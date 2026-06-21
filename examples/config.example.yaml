@@ -1,0 +1,30 @@
+gateway:
+  interface: "en0"
+  lan_ip: "192.168.50.1"
+  upstream_interface: "en0"
+
+dhcp:
+  enabled: true
+  range_start: "192.168.50.100"
+  range_end: "192.168.50.200"
+  lease_time: "12h"
+  domain: "lan"
+
+dns:
+  listen: "192.168.50.1"
+  port: 53
+
+mihomo:
+  binary: "./bin/mihomo"
+  config: "./runtime/mihomo.yaml"
+  mixed_port: 7890
+  redir_port: 7892
+  api_addr: "127.0.0.1:9090"
+  secret: ""
+
+pf:
+  anchor_name: "open_mihomo_gateway"
+  redirect_tcp_to: 7892
+
+runtime:
+  dir: "./runtime"

@@ -1,0 +1,41 @@
+package runtime
+
+import (
+	"os"
+	"path/filepath"
+
+	"open-mihomo-gateway/internal/config"
+)
+
+type Paths struct {
+	Dir          string
+	LogDir       string
+	StateFile    string
+	DNSMasqConf  string
+	MihomoConfig string
+	PFAnchor     string
+	LeaseFile    string
+}
+
+func NewPaths(cfg config.Config) Paths {
+	dir := cfg.Runtime.Dir
+	return Paths{
+		Dir:          dir,
+		LogDir:       filepath.Join(dir, "logs"),
+		StateFile:    filepath.Join(dir, "state.json"),
+		DNSMasqConf:  filepath.Join(dir, "dnsmasq.conf"),
+		MihomoConfig: cfg.Mihomo.Config,
+		PFAnchor:     filepath.Join(dir, "pf.anchor"),
+		LeaseFile:    filepath.Join(dir, "dnsmasq.leases"),
+	}
+}
+
+func Ensure(paths Paths) error {
+	if err := os.MkdirAll(paths.Dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(paths.LogDir, 0o755); err != nil {
+		return err
+	}
+	return os.MkdirAll(filepath.Dir(paths.MihomoConfig), 0o755)
+}
