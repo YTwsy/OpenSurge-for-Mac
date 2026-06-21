@@ -8,7 +8,9 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
 	"open-mihomo-gateway/internal/mihomo"
+	"open-mihomo-gateway/internal/pf"
 	"open-mihomo-gateway/internal/runtime"
+	"open-mihomo-gateway/internal/sysctl"
 )
 
 type Status struct {
@@ -35,6 +37,7 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 	gatewayStatus := "stopped"
 	dhcpStatus := "stopped"
 	mihomoStatus := "stopped"
+	pfStatus := "unloaded"
 	if exists {
 		dhcpRunning := false
 		mihomoRunning := false
@@ -56,6 +59,16 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		} else {
 			gatewayStatus = "degraded"
 		}
+		if state.PFAnchorLoaded {
+			pfStatus = "loaded"
+			if loaded, err := pf.New(m.cfg, m.paths).Loaded(); err == nil && !loaded {
+				pfStatus = "unloaded"
+			}
+		}
+	}
+	forwarding := "unknown"
+	if current, err := sysctl.New().Current(); err == nil {
+		forwarding = sysctl.FormatForwarding(current)
 	}
 
 	return Status{
@@ -64,8 +77,8 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		LANIP:       m.cfg.Gateway.LANIP,
 		DHCP:        dhcpStatus,
 		Mihomo:      mihomoStatus,
-		PFAnchor:    "unloaded",
-		Forwarding:  "unknown",
+		PFAnchor:    pfStatus,
+		Forwarding:  forwarding,
 		ClientCount: len(clients),
 	}, nil
 }

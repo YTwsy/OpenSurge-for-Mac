@@ -40,6 +40,11 @@ func (m Manager) Start() (int, error) {
 	return process.StartDetached(binary, "-f", m.paths.MihomoConfig)
 }
 
+func (m Manager) Check() error {
+	_, err := resolveBinary(m.cfg.Mihomo.Binary)
+	return err
+}
+
 func (m Manager) Stop(pid int) error {
 	return process.StopPID(pid, 3*time.Second)
 }

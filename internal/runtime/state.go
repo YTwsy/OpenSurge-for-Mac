@@ -8,12 +8,12 @@ import (
 )
 
 type State struct {
-	PIDDNSMasq          int       `json:"pid_dnsmasq,omitempty"`
-	PIDMihomo           int       `json:"pid_mihomo,omitempty"`
-	IPForwardingBefore  string    `json:"ip_forwarding_before,omitempty"`
-	PFAnchorLoaded      bool      `json:"pf_anchor_loaded"`
-	StartedAt           time.Time `json:"started_at"`
-	RuntimePreparedOnly bool      `json:"runtime_prepared_only,omitempty"`
+	PIDDNSMasq         int       `json:"pid_dnsmasq,omitempty"`
+	PIDMihomo          int       `json:"pid_mihomo,omitempty"`
+	IPForwardingBefore string    `json:"ip_forwarding_before,omitempty"`
+	PFEnabledBefore    bool      `json:"pf_enabled_before"`
+	PFAnchorLoaded     bool      `json:"pf_anchor_loaded"`
+	StartedAt          time.Time `json:"started_at"`
 }
 
 func LoadState(path string) (State, bool, error) {

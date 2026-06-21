@@ -32,13 +32,23 @@ func (m Manager) Start() (int, error) {
 	if !m.cfg.DHCP.Enabled {
 		return 0, nil
 	}
-	if _, err := exec.LookPath("dnsmasq"); err != nil {
-		return 0, fmt.Errorf("dnsmasq not found in PATH")
+	if err := m.Check(); err != nil {
+		return 0, err
 	}
 	if err := m.WriteConfig(); err != nil {
 		return 0, err
 	}
 	return process.StartDetached("dnsmasq", "--keep-in-foreground", "--conf-file="+m.paths.DNSMasqConf)
+}
+
+func (m Manager) Check() error {
+	if !m.cfg.DHCP.Enabled {
+		return nil
+	}
+	if _, err := exec.LookPath("dnsmasq"); err != nil {
+		return fmt.Errorf("dnsmasq not found in PATH")
+	}
+	return nil
 }
 
 func (m Manager) Stop(pid int) error {
