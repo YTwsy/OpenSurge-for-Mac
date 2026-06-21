@@ -7,6 +7,7 @@ import (
 
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
+	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -21,7 +22,7 @@ type Status struct {
 	ClientCount int
 }
 
-func (m Manager) Status(_ context.Context) (Status, error) {
+func (m Manager) Status(ctx context.Context) (Status, error) {
 	state, exists, err := runtime.LoadState(m.paths.StateFile)
 	if err != nil {
 		return Status{}, err
@@ -33,10 +34,24 @@ func (m Manager) Status(_ context.Context) (Status, error) {
 
 	gatewayStatus := "stopped"
 	dhcpStatus := "stopped"
+	mihomoStatus := "stopped"
 	if exists {
+		dhcpRunning := false
+		mihomoRunning := false
+		mihomoManager := mihomo.New(m.cfg, m.paths)
+		if mihomoManager.Running(state.PIDMihomo) {
+			mihomoRunning = true
+			mihomoStatus = "running"
+			if version, err := mihomo.FetchVersion(ctx, m.cfg); err == nil && version.Version != "" {
+				mihomoStatus = "running (" + version.Version + ")"
+			}
+		}
 		dhcpManager := dhcp.New(m.cfg, m.paths)
 		if dhcpManager.Running(state.PIDDNSMasq) {
+			dhcpRunning = true
 			dhcpStatus = "running"
+		}
+		if dhcpRunning && mihomoRunning {
 			gatewayStatus = "running"
 		} else {
 			gatewayStatus = "degraded"
@@ -48,7 +63,7 @@ func (m Manager) Status(_ context.Context) (Status, error) {
 		Interface:   m.cfg.Gateway.Interface,
 		LANIP:       m.cfg.Gateway.LANIP,
 		DHCP:        dhcpStatus,
-		Mihomo:      "stopped",
+		Mihomo:      mihomoStatus,
 		PFAnchor:    "unloaded",
 		Forwarding:  "unknown",
 		ClientCount: len(clients),
