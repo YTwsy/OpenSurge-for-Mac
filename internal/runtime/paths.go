@@ -8,25 +8,27 @@ import (
 )
 
 type Paths struct {
-	Dir          string
-	LogDir       string
-	StateFile    string
-	DNSMasqConf  string
-	MihomoConfig string
-	PFAnchor     string
-	LeaseFile    string
+	Dir            string
+	LogDir         string
+	StateFile      string
+	DNSMasqConf    string
+	DNSMasqPIDFile string
+	MihomoConfig   string
+	PFAnchor       string
+	LeaseFile      string
 }
 
 func NewPaths(cfg config.Config) Paths {
 	dir := cfg.Runtime.Dir
 	return Paths{
-		Dir:          dir,
-		LogDir:       filepath.Join(dir, "logs"),
-		StateFile:    filepath.Join(dir, "state.json"),
-		DNSMasqConf:  filepath.Join(dir, "dnsmasq.conf"),
-		MihomoConfig: cfg.Mihomo.Config,
-		PFAnchor:     filepath.Join(dir, "pf.anchor"),
-		LeaseFile:    filepath.Join(dir, "dnsmasq.leases"),
+		Dir:            dir,
+		LogDir:         filepath.Join(dir, "logs"),
+		StateFile:      filepath.Join(dir, "state.json"),
+		DNSMasqConf:    filepath.Join(dir, "dnsmasq.conf"),
+		DNSMasqPIDFile: filepath.Join(dir, "dnsmasq.pid"),
+		MihomoConfig:   cfg.Mihomo.Config,
+		PFAnchor:       filepath.Join(dir, "pf.anchor"),
+		LeaseFile:      filepath.Join(dir, "dnsmasq.leases"),
 	}
 }
 
