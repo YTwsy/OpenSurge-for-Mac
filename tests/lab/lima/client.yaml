@@ -1,9 +1,9 @@
 minimumLimaVersion: 2.0.0
 
 images:
-  - location: "__ALPINE_IMAGE__"
+  - location: "https://cloud-images.ubuntu.com/releases/noble/release-20260518/ubuntu-24.04-server-cloudimg-arm64.img"
     arch: aarch64
-    digest: sha512:737b0eb365944ffcf6da477c059c105bbde222942fd5a8380c07db088365b18dbc60a0f2824ea9a3904d57e194e0d05a7074302c3ebc104d0aecb6ddc6ffd91c
+    digest: sha256:6a61b967ba4a27dd1966f835a67643073ed55c2860ce3dc1cb0517282e6b8bec
 
 vmType: vz
 arch: aarch64
@@ -20,6 +20,11 @@ containerd:
 ssh:
   overVsock: true
 
+user:
+  name: lima
+  comment: Lima lab client
+  shell: /bin/bash
+
 # The built-in user-mode NIC remains the control plane. This second NIC is the
 # data plane and connects to the DHCP-free host network managed by socket_vmnet.
 networks:
@@ -32,7 +37,10 @@ provision:
       #!/bin/sh
       set -eux
 __PROXY_EXPORTS__
-      apk add --no-cache bash bind-tools curl iproute2 iputils
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends bash curl dnsutils iproute2 iputils-ping isc-dhcp-client
+      rm -rf /var/lib/apt/lists/*
 
   - mode: data
     path: /usr/local/bin/omg-lab-client
@@ -41,6 +49,8 @@ __PROXY_EXPORTS__
     content: |
       #!/bin/bash
       set -euo pipefail
+__PROXY_EXPORTS__
+      export DEBIAN_FRONTEND=noninteractive
 
       gateway="${2:-192.168.50.1}"
 
@@ -66,13 +76,60 @@ __PROXY_EXPORTS__
         return 1
       }
 
+      request_dhcp_with_networkd() {
+        local iface i
+        iface="$1"
+        command -v networkctl >/dev/null 2>&1 || {
+          echo "no DHCP client found and networkctl is unavailable" >&2
+          return 1
+        }
+        mkdir -p /etc/systemd/network
+        {
+          printf '[Match]\n'
+          printf 'Name=%s\n\n' "$iface"
+          printf '[Network]\n'
+          printf 'DHCP=ipv4\n'
+          printf 'IPv6AcceptRA=no\n'
+          printf 'LinkLocalAddressing=no\n\n'
+          printf '[DHCPv4]\n'
+          printf 'UseDNS=false\n'
+          printf 'UseRoutes=false\n'
+          printf 'ClientIdentifier=mac\n'
+        } >/etc/systemd/network/90-open-mihomo-gateway-lab.network
+        systemctl enable --now systemd-networkd >/dev/null 2>&1 || true
+        networkctl reload >/dev/null 2>&1 || true
+        networkctl reconfigure "$iface" >/dev/null 2>&1 || true
+        networkctl renew "$iface" >/dev/null 2>&1 || true
+        for i in {1..30}; do
+          if ip -4 address show dev "$iface" scope global | grep -q 'inet '; then
+            return 0
+          fi
+          sleep 1
+        done
+        echo "timed out waiting for DHCP lease on $iface via systemd-networkd" >&2
+        return 1
+      }
+
+      request_dhcp() {
+        local iface
+        iface="$1"
+        if command -v udhcpc >/dev/null 2>&1; then
+          timeout 35 udhcpc -i "$iface" -n -q -t 5 -T 5
+        elif command -v dhclient >/dev/null 2>&1; then
+          timeout 35 dhclient -4 -v -1 "$iface"
+        else
+          request_dhcp_with_networkd "$iface"
+        fi
+      }
+
       renew() {
         local iface
         iface="$(lab_interface)"
         ip link set dev "$iface" up
         ip -4 addr flush dev "$iface" scope global || true
-        timeout 35 udhcpc -i "$iface" -n -q -t 5 -T 5
+        request_dhcp "$iface"
         ip route replace default via "$gateway" dev "$iface" metric 5
+        rm -f /etc/resolv.conf
         printf 'nameserver %s\n' "$gateway" >/etc/resolv.conf
         printf 'LAB_INTERFACE=%s\n' "$iface"
         ip -4 -brief address show dev "$iface"
@@ -99,14 +156,30 @@ __PROXY_EXPORTS__
         grep -q "dev $iface" <<<"$route"
         dig +time=5 +tries=1 "@$gateway" example.com A
         ping -c 1 -W 5 1.1.1.1
-        curl --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
-        curl --proxy "$proxy_url" --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+        curl --noproxy '*' --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+        curl --noproxy '' --proxy "$proxy_url" --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
         printf 'CLIENT_PATH_OK interface=%s gateway=%s proxy=%s url=%s\n' "$iface" "$gateway" "$proxy_url" "$test_url"
+      }
+
+      transparent_test() {
+        local host iface route test_url
+        iface="$(lab_interface)"
+        test_url="${3:-https://example.com/}"
+        host="${test_url#*://}"
+        host="${host%%/*}"
+        host="${host%%:*}"
+        route="$(ip -4 route get 1.1.1.1)"
+        grep -q "via $gateway" <<<"$route"
+        grep -q "dev $iface" <<<"$route"
+        dig +time=5 +tries=1 "@$gateway" "$host" A
+        curl --noproxy '*' --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+        printf 'CLIENT_TRANSPARENT_OK interface=%s gateway=%s host=%s url=%s\n' "$iface" "$gateway" "$host" "$test_url"
       }
 
       case "${1:-}" in
         renew) renew ;;
         status) status ;;
         test) test_path ;;
-        *) echo "usage: omg-lab-client <renew|status|test> [gateway] [url]" >&2; exit 2 ;;
+        transparent) transparent_test ;;
+        *) echo "usage: omg-lab-client <renew|status|test|transparent> [gateway] [url]" >&2; exit 2 ;;
       esac

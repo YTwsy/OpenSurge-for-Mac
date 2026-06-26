@@ -1,4 +1,4 @@
-.PHONY: test build doctor status lab-install lab-uninstall-root lab-check lab-up lab-status lab-test lab-down lab-destroy
+.PHONY: test build doctor status lab-install lab-uninstall-root lab-check lab-up lab-status lab-test lab-test-tun lab-down lab-destroy
 
 test:
 	go test ./...
@@ -29,6 +29,9 @@ lab-status:
 
 lab-test:
 	./tests/lab/lab.sh test
+
+lab-test-tun:
+	./tests/lab/lab.sh test-tun
 
 lab-down:
 	./tests/lab/lab.sh down

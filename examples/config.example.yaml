@@ -14,6 +14,7 @@ dhcp:
 dns:
   listen: "192.168.50.1"
   port: 53
+  upstream: ""
 
 mihomo:
   binary: "./bin/mihomo"
@@ -26,6 +27,14 @@ mihomo:
 pf:
   anchor_name: "com.apple/open_mihomo_gateway"
   redirect_tcp_to: 0
+
+transparent:
+  mode: "off"
+  tun_device: "utun123"
+  tun_stack: "mixed"
+  tun_auto_route: true
+  tun_auto_detect_interface: false
+  tun_strict_route: false
 
 runtime:
   dir: "./runtime"

@@ -24,33 +24,39 @@ pid-file={{ .PIDFile }}
 
 port={{ .DNSPort }}
 listen-address={{ .DNSListen }}
+{{ if .DNSUpstream }}
+no-resolv
+server={{ .DNSUpstream }}
+{{ end }}
 `
 
 type templateData struct {
-	Interface  string
-	RangeStart string
-	RangeEnd   string
-	LeaseTime  string
-	GatewayIP  string
-	Domain     string
-	LeaseFile  string
-	PIDFile    string
-	DNSPort    int
-	DNSListen  string
+	Interface   string
+	RangeStart  string
+	RangeEnd    string
+	LeaseTime   string
+	GatewayIP   string
+	Domain      string
+	LeaseFile   string
+	PIDFile     string
+	DNSPort     int
+	DNSListen   string
+	DNSUpstream string
 }
 
 func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 	data := templateData{
-		Interface:  cfg.Gateway.Interface,
-		RangeStart: cfg.DHCP.RangeStart,
-		RangeEnd:   cfg.DHCP.RangeEnd,
-		LeaseTime:  cfg.DHCP.LeaseTime,
-		GatewayIP:  cfg.Gateway.LANIP,
-		Domain:     cfg.DHCP.Domain,
-		LeaseFile:  paths.LeaseFile,
-		PIDFile:    paths.DNSMasqPIDFile,
-		DNSPort:    cfg.DNS.Port,
-		DNSListen:  cfg.DNS.Listen,
+		Interface:   cfg.Gateway.Interface,
+		RangeStart:  cfg.DHCP.RangeStart,
+		RangeEnd:    cfg.DHCP.RangeEnd,
+		LeaseTime:   cfg.DHCP.LeaseTime,
+		GatewayIP:   cfg.Gateway.LANIP,
+		Domain:      cfg.DHCP.Domain,
+		LeaseFile:   paths.LeaseFile,
+		PIDFile:     paths.DNSMasqPIDFile,
+		DNSPort:     cfg.DNS.Port,
+		DNSListen:   cfg.DNS.Listen,
+		DNSUpstream: cfg.DNS.Upstream,
 	}
 
 	tmpl, err := template.New("dnsmasq").Parse(dnsmasqTemplate)

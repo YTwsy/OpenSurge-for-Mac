@@ -7,12 +7,13 @@ import (
 )
 
 type Config struct {
-	Gateway GatewayConfig
-	DHCP    DHCPConfig
-	DNS     DNSConfig
-	Mihomo  MihomoConfig
-	PF      PFConfig
-	Runtime RuntimeConfig
+	Gateway     GatewayConfig
+	DHCP        DHCPConfig
+	DNS         DNSConfig
+	Mihomo      MihomoConfig
+	PF          PFConfig
+	Transparent TransparentConfig
+	Runtime     RuntimeConfig
 }
 
 type GatewayConfig struct {
@@ -31,8 +32,9 @@ type DHCPConfig struct {
 }
 
 type DNSConfig struct {
-	Listen string
-	Port   int
+	Listen   string
+	Port     int
+	Upstream string
 }
 
 type MihomoConfig struct {
@@ -47,6 +49,24 @@ type MihomoConfig struct {
 type PFConfig struct {
 	AnchorName    string
 	RedirectTCPTo int
+}
+
+const (
+	TransparentModeOff = "off"
+	TransparentModeTUN = "tun"
+)
+
+type TransparentConfig struct {
+	Mode                   string
+	TUNDevice              string
+	TUNStack               string
+	TUNAutoRoute           bool
+	TUNAutoDetectInterface bool
+	TUNStrictRoute         bool
+}
+
+func (c TransparentConfig) TUNEnabled() bool {
+	return c.Mode == TransparentModeTUN
 }
 
 type RuntimeConfig struct {
@@ -83,6 +103,14 @@ func Default() Config {
 		PF: PFConfig{
 			AnchorName:    "com.apple/open_mihomo_gateway",
 			RedirectTCPTo: 0,
+		},
+		Transparent: TransparentConfig{
+			Mode:                   TransparentModeOff,
+			TUNDevice:              "utun123",
+			TUNStack:               "mixed",
+			TUNAutoRoute:           true,
+			TUNAutoDetectInterface: false,
+			TUNStrictRoute:         false,
 		},
 		Runtime: RuntimeConfig{
 			Dir: "./runtime",

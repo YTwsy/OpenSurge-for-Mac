@@ -113,6 +113,8 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("dns.port must be a number")
 		}
 		cfg.DNS.Port = port
+	case "dns.upstream":
+		cfg.DNS.Upstream = value
 	case "mihomo.binary":
 		cfg.Mihomo.Binary = value
 	case "mihomo.config":
@@ -141,6 +143,30 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("pf.redirect_tcp_to must be a number")
 		}
 		cfg.PF.RedirectTCPTo = port
+	case "transparent.mode":
+		cfg.Transparent.Mode = strings.ToLower(value)
+	case "transparent.tun_device":
+		cfg.Transparent.TUNDevice = value
+	case "transparent.tun_stack":
+		cfg.Transparent.TUNStack = strings.ToLower(value)
+	case "transparent.tun_auto_route":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("transparent.tun_auto_route must be a boolean")
+		}
+		cfg.Transparent.TUNAutoRoute = enabled
+	case "transparent.tun_auto_detect_interface":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("transparent.tun_auto_detect_interface must be a boolean")
+		}
+		cfg.Transparent.TUNAutoDetectInterface = enabled
+	case "transparent.tun_strict_route":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("transparent.tun_strict_route must be a boolean")
+		}
+		cfg.Transparent.TUNStrictRoute = enabled
 	case "runtime.dir":
 		cfg.Runtime.Dir = value
 	default:

@@ -23,10 +23,6 @@ MIHOMO_SHA256=3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1
 MIHOMO_SIZE=15719003
 MIHOMO_ARCHIVE="mihomo-darwin-arm64-v${MIHOMO_VERSION}.gz"
 MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/${MIHOMO_ARCHIVE}"
-ALPINE_IMAGE="nocloud_alpine-3.23.4-aarch64-uefi-cloudinit-r0.qcow2"
-ALPINE_IMAGE_URL="https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/${ALPINE_IMAGE}"
-ALPINE_IMAGE_SIZE=235077632
-ALPINE_IMAGE_SHA512=737b0eb365944ffcf6da477c059c105bbde222942fd5a8380c07db088365b18dbc60a0f2824ea9a3904d57e194e0d05a7074302c3ebc104d0aecb6ddc6ffd91c
 INSTALL_ROOT=/opt/open-mihomo-gateway
 NETWORK_HELPER="$INSTALL_ROOT/bin/omg-lab-network"
 SUDOERS_FILE=/private/etc/sudoers.d/open-mihomo-gateway-lab
@@ -223,8 +219,6 @@ install_user_tools() {
   install -m 0755 "$socket_vmnet_bin" "$TOOLS_ROOT/socket_vmnet/bin/socket_vmnet"
   install -m 0755 "$socket_vmnet_client_bin" "$TOOLS_ROOT/socket_vmnet/bin/socket_vmnet_client"
 
-  download_segmented_and_verify "$ALPINE_IMAGE_URL" "$CACHE_ROOT/$ALPINE_IMAGE" \
-    "$ALPINE_IMAGE_SHA512" "$ALPINE_IMAGE_SIZE" 12 direct 512
   rm -rf "$tmpdir"
   trap - RETURN
 

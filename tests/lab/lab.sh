@@ -69,6 +69,10 @@ shell_quote() {
 
 write_proxy_exports() {
   local indent=$1 name value
+  case "${OMG_LAB_VM_PROXY:-0}" in
+    1|true|TRUE|yes|YES) ;;
+    *) return 0 ;;
+  esac
   for name in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy FTP_PROXY ftp_proxy grpc_proxy NO_PROXY no_proxy; do
     value="${!name:-}"
     if [[ -n "$value" ]]; then
@@ -78,12 +82,19 @@ write_proxy_exports() {
 }
 
 write_config() {
-	local iface upstream dnsmasq_bin mihomo_bin runtime_dir
+	local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line
+	mode="${1:-off}"
 	iface="$(lab_interface)"
 	upstream="$(upstream_interface)"
 	dnsmasq_bin="$(command -v dnsmasq)"
 	mihomo_bin="$(command -v mihomo)"
   runtime_dir="$STATE_DIR"
+  dns_upstream_line=""
+  case "$mode" in
+    off) ;;
+    tun) dns_upstream_line='  upstream: "127.0.0.1#1053"' ;;
+    *) echo "unknown transparent mode: $mode" >&2; exit 2 ;;
+  esac
 
   case "$iface" in
     bridge*) ;;
@@ -99,13 +110,14 @@ write_config() {
 	  -e "s|__UPSTREAM_INTERFACE__|$(sed_escape "$upstream")|g" \
 	  -e "s|__DNSMASQ_BINARY__|$(sed_escape "$dnsmasq_bin")|g" \
 	  -e "s|__MIHOMO_BINARY__|$(sed_escape "$mihomo_bin")|g" \
+    -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
+    -e "s|__TRANSPARENT_MODE__|$(sed_escape "$mode")|g" \
     -e "s|__RUNTIME_DIR__|$(sed_escape "$runtime_dir")|g" \
     "$CONFIG_TEMPLATE" >"$CONFIG"
 }
 
 write_client_config() {
-  local image line
-  image="$TOOLS_ROOT/cache/nocloud_alpine-3.23.4-aarch64-uefi-cloudinit-r0.qcow2"
+  local line
   mkdir -p "$STATE_DIR"
   : >"$CLIENT_CONFIG"
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -114,7 +126,7 @@ write_client_config() {
         write_proxy_exports "      "
         ;;
       *)
-        printf '%s\n' "${line//__ALPINE_IMAGE__/$image}"
+        printf '%s\n' "$line"
         ;;
     esac
   done <"$TEMPLATE" >"$CLIENT_CONFIG"
@@ -130,7 +142,7 @@ start_clients() {
       limactl delete -f -y "$client"
     fi
     if [[ ! -d "$(instance_dir "$client")" ]]; then
-      limactl create --name "$client" "$CLIENT_CONFIG"
+      limactl create -y --name "$client" "$CLIENT_CONFIG"
     fi
     limactl start "$client"
     limactl shell "$client" -- true
@@ -172,10 +184,37 @@ collect_artifacts() {
   echo "Lab artifacts: $artifact_dir"
 }
 
+url_host() {
+  local url host
+  url="$1"
+  host="${url#*://}"
+  host="${host%%/*}"
+  host="${host%%:*}"
+  printf '%s\n' "$host"
+}
+
+wait_for_transparent_log() {
+  local host i log_file
+  host="$(url_host "$TEST_URL")"
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..20}; do
+    if [[ -f "$log_file" ]] && grep -q -- "--> $host:443" "$log_file"; then
+      echo "transparent TUN log observed for $host:443"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "mihomo did not log transparent TUN traffic for $host:443" >&2
+  tail -80 "$log_file" >&2 || true
+  exit 1
+}
+
 run_test() {
-  local client gateway_started
+  local mode client gateway_started
+  mode="${1:-off}"
   require_installed_lab
-  [[ -f "$CONFIG" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
+  [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
+  write_config "$mode"
   require_command go
   mkdir -p "$ROOT/bin"
   GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
@@ -200,8 +239,15 @@ run_test() {
 
   for client in $CLIENTS; do
     limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
-    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client test "$LAN_IP" "$TEST_URL"
+    if [[ "$mode" == "tun" ]]; then
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+    else
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client test "$LAN_IP" "$TEST_URL"
+    fi
   done
+  if [[ "$mode" == "tun" ]]; then
+    wait_for_transparent_log
+  fi
 
   "$BINARY" status --config "$CONFIG"
   "$BINARY" leases --config "$CONFIG"
@@ -217,7 +263,7 @@ run_test() {
   [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
   trap - EXIT INT TERM
   collect_artifacts
-  echo "virtual LAN test passed"
+  echo "virtual LAN ${mode} test passed"
 }
 
 check_lab() {
@@ -236,7 +282,7 @@ case "${1:-}" in
   up)
     require_installed_lab
     start_network
-    write_config
+    write_config off
     start_clients
     echo "Lab ready: interface=$(lab_interface) config=$CONFIG clients=$CLIENTS"
     ;;
@@ -249,12 +295,20 @@ case "${1:-}" in
     fi
     for client in $CLIENTS; do
       if [[ -d "$(instance_dir "$client")" ]]; then
-        limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status || true
+        client_state="$(limactl list --format '{{.Status}}' "$client" 2>/dev/null || true)"
+        if [[ "$client_state" == "Running" ]]; then
+          limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status || true
+        else
+          echo "$client: ${client_state:-unknown}"
+        fi
       fi
     done
     ;;
   test)
-    run_test
+    run_test off
+    ;;
+  test-tun)
+    run_test tun
     ;;
   down)
     stop_clients
@@ -269,7 +323,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 <check|up|status|test|down|destroy>" >&2
+    echo "usage: $0 <check|up|status|test|test-tun|down|destroy>" >&2
     exit 2
     ;;
 esac

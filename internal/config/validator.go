@@ -57,10 +57,32 @@ func Validate(cfg Config) error {
 	if !validOptionalPort(cfg.PF.RedirectTCPTo) {
 		return fmt.Errorf("pf.redirect_tcp_to must be between 0 and 65535")
 	}
+	if err := validateTransparent(cfg.Transparent); err != nil {
+		return err
+	}
 	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
 		return fmt.Errorf("runtime.dir is required")
 	}
 	return nil
+}
+
+func validateTransparent(cfg TransparentConfig) error {
+	switch cfg.Mode {
+	case TransparentModeOff:
+		return nil
+	case TransparentModeTUN:
+		if !strings.HasPrefix(cfg.TUNDevice, "utun") {
+			return fmt.Errorf("transparent.tun_device must start with utun on macOS")
+		}
+		switch cfg.TUNStack {
+		case "system", "gvisor", "mixed":
+			return nil
+		default:
+			return fmt.Errorf("transparent.tun_stack must be system, gvisor, or mixed")
+		}
+	default:
+		return fmt.Errorf("transparent.mode must be off or tun")
+	}
 }
 
 func validPort(port int) bool {

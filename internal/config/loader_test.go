@@ -23,4 +23,13 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.DHCP.Binary != "dnsmasq" {
 		t.Fatalf("DHCP.Binary = %q", cfg.DHCP.Binary)
 	}
+	if cfg.DNS.Upstream != "" {
+		t.Fatalf("DNS.Upstream = %q", cfg.DNS.Upstream)
+	}
+	if cfg.Transparent.Mode != TransparentModeOff {
+		t.Fatalf("Transparent.Mode = %q", cfg.Transparent.Mode)
+	}
+	if cfg.Transparent.TUNDevice != "utun123" {
+		t.Fatalf("Transparent.TUNDevice = %q", cfg.Transparent.TUNDevice)
+	}
 }

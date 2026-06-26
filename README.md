@@ -14,7 +14,8 @@ The current implementation is milestone-driven:
 Mihomo `redir-port` is disabled by default on macOS because the current Darwin
 build reports redir as unsupported at runtime. The virtual LAN lab validates
 NAT, DHCP/DNS, and mihomo `mixed-port`; transparent TCP capture should be
-designed as a separate TUN or engine-specific milestone.
+designed as a separate TUN or engine-specific milestone. An experimental TUN
+POC can be enabled with `transparent.mode: "tun"`.
 
 ## Usage
 
@@ -44,6 +45,10 @@ example configs that affect runtime traffic. Keep the virtual LAN lab as a
 local, nightly, or manual gate until a dedicated macOS runner can provide the
 same controlled host privileges and network isolation.
 
+Use `make lab-test-tun` for the experimental transparent proxy path. That test
+keeps clients proxy-free and requires mihomo to log the direct HTTPS connection
+through its TUN inbound.
+
 ## Virtual LAN lab
 
 The integration lab runs the real macOS gateway against two lightweight Linux
@@ -56,6 +61,7 @@ make lab-install
 make lab-up
 sudo -v
 make lab-test
+make lab-test-tun
 make lab-down
 ```
 

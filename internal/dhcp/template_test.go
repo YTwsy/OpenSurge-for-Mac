@@ -27,3 +27,22 @@ func TestRenderConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderConfigWithDNSUpstream(t *testing.T) {
+	cfg := config.Default()
+	cfg.DNS.Upstream = "127.0.0.1#1053"
+	paths := runtime.NewPaths(cfg)
+	rendered, err := RenderConfig(cfg, paths)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"no-resolv",
+		"server=127.0.0.1#1053",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
+	}
+}
