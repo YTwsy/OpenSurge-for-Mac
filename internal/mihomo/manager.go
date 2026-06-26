@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,12 +38,29 @@ func (m Manager) Start() (int, error) {
 	if err := m.WriteConfig(); err != nil {
 		return 0, err
 	}
-	return process.StartDetached(binary, "-f", m.paths.MihomoConfig)
+	if err := validateConfig(binary, m.paths.MihomoConfig); err != nil {
+		return 0, err
+	}
+	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o644); err != nil {
+		return 0, err
+	}
+	return process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-f", m.paths.MihomoConfig)
 }
 
 func (m Manager) Check() error {
 	_, err := resolveBinary(m.cfg.Mihomo.Binary)
 	return err
+}
+
+func validateConfig(binary string, configPath string) error {
+	cmd := exec.Command(binary, "-t", "-f", configPath)
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("mihomo config validation failed: %w: %s", err, strings.TrimSpace(output.String()))
+	}
+	return nil
 }
 
 func (m Manager) Stop(pid int) error {

@@ -9,7 +9,9 @@ import (
 
 const anchorTemplate = `nat on {{ .UpstreamInterface }} from {{ .LanCIDR }} to any -> ({{ .UpstreamInterface }})
 
+{{ if gt .RedirPort 0 }}
 rdr pass on {{ .LanInterface }} proto tcp from {{ .LanCIDR }} to any -> 127.0.0.1 port {{ .RedirPort }}
+{{ end }}
 
 pass in all
 pass out all

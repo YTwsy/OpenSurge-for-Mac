@@ -89,6 +89,8 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Gateway.LANIP = value
 	case "gateway.upstream_interface":
 		cfg.Gateway.UpstreamInterface = value
+	case "dhcp.binary":
+		cfg.DHCP.Binary = value
 	case "dhcp.enabled":
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {

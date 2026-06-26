@@ -67,16 +67,38 @@ func (m Manager) Unload(disablePF bool) error {
 }
 
 func (m Manager) Loaded() (bool, error) {
-	out, err := exec.Command("pfctl", "-s", "Anchors").Output()
+	anchorName := strings.TrimSpace(m.cfg.PF.AnchorName)
+	parent, child, nested := splitAnchor(anchorName)
+	args := []string{"-s", "Anchors"}
+	if nested {
+		args = []string{"-a", parent, "-s", "Anchors"}
+	}
+	out, err := exec.Command("pfctl", args...).Output()
 	if err != nil {
 		return false, err
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.TrimSpace(line) == m.cfg.PF.AnchorName {
-			return true, nil
+	return anchorOutputContains(string(out), child), nil
+}
+
+func splitAnchor(anchorName string) (parent string, child string, nested bool) {
+	anchorName = strings.Trim(anchorName, "/")
+	if anchorName == "" {
+		return "", "", false
+	}
+	idx := strings.LastIndex(anchorName, "/")
+	if idx < 0 {
+		return "", anchorName, false
+	}
+	return anchorName[:idx], anchorName[idx+1:], true
+}
+
+func anchorOutputContains(output string, anchorName string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimSpace(line) == anchorName {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 func parseEnabled(info string) bool {

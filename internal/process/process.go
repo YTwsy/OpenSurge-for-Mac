@@ -11,6 +11,23 @@ import (
 
 func StartDetached(name string, args ...string) (int, error) {
 	cmd := exec.Command(name, args...)
+	return startDetached(cmd)
+}
+
+func StartDetachedWithLog(logPath string, name string, args ...string) (int, error) {
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return 0, err
+	}
+	defer logFile.Close()
+
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	return startDetached(cmd)
+}
+
+func startDetached(cmd *exec.Cmd) (int, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return 0, err

@@ -1,0 +1,112 @@
+minimumLimaVersion: 2.0.0
+
+images:
+  - location: "__ALPINE_IMAGE__"
+    arch: aarch64
+    digest: sha512:737b0eb365944ffcf6da477c059c105bbde222942fd5a8380c07db088365b18dbc60a0f2824ea9a3904d57e194e0d05a7074302c3ebc104d0aecb6ddc6ffd91c
+
+vmType: vz
+arch: aarch64
+cpus: 1
+memory: 512MiB
+disk: 4GiB
+
+mounts: []
+
+containerd:
+  system: false
+  user: false
+
+ssh:
+  overVsock: true
+
+# The built-in user-mode NIC remains the control plane. This second NIC is the
+# data plane and connects to the DHCP-free host network managed by socket_vmnet.
+networks:
+  - socket: /private/var/run/open-mihomo-gateway-lab.sock
+    interface: omg0
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+__PROXY_EXPORTS__
+      apk add --no-cache bash bind-tools curl iproute2 iputils
+
+  - mode: data
+    path: /usr/local/bin/omg-lab-client
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      gateway="${2:-192.168.50.1}"
+
+      control_interface() {
+        ip -4 route show default | awk 'NR == 1 { print $5 }'
+      }
+
+      lab_interface() {
+        local control iface
+        if [[ -d /sys/class/net/omg0 ]]; then
+          printf 'omg0\n'
+          return 0
+        fi
+        control="$(control_interface)"
+        for path in /sys/class/net/*; do
+          iface="${path##*/}"
+          if [[ "$iface" != "lo" && "$iface" != "$control" ]]; then
+            printf '%s\n' "$iface"
+            return 0
+          fi
+        done
+        echo "no lab interface found" >&2
+        return 1
+      }
+
+      renew() {
+        local iface
+        iface="$(lab_interface)"
+        ip link set dev "$iface" up
+        ip -4 addr flush dev "$iface" scope global || true
+        timeout 35 udhcpc -i "$iface" -n -q -t 5 -T 5
+        ip route replace default via "$gateway" dev "$iface" metric 5
+        printf 'nameserver %s\n' "$gateway" >/etc/resolv.conf
+        printf 'LAB_INTERFACE=%s\n' "$iface"
+        ip -4 -brief address show dev "$iface"
+        ip -4 route show default
+      }
+
+      status() {
+        local iface
+        iface="$(lab_interface)"
+        printf 'CONTROL_INTERFACE=%s\n' "$(control_interface)"
+        printf 'LAB_INTERFACE=%s\n' "$iface"
+        ip -4 -brief address show dev "$iface"
+        ip -4 route show default
+        cat /etc/resolv.conf
+      }
+
+      test_path() {
+        local iface proxy_url route test_url
+        iface="$(lab_interface)"
+        test_url="${3:-https://example.com/}"
+        proxy_url="http://$gateway:17890"
+        route="$(ip -4 route get 1.1.1.1)"
+        grep -q "via $gateway" <<<"$route"
+        grep -q "dev $iface" <<<"$route"
+        dig +time=5 +tries=1 "@$gateway" example.com A
+        ping -c 1 -W 5 1.1.1.1
+        curl --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+        curl --proxy "$proxy_url" --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+        printf 'CLIENT_PATH_OK interface=%s gateway=%s proxy=%s url=%s\n' "$iface" "$gateway" "$proxy_url" "$test_url"
+      }
+
+      case "${1:-}" in
+        renew) renew ;;
+        status) status ;;
+        test) test_path ;;
+        *) echo "usage: omg-lab-client <renew|status|test> [gateway] [url]" >&2; exit 2 ;;
+      esac

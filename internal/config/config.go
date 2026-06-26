@@ -22,6 +22,7 @@ type GatewayConfig struct {
 }
 
 type DHCPConfig struct {
+	Binary     string
 	Enabled    bool
 	RangeStart string
 	RangeEnd   string
@@ -60,6 +61,7 @@ func Default() Config {
 			UpstreamInterface: "en0",
 		},
 		DHCP: DHCPConfig{
+			Binary:     "dnsmasq",
 			Enabled:    true,
 			RangeStart: "192.168.50.100",
 			RangeEnd:   "192.168.50.200",
@@ -74,13 +76,13 @@ func Default() Config {
 			Binary:    "./bin/mihomo",
 			Config:    "./runtime/mihomo.yaml",
 			MixedPort: 7890,
-			RedirPort: 7892,
+			RedirPort: 0,
 			APIAddr:   "127.0.0.1:9090",
 			Secret:    "",
 		},
 		PF: PFConfig{
-			AnchorName:    "open_mihomo_gateway",
-			RedirectTCPTo: 7892,
+			AnchorName:    "com.apple/open_mihomo_gateway",
+			RedirectTCPTo: 0,
 		},
 		Runtime: RuntimeConfig{
 			Dir: "./runtime",

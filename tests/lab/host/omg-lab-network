@@ -1,0 +1,132 @@
+#!/bin/sh
+set -eu
+
+SOCKET_VMNET=/opt/socket_vmnet/bin/socket_vmnet
+SOCKET=/private/var/run/open-mihomo-gateway-lab.sock
+PID_FILE=/private/var/run/open-mihomo-gateway-lab.pid
+INTERFACE_FILE=/private/var/run/open-mihomo-gateway-lab.interface
+LOG_FILE=/private/var/log/open-mihomo-gateway-lab-vmnet.log
+NETWORK_ID=D034049A-52AC-4927-96DB-CF072835A574
+LAN_IP=192.168.50.1
+NETMASK=255.255.255.0
+
+vmnet_bridges() {
+  for iface in $(/sbin/ifconfig -l); do
+    case "$iface" in
+      bridge*)
+        if /sbin/ifconfig "$iface" | /usr/bin/grep -q 'member: vmenet'; then
+          printf '%s\n' "$iface"
+        fi
+        ;;
+    esac
+  done
+}
+
+interface_with_lab_ip() {
+  for iface in $(vmnet_bridges); do
+    if /sbin/ifconfig "$iface" | /usr/bin/grep -q "inet $LAN_IP "; then
+      printf '%s\n' "$iface"
+      return 0
+    fi
+  done
+  return 1
+}
+
+pid_is_running() {
+  [ -f "$PID_FILE" ] || return 1
+  pid=$(/bin/cat "$PID_FILE")
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  /bin/kill -0 "$pid" 2>/dev/null
+}
+
+start_network() {
+  if pid_is_running && [ -S "$SOCKET" ]; then
+    status_network
+    return 0
+  fi
+
+  /bin/rm -f "$SOCKET" "$PID_FILE" "$INTERFACE_FILE"
+  : >"$LOG_FILE"
+  before=" $(vmnet_bridges | /usr/bin/tr '\n' ' ') "
+
+  /usr/bin/nohup "$SOCKET_VMNET" \
+    --socket-group=staff \
+    --vmnet-mode=host \
+    --vmnet-network-identifier="$NETWORK_ID" \
+    --vmnet-gateway="$LAN_IP" \
+    --vmnet-mask="$NETMASK" \
+    --pidfile="$PID_FILE" \
+    "$SOCKET" >>"$LOG_FILE" 2>&1 &
+
+  attempts=0
+  while [ ! -S "$SOCKET" ] && [ "$attempts" -lt 100 ]; do
+    attempts=$((attempts + 1))
+    /bin/sleep 0.1
+  done
+  if [ ! -S "$SOCKET" ]; then
+    /bin/cat "$LOG_FILE" >&2
+    echo "socket_vmnet did not create $SOCKET" >&2
+    exit 1
+  fi
+
+  iface=$(interface_with_lab_ip || true)
+  if [ -z "$iface" ]; then
+    for candidate in $(vmnet_bridges); do
+      case "$before" in
+        *" $candidate "*) ;;
+        *) iface=$candidate; break ;;
+      esac
+    done
+  fi
+  if [ -z "$iface" ]; then
+    /bin/cat "$LOG_FILE" >&2
+    echo "unable to identify the vmnet host interface" >&2
+    exit 1
+  fi
+
+  if ! /sbin/ifconfig "$iface" | /usr/bin/grep -q "inet $LAN_IP "; then
+    /sbin/ifconfig "$iface" inet "$LAN_IP" netmask "$NETMASK" up
+  fi
+  printf '%s\n' "$iface" >"$INTERFACE_FILE"
+  /bin/chmod 0644 "$INTERFACE_FILE"
+  status_network
+}
+
+stop_network() {
+  if pid_is_running; then
+    pid=$(/bin/cat "$PID_FILE")
+    /bin/kill -TERM "$pid" 2>/dev/null || true
+    attempts=0
+    while /bin/kill -0 "$pid" 2>/dev/null && [ "$attempts" -lt 50 ]; do
+      attempts=$((attempts + 1))
+      /bin/sleep 0.1
+    done
+    if /bin/kill -0 "$pid" 2>/dev/null; then
+      /bin/kill -KILL "$pid" 2>/dev/null || true
+    fi
+  fi
+  /bin/rm -f "$SOCKET" "$PID_FILE" "$INTERFACE_FILE"
+  echo "lab network stopped"
+}
+
+status_network() {
+  if ! pid_is_running || [ ! -S "$SOCKET" ]; then
+    echo "lab network stopped"
+    return 1
+  fi
+  iface=""
+  if [ -f "$INTERFACE_FILE" ]; then
+    iface=$(/bin/cat "$INTERFACE_FILE")
+  fi
+  printf 'lab network running pid=%s interface=%s socket=%s\n' \
+    "$(/bin/cat "$PID_FILE")" "${iface:-unknown}" "$SOCKET"
+}
+
+case "${1:-}" in
+  start) start_network ;;
+  stop) stop_network ;;
+  status) status_network ;;
+  *) echo "usage: omg-lab-network <start|stop|status>" >&2; exit 2 ;;
+esac

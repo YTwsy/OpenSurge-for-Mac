@@ -1,0 +1,31 @@
+gateway:
+  interface: "__LAB_INTERFACE__"
+  lan_ip: "192.168.50.1"
+  upstream_interface: "__UPSTREAM_INTERFACE__"
+
+dhcp:
+  binary: "__DNSMASQ_BINARY__"
+  enabled: true
+  range_start: "192.168.50.100"
+  range_end: "192.168.50.200"
+  lease_time: "30m"
+  domain: "lab"
+
+dns:
+  listen: "192.168.50.1"
+  port: 53
+
+mihomo:
+  binary: "__MIHOMO_BINARY__"
+  config: "__RUNTIME_DIR__/mihomo.yaml"
+  mixed_port: 17890
+  redir_port: 0
+  api_addr: "127.0.0.1:19090"
+  secret: ""
+
+pf:
+  anchor_name: "com.apple/open_mihomo_gateway_lab"
+  redirect_tcp_to: 0
+
+runtime:
+  dir: "__RUNTIME_DIR__"

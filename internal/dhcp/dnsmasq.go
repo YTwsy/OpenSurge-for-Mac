@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"open-mihomo-gateway/internal/config"
@@ -38,17 +39,19 @@ func (m Manager) Start() (int, error) {
 	if err := m.WriteConfig(); err != nil {
 		return 0, err
 	}
-	return process.StartDetached("dnsmasq", "--keep-in-foreground", "--conf-file="+m.paths.DNSMasqConf)
+	binary, err := resolveBinary(m.cfg.DHCP.Binary)
+	if err != nil {
+		return 0, err
+	}
+	return process.StartDetached(binary, "--keep-in-foreground", "--conf-file="+m.paths.DNSMasqConf)
 }
 
 func (m Manager) Check() error {
 	if !m.cfg.DHCP.Enabled {
 		return nil
 	}
-	if _, err := exec.LookPath("dnsmasq"); err != nil {
-		return fmt.Errorf("dnsmasq not found in PATH")
-	}
-	return nil
+	_, err := resolveBinary(m.cfg.DHCP.Binary)
+	return err
 }
 
 func (m Manager) Stop(pid int) error {
@@ -61,4 +64,22 @@ func (m Manager) Stop(pid int) error {
 
 func (m Manager) Running(pid int) bool {
 	return process.IsAlive(pid)
+}
+
+func resolveBinary(path string) (string, error) {
+	if strings.ContainsRune(path, os.PathSeparator) {
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", err
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("%s is a directory", path)
+		}
+		return path, nil
+	}
+	binary, err := exec.LookPath(path)
+	if err != nil {
+		return "", fmt.Errorf("dnsmasq not found in PATH")
+	}
+	return binary, nil
 }

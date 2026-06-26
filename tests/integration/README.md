@@ -1,5 +1,15 @@
 # Integration tests
 
-Manual LAN integration tests are planned after the milestone 1-4 MVP is in
-place. The intended flow is to use an isolated test network before enabling DHCP
-on a real LAN segment.
+The automated virtual LAN lab lives in `tests/lab`. It uses the real macOS
+`pf`, `dnsmasq`, and `mihomo` implementation with disposable Lima Linux clients.
+The default loop covers NAT, DHCP/DNS, direct HTTPS, and explicit HTTPS through
+mihomo `mixed-port`; transparent TCP redirection is not enabled by default on
+macOS because the current mihomo Darwin redir listener is unsupported.
+
+CI currently runs the fast unit-test gate only. Run `make lab-test` locally, in
+a nightly job, or as a manual macOS gate for changes that can alter real traffic
+or host network state.
+
+Real-device tests remain a separate milestone-level check for Wi-Fi behavior,
+device-specific protocol quirks, and IPv6. Never enable the project's DHCP
+server on a normal home or office LAN during integration testing.

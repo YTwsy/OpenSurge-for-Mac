@@ -14,6 +14,7 @@ type Paths struct {
 	DNSMasqConf    string
 	DNSMasqPIDFile string
 	MihomoConfig   string
+	MihomoLog      string
 	PFAnchor       string
 	LeaseFile      string
 }
@@ -27,6 +28,7 @@ func NewPaths(cfg config.Config) Paths {
 		DNSMasqConf:    filepath.Join(dir, "dnsmasq.conf"),
 		DNSMasqPIDFile: filepath.Join(dir, "dnsmasq.pid"),
 		MihomoConfig:   cfg.Mihomo.Config,
+		MihomoLog:      filepath.Join(dir, "logs", "mihomo.log"),
 		PFAnchor:       filepath.Join(dir, "pf.anchor"),
 		LeaseFile:      filepath.Join(dir, "dnsmasq.leases"),
 	}

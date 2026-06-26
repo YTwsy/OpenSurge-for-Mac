@@ -17,6 +17,9 @@ func Validate(cfg Config) error {
 		return fmt.Errorf("gateway.lan_ip must be a valid IPv4 address")
 	}
 	if cfg.DHCP.Enabled {
+		if strings.TrimSpace(cfg.DHCP.Binary) == "" {
+			return fmt.Errorf("dhcp.binary is required")
+		}
 		if net.ParseIP(cfg.DHCP.RangeStart).To4() == nil {
 			return fmt.Errorf("dhcp.range_start must be a valid IPv4 address")
 		}
@@ -42,8 +45,8 @@ func Validate(cfg Config) error {
 	if !validPort(cfg.Mihomo.MixedPort) {
 		return fmt.Errorf("mihomo.mixed_port must be between 1 and 65535")
 	}
-	if !validPort(cfg.Mihomo.RedirPort) {
-		return fmt.Errorf("mihomo.redir_port must be between 1 and 65535")
+	if !validOptionalPort(cfg.Mihomo.RedirPort) {
+		return fmt.Errorf("mihomo.redir_port must be between 0 and 65535")
 	}
 	if strings.TrimSpace(cfg.Mihomo.APIAddr) == "" {
 		return fmt.Errorf("mihomo.api_addr is required")
@@ -51,8 +54,8 @@ func Validate(cfg Config) error {
 	if strings.TrimSpace(cfg.PF.AnchorName) == "" {
 		return fmt.Errorf("pf.anchor_name is required")
 	}
-	if !validPort(cfg.PF.RedirectTCPTo) {
-		return fmt.Errorf("pf.redirect_tcp_to must be between 1 and 65535")
+	if !validOptionalPort(cfg.PF.RedirectTCPTo) {
+		return fmt.Errorf("pf.redirect_tcp_to must be between 0 and 65535")
 	}
 	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
 		return fmt.Errorf("runtime.dir is required")
@@ -62,4 +65,8 @@ func Validate(cfg Config) error {
 
 func validPort(port int) bool {
 	return port > 0 && port <= 65535
+}
+
+func validOptionalPort(port int) bool {
+	return port >= 0 && port <= 65535
 }
