@@ -20,12 +20,14 @@ mihomo:
   binary: "__MIHOMO_BINARY__"
   config: "__RUNTIME_DIR__/mihomo.yaml"
   mixed_port: 17890
+  # macOS transparent proxying uses transparent.mode: "tun"; redir must stay 0.
   redir_port: 0
   api_addr: "127.0.0.1:19090"
   secret: ""
 
 pf:
   anchor_name: "com.apple/open_mihomo_gateway_lab"
+  # PF TCP redirection is not supported on macOS; TUN is the transparent path.
   redirect_tcp_to: 0
 
 transparent:

@@ -28,16 +28,15 @@ func TestRenderAnchor(t *testing.T) {
 	}
 }
 
-func TestRenderAnchorWithTCPRedirect(t *testing.T) {
+func TestRenderAnchorNeverEmitsTCPRedirect(t *testing.T) {
 	cfg := config.Default()
 	cfg.PF.RedirectTCPTo = 7892
 	rendered, err := RenderAnchor(cfg)
 	if err != nil {
 		t.Fatalf("RenderAnchor() error = %v", err)
 	}
-	want := "rdr pass on en0 proto tcp from 192.168.50.0/24 to any -> 127.0.0.1 port 7892"
-	if !strings.Contains(rendered, want) {
-		t.Fatalf("rendered anchor missing %q:\n%s", want, rendered)
+	if strings.Contains(rendered, "rdr pass") {
+		t.Fatalf("rendered anchor emits unsupported TCP redirection:\n%s", rendered)
 	}
 }
 

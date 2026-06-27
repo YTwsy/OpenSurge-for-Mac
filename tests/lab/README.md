@@ -69,9 +69,9 @@ client leases, checks routing, DNS, ICMP/NAT, direct HTTPS, and explicit HTTPS
 through mihomo `mixed-port`, and then verifies cleanup. Artifacts are written
 under `artifacts/lab`.
 
-`lab-test-tun` is the experimental transparent proxy POC. It rewrites the lab
-config with `transparent.mode: "tun"`, forwards dnsmasq to mihomo DNS, leaves
-the clients without explicit proxy settings, and requires the no-proxy HTTPS
+`lab-test-tun` is the TUN transparent proxy gate. It rewrites the lab config
+with `transparent.mode: "tun"`, forwards dnsmasq to mihomo DNS, leaves the
+clients without explicit proxy settings, and requires the no-proxy HTTPS
 request to appear in `mihomo.log`.
 
 Treat `make lab-test` as the required local gate for high-risk network changes:
@@ -83,8 +83,7 @@ runner with the same root-owned helper and isolated socket_vmnet network.
 
 The default lab path sets `mihomo.redir_port` and `pf.redirect_tcp_to` to `0`.
 The current Darwin mihomo build reports redir as unsupported, so transparent
-TCP capture is covered by the experimental TUN gate instead of the default
-passing loop.
+TCP capture is covered by the TUN gate instead of PF TCP redirection.
 
 The gateway binary intentionally does not receive a passwordless sudo rule.
 Run `sudo -v` shortly before `make lab-test` so the test can use the cached sudo
@@ -98,7 +97,7 @@ make lab-uninstall-root  # remove root-owned lab helper and sudoers rule
 make lab-up       # create/start network and clients
 make lab-status   # inspect host and client state
 make lab-test     # run the end-to-end test and restore the host
-make lab-test-tun # run the experimental TUN transparent proxy POC
+make lab-test-tun # run the TUN transparent proxy gate
 make lab-down     # stop clients and remove the host network
 make lab-destroy  # delete the persistent Lima client disks too
 ```

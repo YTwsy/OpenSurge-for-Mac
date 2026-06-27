@@ -48,6 +48,9 @@ func Validate(cfg Config) error {
 	if !validOptionalPort(cfg.Mihomo.RedirPort) {
 		return fmt.Errorf("mihomo.redir_port must be between 0 and 65535")
 	}
+	if cfg.Mihomo.RedirPort != 0 {
+		return fmt.Errorf("mihomo.redir_port is not supported on macOS; use transparent.mode: \"tun\"")
+	}
 	if strings.TrimSpace(cfg.Mihomo.APIAddr) == "" {
 		return fmt.Errorf("mihomo.api_addr is required")
 	}
@@ -56,6 +59,9 @@ func Validate(cfg Config) error {
 	}
 	if !validOptionalPort(cfg.PF.RedirectTCPTo) {
 		return fmt.Errorf("pf.redirect_tcp_to must be between 0 and 65535")
+	}
+	if cfg.PF.RedirectTCPTo != 0 {
+		return fmt.Errorf("pf.redirect_tcp_to is not supported on macOS; use transparent.mode: \"tun\"")
 	}
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err

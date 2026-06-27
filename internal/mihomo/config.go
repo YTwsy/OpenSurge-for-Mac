@@ -8,9 +8,6 @@ import (
 )
 
 const configTemplate = `mixed-port: {{ .MixedPort }}
-{{ if gt .RedirPort 0 }}
-redir-port: {{ .RedirPort }}
-{{ end }}
 allow-lan: true
 bind-address: "*"
 mode: rule
