@@ -1,10 +1,11 @@
 package sysctl
 
 import (
-	"bytes"
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"open-mihomo-gateway/internal/process"
 )
 
 const keyIPForwarding = "net.inet.ip.forwarding"
@@ -23,7 +24,7 @@ func (m Manager) Check() error {
 }
 
 func (m Manager) Current() (string, error) {
-	out, err := exec.Command("sysctl", "-n", keyIPForwarding).Output()
+	out, err := process.Output("sysctl", "-n", keyIPForwarding)
 	if err != nil {
 		return "", err
 	}
@@ -43,16 +44,7 @@ func (m Manager) Restore(previous string) error {
 }
 
 func setIPForwarding(value string) error {
-	cmd := exec.Command("sysctl", "-w", keyIPForwarding+"="+value)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
-			return fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
-		}
-		return err
-	}
-	return nil
+	return process.Run("sysctl", "-w", keyIPForwarding+"="+value)
 }
 
 func FormatForwarding(value string) string {

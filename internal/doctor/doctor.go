@@ -27,7 +27,10 @@ func Run(cfg config.Config) Report {
 		checkPath("mihomo", cfg.Mihomo.Binary),
 		checkCommand("pfctl", "pfctl"),
 		checkInterface(cfg.Gateway.Interface),
+		checkInterface(cfg.Gateway.UpstreamInterface),
+		checkInterfacesDiffer(cfg.Gateway.Interface, cfg.Gateway.UpstreamInterface),
 		checkIPv4("LAN IP", cfg.Gateway.LANIP),
+		checkInterfaceIPv4(cfg.Gateway.Interface, cfg.Gateway.LANIP),
 	}
 	return Report{Checks: checks}
 }
@@ -97,6 +100,43 @@ func checkInterface(name string) Check {
 		return Check{Name: "interface " + name, OK: false, Message: err.Error()}
 	}
 	return Check{Name: "interface " + name, OK: true, Message: iface.HardwareAddr.String()}
+}
+
+func checkInterfacesDiffer(gatewayInterface, upstreamInterface string) Check {
+	name := "gateway and upstream interfaces differ"
+	if strings.TrimSpace(gatewayInterface) == strings.TrimSpace(upstreamInterface) {
+		return Check{Name: name, OK: false, Message: "must use separate downstream and upstream interfaces"}
+	}
+	return Check{Name: name, OK: true}
+}
+
+func checkInterfaceIPv4(interfaceName, ipValue string) Check {
+	name := "LAN IP bound to " + interfaceName
+	target := net.ParseIP(ipValue).To4()
+	if target == nil {
+		return Check{Name: name, OK: false, Message: "invalid IPv4 address"}
+	}
+	iface, err := net.InterfaceByName(interfaceName)
+	if err != nil {
+		return Check{Name: name, OK: false, Message: err.Error()}
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return Check{Name: name, OK: false, Message: err.Error()}
+	}
+	for _, addr := range addrs {
+		switch value := addr.(type) {
+		case *net.IPNet:
+			if value.IP.To4() != nil && value.IP.Equal(target) {
+				return Check{Name: name, OK: true, Message: ipValue}
+			}
+		case *net.IPAddr:
+			if value.IP.To4() != nil && value.IP.Equal(target) {
+				return Check{Name: name, OK: true, Message: ipValue}
+			}
+		}
+	}
+	return Check{Name: name, OK: false, Message: "not configured on interface"}
 }
 
 func checkIPv4(name, value string) Check {

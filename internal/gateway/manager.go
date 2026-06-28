@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"open-mihomo-gateway/internal/config"
@@ -19,30 +20,110 @@ import (
 type Manager struct {
 	cfg   config.Config
 	paths runtime.Paths
+	deps  gatewayDeps
 }
 
 func New(cfg config.Config) Manager {
-	return Manager{cfg: cfg, paths: runtime.NewPaths(cfg)}
+	return Manager{cfg: cfg, paths: runtime.NewPaths(cfg), deps: defaultGatewayDeps()}
+}
+
+type dhcpService interface {
+	Check() error
+	WriteConfig() error
+	Start() (int, error)
+	Stop(int) error
+}
+
+type mihomoService interface {
+	Check() error
+	WriteConfig() error
+	Start() (int, error)
+	Stop(int) error
+}
+
+type pfService interface {
+	Check() error
+	WriteAnchor() error
+	Enabled() (bool, error)
+	Load(bool) error
+	Unload(bool) error
+}
+
+type sysctlService interface {
+	Check() error
+	Current() (string, error)
+	Enable() error
+	Restore(string) error
+}
+
+type gatewayDeps struct {
+	geteuid         func() int
+	loadState       func(string) (runtime.State, bool, error)
+	saveState       func(string, runtime.State) error
+	removeState     func(string) error
+	ensure          func(runtime.Paths) error
+	newDHCP         func(config.Config, runtime.Paths) dhcpService
+	newMihomo       func(config.Config, runtime.Paths) mihomoService
+	newPF           func(config.Config, runtime.Paths) pfService
+	newSysctl       func() sysctlService
+	interfaceByName func(string) (*net.Interface, error)
+	interfaceAddrs  func(*net.Interface) ([]net.Addr, error)
+	now             func() time.Time
+}
+
+func defaultGatewayDeps() gatewayDeps {
+	return gatewayDeps{
+		geteuid:     os.Geteuid,
+		loadState:   runtime.LoadState,
+		saveState:   runtime.SaveState,
+		removeState: runtime.RemoveState,
+		ensure:      runtime.Ensure,
+		newDHCP: func(cfg config.Config, paths runtime.Paths) dhcpService {
+			return dhcp.New(cfg, paths)
+		},
+		newMihomo: func(cfg config.Config, paths runtime.Paths) mihomoService {
+			return mihomo.New(cfg, paths)
+		},
+		newPF: func(cfg config.Config, paths runtime.Paths) pfService {
+			return pf.New(cfg, paths)
+		},
+		newSysctl: func() sysctlService {
+			return sysctl.New()
+		},
+		interfaceByName: net.InterfaceByName,
+		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
+			return iface.Addrs()
+		},
+		now: time.Now,
+	}
+}
+
+func (m Manager) gatewayDeps() gatewayDeps {
+	if m.deps.geteuid == nil {
+		return defaultGatewayDeps()
+	}
+	return m.deps
 }
 
 func (m Manager) Start(_ context.Context) error {
-	if os.Geteuid() != 0 {
+	deps := m.gatewayDeps()
+	if deps.geteuid() != 0 {
 		return fmt.Errorf("start requires sudo/root privileges")
 	}
-	if _, exists, err := runtime.LoadState(m.paths.StateFile); err != nil {
+	if _, exists, err := deps.loadState(m.paths.StateFile); err != nil {
 		return err
 	} else if exists {
 		return fmt.Errorf("gateway state already exists; run stop first")
 	}
-	if err := runtime.Ensure(m.paths); err != nil {
+	if err := deps.ensure(m.paths); err != nil {
 		return err
 	}
 
-	dhcpManager := dhcp.New(m.cfg, m.paths)
-	mihomoManager := mihomo.New(m.cfg, m.paths)
-	pfManager := pf.New(m.cfg, m.paths)
-	sysctlManager := sysctl.New()
-	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager); err != nil {
+	dhcpManager := deps.newDHCP(m.cfg, m.paths)
+	mihomoManager := deps.newMihomo(m.cfg, m.paths)
+	pfManager := deps.newPF(m.cfg, m.paths)
+	sysctlManager := deps.newSysctl()
+	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
 		return err
 	}
 	if err := mihomoManager.WriteConfig(); err != nil {
@@ -65,11 +146,11 @@ func (m Manager) Start(_ context.Context) error {
 	}
 
 	state := runtime.State{
-		StartedAt:          time.Now(),
+		StartedAt:          deps.now(),
 		IPForwardingBefore: ipForwardingBefore,
 		PFEnabledBefore:    pfEnabledBefore,
 	}
-	if err := runtime.SaveState(m.paths.StateFile, state); err != nil {
+	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return err
 	}
 
@@ -82,7 +163,7 @@ func (m Manager) Start(_ context.Context) error {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 	state.PIDMihomo = mihomoPID
-	if err := runtime.SaveState(m.paths.StateFile, state); err != nil {
+	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 
@@ -91,7 +172,7 @@ func (m Manager) Start(_ context.Context) error {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 	state.PIDDNSMasq = pid
-	if err := runtime.SaveState(m.paths.StateFile, state); err != nil {
+	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 
@@ -99,7 +180,7 @@ func (m Manager) Start(_ context.Context) error {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 	state.PFAnchorLoaded = true
-	if err := runtime.SaveState(m.paths.StateFile, state); err != nil {
+	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 
@@ -115,27 +196,28 @@ func (m Manager) Start(_ context.Context) error {
 }
 
 func (m Manager) Stop(_ context.Context) error {
-	if os.Geteuid() != 0 {
+	deps := m.gatewayDeps()
+	if deps.geteuid() != 0 {
 		return fmt.Errorf("stop requires sudo/root privileges")
 	}
-	state, exists, err := runtime.LoadState(m.paths.StateFile)
+	state, exists, err := deps.loadState(m.paths.StateFile)
 	if err != nil {
 		return err
 	}
 	var cleanupErr error
-	pfManager := pf.New(m.cfg, m.paths)
-	sysctlManager := sysctl.New()
+	pfManager := deps.newPF(m.cfg, m.paths)
+	sysctlManager := deps.newSysctl()
 	if exists {
-		dhcpManager := dhcp.New(m.cfg, m.paths)
+		dhcpManager := deps.newDHCP(m.cfg, m.paths)
 		cleanupErr = errors.Join(cleanupErr, dhcpManager.Stop(state.PIDDNSMasq))
-		mihomoManager := mihomo.New(m.cfg, m.paths)
+		mihomoManager := deps.newMihomo(m.cfg, m.paths)
 		cleanupErr = errors.Join(cleanupErr, mihomoManager.Stop(state.PIDMihomo))
 		if state.PFAnchorLoaded {
 			cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
 		}
 		cleanupErr = errors.Join(cleanupErr, sysctlManager.Restore(state.IPForwardingBefore))
 	}
-	cleanupErr = errors.Join(cleanupErr, runtime.RemoveState(m.paths.StateFile))
+	cleanupErr = errors.Join(cleanupErr, deps.removeState(m.paths.StateFile))
 	if cleanupErr != nil {
 		return cleanupErr
 	}
@@ -144,7 +226,7 @@ func (m Manager) Stop(_ context.Context) error {
 	return nil
 }
 
-func (m Manager) preflight(dhcpManager dhcp.Manager, mihomoManager mihomo.Manager, pfManager pf.Manager, sysctlManager sysctl.Manager) error {
+func (m Manager) preflight(dhcpManager dhcpService, mihomoManager mihomoService, pfManager pfService, sysctlManager sysctlService, deps gatewayDeps) error {
 	if err := dhcpManager.Check(); err != nil {
 		return err
 	}
@@ -157,25 +239,28 @@ func (m Manager) preflight(dhcpManager dhcp.Manager, mihomoManager mihomo.Manage
 	if err := sysctlManager.Check(); err != nil {
 		return err
 	}
-	if _, err := net.InterfaceByName(m.cfg.Gateway.Interface); err != nil {
+	if strings.TrimSpace(m.cfg.Gateway.Interface) == strings.TrimSpace(m.cfg.Gateway.UpstreamInterface) {
+		return fmt.Errorf("gateway and upstream interfaces must differ")
+	}
+	if _, err := deps.interfaceByName(m.cfg.Gateway.Interface); err != nil {
 		return fmt.Errorf("interface %s: %w", m.cfg.Gateway.Interface, err)
 	}
-	if _, err := net.InterfaceByName(m.cfg.Gateway.UpstreamInterface); err != nil {
+	if _, err := deps.interfaceByName(m.cfg.Gateway.UpstreamInterface); err != nil {
 		return fmt.Errorf("upstream interface %s: %w", m.cfg.Gateway.UpstreamInterface, err)
 	}
-	return m.checkLANIP()
+	return m.checkLANIP(deps)
 }
 
-func (m Manager) checkLANIP() error {
+func (m Manager) checkLANIP(deps gatewayDeps) error {
 	target := net.ParseIP(m.cfg.Gateway.LANIP).To4()
 	if target == nil {
 		return fmt.Errorf("gateway LAN IP %s is not IPv4", m.cfg.Gateway.LANIP)
 	}
-	iface, err := net.InterfaceByName(m.cfg.Gateway.Interface)
+	iface, err := deps.interfaceByName(m.cfg.Gateway.Interface)
 	if err != nil {
 		return err
 	}
-	addrs, err := iface.Addrs()
+	addrs, err := deps.interfaceAddrs(iface)
 	if err != nil {
 		return err
 	}
@@ -194,7 +279,8 @@ func (m Manager) checkLANIP() error {
 	return fmt.Errorf("LAN IP %s is not configured on interface %s", m.cfg.Gateway.LANIP, m.cfg.Gateway.Interface)
 }
 
-func (m Manager) rollback(cause error, state runtime.State, dhcpManager dhcp.Manager, mihomoManager mihomo.Manager, pfManager pf.Manager, sysctlManager sysctl.Manager) error {
+func (m Manager) rollback(cause error, state runtime.State, dhcpManager dhcpService, mihomoManager mihomoService, pfManager pfService, sysctlManager sysctlService) error {
+	deps := m.gatewayDeps()
 	var cleanupErr error
 	cleanupErr = errors.Join(cleanupErr, dhcpManager.Stop(state.PIDDNSMasq))
 	cleanupErr = errors.Join(cleanupErr, mihomoManager.Stop(state.PIDMihomo))
@@ -202,7 +288,7 @@ func (m Manager) rollback(cause error, state runtime.State, dhcpManager dhcp.Man
 		cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
 	}
 	cleanupErr = errors.Join(cleanupErr, sysctlManager.Restore(state.IPForwardingBefore))
-	cleanupErr = errors.Join(cleanupErr, runtime.RemoveState(m.paths.StateFile))
+	cleanupErr = errors.Join(cleanupErr, deps.removeState(m.paths.StateFile))
 	if cleanupErr != nil {
 		return fmt.Errorf("%w; rollback failed: %v", cause, cleanupErr)
 	}

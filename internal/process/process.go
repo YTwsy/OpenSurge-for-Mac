@@ -75,3 +75,20 @@ func StopPID(pid int, timeout time.Duration) error {
 	}
 	return nil
 }
+
+func RequireAlive(pid int, startupWindow time.Duration) error {
+	if pid <= 0 {
+		return nil
+	}
+	deadline := time.Now().Add(startupWindow)
+	for time.Now().Before(deadline) {
+		if !IsAlive(pid) {
+			return fmt.Errorf("pid %d exited during startup", pid)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !IsAlive(pid) {
+		return fmt.Errorf("pid %d exited during startup", pid)
+	}
+	return nil
+}

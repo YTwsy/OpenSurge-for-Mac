@@ -43,7 +43,15 @@ func (m Manager) Start() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return process.StartDetached(binary, "--keep-in-foreground", "--conf-file="+m.paths.DNSMasqConf)
+	pid, err := process.StartDetached(binary, "--keep-in-foreground", "--conf-file="+m.paths.DNSMasqConf)
+	if err != nil {
+		return 0, err
+	}
+	if err := process.RequireAlive(pid, 300*time.Millisecond); err != nil {
+		_ = process.StopPID(pid, 0)
+		return 0, err
+	}
+	return pid, nil
 }
 
 func (m Manager) Check() error {

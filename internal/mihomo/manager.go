@@ -2,6 +2,7 @@ package mihomo
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -44,7 +45,19 @@ func (m Manager) Start() (int, error) {
 	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o644); err != nil {
 		return 0, err
 	}
-	return process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-f", m.paths.MihomoConfig)
+	pid, err := process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-f", m.paths.MihomoConfig)
+	if err != nil {
+		return 0, err
+	}
+	if err := process.RequireAlive(pid, 300*time.Millisecond); err != nil {
+		_ = process.StopPID(pid, 0)
+		return 0, err
+	}
+	if err := m.waitForAPI(pid, 2*time.Second); err != nil {
+		_ = process.StopPID(pid, 0)
+		return 0, err
+	}
+	return pid, nil
 }
 
 func (m Manager) Check() error {
@@ -53,14 +66,33 @@ func (m Manager) Check() error {
 }
 
 func validateConfig(binary string, configPath string) error {
-	cmd := exec.Command(binary, "-t", "-f", configPath)
 	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-	if err := cmd.Run(); err != nil {
+	if err := process.RunBuffered(&output, binary, "-t", "-f", configPath); err != nil {
 		return fmt.Errorf("mihomo config validation failed: %w: %s", err, strings.TrimSpace(output.String()))
 	}
 	return nil
+}
+
+func (m Manager) waitForAPI(pid int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if !process.IsAlive(pid) {
+			return fmt.Errorf("mihomo pid %d exited during startup", pid)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, err := FetchVersion(ctx, m.cfg)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		time.Sleep(100 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("mihomo API not ready after %s: %w", timeout, lastErr)
+	}
+	return fmt.Errorf("mihomo API not ready after %s", timeout)
 }
 
 func (m Manager) Stop(pid int) error {

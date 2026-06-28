@@ -1,13 +1,13 @@
 package pf
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/process"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -36,7 +36,7 @@ func (m Manager) WriteAnchor() error {
 }
 
 func (m Manager) Enabled() (bool, error) {
-	out, err := exec.Command("pfctl", "-s", "info").Output()
+	out, err := process.Output("pfctl", "-s", "info")
 	if err != nil {
 		return false, err
 	}
@@ -73,7 +73,7 @@ func (m Manager) Loaded() (bool, error) {
 	if nested {
 		args = []string{"-a", parent, "-s", "Anchors"}
 	}
-	out, err := exec.Command("pfctl", args...).Output()
+	out, err := process.Output("pfctl", args...)
 	if err != nil {
 		return false, err
 	}
@@ -112,14 +112,5 @@ func parseEnabled(info string) bool {
 }
 
 func runPF(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if stderr.Len() > 0 {
-			return fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
-		}
-		return err
-	}
-	return nil
+	return process.Run(name, args...)
 }
