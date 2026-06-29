@@ -1,5 +1,7 @@
 # Virtual LAN lab
 
+[简体中文](README.zh-CN.md) | English
+
 This lab keeps the gateway under test on macOS and uses two Lima Ubuntu VMs as
 independent LAN clients. It does not replace the macOS implementation with a
 Linux router.

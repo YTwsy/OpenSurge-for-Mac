@@ -1,15 +1,36 @@
-# Open Mihomo Gateway for macOS
+# OpenSurge for Mac
 
-Open Mihomo Gateway is a macOS CLI gateway MVP. It prepares a Mac to act as an
+[简体中文](README.zh-CN.md) | English
+
+OpenSurge for Mac is a macOS CLI gateway MVP. It prepares a Mac to act as an
 IPv4 LAN gateway, runs dnsmasq for DHCP/DNS, runs mihomo for proxying, and uses
-macOS pf for NAT.
+macOS pf for NAT. Its goal is to turn a Mac into a
+controlled IPv4 LAN gateway that can share proxy-backed connectivity with
+phones, tablets, VMs, test devices, and other downstream clients.
 
-The current implementation is milestone-driven:
+The project direction is broader: a Mac-native, auditable gateway with
+transparent routing, reproducible lab validation, and eventually a friendlier
+control surface.
+
+## Current scope
+
+The current implementation is a CLI-driven MVP:
 
 1. CLI, config, runtime state, and basic status/doctor commands.
 2. dnsmasq config, process management, and lease parsing.
 3. mihomo config, process management, and version API checks.
 4. pf anchor management and IPv4 forwarding restore.
+
+Today OpenSurge for Mac can:
+
+- prepare and inspect a gateway config from the CLI;
+- start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback;
+- support explicit proxy traffic through mihomo `mixed-port`;
+- support transparent proxying through mihomo TUN on macOS;
+- validate risky network behavior in an isolated virtual LAN before touching a
+  normal LAN segment.
+
+## Transparent proxying
 
 TUN is the supported transparent proxy path on macOS. Mihomo `redir-port` and
 PF TCP redirection are intentionally unsupported because the current Darwin

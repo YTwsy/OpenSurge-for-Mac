@@ -1,5 +1,7 @@
 # Integration tests
 
+[简体中文](README.zh-CN.md) | English
+
 The automated virtual LAN lab lives in `tests/lab`. It uses the real macOS
 `pf`, `dnsmasq`, and `mihomo` implementation with disposable Lima Linux clients.
 The default loop covers NAT, DHCP/DNS, direct HTTPS, and explicit HTTPS through
@@ -16,4 +18,5 @@ that mihomo observed the client HTTPS connection through TUN.
 
 Real-device tests remain a separate milestone-level check for Wi-Fi behavior,
 device-specific protocol quirks, and IPv6. Never enable the project's DHCP
-server on a normal home or office LAN during integration testing.
+server on a normal home or office LAN during integration testing. See
+`tests/real-device/README.md` for the isolated downstream-LAN smoke plan.
