@@ -54,6 +54,12 @@ helper。
 DHCP/DNS 并通过 Mac 网关出站。它不替代 `make lab-test` / `make lab-test-tun`
 作为代码改动的可复现 lab 门槛。
 
+当前进度快照来自 `docs/agent-wiki/sources/validation/real-device-smoke.md`。
+截至 2026-07-06 CST，本轮已经验证 explicit/off runner 可以在物理下游 LAN
+启动，真实客户端可以获得 `192.168.50.100-200` 范围租约且 router/DNS 为
+`192.168.50.1`，Mac 侧 DNS 探测和 Mac 侧显式代理 HTTPS 探测成功。不要把
+这些信号扩大为真实手机三段端到端检查已经全部通过。
+
 explicit 模式的关键验收信号是：
 
 - `make real-device-status` 显示 `Gateway: running`、`DHCP: running`、
@@ -65,6 +71,16 @@ explicit 模式的关键验收信号是：
 
 只有运行 `make real-device-start-tun` 并在客户端无显式代理时观察到成功出站和
 `mihomo.log` 中的真实客户端流量，才可以宣称真实设备 TUN smoke 被验证。
+
+尚未宣称通过的真实手机检查是：
+
+- 无代理直连 HTTPS/NAT：手机 Wi-Fi HTTP proxy 关闭，HTTPS 页面成功加载，
+  Mac 侧能看到该手机租约和 DNS 查询。
+- 显式 HTTP 代理 HTTPS：手机 Wi-Fi HTTP proxy 设为 `192.168.50.1:17890`，
+  HTTPS 页面成功加载；如果日志级别允许，`mihomo.log` 能看到来自手机 IP 的
+  HTTPS 连接。
+- TUN 透明模式：`make real-device-start-tun` 启动后，手机保持无显式代理，
+  HTTPS 页面成功加载，并且 `mihomo.log` 中出现来自手机 IP 的目标连接。
 
 ## 透明代理门槛
 

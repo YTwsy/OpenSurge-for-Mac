@@ -190,12 +190,44 @@ curl --noproxy '*' --fail --show-error https://example.com/
 curl --proxy http://192.168.50.1:17890 --fail --show-error https://example.com/
 ```
 
-在 iPhone、PS5、Switch 或其他设备上：
+### 真实手机：无代理直连 HTTPS/NAT
 
-- 确认设备地址是 `192.168.50.x`。
-- 如果设备显示这些细节，确认 router/DNS 是 `192.168.50.1`。
-- 做显式代理测试时，把 HTTP proxy 设置为 `192.168.50.1:17890`。
-- 打开一个简单 HTTPS 页面，或执行普通连通性检查。
+保持 `make real-device-start-off` 已运行。在手机的 Wi-Fi 详情页关闭 HTTP proxy；
+如需避免蜂窝网络兜底，可以临时关闭蜂窝数据。确认手机地址是
+`192.168.50.x`，router/DNS 是 `192.168.50.1`。
+
+在手机浏览器打开一个简单 HTTPS 页面，例如 `https://example.com/`。然后在 Mac
+上运行：
+
+```sh
+make real-device-client-check
+```
+
+预期：手机页面能打开，`leases` 中出现该手机或等价物理客户端，`dnsmasq.log`
+中能看到来自下游客户端的查询。这个信号证明 explicit/off 模式下的真实客户端
+直连 HTTPS 可以通过 Mac NAT 出站；它不证明 mihomo 代理出口，因为此时客户端
+没有走显式代理，透明模式也还没有开启。
+
+### 真实手机：显式 HTTP 代理 HTTPS
+
+保持 `make real-device-start-off` 已运行。在手机 Wi-Fi 设置里把 HTTP proxy
+改为手动：
+
+```text
+Server: 192.168.50.1
+Port: 17890
+```
+
+再次打开 `https://example.com/` 或另一个简单 HTTPS 页面。然后在 Mac 上运行：
+
+```sh
+make real-device-client-check
+tail -n 120 runtime/real-device/logs/mihomo.log
+```
+
+预期：手机 HTTPS 页面能打开；如果当前日志级别记录连接，`mihomo.log` 中应能
+看到来自手机 `192.168.50.x` 的 TCP 连接，目标类似 `example.com:443`。测试完
+显式代理后，记得在手机 Wi-Fi 设置里关闭 HTTP proxy，再做直连或 TUN 测试。
 
 停止并验证清理：
 
@@ -235,6 +267,11 @@ dig @192.168.50.1 example.com A
 curl --noproxy '*' --fail --show-error https://example.com/
 ```
 
+在真实手机上，先确认 Wi-Fi HTTP proxy 已关闭，然后重新连接下游 AP 或续租
+DHCP。打开 `https://example.com/` 或另一个简单 HTTPS 页面。这个测试和显式
+代理测试不同：手机上不能设置 `192.168.50.1:17890`，否则就不能证明 TUN
+透明路径。
+
 在 Mac 上确认 mihomo 观察到了客户端流量：
 
 ```sh
@@ -242,8 +279,9 @@ make real-device-client-check
 tail -n 120 runtime/real-device/logs/mihomo.log
 ```
 
-预期：日志中包含来自真实客户端地址的 TCP 连接，例如 `192.168.50.100` 到
-`example.com:443`，或 smoke 测试中使用的目标。
+预期：手机 HTTPS 页面能打开，日志中包含来自真实客户端地址的 TCP 连接，例如
+`192.168.50.100` 到 `example.com:443`，或 smoke 测试中使用的目标。只有这组
+信号出现后，才可以宣称真实设备 TUN smoke 已经通过。
 
 停止并验证清理：
 

@@ -18,6 +18,7 @@ docs/agent-wiki/
       tun-mainline.md
     validation/
       lab-gates.md
+      real-device-smoke.md
   wiki/
     index.md
     concepts/

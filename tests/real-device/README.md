@@ -199,12 +199,49 @@ curl --noproxy '*' --fail --show-error https://example.com/
 curl --proxy http://192.168.50.1:17890 --fail --show-error https://example.com/
 ```
 
-On iPhone, PS5, Switch, or another device:
+### Physical phone: no-proxy direct HTTPS/NAT
 
-- Confirm the device address is `192.168.50.x`.
-- Confirm router/DNS is `192.168.50.1` when the device exposes those details.
-- For explicit proxy testing, set HTTP proxy to `192.168.50.1:17890`.
-- Open a simple HTTPS page or perform a normal connectivity check.
+Keep `make real-device-start-off` running. In the phone Wi-Fi details, turn HTTP
+proxy off; if needed, temporarily disable cellular data so the phone cannot fall
+back to it. Confirm the phone address is `192.168.50.x`, with router/DNS set to
+`192.168.50.1`.
+
+Open a simple HTTPS page on the phone, for example `https://example.com/`. Then
+run this on the Mac:
+
+```sh
+make real-device-client-check
+```
+
+Expected: the phone can load the page, `leases` shows the phone or equivalent
+physical client, and `dnsmasq.log` shows queries from the downstream client.
+This proves smoke-level direct HTTPS through Mac NAT in explicit/off mode. It
+does not prove mihomo proxy egress because the client is not using an explicit
+proxy and transparent mode is not enabled yet.
+
+### Physical phone: explicit HTTP proxy HTTPS
+
+Keep `make real-device-start-off` running. In the phone Wi-Fi settings, set HTTP
+proxy to manual:
+
+```text
+Server: 192.168.50.1
+Port: 17890
+```
+
+Open `https://example.com/` again, or another simple HTTPS page. Then run this
+on the Mac:
+
+```sh
+make real-device-client-check
+tail -n 120 runtime/real-device/logs/mihomo.log
+```
+
+Expected: the phone can load the HTTPS page. If the current log level records
+connections, `mihomo.log` should show a TCP connection from the phone
+`192.168.50.x` address to a target such as `example.com:443`. After explicit
+proxy testing, turn HTTP proxy off in the phone Wi-Fi settings before testing
+direct or TUN mode.
 
 Stop and verify cleanup:
 
@@ -244,6 +281,11 @@ dig @192.168.50.1 example.com A
 curl --noproxy '*' --fail --show-error https://example.com/
 ```
 
+On a physical phone, first confirm Wi-Fi HTTP proxy is off, then reconnect to
+the downstream AP or renew DHCP. Open `https://example.com/` or another simple
+HTTPS page. This differs from the explicit proxy test: the phone must not use
+`192.168.50.1:17890`, otherwise the run does not prove the TUN transparent path.
+
 On the Mac, confirm mihomo saw client traffic:
 
 ```sh
@@ -251,9 +293,10 @@ make real-device-client-check
 tail -n 120 runtime/real-device/logs/mihomo.log
 ```
 
-Expected: the log contains a TCP connection from a real client address such as
-`192.168.50.100` to `example.com:443`, or to the target used during the smoke
-test.
+Expected: the phone can load the HTTPS page, and the log contains a TCP
+connection from a real client address such as `192.168.50.100` to
+`example.com:443`, or to the target used during the smoke test. Only after this
+signal appears should the real-device TUN smoke be called verified.
 
 Stop and verify cleanup:
 
