@@ -46,6 +46,7 @@ type pfService interface {
 	WriteAnchor() error
 	Enabled() (bool, error)
 	Load(bool) error
+	Loaded() (bool, error)
 	Unload(bool) error
 }
 
@@ -180,6 +181,13 @@ func (m Manager) Start(_ context.Context) error {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 	state.PFAnchorLoaded = true
+	loaded, err := pfManager.Loaded()
+	if err != nil {
+		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+	}
+	if !loaded {
+		return m.rollback(fmt.Errorf("pf anchor %s did not become visible after load", m.cfg.PF.AnchorName), state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}

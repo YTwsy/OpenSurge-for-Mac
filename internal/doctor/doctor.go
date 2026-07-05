@@ -23,7 +23,7 @@ type Report struct {
 func Run(cfg config.Config) Report {
 	checks := []Check{
 		checkRoot(),
-		checkCommand("dnsmasq", "dnsmasq"),
+		checkPath("dnsmasq", cfg.DHCP.Binary),
 		checkPath("mihomo", cfg.Mihomo.Binary),
 		checkCommand("pfctl", "pfctl"),
 		checkInterface(cfg.Gateway.Interface),

@@ -171,6 +171,8 @@ type fakePF struct {
 	enabled      bool
 	enabledErr   error
 	loadErr      error
+	loaded       bool
+	loadedErr    error
 	unloadErr    error
 	loadCalled   bool
 	unloadCalled bool
@@ -191,6 +193,10 @@ func (f *fakePF) Enabled() (bool, error) {
 func (f *fakePF) Load(bool) error {
 	f.loadCalled = true
 	return f.loadErr
+}
+
+func (f *fakePF) Loaded() (bool, error) {
+	return f.loaded, f.loadedErr
 }
 
 func (f *fakePF) Unload(bool) error {

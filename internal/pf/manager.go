@@ -68,6 +68,18 @@ func (m Manager) Unload(disablePF bool) error {
 
 func (m Manager) Loaded() (bool, error) {
 	anchorName := strings.TrimSpace(m.cfg.PF.AnchorName)
+	if anchorName == "" {
+		return false, nil
+	}
+	for _, kind := range []string{"rules", "nat"} {
+		out, err := process.Output("pfctl", "-a", anchorName, "-s", kind)
+		if err != nil {
+			return false, err
+		}
+		if strings.TrimSpace(string(out)) != "" {
+			return true, nil
+		}
+	}
 	parent, child, nested := splitAnchor(anchorName)
 	args := []string{"-s", "Anchors"}
 	if nested {

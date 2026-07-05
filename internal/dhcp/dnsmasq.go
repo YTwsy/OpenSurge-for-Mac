@@ -43,7 +43,10 @@ func (m Manager) Start() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	pid, err := process.StartDetached(binary, "--keep-in-foreground", "--conf-file="+m.paths.DNSMasqConf)
+	if err := os.WriteFile(m.paths.DNSMasqLog, nil, 0o644); err != nil {
+		return 0, err
+	}
+	pid, err := process.StartDetachedWithLog(m.paths.DNSMasqLog, binary, "--no-daemon", "--log-facility=-", "--conf-file="+m.paths.DNSMasqConf)
 	if err != nil {
 		return 0, err
 	}

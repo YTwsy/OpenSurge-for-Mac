@@ -47,7 +47,14 @@ func IsAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return proc.Signal(syscall.Signal(0)) == nil
+	return signalErrMeansAlive(proc.Signal(syscall.Signal(0)))
+}
+
+func signalErrMeansAlive(err error) bool {
+	if err == nil {
+		return true
+	}
+	return errors.Is(err, syscall.EPERM) || errors.Is(err, os.ErrPermission)
 }
 
 func StopPID(pid int, timeout time.Duration) error {
