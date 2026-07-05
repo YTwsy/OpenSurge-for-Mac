@@ -1,4 +1,4 @@
-.PHONY: test build doctor status lab-install lab-uninstall-root lab-check lab-up lab-status lab-test lab-test-tun lab-down lab-destroy
+.PHONY: test build doctor status lab-install lab-uninstall-root lab-check lab-up lab-status lab-test lab-test-tun lab-down lab-destroy real-device-start-off real-device-start-tun real-device-stop real-device-status real-device-client-check
 
 test:
 	go test ./...
@@ -38,3 +38,18 @@ lab-down:
 
 lab-destroy:
 	./tests/lab/lab.sh destroy
+
+real-device-start-off:
+	./tests/real-device/smoke.sh start-off
+
+real-device-start-tun:
+	./tests/real-device/smoke.sh start-tun
+
+real-device-stop:
+	./tests/real-device/smoke.sh stop
+
+real-device-status:
+	./tests/real-device/smoke.sh status
+
+real-device-client-check:
+	./tests/real-device/smoke.sh client-check

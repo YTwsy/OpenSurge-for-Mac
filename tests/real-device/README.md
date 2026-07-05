@@ -73,7 +73,26 @@ Expected:
 - The two interfaces must be different.
 - The upstream network must not already use `192.168.50.0/24`.
 
-Bring up the downstream LAN address:
+Prefer the smoke runner for local config generation, build, downstream address
+binding, root doctor, startup, and basic probes:
+
+```sh
+make real-device-start-off
+make real-device-status
+```
+
+The runner prompts for `sudo` once in the terminal and keeps the root-required
+steps inside that same sudo session. It does not install a passwordless sudoers
+rule, and it does not grant passwordless root access to writable binaries in the
+repository.
+
+If the downstream interface is not `en7`, override it:
+
+```sh
+OMG_REAL_DEVICE_IFACE=en8 make real-device-start-off
+```
+
+The manual flow is still available:
 
 ```sh
 sudo ifconfig en7 inet 192.168.50.1 netmask 255.255.255.0 up
@@ -148,7 +167,17 @@ not yet prove subscription routing or remote proxy egress behavior.
 
 ## Explicit proxy smoke
 
-Build and start:
+Recommended startup:
+
+```sh
+make real-device-start-off
+```
+
+The runner builds, writes `runtime/real-device/config-off.yaml`, binds the
+downstream address, runs root doctor, starts the gateway, and performs basic
+DNS/API/listener probes.
+
+Manual build and startup:
 
 ```sh
 GOCACHE=/private/tmp/omg-go-cache go build -o bin/omg ./cmd/omg
@@ -180,6 +209,12 @@ On iPhone, PS5, Switch, or another device:
 Stop and verify cleanup:
 
 ```sh
+make real-device-stop
+```
+
+Or manually:
+
+```sh
 sudo ./bin/omg stop --config runtime/real-device/config-off.yaml
 ./bin/omg status --config runtime/real-device/config-off.yaml
 sysctl -n net.inet.ip.forwarding
@@ -188,7 +223,13 @@ sudo pfctl -s Anchors
 
 ## Transparent TUN smoke
 
-Start the TUN config:
+Recommended TUN startup:
+
+```sh
+make real-device-start-tun
+```
+
+Or manually:
 
 ```sh
 sudo ./bin/omg start --config runtime/real-device/config-tun.yaml
@@ -206,6 +247,7 @@ curl --noproxy '*' --fail --show-error https://example.com/
 On the Mac, confirm mihomo saw client traffic:
 
 ```sh
+make real-device-client-check
 tail -n 120 runtime/real-device/logs/mihomo.log
 ```
 
@@ -214,6 +256,12 @@ Expected: the log contains a TCP connection from a real client address such as
 test.
 
 Stop and verify cleanup:
+
+```sh
+make real-device-stop
+```
+
+Or manually:
 
 ```sh
 sudo ./bin/omg stop --config runtime/real-device/config-tun.yaml

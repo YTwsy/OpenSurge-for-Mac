@@ -68,7 +68,25 @@ ifconfig en7
 - 两个接口必须不同。
 - 上游网络不能已经使用 `192.168.50.0/24`。
 
-配置下游 LAN 地址：
+推荐用 smoke runner 自动完成本地配置、构建、下游地址绑定、root doctor、
+启动和基础探测：
+
+```sh
+make real-device-start-off
+make real-device-status
+```
+
+该 runner 会在终端里触发一次 `sudo` 提示，并把后续 root 步骤放在同一个
+sudo 会话中执行，避免在多条命令之间反复刷新 sudo ticket。它不会安装免密
+sudoers 规则，也不会给仓库里的可写二进制授予免密 root 权限。
+
+如果下游接口不是 `en7`，用环境变量覆盖：
+
+```sh
+OMG_REAL_DEVICE_IFACE=en8 make real-device-start-off
+```
+
+手动流程仍然可以使用：
 
 ```sh
 sudo ifconfig en7 inet 192.168.50.1 netmask 255.255.255.0 up
@@ -141,7 +159,16 @@ transparent:
 
 ## 显式代理 smoke
 
-构建并启动：
+推荐启动方式：
+
+```sh
+make real-device-start-off
+```
+
+构建、写入 `runtime/real-device/config-off.yaml`、绑定下游地址、root doctor、
+启动和基础 DNS/API/listener 探测都会由 runner 完成。
+
+手动构建并启动：
 
 ```sh
 GOCACHE=/private/tmp/omg-go-cache go build -o bin/omg ./cmd/omg
@@ -173,6 +200,12 @@ curl --proxy http://192.168.50.1:17890 --fail --show-error https://example.com/
 停止并验证清理：
 
 ```sh
+make real-device-stop
+```
+
+或手动：
+
+```sh
 sudo ./bin/omg stop --config runtime/real-device/config-off.yaml
 ./bin/omg status --config runtime/real-device/config-off.yaml
 sysctl -n net.inet.ip.forwarding
@@ -181,7 +214,13 @@ sudo pfctl -s Anchors
 
 ## 透明 TUN smoke
 
-启动 TUN 配置：
+推荐启动 TUN 配置：
+
+```sh
+make real-device-start-tun
+```
+
+或手动：
 
 ```sh
 sudo ./bin/omg start --config runtime/real-device/config-tun.yaml
@@ -199,6 +238,7 @@ curl --noproxy '*' --fail --show-error https://example.com/
 在 Mac 上确认 mihomo 观察到了客户端流量：
 
 ```sh
+make real-device-client-check
 tail -n 120 runtime/real-device/logs/mihomo.log
 ```
 
@@ -206,6 +246,12 @@ tail -n 120 runtime/real-device/logs/mihomo.log
 `example.com:443`，或 smoke 测试中使用的目标。
 
 停止并验证清理：
+
+```sh
+make real-device-stop
+```
+
+或手动：
 
 ```sh
 sudo ./bin/omg stop --config runtime/real-device/config-tun.yaml

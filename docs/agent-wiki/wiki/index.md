@@ -30,5 +30,7 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
 - 生命周期代码：`internal/gateway/manager.go`
 - 配置验证：`internal/config/validator.go`
 - Virtual LAN lab：`tests/lab/README.md` 和 `tests/lab/lab.sh`
+- 真实设备 smoke：`tests/real-device/README.md` 和
+  `tests/real-device/smoke.sh`
 
 当这些事实来源的变化会影响未来 agent 判断时，更新这个 wiki。
