@@ -38,5 +38,16 @@ transparent:
   tun_auto_detect_interface: false
   tun_strict_route: false
 
+upstream_proxy:
+  # Keep disabled for the default DIRECT gateway. Enable for proxy egress smoke.
+  enabled: false
+  name: "real-device-egress"
+  type: "http"
+  server: "127.0.0.1"
+  port: 18080
+  username: ""
+  password: ""
+  match_domain: "example.com"
+
 runtime:
   dir: "./runtime"

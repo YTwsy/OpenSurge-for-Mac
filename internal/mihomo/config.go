@@ -2,6 +2,7 @@ package mihomo
 
 import (
 	"bytes"
+	"strconv"
 	"text/template"
 
 	"open-mihomo-gateway/internal/config"
@@ -51,14 +52,40 @@ tun:
     - 255.255.255.255/32
 
 {{ end }}
+{{ if .UpstreamProxy.Enabled }}
+proxies:
+  - name: {{ yamlQuote .UpstreamProxy.Name }}
+    type: {{ .UpstreamProxy.Type }}
+    server: {{ yamlQuote .UpstreamProxy.Server }}
+    port: {{ .UpstreamProxy.Port }}
+{{ if .UpstreamProxy.Username }}
+    username: {{ yamlQuote .UpstreamProxy.Username }}
+{{ end }}
+{{ if .UpstreamProxy.Password }}
+    password: {{ yamlQuote .UpstreamProxy.Password }}
+{{ end }}
+
+proxy-groups:
+  - name: open-surge-egress
+    type: select
+    proxies:
+      - {{ yamlQuote .UpstreamProxy.Name }}
+
+rules:
+  - DOMAIN,{{ .UpstreamProxy.MatchDomain }},open-surge-egress
+  - MATCH,DIRECT
+{{ else }}
 proxies: []
 
 rules:
   - MATCH,DIRECT
+{{ end }}
 `
 
 func RenderConfig(cfg config.Config) (string, error) {
-	tmpl, err := template.New("mihomo").Parse(configTemplate)
+	tmpl, err := template.New("mihomo").Funcs(template.FuncMap{
+		"yamlQuote": strconv.Quote,
+	}).Parse(configTemplate)
 	if err != nil {
 		return "", err
 	}
@@ -83,6 +110,7 @@ type templateData struct {
 	TUNStrictRoute         bool
 	UpstreamInterface      string
 	LANPrefix              string
+	UpstreamProxy          config.UpstreamProxyConfig
 }
 
 func newTemplateData(cfg config.Config) (templateData, error) {
@@ -101,5 +129,6 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 		TUNStrictRoute:         transparent.TUNStrictRoute,
 		UpstreamInterface:      cfg.Gateway.UpstreamInterface,
 		LANPrefix:              lanPrefix,
+		UpstreamProxy:          cfg.UpstreamProxy,
 	}, nil
 }

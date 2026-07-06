@@ -39,3 +39,75 @@ func TestValidateAcceptsTUNTransparentMode(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 }
+
+func TestValidateAcceptsUpstreamProxy(t *testing.T) {
+	cfg := Default()
+	cfg.UpstreamProxy.Enabled = true
+	cfg.UpstreamProxy.Name = "real-device-egress"
+	cfg.UpstreamProxy.Type = "http"
+	cfg.UpstreamProxy.Server = "127.0.0.1"
+	cfg.UpstreamProxy.Port = 18080
+	cfg.UpstreamProxy.MatchDomain = "example.com"
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidUpstreamProxy(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{
+			name: "missing server",
+			edit: func(cfg *Config) {
+				cfg.UpstreamProxy.Server = ""
+			},
+			want: "upstream_proxy.server is required",
+		},
+		{
+			name: "unsupported type",
+			edit: func(cfg *Config) {
+				cfg.UpstreamProxy.Type = "direct"
+			},
+			want: "upstream_proxy.type must be http or socks5",
+		},
+		{
+			name: "invalid domain rule",
+			edit: func(cfg *Config) {
+				cfg.UpstreamProxy.MatchDomain = "https://example.com/"
+			},
+			want: "upstream_proxy.match_domain must be a domain",
+		},
+		{
+			name: "invalid port",
+			edit: func(cfg *Config) {
+				cfg.UpstreamProxy.Port = 0
+			},
+			want: "upstream_proxy.port must be between 1 and 65535",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Default()
+			cfg.UpstreamProxy.Enabled = true
+			cfg.UpstreamProxy.Name = "real-device-egress"
+			cfg.UpstreamProxy.Type = "http"
+			cfg.UpstreamProxy.Server = "127.0.0.1"
+			cfg.UpstreamProxy.Port = 18080
+			cfg.UpstreamProxy.MatchDomain = "example.com"
+			tt.edit(&cfg)
+
+			err := Validate(cfg)
+			if err == nil {
+				t.Fatalf("Validate() succeeded")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %q, want %q", err, tt.want)
+			}
+		})
+	}
+}

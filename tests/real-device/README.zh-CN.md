@@ -154,8 +154,23 @@ transparent:
   mode: "tun"
 ```
 
-当前生成的 mihomo 配置使用 `MATCH,DIRECT`。这个里程碑证明真实设备流量能被 Mac
-网关捕获并转发；它还不证明订阅规则或远程代理出口行为。
+默认生成的 mihomo 配置使用 `MATCH,DIRECT`。这个模式证明真实设备流量能被 Mac
+网关捕获并转发。要验证代理出口行为，可以启用可选的 `upstream_proxy`，指向一个
+受控 HTTP 或 SOCKS5 代理：
+
+```yaml
+upstream_proxy:
+  enabled: true
+  name: "real-device-egress"
+  type: "http"
+  server: "127.0.0.1"
+  port: 18080
+  username: ""
+  password: ""
+  match_domain: "example.com"
+```
+
+代理可以跑在 Mac 本机。默认 DIRECT 网关 smoke 应保持它关闭。
 
 ## 显式代理 smoke
 
@@ -283,6 +298,39 @@ tail -n 120 runtime/real-device/logs/mihomo.log
 `192.168.50.100` 到 `example.com:443`，或 smoke 测试中使用的目标。只有这组
 信号出现后，才可以宣称真实设备 TUN smoke 已经通过。
 
+## 代理出口 smoke
+
+先启动一个受控的本地 HTTP 或 SOCKS5 代理。runner 默认值会寻找
+`127.0.0.1:18080` 上的 HTTP 代理；如果使用其他主机、端口、类型或测试域名，用
+环境变量覆盖。
+
+```sh
+make real-device-start-tun-proxy
+```
+
+等价的显式调用：
+
+```sh
+OMG_REAL_DEVICE_UPSTREAM_PROXY_ENABLED=true \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_TYPE=http \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_SERVER=127.0.0.1 \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_PORT=18080 \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_MATCH_DOMAIN=example.com \
+make real-device-start-tun
+```
+
+手机保持无显式代理设置，打开 `https://example.com/`。然后同时检查 OpenSurge
+和受控代理：
+
+```sh
+make real-device-client-check
+tail -n 120 runtime/real-device/logs/mihomo.log
+```
+
+预期：`dnsmasq.log` 显示真实客户端通过 mihomo fake-ip 解析匹配域名，
+`mihomo.log` 显示该域名使用 `open-surge-egress` 而不是 `DIRECT`，受控代理日志
+显示对应的出口请求。如果受控代理有不同的外部出口，还应比较观察到的出口 IP。
+
 停止并验证清理：
 
 ```sh
@@ -308,6 +356,7 @@ sudo pfctl -s Anchors
 - 通过 `192.168.50.1:17890` 的显式 HTTPS 能工作。
 - TUN 模式在客户端无代理设置时能工作。
 - `mihomo.log` 在 TUN 模式下显示真实客户端流量。
+- 代理出口 smoke 对匹配域名显示 `open-surge-egress`，而不是 `DIRECT`。
 - `stop` 会移除运行时状态并卸载 pf anchor。
 - `stop` 后 IP forwarding 恢复到启动前的值。
 

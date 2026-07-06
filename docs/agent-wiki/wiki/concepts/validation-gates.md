@@ -55,12 +55,13 @@ DHCP/DNS 并通过 Mac 网关出站。它不替代 `make lab-test` / `make lab-t
 作为代码改动的可复现 lab 门槛。
 
 当前进度快照来自 `docs/agent-wiki/sources/validation/real-device-smoke.md`。
-截至 2026-07-06 CST，本轮已经验证 explicit/off runner 和 TUN runner 可以在
-物理下游 LAN 启动，真实 Pixel 手机可以获得 `192.168.50.100-200` 范围租约且
-router/DNS 为 `192.168.50.1`。手机侧无代理直连 HTTPS/NAT、显式
-`192.168.50.1:17890` HTTP proxy HTTPS，以及 TUN 模式下无显式代理 HTTPS 均已
-完成一次 smoke；Mac 侧能对应看到租约、DNS 查询、fake-ip 查询和 `mihomo.log`
-中的客户端目标连接。
+截至 2026-07-06 CST，本轮已经验证 explicit/off runner、TUN runner 和最小
+proxy egress runner 可以在物理下游 LAN 启动，真实 Pixel 手机可以获得
+`192.168.50.100-200` 范围租约且 router/DNS 为 `192.168.50.1`。手机侧无代理
+直连 HTTPS/NAT、显式 `192.168.50.1:17890` HTTP proxy HTTPS、TUN 模式下无
+显式代理 HTTPS，以及本机受控 upstream proxy 命中 `open-surge-egress` 均已完成
+一次 smoke；Mac 侧能对应看到租约、DNS 查询、fake-ip 查询、`mihomo.log` 中的
+客户端目标连接，以及受控代理日志中的 `CONNECT example.com:443`。
 
 explicit 模式的关键验收信号是：
 
@@ -84,10 +85,18 @@ TUN smoke 被验证。
   HTTPS 连接。
 - TUN 透明模式：`make real-device-start-tun` 启动后，手机保持无显式代理，
   HTTPS 页面成功加载，并且 `mihomo.log` 中出现来自手机 IP 的目标连接。
+- 最小 proxy egress：`make real-device-start-tun-proxy` 启动后，手机保持无
+  显式代理，`https://example.com/` 成功加载；`dnsmasq.log` 中出现该手机的
+  `example.com` fake-ip 查询，`mihomo.log` 中出现
+  `example.com:443 match Domain(example.com) using
+  open-surge-egress[real-device-egress]`，受控本机 HTTP CONNECT proxy 日志中
+  出现 `CONNECT example.com:443`。
 
-当前生成的 mihomo 配置仍然是 `MATCH,DIRECT`，所以这些真实设备信号不证明订阅
-规则、远端代理节点、策略组切换或出口 IP 变化。验证这些行为需要单独的 proxy
-egress smoke。
+默认生成的 mihomo 配置仍然是 `MATCH,DIRECT`。已验证的 proxy egress smoke 只证明
+最小受控 `upstream_proxy` 切片能把指定域名交给 `open-surge-egress` 和本机受控
+代理；它不证明订阅规则、远端代理节点、策略组切换或出口 IP 变化。只有换成具有
+独立出口的实际代理，并同时看到 `mihomo.log` 使用 `open-surge-egress`、受控代理
+日志有对应请求、出口 IP 发生预期变化，才可以宣称远端代理出口路径被验证。
 
 ## 透明代理门槛
 

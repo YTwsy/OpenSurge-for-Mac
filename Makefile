@@ -1,4 +1,8 @@
-.PHONY: test build doctor status lab-install lab-uninstall-root lab-check lab-up lab-status lab-test lab-test-tun lab-down lab-destroy real-device-start-off real-device-start-tun real-device-stop real-device-status real-device-client-check
+.PHONY: test build doctor status
+.PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
+.PHONY: lab-test-tun lab-down lab-destroy
+.PHONY: real-device-start-off real-device-start-tun real-device-start-tun-proxy
+.PHONY: real-device-stop real-device-status real-device-client-check
 
 test:
 	go test ./...
@@ -44,6 +48,9 @@ real-device-start-off:
 
 real-device-start-tun:
 	./tests/real-device/smoke.sh start-tun
+
+real-device-start-tun-proxy:
+	OMG_REAL_DEVICE_UPSTREAM_PROXY_ENABLED=true ./tests/real-device/smoke.sh start-tun
 
 real-device-stop:
 	./tests/real-device/smoke.sh stop

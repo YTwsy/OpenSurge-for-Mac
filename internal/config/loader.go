@@ -167,6 +167,30 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("transparent.tun_strict_route must be a boolean")
 		}
 		cfg.Transparent.TUNStrictRoute = enabled
+	case "upstream_proxy.enabled":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("upstream_proxy.enabled must be a boolean")
+		}
+		cfg.UpstreamProxy.Enabled = enabled
+	case "upstream_proxy.name":
+		cfg.UpstreamProxy.Name = value
+	case "upstream_proxy.type":
+		cfg.UpstreamProxy.Type = strings.ToLower(value)
+	case "upstream_proxy.server":
+		cfg.UpstreamProxy.Server = value
+	case "upstream_proxy.port":
+		port, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("upstream_proxy.port must be a number")
+		}
+		cfg.UpstreamProxy.Port = port
+	case "upstream_proxy.username":
+		cfg.UpstreamProxy.Username = value
+	case "upstream_proxy.password":
+		cfg.UpstreamProxy.Password = value
+	case "upstream_proxy.match_domain":
+		cfg.UpstreamProxy.MatchDomain = strings.ToLower(value)
 	case "runtime.dir":
 		cfg.Runtime.Dir = value
 	default:

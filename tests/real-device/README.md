@@ -161,9 +161,25 @@ transparent:
   mode: "tun"
 ```
 
-The current generated mihomo config uses `MATCH,DIRECT`. This milestone proves
-that real-device traffic is captured and forwarded by the Mac gateway. It does
-not yet prove subscription routing or remote proxy egress behavior.
+By default, the generated mihomo config uses `MATCH,DIRECT`. That mode proves
+that real-device traffic is captured and forwarded by the Mac gateway. To prove
+proxy egress behavior, enable the optional `upstream_proxy` section and point it
+at a controlled HTTP or SOCKS5 proxy:
+
+```yaml
+upstream_proxy:
+  enabled: true
+  name: "real-device-egress"
+  type: "http"
+  server: "127.0.0.1"
+  port: 18080
+  username: ""
+  password: ""
+  match_domain: "example.com"
+```
+
+The proxy may run on the Mac itself. Keep it disabled for the default DIRECT
+gateway smoke.
 
 ## Explicit proxy smoke
 
@@ -298,6 +314,41 @@ connection from a real client address such as `192.168.50.100` to
 `example.com:443`, or to the target used during the smoke test. Only after this
 signal appears should the real-device TUN smoke be called verified.
 
+## Proxy egress smoke
+
+Start a controlled local HTTP or SOCKS5 proxy first. The default runner values
+expect an HTTP proxy on `127.0.0.1:18080`; override the environment variables
+when using another host, port, type, or test domain.
+
+```sh
+make real-device-start-tun-proxy
+```
+
+Equivalent explicit invocation:
+
+```sh
+OMG_REAL_DEVICE_UPSTREAM_PROXY_ENABLED=true \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_TYPE=http \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_SERVER=127.0.0.1 \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_PORT=18080 \
+OMG_REAL_DEVICE_UPSTREAM_PROXY_MATCH_DOMAIN=example.com \
+make real-device-start-tun
+```
+
+Leave the phone without explicit proxy settings and open
+`https://example.com/`. Then inspect both OpenSurge and the controlled proxy:
+
+```sh
+make real-device-client-check
+tail -n 120 runtime/real-device/logs/mihomo.log
+```
+
+Expected: `dnsmasq.log` shows the real client resolving the match domain through
+mihomo fake-ip, `mihomo.log` shows the match domain using `open-surge-egress`
+rather than `DIRECT`, and the controlled proxy log shows the corresponding
+egress request. If the controlled proxy has a distinct external route, also
+compare the observed exit IP.
+
 Stop and verify cleanup:
 
 ```sh
@@ -323,6 +374,8 @@ sudo pfctl -s Anchors
 - Explicit HTTPS through `192.168.50.1:17890` works.
 - TUN mode works without client proxy settings.
 - `mihomo.log` shows real client traffic in TUN mode.
+- Proxy egress smoke shows `open-surge-egress` instead of `DIRECT` for the
+  matched domain.
 - `stop` removes runtime state and unloads the pf anchor.
 - IP forwarding is restored to its previous value after `stop`.
 

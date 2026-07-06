@@ -66,6 +66,9 @@ func Validate(cfg Config) error {
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err
 	}
+	if err := validateUpstreamProxy(cfg.UpstreamProxy); err != nil {
+		return err
+	}
 	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
 		return fmt.Errorf("runtime.dir is required")
 	}
@@ -89,6 +92,68 @@ func validateTransparent(cfg TransparentConfig) error {
 	default:
 		return fmt.Errorf("transparent.mode must be off or tun")
 	}
+}
+
+func validateUpstreamProxy(cfg UpstreamProxyConfig) error {
+	if !cfg.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Name) == "" {
+		return fmt.Errorf("upstream_proxy.name is required when upstream_proxy.enabled is true")
+	}
+	if strings.TrimSpace(cfg.Name) == "open-surge-egress" {
+		return fmt.Errorf("upstream_proxy.name must differ from reserved proxy group open-surge-egress")
+	}
+	if !validRuleToken(cfg.Name) {
+		return fmt.Errorf("upstream_proxy.name must not contain whitespace, commas, or control characters")
+	}
+	switch cfg.Type {
+	case "http", "socks5":
+	default:
+		return fmt.Errorf("upstream_proxy.type must be http or socks5")
+	}
+	if strings.TrimSpace(cfg.Server) == "" {
+		return fmt.Errorf("upstream_proxy.server is required when upstream_proxy.enabled is true")
+	}
+	if hasControlChar(cfg.Server) {
+		return fmt.Errorf("upstream_proxy.server must not contain control characters")
+	}
+	if !validPort(cfg.Port) {
+		return fmt.Errorf("upstream_proxy.port must be between 1 and 65535")
+	}
+	if !validDomainRule(cfg.MatchDomain) {
+		return fmt.Errorf("upstream_proxy.match_domain must be a domain without scheme, path, whitespace, or comma")
+	}
+	if hasControlChar(cfg.Username) || hasControlChar(cfg.Password) {
+		return fmt.Errorf("upstream_proxy credentials must not contain control characters")
+	}
+	return nil
+}
+
+func validRuleToken(value string) bool {
+	if strings.TrimSpace(value) != value || value == "" {
+		return false
+	}
+	if strings.ContainsAny(value, ",\t\n\r ") {
+		return false
+	}
+	return !hasControlChar(value)
+}
+
+func validDomainRule(value string) bool {
+	if !validRuleToken(value) {
+		return false
+	}
+	return !strings.ContainsAny(value, "/:")
+}
+
+func hasControlChar(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func validPort(port int) bool {

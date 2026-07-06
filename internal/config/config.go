@@ -7,13 +7,14 @@ import (
 )
 
 type Config struct {
-	Gateway     GatewayConfig
-	DHCP        DHCPConfig
-	DNS         DNSConfig
-	Mihomo      MihomoConfig
-	PF          PFConfig
-	Transparent TransparentConfig
-	Runtime     RuntimeConfig
+	Gateway       GatewayConfig
+	DHCP          DHCPConfig
+	DNS           DNSConfig
+	Mihomo        MihomoConfig
+	PF            PFConfig
+	Transparent   TransparentConfig
+	UpstreamProxy UpstreamProxyConfig
+	Runtime       RuntimeConfig
 }
 
 type GatewayConfig struct {
@@ -69,6 +70,17 @@ func (c TransparentConfig) TUNEnabled() bool {
 	return c.Mode == TransparentModeTUN
 }
 
+type UpstreamProxyConfig struct {
+	Enabled     bool
+	Name        string
+	Type        string
+	Server      string
+	Port        int
+	Username    string
+	Password    string
+	MatchDomain string
+}
+
 type RuntimeConfig struct {
 	Dir string
 }
@@ -111,6 +123,14 @@ func Default() Config {
 			TUNAutoRoute:           true,
 			TUNAutoDetectInterface: false,
 			TUNStrictRoute:         false,
+		},
+		UpstreamProxy: UpstreamProxyConfig{
+			Enabled:     false,
+			Name:        "real-device-egress",
+			Type:        "http",
+			Server:      "127.0.0.1",
+			Port:        0,
+			MatchDomain: "example.com",
 		},
 		Runtime: RuntimeConfig{
 			Dir: "./runtime",

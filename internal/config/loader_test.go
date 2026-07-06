@@ -32,4 +32,10 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.Transparent.TUNDevice != "utun123" {
 		t.Fatalf("Transparent.TUNDevice = %q", cfg.Transparent.TUNDevice)
 	}
+	if cfg.UpstreamProxy.Enabled {
+		t.Fatalf("UpstreamProxy.Enabled = true")
+	}
+	if cfg.UpstreamProxy.MatchDomain != "example.com" {
+		t.Fatalf("UpstreamProxy.MatchDomain = %q", cfg.UpstreamProxy.MatchDomain)
+	}
 }
