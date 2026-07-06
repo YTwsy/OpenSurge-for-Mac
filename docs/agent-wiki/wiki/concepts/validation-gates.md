@@ -55,10 +55,12 @@ DHCP/DNS 并通过 Mac 网关出站。它不替代 `make lab-test` / `make lab-t
 作为代码改动的可复现 lab 门槛。
 
 当前进度快照来自 `docs/agent-wiki/sources/validation/real-device-smoke.md`。
-截至 2026-07-06 CST，本轮已经验证 explicit/off runner 可以在物理下游 LAN
-启动，真实客户端可以获得 `192.168.50.100-200` 范围租约且 router/DNS 为
-`192.168.50.1`，Mac 侧 DNS 探测和 Mac 侧显式代理 HTTPS 探测成功。不要把
-这些信号扩大为真实手机三段端到端检查已经全部通过。
+截至 2026-07-06 CST，本轮已经验证 explicit/off runner 和 TUN runner 可以在
+物理下游 LAN 启动，真实 Pixel 手机可以获得 `192.168.50.100-200` 范围租约且
+router/DNS 为 `192.168.50.1`。手机侧无代理直连 HTTPS/NAT、显式
+`192.168.50.1:17890` HTTP proxy HTTPS，以及 TUN 模式下无显式代理 HTTPS 均已
+完成一次 smoke；Mac 侧能对应看到租约、DNS 查询、fake-ip 查询和 `mihomo.log`
+中的客户端目标连接。
 
 explicit 模式的关键验收信号是：
 
@@ -69,10 +71,11 @@ explicit 模式的关键验收信号是：
 - `curl --proxy http://192.168.50.1:17890 https://example.com/` 能通过
   mihomo `mixed-port` 访问 HTTPS。
 
-只有运行 `make real-device-start-tun` 并在客户端无显式代理时观察到成功出站和
-`mihomo.log` 中的真实客户端流量，才可以宣称真实设备 TUN smoke 被验证。
+只有运行 `make real-device-start-tun` 并在客户端无显式代理时观察到成功出站、
+fake-ip DNS 响应和 `mihomo.log` 中的真实客户端目标连接，才可以宣称真实设备
+TUN smoke 被验证。
 
-尚未宣称通过的真实手机检查是：
+本轮已通过的真实手机检查是：
 
 - 无代理直连 HTTPS/NAT：手机 Wi-Fi HTTP proxy 关闭，HTTPS 页面成功加载，
   Mac 侧能看到该手机租约和 DNS 查询。
@@ -81,6 +84,10 @@ explicit 模式的关键验收信号是：
   HTTPS 连接。
 - TUN 透明模式：`make real-device-start-tun` 启动后，手机保持无显式代理，
   HTTPS 页面成功加载，并且 `mihomo.log` 中出现来自手机 IP 的目标连接。
+
+当前生成的 mihomo 配置仍然是 `MATCH,DIRECT`，所以这些真实设备信号不证明订阅
+规则、远端代理节点、策略组切换或出口 IP 变化。验证这些行为需要单独的 proxy
+egress smoke。
 
 ## 透明代理门槛
 
