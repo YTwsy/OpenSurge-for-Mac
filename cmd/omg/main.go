@@ -80,6 +80,13 @@ func run(args []string) int {
 			return 1
 		}
 		fmt.Print(rendered)
+	case "validate-mihomo":
+		paths := runtime.NewPaths(cfg)
+		if err := mihomo.New(cfg, paths).ValidateConfig(); err != nil {
+			fmt.Fprintf(os.Stderr, "validate-mihomo: %v\n", err)
+			return 1
+		}
+		fmt.Printf("mihomo config valid: %s\n", paths.MihomoConfig)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", command)
 		printUsage(os.Stderr)
@@ -104,6 +111,8 @@ Commands:
   logs     print runtime log location
   render-mihomo
            print the final mihomo config without starting services
+  validate-mihomo
+           render and validate the final mihomo config without starting services
 
 Default config: %s
 `, defaultConfigPath)

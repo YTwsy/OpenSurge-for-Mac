@@ -32,6 +32,20 @@ func (m Manager) WriteConfig() error {
 	return os.WriteFile(m.paths.MihomoConfig, []byte(rendered), 0o644)
 }
 
+func (m Manager) ValidateConfig() error {
+	binary, err := resolveBinary(m.cfg.Mihomo.Binary)
+	if err != nil {
+		return err
+	}
+	if err := runtime.Ensure(m.paths); err != nil {
+		return err
+	}
+	if err := m.WriteConfig(); err != nil {
+		return err
+	}
+	return validateConfig(binary, m.configDir(), m.paths.MihomoConfig)
+}
+
 func (m Manager) Start() (int, error) {
 	binary, err := resolveBinary(m.cfg.Mihomo.Binary)
 	if err != nil {

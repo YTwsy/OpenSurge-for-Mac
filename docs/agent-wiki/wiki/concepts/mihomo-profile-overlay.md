@@ -43,7 +43,10 @@ Imported profile support is a mihomo config-generation change. Run `make test`
 for code-level coverage. `doctor` includes a `mihomo config render` check so an
 unreadable imported profile or missing `rules` section fails before gateway
 startup. Use `go run ./cmd/omg render-mihomo --config <path>` to inspect the
-final overlaid mihomo config without root or service startup.
+final overlaid mihomo config without root or service startup. Use
+`go run ./cmd/omg validate-mihomo --config <path>` for a stronger non-root check
+that renders the final config and runs mihomo's own `-t` validation with the same
+`-d` directory OpenSurge uses at startup.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:

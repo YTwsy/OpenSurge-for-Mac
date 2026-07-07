@@ -63,6 +63,7 @@ Preview the final generated mihomo config before starting gateway services:
 go run ./cmd/omg doctor --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example.yaml
+go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.example.yaml
 ```
 
 ## Usage
@@ -71,6 +72,7 @@ go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example
 go run ./cmd/omg doctor --config examples/config.example.yaml
 go run ./cmd/omg status --config examples/config.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
+go run ./cmd/omg validate-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml
 sudo go run ./cmd/omg stop --config examples/config.example.yaml
 ```
