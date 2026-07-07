@@ -57,6 +57,13 @@ mihomo profile 所在目录解析。
 go run ./cmd/omg doctor --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example.yaml
+```
+
+当 `mihomo.binary` 指向已安装的 mihomo 二进制时，可以使用
+`validate-mihomo`。它会渲染最终配置，并运行 mihomo 自己的 `-t` 校验，但不会
+启动网关服务。
+
+```sh
 go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.example.yaml
 ```
 
@@ -66,7 +73,6 @@ go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.examp
 go run ./cmd/omg doctor --config examples/config.example.yaml
 go run ./cmd/omg status --config examples/config.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
-go run ./cmd/omg validate-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml
 sudo go run ./cmd/omg stop --config examples/config.example.yaml
 ```

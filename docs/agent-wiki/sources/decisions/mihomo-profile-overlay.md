@@ -41,7 +41,8 @@ a desktop-style mihomo profile break the OpenSurge LAN gateway contract.
 `go run ./cmd/omg render-mihomo --config <path>` to preview the final generated
 mihomo config before running root-required gateway startup. Use
 `go run ./cmd/omg validate-mihomo --config <path>` to run mihomo's own `-t`
-validation with the same `-d` directory OpenSurge uses at startup.
+validation with the same `-d` directory OpenSurge uses at startup. This command
+requires `mihomo.binary` to point to an installed mihomo binary.
 
 Use `make lab-test-tun-imported-profile` for a reproducible TUN lab gate that
 starts OpenSurge with an imported profile fixture. The fixture keeps

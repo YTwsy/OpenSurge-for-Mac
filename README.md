@@ -63,6 +63,13 @@ Preview the final generated mihomo config before starting gateway services:
 go run ./cmd/omg doctor --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example.yaml
+```
+
+Use `validate-mihomo` when `mihomo.binary` points to an installed mihomo binary.
+It renders the final config and runs mihomo's own `-t` validation without
+starting gateway services.
+
+```sh
 go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.example.yaml
 ```
 
@@ -72,7 +79,6 @@ go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.examp
 go run ./cmd/omg doctor --config examples/config.example.yaml
 go run ./cmd/omg status --config examples/config.example.yaml
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
-go run ./cmd/omg validate-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml
 sudo go run ./cmd/omg stop --config examples/config.example.yaml
 ```

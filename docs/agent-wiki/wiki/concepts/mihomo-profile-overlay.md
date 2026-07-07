@@ -46,7 +46,8 @@ startup. Use `go run ./cmd/omg render-mihomo --config <path>` to inspect the
 final overlaid mihomo config without root or service startup. Use
 `go run ./cmd/omg validate-mihomo --config <path>` for a stronger non-root check
 that renders the final config and runs mihomo's own `-t` validation with the same
-`-d` directory OpenSurge uses at startup.
+`-d` directory OpenSurge uses at startup. This command requires `mihomo.binary`
+in the OpenSurge config to point to an installed mihomo binary.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:
