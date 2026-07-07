@@ -119,6 +119,16 @@ make lab-test-tun
 - gateway 被停止，`runtime/lab/state.json` 被移除；
 - artifacts 写入 `artifacts/lab`。
 
+修改 mihomo profile 导入或 OpenSurge gateway overlay 行为时，优先使用：
+
+```sh
+make lab-test-tun-imported-profile
+```
+
+这个门禁使用 `tests/lab/mihomo-profile.imported-tun.yaml` 启动 imported profile
+配置，并保持规则为 `MATCH,DIRECT`。它证明 imported profile overlay 可以进入 TUN
+lab 路径；它不证明外部代理出口或远端节点可用。
+
 ## 结论纪律
 
 最终报告必须明确说出实际运行了哪些命令。如果只运行了 `make test`，不要暗示

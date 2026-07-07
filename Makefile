@@ -1,6 +1,6 @@
 .PHONY: test build doctor status
 .PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
-.PHONY: lab-test-tun lab-down lab-destroy
+.PHONY: lab-test-tun lab-test-tun-imported-profile lab-down lab-destroy
 .PHONY: real-device-start-off real-device-start-tun real-device-start-tun-proxy
 .PHONY: real-device-stop real-device-status real-device-client-check
 
@@ -36,6 +36,9 @@ lab-test:
 
 lab-test-tun:
 	./tests/lab/lab.sh test-tun
+
+lab-test-tun-imported-profile:
+	OMG_LAB_MIHOMO_PROFILE=tests/lab/mihomo-profile.imported-tun.yaml ./tests/lab/lab.sh test-tun
 
 lab-down:
 	./tests/lab/lab.sh down

@@ -23,6 +23,7 @@ BINARY="$ROOT/bin/omg-lab"
 LAN_IP=192.168.50.1
 CLIENTS="${OMG_LAB_CLIENTS:-omg-lab-client-1 omg-lab-client-2}"
 TEST_URL="${OMG_LAB_TEST_URL:-https://example.com/}"
+LAB_MIHOMO_PROFILE="${OMG_LAB_MIHOMO_PROFILE:-}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -81,8 +82,17 @@ write_proxy_exports() {
   done
 }
 
+resolve_lab_profile() {
+  local profile=$1
+  case "$profile" in
+    /*) printf '%s\n' "$profile" ;;
+    *) printf '%s/%s\n' "$ROOT" "$profile" ;;
+  esac
+}
+
 write_config() {
-	local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line
+  local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line
+  local profile_mode profile_path
 	mode="${1:-off}"
 	iface="$(lab_interface)"
 	upstream="$(upstream_interface)"
@@ -90,6 +100,13 @@ write_config() {
 	mihomo_bin="$(command -v mihomo)"
   runtime_dir="$STATE_DIR"
   dns_upstream_line=""
+  profile_mode="managed"
+  profile_path=""
+  if [[ -n "$LAB_MIHOMO_PROFILE" ]]; then
+    profile_mode="imported"
+    profile_path="$(resolve_lab_profile "$LAB_MIHOMO_PROFILE")"
+    [[ -f "$profile_path" ]] || { echo "mihomo profile not found: $profile_path" >&2; exit 1; }
+  fi
   case "$mode" in
     off) ;;
     tun) dns_upstream_line='  upstream: "127.0.0.1#1053"' ;;
@@ -110,6 +127,8 @@ write_config() {
 	  -e "s|__UPSTREAM_INTERFACE__|$(sed_escape "$upstream")|g" \
 	  -e "s|__DNSMASQ_BINARY__|$(sed_escape "$dnsmasq_bin")|g" \
 	  -e "s|__MIHOMO_BINARY__|$(sed_escape "$mihomo_bin")|g" \
+    -e "s|__MIHOMO_PROFILE_MODE__|$(sed_escape "$profile_mode")|g" \
+    -e "s|__MIHOMO_PROFILE__|$(sed_escape "$profile_path")|g" \
     -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
     -e "s|__TRANSPARENT_MODE__|$(sed_escape "$mode")|g" \
     -e "s|__RUNTIME_DIR__|$(sed_escape "$runtime_dir")|g" \

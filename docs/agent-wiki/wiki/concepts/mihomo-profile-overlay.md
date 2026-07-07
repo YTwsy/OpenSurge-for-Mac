@@ -43,4 +43,10 @@ final overlaid mihomo config without root or service startup.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:
-`make lab-test`, `make lab-test-tun`, or a documented real-device smoke.
+`make lab-test`, `make lab-test-tun`, `make lab-test-tun-imported-profile`, or a
+documented real-device smoke.
+
+`make lab-test-tun-imported-profile` runs the TUN gate with
+`tests/lab/mihomo-profile.imported-tun.yaml`, which keeps rules at
+`MATCH,DIRECT`. It proves the imported profile overlay can start in the TUN lab;
+it does not prove an external proxy egress.

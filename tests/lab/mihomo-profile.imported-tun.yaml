@@ -1,0 +1,8 @@
+# Imported profile fixture for the TUN lab gate.
+# It exercises mihomo.profile_mode: imported while keeping traffic DIRECT so the
+# lab does not depend on an external proxy service.
+
+proxies: []
+
+rules:
+  - MATCH,DIRECT

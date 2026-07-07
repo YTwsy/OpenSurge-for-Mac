@@ -83,7 +83,10 @@ lab 脚本，以及会影响运行时流量的示例配置。除非有专用 mac
 受控的主机权限和网络隔离，否则虚拟 LAN lab 应保持为本地、夜间或手动门禁。
 
 使用 `make lab-test-tun` 验证支持的透明代理路径。该测试会让客户端不配置代理，
-并要求 mihomo 日志中出现通过 TUN inbound 观察到的直连 HTTPS 请求。
+并要求 mihomo 日志中出现通过 TUN inbound 观察到的直连 HTTPS 请求。修改
+mihomo profile 导入或 overlay 行为时，使用
+`make lab-test-tun-imported-profile`；它会用 imported profile fixture 跑同一个
+TUN 门禁。
 
 ## 虚拟 LAN lab
 
@@ -97,6 +100,7 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-imported-profile
 make lab-down
 ```
 

@@ -95,7 +95,9 @@ same controlled host privileges and network isolation.
 
 Use `make lab-test-tun` for the supported transparent proxy path. That test
 keeps clients proxy-free and requires mihomo to log the direct HTTPS connection
-through its TUN inbound.
+through its TUN inbound. Use `make lab-test-tun-imported-profile` when changing
+mihomo profile import or overlay behavior; it runs the same TUN gate with an
+imported profile fixture.
 
 ## Virtual LAN lab
 
@@ -110,6 +112,7 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-imported-profile
 make lab-down
 ```
 

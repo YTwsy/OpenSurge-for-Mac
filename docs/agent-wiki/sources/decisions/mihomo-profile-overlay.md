@@ -38,5 +38,10 @@ a desktop-style mihomo profile break the OpenSurge LAN gateway contract.
 `go run ./cmd/omg render-mihomo --config <path>` to preview the final generated
 mihomo config before running root-required gateway startup.
 
+Use `make lab-test-tun-imported-profile` for a reproducible TUN lab gate that
+starts OpenSurge with an imported profile fixture. The fixture keeps
+`MATCH,DIRECT`, so it proves imported overlay compatibility with TUN startup and
+transparent routing, not external proxy egress.
+
 Do not treat imported profiles as permission to re-enable `redir-port` or PF TCP
 redirection. macOS transparent proxying remains TUN-first.
