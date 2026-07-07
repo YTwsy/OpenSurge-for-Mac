@@ -42,6 +42,13 @@ require_installed_lab() {
   fi
 }
 
+require_cached_sudo() {
+  if ! sudo -n true 2>/dev/null; then
+    echo "gateway test requires a cached sudo credential; run 'sudo -v' in a terminal, then retry" >&2
+    exit 1
+  fi
+}
+
 instance_dir() {
   printf '%s/%s\n' "${LIMA_HOME:-$HOME/.lima}" "$1"
 }
@@ -233,6 +240,7 @@ run_test() {
   mode="${1:-off}"
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
+  require_cached_sudo
   write_config "$mode"
   require_command go
   mkdir -p "$ROOT/bin"
@@ -250,10 +258,7 @@ run_test() {
   }
   trap cleanup_test EXIT INT TERM
 
-  if ! sudo -n "$BINARY" start --config "$CONFIG"; then
-    echo "gateway test requires a cached sudo credential; run 'sudo -v' in a terminal, then retry" >&2
-    exit 1
-  fi
+  sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
 
   for client in $CLIENTS; do
