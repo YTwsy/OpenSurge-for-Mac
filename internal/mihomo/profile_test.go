@@ -60,6 +60,56 @@ tun:
 	}
 }
 
+func TestLoadImportedProfileSectionsRewritesProviderPaths(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "providers"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	profilePath := filepath.Join(dir, "profile.yaml")
+	body := `proxy-providers:
+  local:
+    type: file
+    path: ./providers/proxies.yaml # keep comment
+  quoted:
+    type: file
+    path: "./providers/quoted.yaml"
+  absolute:
+    type: file
+    path: /var/tmp/proxies.yaml
+rule-providers:
+  cn:
+    type: file
+    path: './providers/cn.yaml'
+  remote:
+    type: http
+    path: https://example.com/rules.yaml
+rules:
+  - RULE-SET,cn,DIRECT
+  - MATCH,DIRECT
+`
+	if err := os.WriteFile(profilePath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sections, err := LoadImportedProfileSections(profilePath)
+	if err != nil {
+		t.Fatalf("LoadImportedProfileSections() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"path: " + filepath.Join(dir, "providers", "proxies.yaml") + " # keep comment",
+		`path: "` + filepath.Join(dir, "providers", "quoted.yaml") + `"`,
+		`path: '` + filepath.Join(dir, "providers", "cn.yaml") + `'`,
+		"path: /var/tmp/proxies.yaml",
+		"path: https://example.com/rules.yaml",
+		"- RULE-SET,cn,DIRECT",
+	} {
+		if !strings.Contains(sections, want) {
+			t.Fatalf("imported sections missing %q:\n%s", want, sections)
+		}
+	}
+}
+
 func TestLoadImportedProfileSectionsRequiresRules(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.yaml")

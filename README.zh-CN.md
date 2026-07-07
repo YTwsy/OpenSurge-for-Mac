@@ -47,7 +47,9 @@ mihomo:
   profile: "./profiles/home.yaml"
 ```
 
-相对形式的 `mihomo.profile` 会基于 OpenSurge 配置文件所在目录解析。
+相对形式的 `mihomo.profile` 会基于 OpenSurge 配置文件所在目录解析。导入的
+`proxy-providers` 和 `rule-providers` 内部如果有相对 `path:`，会基于被导入的
+mihomo profile 所在目录解析。
 
 启动网关服务前，可以先预览最终生成的 mihomo 配置：
 

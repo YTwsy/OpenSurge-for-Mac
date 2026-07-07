@@ -11,7 +11,9 @@ DIRECT/smoke mihomo config.
 
 `mihomo.profile_mode: "imported"` reads `mihomo.profile` and imports only these
 top-level mihomo engine sections. Relative `mihomo.profile` paths are resolved
-from the OpenSurge config file's directory:
+from the OpenSurge config file's directory. Relative `path:` entries inside
+imported `proxy-providers` and `rule-providers` are resolved from the imported
+mihomo profile's directory:
 
 - `proxies`
 - `proxy-providers`

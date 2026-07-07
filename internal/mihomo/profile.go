@@ -3,6 +3,7 @@ package mihomo
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -28,14 +29,20 @@ func LoadImportedProfileSections(path string) (string, error) {
 		return "", fmt.Errorf("imported mihomo profile contains no importable sections")
 	}
 
-	return strings.TrimRight(strings.Join(blocks, "\n"), "\n") + "\n", nil
+	return strings.TrimRight(renderImportedProfileBlocks(blocks, filepath.Dir(path)), "\n") + "\n", nil
 }
 
-func extractImportableProfileSections(profile string) ([]string, map[string]bool) {
+type importedProfileBlock struct {
+	key  string
+	text string
+}
+
+func extractImportableProfileSections(profile string) ([]importedProfileBlock, map[string]bool) {
 	lines := strings.SplitAfter(profile, "\n")
 	found := make(map[string]bool)
-	var blocks []string
+	var blocks []importedProfileBlock
 	var current strings.Builder
+	currentKey := ""
 	collecting := false
 
 	flush := func() {
@@ -44,9 +51,10 @@ func extractImportableProfileSections(profile string) ([]string, map[string]bool
 		}
 		block := strings.TrimRight(current.String(), "\n")
 		if block != "" {
-			blocks = append(blocks, block)
+			blocks = append(blocks, importedProfileBlock{key: currentKey, text: block})
 		}
 		current.Reset()
+		currentKey = ""
 		collecting = false
 	}
 
@@ -55,6 +63,7 @@ func extractImportableProfileSections(profile string) ([]string, map[string]bool
 			if importableProfileSections[key] {
 				flush()
 				collecting = true
+				currentKey = key
 				found[key] = true
 				current.WriteString(line)
 				continue
@@ -69,6 +78,112 @@ func extractImportableProfileSections(profile string) ([]string, map[string]bool
 	flush()
 
 	return blocks, found
+}
+
+func renderImportedProfileBlocks(blocks []importedProfileBlock, profileDir string) string {
+	rendered := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		switch block.key {
+		case "proxy-providers", "rule-providers":
+			rendered = append(rendered, rewriteProviderPaths(block.text, profileDir))
+		default:
+			rendered = append(rendered, block.text)
+		}
+	}
+	return strings.Join(rendered, "\n")
+}
+
+func rewriteProviderPaths(block string, profileDir string) string {
+	lines := strings.SplitAfter(block, "\n")
+	for i, line := range lines {
+		lines[i] = rewriteProviderPathLine(line, profileDir)
+	}
+	return strings.Join(lines, "")
+}
+
+func rewriteProviderPathLine(line string, profileDir string) string {
+	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
+	indent := line[:indentLen]
+	body := line[indentLen:]
+	trimmedBody := strings.TrimSpace(body)
+	if trimmedBody == "" || strings.HasPrefix(trimmedBody, "#") {
+		return line
+	}
+
+	key, rest, ok := strings.Cut(body, ":")
+	if !ok || strings.TrimSpace(key) != "path" {
+		return line
+	}
+
+	lineEnding := ""
+	if strings.HasSuffix(rest, "\n") {
+		lineEnding = "\n"
+		rest = strings.TrimSuffix(rest, "\n")
+	}
+	valuePart, commentPart := splitInlineComment(rest)
+	prefixWhitespace := leadingWhitespace(valuePart)
+	commentWhitespace := trailingWhitespace(valuePart)
+	value := strings.TrimSpace(valuePart)
+	quote := pathQuote(value)
+	unquoted := strings.Trim(value, `"'`)
+	if !relativeProviderPath(unquoted) {
+		return line
+	}
+
+	rewritten := filepath.Join(profileDir, unquoted)
+	return indent + key + ":" + prefixWhitespace + quote + rewritten + quote + commentWhitespace + commentPart + lineEnding
+}
+
+func splitInlineComment(value string) (string, string) {
+	inSingle := false
+	inDouble := false
+	for i, r := range value {
+		switch r {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+		case '#':
+			if !inSingle && !inDouble {
+				return value[:i], value[i:]
+			}
+		}
+	}
+	return value, ""
+}
+
+func leadingWhitespace(value string) string {
+	return value[:len(value)-len(strings.TrimLeft(value, " \t"))]
+}
+
+func trailingWhitespace(value string) string {
+	return value[len(strings.TrimRight(value, " \t")):]
+}
+
+func pathQuote(value string) string {
+	if len(value) >= 2 {
+		switch {
+		case value[0] == '"' && value[len(value)-1] == '"':
+			return `"`
+		case value[0] == '\'' && value[len(value)-1] == '\'':
+			return `'`
+		}
+	}
+	return ""
+}
+
+func relativeProviderPath(value string) bool {
+	if value == "" || filepath.IsAbs(value) {
+		return false
+	}
+	if strings.Contains(value, "://") {
+		return false
+	}
+	return true
 }
 
 func topLevelYAMLKey(line string) (string, bool) {

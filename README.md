@@ -54,7 +54,8 @@ mihomo:
 ```
 
 Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
-directory.
+directory. Relative `path:` entries inside imported `proxy-providers` and
+`rule-providers` are resolved from the imported mihomo profile's directory.
 
 Preview the final generated mihomo config before starting gateway services:
 
