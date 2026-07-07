@@ -13,7 +13,9 @@ DIRECT/smoke mihomo config.
 top-level mihomo engine sections. Relative `mihomo.profile` paths are resolved
 from the OpenSurge config file's directory. Relative `path:` entries inside
 imported `proxy-providers` and `rule-providers` are resolved from the imported
-mihomo profile's directory:
+mihomo profile's directory. When starting or validating mihomo for an imported
+profile, OpenSurge passes `-d <profile-dir>` so mihomo SAFE_PATHS accepts those
+provider files:
 
 - `proxies`
 - `proxy-providers`

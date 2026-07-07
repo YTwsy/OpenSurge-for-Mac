@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,13 +40,14 @@ func (m Manager) Start() (int, error) {
 	if err := m.WriteConfig(); err != nil {
 		return 0, err
 	}
-	if err := validateConfig(binary, m.paths.MihomoConfig); err != nil {
+	configDir := m.configDir()
+	if err := validateConfig(binary, configDir, m.paths.MihomoConfig); err != nil {
 		return 0, err
 	}
 	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o644); err != nil {
 		return 0, err
 	}
-	pid, err := process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-f", m.paths.MihomoConfig)
+	pid, err := process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-d", configDir, "-f", m.paths.MihomoConfig)
 	if err != nil {
 		return 0, err
 	}
@@ -65,9 +67,16 @@ func (m Manager) Check() error {
 	return err
 }
 
-func validateConfig(binary string, configPath string) error {
+func (m Manager) configDir() string {
+	if m.cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported && strings.TrimSpace(m.cfg.Mihomo.Profile) != "" {
+		return filepath.Dir(m.cfg.Mihomo.Profile)
+	}
+	return filepath.Dir(m.paths.MihomoConfig)
+}
+
+func validateConfig(binary string, configDir string, configPath string) error {
 	var output bytes.Buffer
-	if err := process.RunBuffered(&output, binary, "-t", "-f", configPath); err != nil {
+	if err := process.RunBuffered(&output, binary, "-d", configDir, "-t", "-f", configPath); err != nil {
 		return fmt.Errorf("mihomo config validation failed: %w: %s", err, strings.TrimSpace(output.String()))
 	}
 	return nil
