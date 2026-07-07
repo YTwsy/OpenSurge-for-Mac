@@ -15,6 +15,8 @@ OpenSurge for Mac 的目标，是成为一个开源的 Surge for Mac 风格 macO
 - Mac 作为下游设备的 IPv4 LAN gateway；
 - dnsmasq 在下游 LAN 上提供 DHCP 和 DNS；
 - mihomo 是当前代理引擎；
+- OpenSurge 可以导入 mihomo 的代理/规则 profile section，但仍由 OpenSurge
+  覆盖并接管 LAN 绑定、DNS、TUN 和 API 等网关字段；
 - macOS pf 提供 NAT；
 - macOS IPv4 forwarding 由 sysctl 管理，并在停止时恢复；
 - macOS 透明代理当前通过 mihomo TUN 实现。

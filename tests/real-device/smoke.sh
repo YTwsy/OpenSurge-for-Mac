@@ -107,6 +107,8 @@ dns:
 mihomo:
   binary: "./runtime/tools/bin/mihomo"
   config: "./runtime/real-device/mihomo.yaml"
+  profile_mode: "managed"
+  profile: ""
   mixed_port: 17890
   redir_port: 0
   api_addr: "127.0.0.1:19090"

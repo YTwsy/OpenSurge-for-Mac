@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -42,11 +43,18 @@ func Load(path string) (Config, error) {
 	if err := scanner.Err(); err != nil {
 		return Config{}, err
 	}
+	resolveRelativePaths(path, &cfg)
 	if err := Validate(cfg); err != nil {
 		return Config{}, err
 	}
 
 	return cfg, nil
+}
+
+func resolveRelativePaths(configPath string, cfg *Config) {
+	if cfg.Mihomo.Profile != "" && !filepath.IsAbs(cfg.Mihomo.Profile) {
+		cfg.Mihomo.Profile = filepath.Join(filepath.Dir(configPath), cfg.Mihomo.Profile)
+	}
 }
 
 func stripComment(line string) string {
@@ -119,6 +127,10 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Mihomo.Binary = value
 	case "mihomo.config":
 		cfg.Mihomo.Config = value
+	case "mihomo.profile_mode":
+		cfg.Mihomo.ProfileMode = strings.ToLower(value)
+	case "mihomo.profile":
+		cfg.Mihomo.Profile = value
 	case "mihomo.mixed_port":
 		port, err := strconv.Atoi(value)
 		if err != nil {

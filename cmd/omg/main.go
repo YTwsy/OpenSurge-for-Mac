@@ -10,6 +10,7 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -72,6 +73,13 @@ func run(args []string) int {
 		fmt.Print(device.FormatClients(clients))
 	case "logs":
 		fmt.Printf("Logs directory: %s\n", runtime.NewPaths(cfg).LogDir)
+	case "render-mihomo":
+		rendered, err := mihomo.RenderConfig(cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "render-mihomo: %v\n", err)
+			return 1
+		}
+		fmt.Print(rendered)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", command)
 		printUsage(os.Stderr)
@@ -82,7 +90,7 @@ func run(args []string) int {
 }
 
 func printUsage(out *os.File) {
-	fmt.Fprintf(out, `Open Mihomo Gateway for macOS
+	fmt.Fprintf(out, `OpenSurge for Mac
 
 Usage:
   omg <command> --config <path>
@@ -94,6 +102,8 @@ Commands:
   doctor   run environment checks
   leases   print DHCP leases
   logs     print runtime log location
+  render-mihomo
+           print the final mihomo config without starting services
 
 Default config: %s
 `, defaultConfigPath)

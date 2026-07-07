@@ -33,11 +33,36 @@ macOS 上支持的透明代理路径是 TUN。mihomo `redir-port` 和 PF TCP 重
 `mihomo.redir_port` 和 `pf.redirect_tcp_to` 为 `0`，并通过
 `transparent.mode: "tun"` 启用透明代理。
 
+## mihomo profile
+
+OpenSurge for Mac 可以渲染托管的 mihomo 配置，也可以从已有 mihomo profile
+导入代理和规则 section。在 imported 模式下，OpenSurge 仍然接管网关关键字段：
+LAN 绑定、`allow-lan`、DNS、TUN、`external-controller` 和 runtime 路径。
+导入的 profile 只贡献 `proxies`、`proxy-providers`、`proxy-groups`、
+`rule-providers` 和 `rules` 这些引擎层 section。
+
+```yaml
+mihomo:
+  profile_mode: "imported"
+  profile: "./profiles/home.yaml"
+```
+
+相对形式的 `mihomo.profile` 会基于 OpenSurge 配置文件所在目录解析。
+
+启动网关服务前，可以先预览最终生成的 mihomo 配置：
+
+```sh
+go run ./cmd/omg doctor --config examples/config.imported-profile.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example.yaml
+```
+
 ## 使用
 
 ```sh
 go run ./cmd/omg doctor --config examples/config.example.yaml
 go run ./cmd/omg status --config examples/config.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml
 sudo go run ./cmd/omg stop --config examples/config.example.yaml
 ```

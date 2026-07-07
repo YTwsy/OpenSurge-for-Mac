@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/mihomo"
 )
 
 type Check struct {
@@ -25,6 +26,7 @@ func Run(cfg config.Config) Report {
 		checkRoot(),
 		checkPath("dnsmasq", cfg.DHCP.Binary),
 		checkPath("mihomo", cfg.Mihomo.Binary),
+		checkMihomoConfigRender(cfg),
 		checkCommand("pfctl", "pfctl"),
 		checkInterface(cfg.Gateway.Interface),
 		checkInterface(cfg.Gateway.UpstreamInterface),
@@ -33,6 +35,13 @@ func Run(cfg config.Config) Report {
 		checkInterfaceIPv4(cfg.Gateway.Interface, cfg.Gateway.LANIP),
 	}
 	return Report{Checks: checks}
+}
+
+func checkMihomoConfigRender(cfg config.Config) Check {
+	if _, err := mihomo.RenderConfig(cfg); err != nil {
+		return Check{Name: "mihomo config render", OK: false, Message: err.Error()}
+	}
+	return Check{Name: "mihomo config render", OK: true}
 }
 
 func (r Report) Healthy() bool {

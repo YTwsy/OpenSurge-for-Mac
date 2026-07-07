@@ -11,6 +11,8 @@
   gateway，以及如何停止并恢复。
 - [macOS TUN 透明代理](concepts/macos-tun-transparent-proxy.md)：为什么
   TUN 是透明代理主线，以及哪些旧旋钮必须保持 inactive。
+- [mihomo profile overlay](concepts/mihomo-profile-overlay.md)：如何导入
+  mihomo 代理/规则 section，同时保持 OpenSurge 接管网关字段。
 - [验证门槛](concepts/validation-gates.md)：哪些检查能证明哪些结论。
 
 ## 项目形态
@@ -29,6 +31,8 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
 - 示例配置：`examples/config.example.yaml`
 - 生命周期代码：`internal/gateway/manager.go`
 - 配置验证：`internal/config/validator.go`
+- mihomo profile 导入：`internal/mihomo/profile.go` 和
+  `docs/agent-wiki/sources/decisions/mihomo-profile-overlay.md`
 - Virtual LAN lab：`tests/lab/README.md` 和 `tests/lab/lab.sh`
 - 真实设备 smoke：`tests/real-device/README.md` 和
   `tests/real-device/smoke.sh`

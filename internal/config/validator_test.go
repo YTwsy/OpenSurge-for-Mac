@@ -54,6 +54,70 @@ func TestValidateAcceptsUpstreamProxy(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsImportedMihomoProfile(t *testing.T) {
+	cfg := Default()
+	cfg.Mihomo.ProfileMode = MihomoProfileModeImported
+	cfg.Mihomo.Profile = "./profiles/home.yaml"
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidMihomoProfileConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{
+			name: "unknown mode",
+			edit: func(cfg *Config) {
+				cfg.Mihomo.ProfileMode = "raw"
+			},
+			want: "mihomo.profile_mode must be managed or imported",
+		},
+		{
+			name: "managed profile path",
+			edit: func(cfg *Config) {
+				cfg.Mihomo.Profile = "./profiles/home.yaml"
+			},
+			want: "mihomo.profile requires",
+		},
+		{
+			name: "imported missing profile path",
+			edit: func(cfg *Config) {
+				cfg.Mihomo.ProfileMode = MihomoProfileModeImported
+			},
+			want: "mihomo.profile is required",
+		},
+		{
+			name: "imported with upstream proxy smoke",
+			edit: func(cfg *Config) {
+				cfg.Mihomo.ProfileMode = MihomoProfileModeImported
+				cfg.Mihomo.Profile = "./profiles/home.yaml"
+				cfg.UpstreamProxy.Enabled = true
+			},
+			want: "upstream_proxy.enabled cannot be true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Default()
+			tt.edit(&cfg)
+
+			err := Validate(cfg)
+			if err == nil {
+				t.Fatalf("Validate() succeeded")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %q, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateRejectsInvalidUpstreamProxy(t *testing.T) {
 	tests := []struct {
 		name string

@@ -38,11 +38,38 @@ build reports redir as unsupported at runtime. Keep `mihomo.redir_port` and
 `pf.redirect_tcp_to` at `0`; enable transparent proxying with
 `transparent.mode: "tun"`.
 
+## Mihomo profiles
+
+OpenSurge for Mac can render a managed mihomo config or import the proxy and
+rule sections from an existing mihomo profile. In imported mode, OpenSurge keeps
+owning the gateway-critical fields: LAN binding, `allow-lan`, DNS, TUN,
+`external-controller`, and runtime paths. The imported profile contributes only
+engine-level sections such as `proxies`, `proxy-providers`, `proxy-groups`,
+`rule-providers`, and `rules`.
+
+```yaml
+mihomo:
+  profile_mode: "imported"
+  profile: "./profiles/home.yaml"
+```
+
+Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
+directory.
+
+Preview the final generated mihomo config before starting gateway services:
+
+```sh
+go run ./cmd/omg doctor --config examples/config.imported-profile.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example.yaml
+```
+
 ## Usage
 
 ```sh
 go run ./cmd/omg doctor --config examples/config.example.yaml
 go run ./cmd/omg status --config examples/config.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml
 sudo go run ./cmd/omg stop --config examples/config.example.yaml
 ```

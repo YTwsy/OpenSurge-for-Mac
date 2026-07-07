@@ -1,0 +1,46 @@
+# mihomo profile overlay
+
+When a task involves importing existing mihomo or Clash-style profiles, keep the
+boundary clear: mihomo remains the proxy engine, but OpenSurge owns the Mac
+gateway overlay.
+
+## Modes
+
+`mihomo.profile_mode: "managed"` is the default. OpenSurge renders its minimal
+DIRECT/smoke mihomo config.
+
+`mihomo.profile_mode: "imported"` reads `mihomo.profile` and imports only these
+top-level mihomo engine sections. Relative `mihomo.profile` paths are resolved
+from the OpenSurge config file's directory:
+
+- `proxies`
+- `proxy-providers`
+- `proxy-groups`
+- `rule-providers`
+- `rules`
+
+## Gateway-owned fields
+
+Imported profiles must not become raw pass-through configs. OpenSurge still
+renders and owns:
+
+- LAN binding through `mixed-port`, `allow-lan`, and `bind-address`;
+- `external-controller`, so `status` and `doctor` have the expected API target;
+- DNS listener, fake-ip behavior, and TUN DNS hijack;
+- TUN device, stack, routing flags, and LAN/private route exclusions.
+
+This prevents a desktop mihomo profile from disabling LAN access, turning off
+DNS/TUN, changing controller ports, or reintroducing unsupported transparent
+proxy paths.
+
+## Validation
+
+Imported profile support is a mihomo config-generation change. Run `make test`
+for code-level coverage. `doctor` includes a `mihomo config render` check so an
+unreadable imported profile or missing `rules` section fails before gateway
+startup. Use `go run ./cmd/omg render-mihomo --config <path>` to inspect the
+final overlaid mihomo config without root or service startup.
+
+If a change affects generated runtime traffic defaults, TUN behavior, DNS
+behavior, or real proxy egress semantics, use the matching network gate:
+`make lab-test`, `make lab-test-tun`, or a documented real-device smoke.

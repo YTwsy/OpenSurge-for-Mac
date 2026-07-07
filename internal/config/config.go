@@ -39,12 +39,14 @@ type DNSConfig struct {
 }
 
 type MihomoConfig struct {
-	Binary    string
-	Config    string
-	MixedPort int
-	RedirPort int
-	APIAddr   string
-	Secret    string
+	Binary      string
+	Config      string
+	ProfileMode string
+	Profile     string
+	MixedPort   int
+	RedirPort   int
+	APIAddr     string
+	Secret      string
 }
 
 type PFConfig struct {
@@ -55,6 +57,11 @@ type PFConfig struct {
 const (
 	TransparentModeOff = "off"
 	TransparentModeTUN = "tun"
+)
+
+const (
+	MihomoProfileModeManaged  = "managed"
+	MihomoProfileModeImported = "imported"
 )
 
 type TransparentConfig struct {
@@ -105,12 +112,14 @@ func Default() Config {
 			Port:   53,
 		},
 		Mihomo: MihomoConfig{
-			Binary:    "./bin/mihomo",
-			Config:    "./runtime/mihomo.yaml",
-			MixedPort: 7890,
-			RedirPort: 0,
-			APIAddr:   "127.0.0.1:9090",
-			Secret:    "",
+			Binary:      "./bin/mihomo",
+			Config:      "./runtime/mihomo.yaml",
+			ProfileMode: MihomoProfileModeManaged,
+			Profile:     "",
+			MixedPort:   7890,
+			RedirPort:   0,
+			APIAddr:     "127.0.0.1:9090",
+			Secret:      "",
 		},
 		PF: PFConfig{
 			AnchorName:    "com.apple/open_mihomo_gateway",

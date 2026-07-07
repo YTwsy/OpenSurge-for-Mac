@@ -1,0 +1,42 @@
+---
+title: Mihomo profile import uses OpenSurge gateway overlay
+kind: decision
+status: seed
+---
+
+# mihomo profile import uses OpenSurge gateway overlay
+
+OpenSurge for Mac should support importing existing mihomo profiles, but imported
+profiles are not raw pass-through gateway configs.
+
+In `mihomo.profile_mode: "imported"`, OpenSurge imports only mihomo engine
+sections:
+
+- `proxies`
+- `proxy-providers`
+- `proxy-groups`
+- `rule-providers`
+- `rules`
+
+Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
+directory.
+
+OpenSurge continues to render and own gateway-critical fields, including:
+
+- `mixed-port`
+- `allow-lan`
+- `bind-address`
+- `external-controller`
+- DNS listener and fake-ip settings
+- TUN settings and LAN/private route exclusions
+- runtime config path
+
+This preserves the user's existing mihomo proxy/rule investment without letting
+a desktop-style mihomo profile break the OpenSurge LAN gateway contract.
+
+`doctor` includes a `mihomo config render` check for imported profiles. Use
+`go run ./cmd/omg render-mihomo --config <path>` to preview the final generated
+mihomo config before running root-required gateway startup.
+
+Do not treat imported profiles as permission to re-enable `redir-port` or PF TCP
+redirection. macOS transparent proxying remains TUN-first.

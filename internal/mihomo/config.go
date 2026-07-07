@@ -52,7 +52,9 @@ tun:
     - 255.255.255.255/32
 
 {{ end }}
-{{ if .UpstreamProxy.Enabled }}
+{{ if .ImportedProfile }}
+{{ .ImportedProfileSections }}
+{{ else if .UpstreamProxy.Enabled }}
 proxies:
   - name: {{ yamlQuote .UpstreamProxy.Name }}
     type: {{ .UpstreamProxy.Type }}
@@ -102,15 +104,17 @@ func RenderConfig(cfg config.Config) (string, error) {
 
 type templateData struct {
 	config.MihomoConfig
-	TUNEnabled             bool
-	TUNDevice              string
-	TUNStack               string
-	TUNAutoRoute           bool
-	TUNAutoDetectInterface bool
-	TUNStrictRoute         bool
-	UpstreamInterface      string
-	LANPrefix              string
-	UpstreamProxy          config.UpstreamProxyConfig
+	TUNEnabled              bool
+	TUNDevice               string
+	TUNStack                string
+	TUNAutoRoute            bool
+	TUNAutoDetectInterface  bool
+	TUNStrictRoute          bool
+	UpstreamInterface       string
+	LANPrefix               string
+	UpstreamProxy           config.UpstreamProxyConfig
+	ImportedProfile         bool
+	ImportedProfileSections string
 }
 
 func newTemplateData(cfg config.Config) (templateData, error) {
@@ -118,17 +122,26 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err != nil {
 		return templateData{}, err
 	}
+	importedProfileSections := ""
+	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
+		importedProfileSections, err = LoadImportedProfileSections(cfg.Mihomo.Profile)
+		if err != nil {
+			return templateData{}, err
+		}
+	}
 	transparent := cfg.Transparent
 	return templateData{
-		MihomoConfig:           cfg.Mihomo,
-		TUNEnabled:             transparent.TUNEnabled(),
-		TUNDevice:              transparent.TUNDevice,
-		TUNStack:               transparent.TUNStack,
-		TUNAutoRoute:           transparent.TUNAutoRoute,
-		TUNAutoDetectInterface: transparent.TUNAutoDetectInterface,
-		TUNStrictRoute:         transparent.TUNStrictRoute,
-		UpstreamInterface:      cfg.Gateway.UpstreamInterface,
-		LANPrefix:              lanPrefix,
-		UpstreamProxy:          cfg.UpstreamProxy,
+		MihomoConfig:            cfg.Mihomo,
+		TUNEnabled:              transparent.TUNEnabled(),
+		TUNDevice:               transparent.TUNDevice,
+		TUNStack:                transparent.TUNStack,
+		TUNAutoRoute:            transparent.TUNAutoRoute,
+		TUNAutoDetectInterface:  transparent.TUNAutoDetectInterface,
+		TUNStrictRoute:          transparent.TUNStrictRoute,
+		UpstreamInterface:       cfg.Gateway.UpstreamInterface,
+		LANPrefix:               lanPrefix,
+		UpstreamProxy:           cfg.UpstreamProxy,
+		ImportedProfile:         cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported,
+		ImportedProfileSections: importedProfileSections,
 	}, nil
 }

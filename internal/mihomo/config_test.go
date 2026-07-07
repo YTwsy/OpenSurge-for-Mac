@@ -1,6 +1,8 @@
 package mihomo
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -72,6 +74,96 @@ func TestRenderConfigWithUpstreamProxy(t *testing.T) {
 	}
 	if strings.Contains(rendered, "18080proxy-groups") {
 		t.Fatalf("rendered config glues port and proxy group:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigWithImportedProfileOverlay(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	body := `allow-lan: false
+bind-address: 127.0.0.1
+external-controller: 127.0.0.1:9999
+dns:
+  enable: false
+proxies:
+  - name: Imported
+    type: socks5
+    server: 203.0.113.10
+    port: 1080
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - Imported
+rules:
+  - DOMAIN-SUFFIX,example.com,Proxy
+  - MATCH,DIRECT
+tun:
+  enable: false
+`
+	if err := os.WriteFile(profilePath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	cfg.Mihomo.MixedPort = 17890
+	cfg.Mihomo.APIAddr = "127.0.0.1:19090"
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+
+	for _, want := range []string{
+		"mixed-port: 17890",
+		"allow-lan: true",
+		"bind-address: \"*\"",
+		"external-controller: 127.0.0.1:19090",
+		"enhanced-mode: fake-ip",
+		"tun:",
+		"  enable: true",
+		"proxies:",
+		"  - name: Imported",
+		"proxy-groups:",
+		"rules:",
+		"- DOMAIN-SUFFIX,example.com,Proxy",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
+	}
+	for _, notWant := range []string{
+		"allow-lan: false",
+		"external-controller: 127.0.0.1:9999",
+		"enable: false",
+		"open-surge-egress",
+	} {
+		if strings.Contains(rendered, notWant) {
+			t.Fatalf("rendered config kept unwanted profile/default value %q:\n%s", notWant, rendered)
+		}
+	}
+}
+
+func TestRenderConfigWithImportedExampleProfile(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = filepath.Join("..", "..", "examples", "mihomo-profile.example.yaml")
+
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	for _, want := range []string{
+		`- name: "demo-proxy"`,
+		`- name: "Proxy"`,
+		"- DOMAIN,example.com,Proxy",
+		"- MATCH,DIRECT",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
 	}
 }
 

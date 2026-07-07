@@ -19,20 +19,15 @@ dns:
 mihomo:
   binary: "./bin/mihomo"
   config: "./runtime/mihomo.yaml"
-  # "managed" renders OpenSurge's minimal DIRECT/smoke config.
-  # "imported" imports proxy/rule sections from mihomo.profile and overlays
-  # OpenSurge-owned gateway fields such as LAN binding, DNS, TUN, and API.
-  profile_mode: "managed"
-  profile: ""
+  profile_mode: "imported"
+  profile: "./mihomo-profile.example.yaml"
   mixed_port: 7890
-  # macOS transparent proxying uses transparent.mode: "tun"; redir must stay 0.
   redir_port: 0
   api_addr: "127.0.0.1:9090"
   secret: ""
 
 pf:
   anchor_name: "com.apple/open_mihomo_gateway"
-  # PF TCP redirection is not supported on macOS; TUN is the transparent path.
   redirect_tcp_to: 0
 
 transparent:
@@ -42,17 +37,6 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
-
-upstream_proxy:
-  # Keep disabled for the default DIRECT gateway. Enable for proxy egress smoke.
-  enabled: false
-  name: "real-device-egress"
-  type: "http"
-  server: "127.0.0.1"
-  port: 18080
-  username: ""
-  password: ""
-  match_domain: "example.com"
 
 runtime:
   dir: "./runtime"

@@ -15,6 +15,7 @@ docs/agent-wiki/
   sources/
     project-brief.md
     decisions/
+      mihomo-profile-overlay.md
       tun-mainline.md
     validation/
       lab-gates.md
@@ -24,6 +25,7 @@ docs/agent-wiki/
     concepts/
       gateway-lifecycle.md
       macos-tun-transparent-proxy.md
+      mihomo-profile-overlay.md
       validation-gates.md
 ```
 

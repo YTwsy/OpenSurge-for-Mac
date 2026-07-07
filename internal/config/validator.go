@@ -54,6 +54,9 @@ func Validate(cfg Config) error {
 	if strings.TrimSpace(cfg.Mihomo.APIAddr) == "" {
 		return fmt.Errorf("mihomo.api_addr is required")
 	}
+	if err := validateMihomoProfile(cfg); err != nil {
+		return err
+	}
 	if strings.TrimSpace(cfg.PF.AnchorName) == "" {
 		return fmt.Errorf("pf.anchor_name is required")
 	}
@@ -71,6 +74,25 @@ func Validate(cfg Config) error {
 	}
 	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
 		return fmt.Errorf("runtime.dir is required")
+	}
+	return nil
+}
+
+func validateMihomoProfile(cfg Config) error {
+	switch cfg.Mihomo.ProfileMode {
+	case MihomoProfileModeManaged:
+		if strings.TrimSpace(cfg.Mihomo.Profile) != "" {
+			return fmt.Errorf("mihomo.profile requires mihomo.profile_mode: \"imported\"")
+		}
+	case MihomoProfileModeImported:
+		if strings.TrimSpace(cfg.Mihomo.Profile) == "" {
+			return fmt.Errorf("mihomo.profile is required when mihomo.profile_mode is imported")
+		}
+		if cfg.UpstreamProxy.Enabled {
+			return fmt.Errorf("upstream_proxy.enabled cannot be true when mihomo.profile_mode is imported")
+		}
+	default:
+		return fmt.Errorf("mihomo.profile_mode must be managed or imported")
 	}
 	return nil
 }

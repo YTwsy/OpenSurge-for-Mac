@@ -1,0 +1,19 @@
+# Example imported mihomo profile.
+# OpenSurge imports only proxies/proxy-providers/proxy-groups/rule-providers/rules
+# from this file and overlays gateway-owned DNS, TUN, LAN binding, and API fields.
+
+proxies:
+  - name: "demo-proxy"
+    type: http
+    server: "127.0.0.1"
+    port: 18080
+
+proxy-groups:
+  - name: "Proxy"
+    type: select
+    proxies:
+      - "demo-proxy"
+
+rules:
+  - DOMAIN,example.com,Proxy
+  - MATCH,DIRECT
