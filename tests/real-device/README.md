@@ -265,6 +265,11 @@ Stop and verify cleanup:
 make real-device-stop
 ```
 
+`make real-device-stop` stops both real-device configs and removes the
+`192.168.50.1` test LAN address from the downstream interface when it is still
+present. This keeps the virtual LAN lab from later routing `192.168.50.0/24`
+traffic to the real-device interface.
+
 Or manually:
 
 ```sh
@@ -355,6 +360,11 @@ Stop and verify cleanup:
 make real-device-stop
 ```
 
+`make real-device-stop` stops both real-device configs and removes the
+`192.168.50.1` test LAN address from the downstream interface when it is still
+present. This keeps the virtual LAN lab from later routing `192.168.50.0/24`
+traffic to the real-device interface.
+
 Or manually:
 
 ```sh
@@ -376,7 +386,8 @@ sudo pfctl -s Anchors
 - `mihomo.log` shows real client traffic in TUN mode.
 - Proxy egress smoke shows `open-surge-egress` instead of `DIRECT` for the
   matched domain.
-- `stop` removes runtime state and unloads the pf anchor.
+- `stop` removes runtime state, unloads the pf anchor, and releases the
+  downstream test LAN IP.
 - IP forwarding is restored to its previous value after `stop`.
 
 ## Artifact checklist

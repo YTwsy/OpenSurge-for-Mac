@@ -63,6 +63,31 @@ lab_interface() {
   cat "$INTERFACE_FILE"
 }
 
+interfaces_with_lab_ip_except() {
+  local allowed_iface iface
+  allowed_iface="$1"
+  for iface in $(/sbin/ifconfig -l); do
+    if [[ "$iface" == "$allowed_iface" ]]; then
+      continue
+    fi
+    if /sbin/ifconfig "$iface" 2>/dev/null | grep -q "inet $LAN_IP "; then
+      printf '%s\n' "$iface"
+    fi
+  done
+}
+
+require_unique_lab_ip() {
+  local iface conflicts
+  iface="$1"
+  conflicts="$(interfaces_with_lab_ip_except "$iface")"
+  if [[ -n "$conflicts" ]]; then
+    echo "lab LAN IP $LAN_IP is already configured on non-lab interface(s):" >&2
+    printf '%s\n' "$conflicts" >&2
+    echo "remove the duplicate address before running the lab, for example with make real-device-stop or sudo ifconfig <iface> inet $LAN_IP delete" >&2
+    exit 1
+  fi
+}
+
 upstream_interface() {
   /sbin/route -n get default | awk '/interface:/ { print $2; exit }'
 }
@@ -99,7 +124,7 @@ resolve_lab_profile() {
 
 write_config() {
   local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line
-  local profile_mode profile_path
+  local profile_mode profile_path profile_source
 	mode="${1:-off}"
 	iface="$(lab_interface)"
 	upstream="$(upstream_interface)"
@@ -111,8 +136,14 @@ write_config() {
   profile_path=""
   if [[ -n "$LAB_MIHOMO_PROFILE" ]]; then
     profile_mode="imported"
-    profile_path="$(resolve_lab_profile "$LAB_MIHOMO_PROFILE")"
-    [[ -f "$profile_path" ]] || { echo "mihomo profile not found: $profile_path" >&2; exit 1; }
+    profile_source="$(resolve_lab_profile "$LAB_MIHOMO_PROFILE")"
+    [[ -f "$profile_source" ]] || { echo "mihomo profile not found: $profile_source" >&2; exit 1; }
+    profile_path="$profile_source"
+    if [[ "$profile_source" == "$ROOT/tests/lab/mihomo-profile.imported-tun.yaml" ]]; then
+      mkdir -p "$STATE_DIR"
+      profile_path="$STATE_DIR/$(basename "$profile_source")"
+      cp "$profile_source" "$profile_path"
+    fi
   fi
   case "$mode" in
     off) ;;
@@ -126,6 +157,7 @@ write_config() {
   esac
   /sbin/ifconfig "$iface" | grep -q 'member: vmenet'
   /sbin/ifconfig "$iface" | grep -q "inet $LAN_IP "
+  require_unique_lab_ip "$iface"
   [[ "$iface" != "$upstream" ]] || { echo "lab and upstream interfaces must differ" >&2; exit 1; }
 
   mkdir -p "$STATE_DIR"

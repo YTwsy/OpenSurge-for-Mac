@@ -250,6 +250,10 @@ tail -n 120 runtime/real-device/logs/mihomo.log
 make real-device-stop
 ```
 
+`make real-device-stop` 会停止两份 real-device 配置，并在下游接口仍保留
+`192.168.50.1` 测试 LAN 地址时移除它。这样后续虚拟 LAN lab 不会把
+`192.168.50.0/24` 流量路由到真实设备接口。
+
 或手动：
 
 ```sh
@@ -337,6 +341,10 @@ tail -n 120 runtime/real-device/logs/mihomo.log
 make real-device-stop
 ```
 
+`make real-device-stop` 会停止两份 real-device 配置，并在下游接口仍保留
+`192.168.50.1` 测试 LAN 地址时移除它。这样后续虚拟 LAN lab 不会把
+`192.168.50.0/24` 流量路由到真实设备接口。
+
 或手动：
 
 ```sh
@@ -357,7 +365,7 @@ sudo pfctl -s Anchors
 - TUN 模式在客户端无代理设置时能工作。
 - `mihomo.log` 在 TUN 模式下显示真实客户端流量。
 - 代理出口 smoke 对匹配域名显示 `open-surge-egress`，而不是 `DIRECT`。
-- `stop` 会移除运行时状态并卸载 pf anchor。
+- `stop` 会移除运行时状态、卸载 pf anchor，并释放下游接口上的测试 LAN IP。
 - `stop` 后 IP forwarding 恢复到启动前的值。
 
 ## Artifact 清单

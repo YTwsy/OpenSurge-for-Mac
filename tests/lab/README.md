@@ -91,6 +91,18 @@ The gateway binary intentionally does not receive a passwordless sudo rule.
 Run `sudo -v` shortly before `make lab-test` so the test can use the cached sudo
 credential without embedding or broadening root privileges.
 
+The cached sudo credential is terminal-scoped and time-limited. If an agent or
+automation runs `sudo -v` in one TTY and `make lab-test` in another, the lab
+script may still fail its `sudo -n` preflight. Run `sudo -v` in the same
+terminal session, immediately before the root-required lab target.
+
+The lab owns `192.168.50.1/24` only on its vmnet bridge. Do not leave the same
+address on another interface. The real-device smoke also uses `192.168.50.1` on
+interfaces such as `en7`; run `make real-device-stop` before `make lab-up`, or
+remove the duplicate address with `sudo ifconfig <iface> inet 192.168.50.1
+delete`. A duplicate LAN IP can make macOS route DNS responses to the wrong
+interface and show up as a TUN lab DNS timeout.
+
 ## Commands
 
 ```sh
@@ -111,5 +123,6 @@ different HTTPS connectivity target.
 
 The generated config uses a vmnet-backed `bridge` interface and refuses to run
 if that interface is also the default upstream. Never replace the lab interface
-with `en0` or another normal LAN interface. `lab-test` always attempts to stop
-the gateway and records diagnostics when an assertion fails.
+with `en0` or another normal LAN interface. `lab-up` also refuses to continue
+when `192.168.50.1` is configured on a non-lab interface. `lab-test` always
+attempts to stop the gateway and records diagnostics when an assertion fails.

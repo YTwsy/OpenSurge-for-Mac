@@ -32,6 +32,18 @@ HTTPS，以及清理行为。
 
 宣称透明代理路径被验证前，应运行 `make lab-test-tun`。
 
+## 运行前置条件
+
+lab 的 root-required 步骤依赖当前终端会话里的 sudo 缓存。`sudo -v` 和
+`make lab-test` / `make lab-test-tun` 应在同一个 TTY 里连续运行；如果 agent 在
+不同 exec 会话里刷新 sudo，脚本的 `sudo -n` 预检查仍可能失败。
+
+虚拟 LAN lab 和真实设备 smoke 默认都使用 `192.168.50.1/24`。运行 lab 前，
+这个地址只能存在于 lab 的 vmnet bridge 上。如果 `en7` 等 real-device 下游接口
+仍保留 `192.168.50.1`，macOS 可能把 `192.168.50.0/24` 的回程路由选到错误接口，
+表现为 `dig @192.168.50.1 example.com A` timeout，而 dnsmasq 日志仍显示收到了
+查询。先运行 `make real-device-stop`，或手动删除重复地址。
+
 ## TUN 验收信号
 
 当前 `make lab-test-tun` 的关键信号是：

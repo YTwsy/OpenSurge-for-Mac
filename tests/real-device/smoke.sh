@@ -196,6 +196,12 @@ root_stop() {
   stop_one "$CONFIG_OFF"
   stop_one "$CONFIG_TUN"
 
+  section "unbind downstream interface"
+  if /sbin/ifconfig "$IFACE" 2>/dev/null | grep -q "inet $LAN_IP "; then
+    /sbin/ifconfig "$IFACE" inet "$LAN_IP" delete || true
+  fi
+  /sbin/ifconfig "$IFACE" 2>/dev/null || true
+
   section "status"
   "$OMG_BIN" status --config "$CONFIG_OFF" || true
 

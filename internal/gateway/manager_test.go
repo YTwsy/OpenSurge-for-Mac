@@ -48,6 +48,9 @@ func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 			newSysctl: func() sysctlService {
 				return sysctlManager
 			},
+			interfaces: func() ([]net.Interface, error) {
+				return []net.Interface{{Name: cfg.Gateway.Interface}}, nil
+			},
 			interfaceByName: func(name string) (*net.Interface, error) {
 				return &net.Interface{Name: name}, nil
 			},
@@ -107,6 +110,47 @@ func TestPreflightRejectsSameGatewayAndUpstreamInterface(t *testing.T) {
 		t.Fatalf("preflight() succeeded")
 	}
 	if !strings.Contains(err.Error(), "must differ") {
+		t.Fatalf("preflight() error = %q", err)
+	}
+}
+
+func TestPreflightRejectsLANIPOnAnotherInterface(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "bridge102"
+	cfg.Gateway.UpstreamInterface = "en0"
+	cfg.Gateway.LANIP = "192.168.50.1"
+	manager := Manager{
+		cfg:   cfg,
+		paths: runtime.NewPaths(cfg),
+		deps: gatewayDeps{
+			interfaceByName: func(name string) (*net.Interface, error) {
+				return &net.Interface{Name: name}, nil
+			},
+			interfaces: func() ([]net.Interface, error) {
+				return []net.Interface{
+					{Name: "bridge102"},
+					{Name: "en7"},
+				}, nil
+			},
+			interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
+				switch iface.Name {
+				case "bridge102", "en7":
+					return []net.Addr{&net.IPNet{
+						IP:   net.ParseIP(cfg.Gateway.LANIP),
+						Mask: net.CIDRMask(24, 32),
+					}}, nil
+				default:
+					return nil, nil
+				}
+			},
+		},
+	}
+
+	err := manager.preflight(&fakeDHCP{}, &fakeMihomo{}, &fakePF{}, &fakeSysctl{}, manager.deps)
+	if err == nil {
+		t.Fatalf("preflight() succeeded")
+	}
+	if !strings.Contains(err.Error(), "also configured on interface en7") {
 		t.Fatalf("preflight() error = %q", err)
 	}
 }

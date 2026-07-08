@@ -67,6 +67,7 @@ type gatewayDeps struct {
 	newMihomo       func(config.Config, runtime.Paths) mihomoService
 	newPF           func(config.Config, runtime.Paths) pfService
 	newSysctl       func() sysctlService
+	interfaces      func() ([]net.Interface, error)
 	interfaceByName func(string) (*net.Interface, error)
 	interfaceAddrs  func(*net.Interface) ([]net.Addr, error)
 	now             func() time.Time
@@ -91,6 +92,7 @@ func defaultGatewayDeps() gatewayDeps {
 		newSysctl: func() sysctlService {
 			return sysctl.New()
 		},
+		interfaces:      net.Interfaces,
 		interfaceByName: net.InterfaceByName,
 		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
 			return iface.Addrs()
@@ -272,19 +274,54 @@ func (m Manager) checkLANIP(deps gatewayDeps) error {
 	if err != nil {
 		return err
 	}
+	found := false
 	for _, addr := range addrs {
-		switch value := addr.(type) {
-		case *net.IPNet:
-			if value.IP.To4() != nil && value.IP.Equal(target) {
-				return nil
-			}
-		case *net.IPAddr:
-			if value.IP.To4() != nil && value.IP.Equal(target) {
-				return nil
+		if addrHasIPv4(addr, target) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("LAN IP %s is not configured on interface %s", m.cfg.Gateway.LANIP, m.cfg.Gateway.Interface)
+	}
+	return m.checkLANIPConflicts(target, iface.Name, deps)
+}
+
+func (m Manager) checkLANIPConflicts(target net.IP, gatewayInterface string, deps gatewayDeps) error {
+	interfaces := deps.interfaces
+	if interfaces == nil {
+		interfaces = net.Interfaces
+	}
+	ifaces, err := interfaces()
+	if err != nil {
+		return err
+	}
+	for _, candidate := range ifaces {
+		if candidate.Name == gatewayInterface {
+			continue
+		}
+		addrs, err := deps.interfaceAddrs(&candidate)
+		if err != nil {
+			return fmt.Errorf("interface %s addresses: %w", candidate.Name, err)
+		}
+		for _, addr := range addrs {
+			if addrHasIPv4(addr, target) {
+				return fmt.Errorf("LAN IP %s is also configured on interface %s; remove the duplicate address before starting the gateway", m.cfg.Gateway.LANIP, candidate.Name)
 			}
 		}
 	}
-	return fmt.Errorf("LAN IP %s is not configured on interface %s", m.cfg.Gateway.LANIP, m.cfg.Gateway.Interface)
+	return nil
+}
+
+func addrHasIPv4(addr net.Addr, target net.IP) bool {
+	switch value := addr.(type) {
+	case *net.IPNet:
+		return value.IP.To4() != nil && value.IP.Equal(target)
+	case *net.IPAddr:
+		return value.IP.To4() != nil && value.IP.Equal(target)
+	default:
+		return false
+	}
 }
 
 func (m Manager) rollback(cause error, state runtime.State, dhcpManager dhcpService, mihomoManager mihomoService, pfManager pfService, sysctlManager sysctlService) error {

@@ -80,6 +80,17 @@ PF TCP 重定向。
 网关二进制本身不会获得免密 sudo 规则。运行 `make lab-test` 前请先执行 `sudo -v`，
 让测试能使用缓存的 sudo 凭据，同时避免嵌入或扩大 root 权限。
 
+sudo 缓存凭据和终端会话有关，也会过期。如果 agent 或自动化在一个 TTY 里运行
+`sudo -v`，却在另一个 TTY 里运行 `make lab-test`，lab 脚本的 `sudo -n` 预检查
+仍然可能失败。请在同一个终端会话里、紧挨着 root-required lab 目标之前运行
+`sudo -v`。
+
+lab 只应该在 vmnet bridge 上拥有 `192.168.50.1/24`。不要把同一个地址留在其他
+接口上。真实设备 smoke 也会在 `en7` 等接口上使用 `192.168.50.1`；运行
+`make lab-up` 前请先执行 `make real-device-stop`，或者用
+`sudo ifconfig <iface> inet 192.168.50.1 delete` 移除重复地址。重复 LAN IP 会让
+macOS 把 DNS 响应路由到错误接口，表现为 TUN lab DNS timeout。
+
 ## 命令
 
 ```sh
@@ -99,5 +110,6 @@ HTTPS 连通性目标。
 ## 安全
 
 生成的配置使用 vmnet-backed `bridge` 接口，并且在该接口同时也是默认上游时拒绝
-运行。不要把 lab 接口替换成 `en0` 或其他普通 LAN 接口。`lab-test` 在断言失败时
-总会尝试停止网关并记录诊断信息。
+运行。不要把 lab 接口替换成 `en0` 或其他普通 LAN 接口。如果 `192.168.50.1`
+配置在非 lab 接口上，`lab-up` 也会拒绝继续。`lab-test` 在断言失败时总会尝试
+停止网关并记录诊断信息。

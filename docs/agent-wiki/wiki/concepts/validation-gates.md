@@ -61,7 +61,9 @@ proxy egress runner 可以在物理下游 LAN 启动，真实 Pixel 手机可以
 直连 HTTPS/NAT、显式 `192.168.50.1:17890` HTTP proxy HTTPS、TUN 模式下无
 显式代理 HTTPS，以及本机受控 upstream proxy 命中 `open-surge-egress` 均已完成
 一次 smoke；Mac 侧能对应看到租约、DNS 查询、fake-ip 查询、`mihomo.log` 中的
-客户端目标连接，以及受控代理日志中的 `CONNECT example.com:443`。
+客户端目标连接，以及受控代理日志中的 `CONNECT example.com:443`。`stop` 清理
+范围包括释放下游接口上的 `192.168.50.1` 测试 LAN IP，避免后续 virtual LAN lab
+把 `192.168.50.0/24` 回程路由选到真实设备接口。
 
 explicit 模式的关键验收信号是：
 
@@ -109,6 +111,15 @@ make lab-test-tun
 宣称透明代理路径被验证前，应运行这个门槛。它启用
 `transparent.mode: "tun"`，保持客户端没有显式代理配置，并要求 HTTPS 请求
 出现在 mihomo TUN 路径中。
+
+运行前确认：
+
+- `sudo -v` 和 lab target 在同一个终端/TTY 里连续执行。sudo ticket 不是跨
+  agent exec 会话可靠共享的状态。
+- `192.168.50.1` 只配置在当前 lab bridge 上。真实设备 smoke 也会使用这个地址；
+  如果 `en7` 等接口残留 `192.168.50.1/24`，macOS 可能把 lab client 回程路由到
+  错误接口，表现为 TUN DNS timeout。先运行 `make real-device-stop` 或删除重复
+  地址。
 
 当前重要验收信号：
 
