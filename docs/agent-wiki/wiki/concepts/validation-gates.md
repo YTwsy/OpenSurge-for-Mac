@@ -100,6 +100,43 @@ TUN smoke 被验证。
 独立出口的实际代理，并同时看到 `mihomo.log` 使用 `open-surge-egress`、受控代理
 日志有对应请求、出口 IP 发生预期变化，才可以宣称远端代理出口路径被验证。
 
+## same-LAN TUN smoke
+
+同 LAN 默认网关 smoke 的入口是：
+
+```sh
+make same-lan-start-tun
+make same-lan-start-tun-proxy
+make same-lan-adb-check
+make same-lan-stop
+```
+
+这个 gate 覆盖 Mac 和一台 Android 测试设备处于同一家庭或办公室 LAN 的场景。
+第一版只允许 `gateway.mode: "same_lan"`、`dhcp.enabled: false` 和
+`transparent.mode: "tun"`。OpenSurge 不在主 LAN 上发 DHCP；测试手机需要手动或由
+外部 DHCP 配置把默认网关和 DNS 指向 Mac 的 LAN IP。
+
+`make same-lan-adb-check` 是客户端证据入口。它应通过 ADB 采集 Android 默认路由、
+DNS 查询、无显式代理探针结果，并回看 Mac 侧 `dnsmasq.log` 和 `mihomo.log`。只有
+同时看到 Android 默认路由包含 `via <mac-lan-ip>`、DNS 查询走 Mac、客户端触发目标
+连接、`mihomo.log` 中出现 TUN 路径目标连接，才可以宣称 same-LAN TUN smoke 通过。
+
+这个 gate 不证明主路由 DHCP 全局下发、所有设备兼容、IPv6、DoH/Private Relay、
+UDP/QUIC、imported profile 或策略组切换。Android 镜像如果缺少 `curl`、`wget`、
+`nc`、`nslookup` 或 `dig`，应把结果记录为 ADB 客户端探针能力不足，而不是把人工
+浏览器页面成功当成完整自动化证据。
+
+same-LAN 的真实代理出口可以先用最小 `upstream_proxy` 切片验证，不必先导入完整
+订阅。2026-07-09 已用 `api.ipify.org`、Pixel 测试手机和 LAN HTTP 代理完成这一
+层：Android 默认路由经 Mac、Android 显式代理为空、`dnsmasq.log` 看到 Android 源
+IP 查询 `api.ipify.org`、`mihomo.log` 显示
+`Domain(api.ipify.org) using open-surge-egress[same-lan-http-egress]`，Android
+浏览器显示的出口 IP 与 Mac 直接使用该 LAN 代理访问 `api.ipify.org` 的结果一致。
+
+策略组切换需要单独验证。当前自动生成的 `open-surge-egress` 只有一个代理成员，只能
+证明命中代理；要证明切换，应让 group 至少包含 LAN 代理和 `DIRECT` 两个候选，通过
+mihomo API 切换选中项后重复出口 IP 探针。
+
 ## 透明代理门槛
 
 运行：

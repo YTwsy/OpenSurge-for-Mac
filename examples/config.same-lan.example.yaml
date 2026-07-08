@@ -1,0 +1,53 @@
+gateway:
+  mode: "same_lan"
+  interface: "en0"
+  lan_ip: "192.168.1.20"
+  upstream_interface: "en0"
+
+dhcp:
+  binary: "./runtime/tools/bin/dnsmasq"
+  enabled: false
+  range_start: "192.168.50.100"
+  range_end: "192.168.50.200"
+  lease_time: "30m"
+  domain: "same-lan"
+
+dns:
+  listen: "192.168.1.20"
+  port: 53
+  upstream: "127.0.0.1#1053"
+
+mihomo:
+  binary: "./runtime/tools/bin/mihomo"
+  config: "./runtime/same-lan/mihomo.yaml"
+  profile_mode: "managed"
+  profile: ""
+  mixed_port: 17890
+  redir_port: 0
+  api_addr: "127.0.0.1:19090"
+  secret: ""
+
+pf:
+  anchor_name: "com.apple/open_mihomo_gateway_same_lan"
+  redirect_tcp_to: 0
+
+transparent:
+  mode: "tun"
+  tun_device: "utun123"
+  tun_stack: "mixed"
+  tun_auto_route: true
+  tun_auto_detect_interface: false
+  tun_strict_route: false
+
+upstream_proxy:
+  enabled: false
+  name: "same-lan-egress"
+  type: "http"
+  server: "127.0.0.1"
+  port: 18080
+  username: ""
+  password: ""
+  match_domain: "example.com"
+
+runtime:
+  dir: "./runtime/same-lan"

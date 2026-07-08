@@ -249,7 +249,12 @@ func (m Manager) preflight(dhcpManager dhcpService, mihomoManager mihomoService,
 	if err := sysctlManager.Check(); err != nil {
 		return err
 	}
-	if strings.TrimSpace(m.cfg.Gateway.Interface) == strings.TrimSpace(m.cfg.Gateway.UpstreamInterface) {
+	sameInterface := strings.TrimSpace(m.cfg.Gateway.Interface) == strings.TrimSpace(m.cfg.Gateway.UpstreamInterface)
+	if m.cfg.Gateway.SameLAN() {
+		if !sameInterface {
+			return fmt.Errorf("gateway.mode same_lan requires gateway and upstream interfaces to match")
+		}
+	} else if sameInterface {
 		return fmt.Errorf("gateway and upstream interfaces must differ")
 	}
 	if _, err := deps.interfaceByName(m.cfg.Gateway.Interface); err != nil {

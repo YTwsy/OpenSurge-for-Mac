@@ -40,6 +40,62 @@ func TestValidateAcceptsTUNTransparentMode(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsSameLANGatewayMode(t *testing.T) {
+	cfg := Default()
+	cfg.Gateway.Mode = GatewayModeSameLAN
+	cfg.Gateway.Interface = "en0"
+	cfg.Gateway.UpstreamInterface = "en0"
+	cfg.DHCP.Enabled = false
+	cfg.Transparent.Mode = TransparentModeTUN
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateRejectsInvalidSameLANConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{
+			name: "dhcp enabled",
+			edit: func(cfg *Config) {
+				cfg.DHCP.Enabled = true
+			},
+			want: "dhcp.enabled: false",
+		},
+		{
+			name: "transparent off",
+			edit: func(cfg *Config) {
+				cfg.Transparent.Mode = TransparentModeOff
+			},
+			want: `transparent.mode: "tun"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Default()
+			cfg.Gateway.Mode = GatewayModeSameLAN
+			cfg.Gateway.Interface = "en0"
+			cfg.Gateway.UpstreamInterface = "en0"
+			cfg.DHCP.Enabled = false
+			cfg.Transparent.Mode = TransparentModeTUN
+			tt.edit(&cfg)
+
+			err := Validate(cfg)
+			if err == nil {
+				t.Fatalf("Validate() succeeded")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %q, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateAcceptsUpstreamProxy(t *testing.T) {
 	cfg := Default()
 	cfg.UpstreamProxy.Enabled = true

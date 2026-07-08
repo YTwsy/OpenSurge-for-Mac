@@ -22,6 +22,9 @@ func New(cfg config.Config, paths runtime.Paths) Manager {
 }
 
 func (m Manager) WriteConfig() error {
+	if !m.shouldRun() {
+		return nil
+	}
 	rendered, err := RenderConfig(m.cfg, m.paths)
 	if err != nil {
 		return err
@@ -30,7 +33,7 @@ func (m Manager) WriteConfig() error {
 }
 
 func (m Manager) Start() (int, error) {
-	if !m.cfg.DHCP.Enabled {
+	if !m.shouldRun() {
 		return 0, nil
 	}
 	if err := m.Check(); err != nil {
@@ -58,7 +61,7 @@ func (m Manager) Start() (int, error) {
 }
 
 func (m Manager) Check() error {
-	if !m.cfg.DHCP.Enabled {
+	if !m.shouldRun() {
 		return nil
 	}
 	_, err := resolveBinary(m.cfg.DHCP.Binary)
@@ -75,6 +78,10 @@ func (m Manager) Stop(pid int) error {
 
 func (m Manager) Running(pid int) bool {
 	return process.IsAlive(pid)
+}
+
+func (m Manager) shouldRun() bool {
+	return m.cfg.DHCP.Enabled || m.cfg.Gateway.SameLAN()
 }
 
 func resolveBinary(path string) (string, error) {

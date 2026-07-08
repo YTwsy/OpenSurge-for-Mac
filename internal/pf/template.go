@@ -7,7 +7,9 @@ import (
 	"open-mihomo-gateway/internal/config"
 )
 
-const anchorTemplate = `nat on {{ .UpstreamInterface }} from {{ .LanCIDR }} to any -> ({{ .UpstreamInterface }})
+const anchorTemplate = `{{ if .SameLAN }}nat on {{ .UpstreamInterface }} from {{ .LanCIDR }} to ! {{ .LanCIDR }} -> ({{ .UpstreamInterface }})
+{{ else }}nat on {{ .UpstreamInterface }} from {{ .LanCIDR }} to any -> ({{ .UpstreamInterface }})
+{{ end }}
 
 pass in all
 pass out all
@@ -16,6 +18,7 @@ pass out all
 type templateData struct {
 	UpstreamInterface string
 	LanCIDR           string
+	SameLAN           bool
 }
 
 func RenderAnchor(cfg config.Config) (string, error) {
@@ -26,6 +29,7 @@ func RenderAnchor(cfg config.Config) (string, error) {
 	data := templateData{
 		UpstreamInterface: cfg.Gateway.UpstreamInterface,
 		LanCIDR:           lanCIDR,
+		SameLAN:           cfg.Gateway.SameLAN(),
 	}
 
 	tmpl, err := template.New("pf-anchor").Parse(anchorTemplate)

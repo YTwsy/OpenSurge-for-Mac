@@ -18,6 +18,7 @@ type Config struct {
 }
 
 type GatewayConfig struct {
+	Mode              string
 	Interface         string
 	LANIP             string
 	UpstreamInterface string
@@ -55,6 +56,11 @@ type PFConfig struct {
 }
 
 const (
+	GatewayModeIsolatedLAN = "isolated_lan"
+	GatewayModeSameLAN     = "same_lan"
+)
+
+const (
 	TransparentModeOff = "off"
 	TransparentModeTUN = "tun"
 )
@@ -77,6 +83,10 @@ func (c TransparentConfig) TUNEnabled() bool {
 	return c.Mode == TransparentModeTUN
 }
 
+func (c GatewayConfig) SameLAN() bool {
+	return c.Mode == GatewayModeSameLAN
+}
+
 type UpstreamProxyConfig struct {
 	Enabled     bool
 	Name        string
@@ -95,6 +105,7 @@ type RuntimeConfig struct {
 func Default() Config {
 	return Config{
 		Gateway: GatewayConfig{
+			Mode:              GatewayModeIsolatedLAN,
 			Interface:         "en0",
 			LANIP:             "192.168.50.1",
 			UpstreamInterface: "en0",

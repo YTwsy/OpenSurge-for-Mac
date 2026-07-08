@@ -18,6 +18,7 @@ type Status struct {
 	Interface   string
 	LANIP       string
 	DHCP        string
+	DHCPEnabled bool
 	Mihomo      string
 	PFAnchor    string
 	Forwarding  string
@@ -76,6 +77,7 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		Interface:   m.cfg.Gateway.Interface,
 		LANIP:       m.cfg.Gateway.LANIP,
 		DHCP:        dhcpStatus,
+		DHCPEnabled: m.cfg.DHCP.Enabled,
 		Mihomo:      mihomoStatus,
 		PFAnchor:    pfStatus,
 		Forwarding:  forwarding,
@@ -84,11 +86,15 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 }
 
 func (s Status) Format() string {
+	dnsmasqLabel := "DHCP"
+	if !s.DHCPEnabled {
+		dnsmasqLabel = "DNS"
+	}
 	lines := []string{
 		fmt.Sprintf("Gateway: %s", s.Gateway),
 		fmt.Sprintf("Interface: %s", s.Interface),
 		fmt.Sprintf("LAN IP: %s", s.LANIP),
-		fmt.Sprintf("DHCP: %s", s.DHCP),
+		fmt.Sprintf("%s: %s", dnsmasqLabel, s.DHCP),
 		fmt.Sprintf("mihomo: %s", s.Mihomo),
 		fmt.Sprintf("pf anchor: %s", s.PFAnchor),
 		fmt.Sprintf("IP forwarding: %s", s.Forwarding),

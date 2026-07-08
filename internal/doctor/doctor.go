@@ -30,7 +30,7 @@ func Run(cfg config.Config) Report {
 		checkCommand("pfctl", "pfctl"),
 		checkInterface(cfg.Gateway.Interface),
 		checkInterface(cfg.Gateway.UpstreamInterface),
-		checkInterfacesDiffer(cfg.Gateway.Interface, cfg.Gateway.UpstreamInterface),
+		checkGatewayInterfaceTopology(cfg.Gateway),
 		checkIPv4("LAN IP", cfg.Gateway.LANIP),
 		checkInterfaceIPv4(cfg.Gateway.Interface, cfg.Gateway.LANIP),
 	}
@@ -111,10 +111,17 @@ func checkInterface(name string) Check {
 	return Check{Name: "interface " + name, OK: true, Message: iface.HardwareAddr.String()}
 }
 
-func checkInterfacesDiffer(gatewayInterface, upstreamInterface string) Check {
-	name := "gateway and upstream interfaces differ"
-	if strings.TrimSpace(gatewayInterface) == strings.TrimSpace(upstreamInterface) {
-		return Check{Name: name, OK: false, Message: "must use separate downstream and upstream interfaces"}
+func checkGatewayInterfaceTopology(cfg config.GatewayConfig) Check {
+	name := "gateway interface topology"
+	sameInterface := strings.TrimSpace(cfg.Interface) == strings.TrimSpace(cfg.UpstreamInterface)
+	if cfg.SameLAN() {
+		if !sameInterface {
+			return Check{Name: name, OK: false, Message: "same_lan requires gateway and upstream interfaces to match"}
+		}
+		return Check{Name: name, OK: true, Message: "same_lan uses one LAN interface"}
+	}
+	if sameInterface {
+		return Check{Name: name, OK: false, Message: "isolated_lan requires separate downstream and upstream interfaces"}
 	}
 	return Check{Name: name, OK: true}
 }

@@ -11,15 +11,17 @@ import (
 const dnsmasqTemplate = `interface={{ .Interface }}
 bind-interfaces
 
+{{ if .DHCPEnabled }}
 dhcp-range={{ .RangeStart }},{{ .RangeEnd }},{{ .LeaseTime }}
 dhcp-option=option:router,{{ .GatewayIP }}
 dhcp-option=option:dns-server,{{ .GatewayIP }}
 domain={{ .Domain }}
 
 log-dhcp
+dhcp-leasefile={{ .LeaseFile }}
+{{ end }}
 log-queries
 
-dhcp-leasefile={{ .LeaseFile }}
 pid-file={{ .PIDFile }}
 
 port={{ .DNSPort }}
@@ -31,6 +33,7 @@ server={{ .DNSUpstream }}
 `
 
 type templateData struct {
+	DHCPEnabled bool
 	Interface   string
 	RangeStart  string
 	RangeEnd    string
@@ -46,6 +49,7 @@ type templateData struct {
 
 func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 	data := templateData{
+		DHCPEnabled: cfg.DHCP.Enabled,
 		Interface:   cfg.Gateway.Interface,
 		RangeStart:  cfg.DHCP.RangeStart,
 		RangeEnd:    cfg.DHCP.RangeEnd,

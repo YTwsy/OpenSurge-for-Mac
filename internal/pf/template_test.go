@@ -40,6 +40,26 @@ func TestRenderAnchorNeverEmitsTCPRedirect(t *testing.T) {
 	}
 }
 
+func TestRenderAnchorSameLANExcludesLocalLAN(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameLAN
+	cfg.Gateway.Interface = "en0"
+	cfg.Gateway.UpstreamInterface = "en0"
+	cfg.Gateway.LANIP = "192.168.1.20"
+	rendered, err := RenderAnchor(cfg)
+	if err != nil {
+		t.Fatalf("RenderAnchor() error = %v", err)
+	}
+
+	want := "nat on en0 from 192.168.1.0/24 to ! 192.168.1.0/24 -> (en0)"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("rendered same-LAN anchor missing %q:\n%s", want, rendered)
+	}
+	if strings.Contains(rendered, "to any") {
+		t.Fatalf("rendered same-LAN anchor did not exclude local LAN:\n%s", rendered)
+	}
+}
+
 func TestParseEnabled(t *testing.T) {
 	if !parseEnabled("Status: Enabled for 0 days\n") {
 		t.Fatalf("enabled status parsed as false")

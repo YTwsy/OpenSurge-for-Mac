@@ -15,6 +15,9 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.Gateway.Interface != "en0" {
 		t.Fatalf("Gateway.Interface = %q", cfg.Gateway.Interface)
 	}
+	if cfg.Gateway.Mode != GatewayModeIsolatedLAN {
+		t.Fatalf("Gateway.Mode = %q", cfg.Gateway.Mode)
+	}
 	if cfg.Mihomo.MixedPort != 7890 {
 		t.Fatalf("Mihomo.MixedPort = %d", cfg.Mihomo.MixedPort)
 	}
@@ -44,6 +47,37 @@ func TestLoadExampleConfig(t *testing.T) {
 	}
 	if cfg.UpstreamProxy.MatchDomain != "example.com" {
 		t.Fatalf("UpstreamProxy.MatchDomain = %q", cfg.UpstreamProxy.MatchDomain)
+	}
+}
+
+func TestLoadSameLANGatewayMode(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+gateway:
+  mode: "same_lan"
+  interface: "en0"
+  upstream_interface: "en0"
+
+dhcp:
+  enabled: false
+
+transparent:
+  mode: "tun"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Gateway.Mode != GatewayModeSameLAN {
+		t.Fatalf("Gateway.Mode = %q", cfg.Gateway.Mode)
+	}
+	if cfg.DHCP.Enabled {
+		t.Fatalf("DHCP.Enabled = true")
 	}
 }
 
@@ -113,5 +147,21 @@ func TestLoadImportedProfileExampleConfig(t *testing.T) {
 	}
 	if filepath.Base(cfg.Mihomo.Profile) != "mihomo-profile.example.yaml" {
 		t.Fatalf("Mihomo.Profile = %q", cfg.Mihomo.Profile)
+	}
+}
+
+func TestLoadSameLANExampleConfig(t *testing.T) {
+	cfg, err := Load(filepath.Join("..", "..", "examples", "config.same-lan.example.yaml"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Gateway.Mode != GatewayModeSameLAN {
+		t.Fatalf("Gateway.Mode = %q", cfg.Gateway.Mode)
+	}
+	if cfg.DHCP.Enabled {
+		t.Fatalf("DHCP.Enabled = true")
+	}
+	if cfg.Transparent.Mode != TransparentModeTUN {
+		t.Fatalf("Transparent.Mode = %q", cfg.Transparent.Mode)
 	}
 }

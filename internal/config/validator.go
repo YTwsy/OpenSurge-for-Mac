@@ -7,6 +7,11 @@ import (
 )
 
 func Validate(cfg Config) error {
+	switch cfg.Gateway.Mode {
+	case GatewayModeIsolatedLAN, GatewayModeSameLAN:
+	default:
+		return fmt.Errorf("gateway.mode must be isolated_lan or same_lan")
+	}
 	if strings.TrimSpace(cfg.Gateway.Interface) == "" {
 		return fmt.Errorf("gateway.interface is required")
 	}
@@ -68,6 +73,14 @@ func Validate(cfg Config) error {
 	}
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err
+	}
+	if cfg.Gateway.SameLAN() {
+		if cfg.DHCP.Enabled {
+			return fmt.Errorf("gateway.mode same_lan requires dhcp.enabled: false")
+		}
+		if cfg.Transparent.Mode != TransparentModeTUN {
+			return fmt.Errorf("gateway.mode same_lan requires transparent.mode: \"tun\"")
+		}
 	}
 	if err := validateUpstreamProxy(cfg.UpstreamProxy); err != nil {
 		return err

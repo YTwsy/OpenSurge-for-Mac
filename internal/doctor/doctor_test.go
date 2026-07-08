@@ -9,18 +9,37 @@ import (
 	"open-mihomo-gateway/internal/config"
 )
 
-func TestCheckInterfacesDiffer(t *testing.T) {
-	check := checkInterfacesDiffer("en0", " en0 ")
+func TestCheckGatewayInterfaceTopology(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "en0"
+	cfg.Gateway.UpstreamInterface = " en0 "
+	check := checkGatewayInterfaceTopology(cfg.Gateway)
 	if check.OK {
-		t.Fatalf("checkInterfacesDiffer() OK = true")
+		t.Fatalf("checkGatewayInterfaceTopology() OK = true")
 	}
 	if check.Message == "" {
-		t.Fatalf("checkInterfacesDiffer() missing failure message")
+		t.Fatalf("checkGatewayInterfaceTopology() missing failure message")
 	}
 
-	check = checkInterfacesDiffer("en7", "en0")
+	cfg.Gateway.Interface = "en7"
+	cfg.Gateway.UpstreamInterface = "en0"
+	check = checkGatewayInterfaceTopology(cfg.Gateway)
 	if !check.OK {
-		t.Fatalf("checkInterfacesDiffer() OK = false: %s", check.Message)
+		t.Fatalf("checkGatewayInterfaceTopology() OK = false: %s", check.Message)
+	}
+
+	cfg.Gateway.Mode = config.GatewayModeSameLAN
+	cfg.Gateway.Interface = "en0"
+	cfg.Gateway.UpstreamInterface = " en0 "
+	check = checkGatewayInterfaceTopology(cfg.Gateway)
+	if !check.OK {
+		t.Fatalf("checkGatewayInterfaceTopology() same_lan OK = false: %s", check.Message)
+	}
+
+	cfg.Gateway.UpstreamInterface = "en7"
+	check = checkGatewayInterfaceTopology(cfg.Gateway)
+	if check.OK {
+		t.Fatalf("checkGatewayInterfaceTopology() same_lan with different interfaces OK = true")
 	}
 }
 

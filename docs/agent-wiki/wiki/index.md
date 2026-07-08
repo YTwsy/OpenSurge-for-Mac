@@ -38,5 +38,8 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
   `tests/real-device/smoke.sh`
 - 真实设备 smoke 当前进度：
   `docs/agent-wiki/sources/validation/real-device-smoke.md`
+- same-LAN TUN smoke：`tests/same-lan/README.md`、
+  `tests/same-lan/smoke.sh` 和
+  `docs/agent-wiki/sources/validation/same-lan-tun-smoke.md`
 
 当这些事实来源的变化会影响未来 agent 判断时，更新这个 wiki。

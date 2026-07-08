@@ -108,6 +108,14 @@ through its TUN inbound. Use `make lab-test-tun-imported-profile` when changing
 mihomo profile import or overlay behavior; it runs the same TUN gate with an
 imported profile fixture.
 
+Use `make same-lan-start-tun` and `make same-lan-adb-check` for the narrow
+same-LAN default-gateway smoke. This gate keeps DHCP disabled, requires TUN, and
+uses ADB to inspect one Android test device whose gateway and DNS point at the
+Mac's LAN IP. Use `make same-lan-start-tun-proxy` with `OMG_SAME_LAN_*`
+upstream-proxy environment overrides to prove one-domain real proxy egress, such
+as `api.ipify.org`, before importing a full subscription. It does not claim
+whole-LAN rollout readiness or policy-group switching.
+
 ## Virtual LAN lab
 
 The integration lab runs the real macOS gateway against two lightweight Linux

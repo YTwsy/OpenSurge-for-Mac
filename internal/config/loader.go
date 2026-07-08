@@ -91,6 +91,8 @@ func unquote(value string) string {
 
 func applyValue(cfg *Config, section, key, value string) error {
 	switch section + "." + key {
+	case "gateway.mode":
+		cfg.Gateway.Mode = strings.ToLower(value)
 	case "gateway.interface":
 		cfg.Gateway.Interface = value
 	case "gateway.lan_ip":

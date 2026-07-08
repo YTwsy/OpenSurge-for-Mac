@@ -98,6 +98,13 @@ mihomo profile 导入或 overlay 行为时，使用
 `make lab-test-tun-imported-profile`；它会用 imported profile fixture 跑同一个
 TUN 门禁。
 
+使用 `make same-lan-start-tun` 和 `make same-lan-adb-check` 验证窄范围的同
+LAN 默认网关 smoke。这个 gate 会保持 DHCP disabled，要求 TUN，并通过 ADB 检查
+一台默认网关和 DNS 指向 Mac LAN IP 的 Android 测试设备。需要先验证单个域名的
+真实代理出口时，可以配合 `OMG_SAME_LAN_*` 上游代理环境变量使用
+`make same-lan-start-tun-proxy`，例如先测 `api.ipify.org`，再讨论完整订阅导入。
+它不宣称已经具备全 LAN 上线能力或策略组切换能力。
+
 ## 虚拟 LAN lab
 
 集成 lab 会用两个轻量 Linux 客户端测试真实的 macOS 网关。Lima 提供客户端，
