@@ -86,8 +86,8 @@ go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
 go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
-sudo go run ./cmd/omg start --config examples/config.example.yaml
-sudo go run ./cmd/omg stop --config examples/config.example.yaml
+sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 ```
 
 `policy-select` 会先读取 live mihomo 策略组，并在发送切换请求前拒绝未知 group
@@ -95,6 +95,8 @@ sudo go run ./cmd/omg stop --config examples/config.example.yaml
 日志行，并为每个日志文件返回存在状态和读取错误字段，方便控制面消费。
 `snapshot --format json` 会聚合 status、doctor、leases、日志尾部、策略组和
 连接；mihomo API 失败会留在 `mihomo` 字段内部，不影响其余 snapshot 可用。
+`start --format json` 和 `stop --format json` 会在网关动作成功后返回包含
+`command`、`ok` 和 `config_path` 的成功 payload。
 
 ## 安全
 

@@ -29,6 +29,8 @@ LAN lab 中验证，再进入普通 LAN 场景。
 json` 会返回最近的 dnsmasq/mihomo 日志行，并对每个日志文件标出存在状态和读取
 错误。`snapshot --format json` 聚合 status、doctor、leases、日志尾部、策略组和
 连接，并把 mihomo API 不可用记录在局部字段里，供未来轻 UI 或菜单栏诊断复用。
+`start --format json` 和 `stop --format json` 在动作成功后返回结构化成功 payload；
+失败仍通过非零退出码和 stderr 表达。
 
 ## 当前事实来源
 

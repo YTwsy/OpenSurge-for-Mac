@@ -93,8 +93,8 @@ go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
 go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
-sudo go run ./cmd/omg start --config examples/config.example.yaml
-sudo go run ./cmd/omg stop --config examples/config.example.yaml
+sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 ```
 
 `policy-select` first reads the live mihomo policy groups and rejects unknown
@@ -104,6 +104,8 @@ with per-file existence and read-error fields for control surfaces.
 `snapshot --format json` aggregates status, doctor checks, leases, log tails,
 policy groups, and connections; mihomo API failures are reported inside the
 `mihomo` fields so the rest of the snapshot remains usable.
+`start --format json` and `stop --format json` return a success payload with
+`command`, `ok`, and `config_path` after the gateway action succeeds.
 
 ## Safety
 

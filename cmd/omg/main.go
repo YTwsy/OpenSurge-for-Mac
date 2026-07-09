@@ -20,10 +20,19 @@ import (
 const defaultConfigPath = "examples/config.example.yaml"
 
 var (
-	fetchProxyGroups = mihomo.FetchProxyGroups
-	selectProxyGroup = mihomo.SelectProxyGroup
-	fetchConnections = mihomo.FetchConnections
+	fetchProxyGroups  = mihomo.FetchProxyGroups
+	selectProxyGroup  = mihomo.SelectProxyGroup
+	fetchConnections  = mihomo.FetchConnections
+	newGatewayManager = func(cfg config.Config) gatewayManager {
+		return gateway.New(cfg)
+	}
 )
+
+type gatewayManager interface {
+	Start(context.Context) error
+	Stop(context.Context) error
+	Status(context.Context) (gateway.Status, error)
+}
 
 func main() {
 	os.Exit(run(os.Args[1:]))
@@ -59,7 +68,7 @@ func run(args []string) int {
 	}
 
 	ctx := context.Background()
-	manager := gateway.New(cfg)
+	manager := newGatewayManager(cfg)
 
 	switch command {
 	case "start":
@@ -67,10 +76,16 @@ func run(args []string) int {
 			fmt.Fprintf(os.Stderr, "start: %v\n", err)
 			return 1
 		}
+		if jsonOutput {
+			return writeJSONExit(commandResultJSON{Command: "start", OK: true, ConfigPath: *configPath})
+		}
 	case "stop":
 		if err := manager.Stop(ctx); err != nil {
 			fmt.Fprintf(os.Stderr, "stop: %v\n", err)
 			return 1
+		}
+		if jsonOutput {
+			return writeJSONExit(commandResultJSON{Command: "stop", OK: true, ConfigPath: *configPath})
 		}
 	case "status":
 		status, err := manager.Status(ctx)
@@ -206,6 +221,12 @@ type leasesJSON struct {
 	Clients []device.Client `json:"clients"`
 }
 
+type commandResultJSON struct {
+	Command    string `json:"command"`
+	OK         bool   `json:"ok"`
+	ConfigPath string `json:"config_path"`
+}
+
 type logsJSON struct {
 	LogsDir      string        `json:"logs_dir"`
 	DNSMasqLog   string        `json:"dnsmasq_log"`
@@ -327,7 +348,7 @@ func policyGroupNames(groups []mihomo.ProxyGroup) []string {
 	return names
 }
 
-func buildSnapshot(ctx context.Context, cfg config.Config, manager gateway.Manager, tail int) snapshotJSON {
+func buildSnapshot(ctx context.Context, cfg config.Config, manager gatewayManager, tail int) snapshotJSON {
 	status, statusErr := manager.Status(ctx)
 	report := doctor.Run(cfg)
 	paths := runtime.NewPaths(cfg)

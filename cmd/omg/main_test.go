@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/gateway"
 	"open-mihomo-gateway/internal/mihomo"
 )
 
@@ -105,6 +106,71 @@ runtime:
 	}
 	if payload["client_count"] != float64(0) {
 		t.Fatalf("client_count = %#v", payload["client_count"])
+	}
+}
+
+func TestStartCommandPrintsJSON(t *testing.T) {
+	oldNewGatewayManager := newGatewayManager
+	t.Cleanup(func() {
+		newGatewayManager = oldNewGatewayManager
+	})
+	fake := &fakeGatewayManager{}
+	newGatewayManager = func(cfg config.Config) gatewayManager {
+		if cfg.Runtime.Dir == "" {
+			t.Fatalf("runtime dir empty")
+		}
+		return fake
+	}
+
+	configPath := writeRuntimeConfig(t)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"start", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+	if !fake.startCalled {
+		t.Fatalf("Start was not called")
+	}
+
+	var payload commandResultJSON
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("start json invalid: %v\n%s", err, output)
+	}
+	if payload.Command != "start" || !payload.OK || payload.ConfigPath != configPath {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestStopCommandPrintsJSON(t *testing.T) {
+	oldNewGatewayManager := newGatewayManager
+	t.Cleanup(func() {
+		newGatewayManager = oldNewGatewayManager
+	})
+	fake := &fakeGatewayManager{}
+	newGatewayManager = func(cfg config.Config) gatewayManager {
+		return fake
+	}
+
+	configPath := writeRuntimeConfig(t)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"stop", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+	if !fake.stopCalled {
+		t.Fatalf("Stop was not called")
+	}
+
+	var payload commandResultJSON
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("stop json invalid: %v\n%s", err, output)
+	}
+	if payload.Command != "stop" || !payload.OK || payload.ConfigPath != configPath {
+		t.Fatalf("payload = %#v", payload)
 	}
 }
 
@@ -876,6 +942,43 @@ runtime:
 		t.Fatal(err)
 	}
 	return configPath
+}
+
+func writeRuntimeConfig(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+runtime:
+  dir: "` + filepath.Join(dir, "runtime") + `"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return configPath
+}
+
+type fakeGatewayManager struct {
+	startCalled bool
+	stopCalled  bool
+	status      gateway.Status
+	startErr    error
+	stopErr     error
+	statusErr   error
+}
+
+func (m *fakeGatewayManager) Start(ctx context.Context) error {
+	m.startCalled = true
+	return m.startErr
+}
+
+func (m *fakeGatewayManager) Stop(ctx context.Context) error {
+	m.stopCalled = true
+	return m.stopErr
+}
+
+func (m *fakeGatewayManager) Status(ctx context.Context) (gateway.Status, error) {
+	return m.status, m.statusErr
 }
 
 func captureStdout(t *testing.T, fn func()) string {
