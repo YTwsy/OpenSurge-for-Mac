@@ -44,11 +44,11 @@ make policy-control-test
 
 这个门槛启动真实 mihomo 二进制和 OpenSurge CLI，但不启动 dnsmasq、pf、TUN，
 也不需要 sudo。它用 imported profile fixture 验证 `policies`、`policy-select`、
-`connections`、`providers` 和聚合 `snapshot` 能通过 live external-controller API
-工作，并会重启 mihomo 证明 `profile.store-selected` 可以恢复选中的策略。它适合
-策略组控制、provider 状态读取、机器可读 CLI、mihomo API wrapper 和
-`profile.store-selected` 相关改动；不要用它宣称 DHCP、DNS 下发、TUN 透明代理、
-same-LAN 或真实设备路径已验证。
+`connections`、`providers`、`provider-update` 和聚合 `snapshot` 能通过 live
+external-controller API 工作，并会重启 mihomo 证明 `profile.store-selected` 可以
+恢复选中的策略。它适合策略组控制、provider 状态读取和刷新、机器可读 CLI、mihomo
+API wrapper 和 `profile.store-selected` 相关改动；不要用它宣称 DHCP、DNS 下发、
+TUN 透明代理、same-LAN 或真实设备路径已验证。
 
 ## 真实设备 smoke
 

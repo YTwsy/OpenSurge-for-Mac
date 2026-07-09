@@ -262,6 +262,72 @@ func TestFetchProviders(t *testing.T) {
 	}
 }
 
+func TestUpdateProxyProvider(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.APIAddr = "http://127.0.0.1:9090/"
+	cfg.Mihomo.Secret = "test-secret"
+
+	var sawUpdate bool
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.Header.Get("Authorization"); got != "Bearer test-secret" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		switch {
+		case req.Method == http.MethodPut && req.URL.String() == "http://127.0.0.1:9090/providers/proxies/Demo%20Provider":
+			sawUpdate = true
+			return &http.Response{
+				StatusCode: http.StatusNoContent,
+				Status:     "204 No Content",
+				Body:       io.NopCloser(strings.NewReader("")),
+				Header:     make(http.Header),
+			}, nil
+		case req.Method == http.MethodGet && req.URL.String() == "http://127.0.0.1:9090/providers/proxies":
+			if !sawUpdate {
+				t.Fatalf("provider list fetched before update")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body: io.NopCloser(strings.NewReader(`{
+				  "providers": {
+				    "Demo Provider": {
+				      "name": "Demo Provider",
+				      "type": "Proxy",
+				      "vehicleType": "File",
+				      "proxies": [{"name":"Updated","type":"Http","alive":true}]
+				    }
+				  }
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		default:
+			t.Fatalf("%s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})}
+
+	provider, err := updateProxyProviderWithClient(context.Background(), cfg, client, "Demo Provider")
+	if err != nil {
+		t.Fatalf("updateProxyProviderWithClient() error = %v", err)
+	}
+	if provider.Name != "Demo Provider" || provider.ProxyCount != 1 || provider.Proxies[0].Name != "Updated" {
+		t.Fatalf("provider = %#v", provider)
+	}
+}
+
+func TestUpdateProxyProviderRequiresName(t *testing.T) {
+	cfg := config.Default()
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+		return nil, nil
+	})}
+
+	_, err := updateProxyProviderWithClient(context.Background(), cfg, client, " ")
+	if err == nil || !strings.Contains(err.Error(), "proxy provider is required") {
+		t.Fatalf("updateProxyProviderWithClient() error = %v", err)
+	}
+}
+
 func TestImportedProfilePolicySwitchFixture(t *testing.T) {
 	cfg := config.Default()
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported

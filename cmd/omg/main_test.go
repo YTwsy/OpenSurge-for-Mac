@@ -955,6 +955,82 @@ func TestProvidersCommandPrintsJSON(t *testing.T) {
 	}
 }
 
+func TestProviderUpdateCommandPrintsJSON(t *testing.T) {
+	oldUpdate := updateProxyProvider
+	t.Cleanup(func() {
+		updateProxyProvider = oldUpdate
+	})
+	updateProxyProvider = func(ctx context.Context, cfg config.Config, providerName string) (mihomo.ProxyProvider, error) {
+		if cfg.Mihomo.APIAddr != "127.0.0.1:9090" {
+			t.Fatalf("api_addr = %q", cfg.Mihomo.APIAddr)
+		}
+		if providerName != "demo" {
+			t.Fatalf("providerName = %q", providerName)
+		}
+		return mihomo.ProxyProvider{
+			Name:        "demo",
+			Type:        "Proxy",
+			VehicleType: "File",
+			ProxyCount:  1,
+			Proxies:     []mihomo.ProviderProxy{{Name: "Updated", Type: "Http", Alive: true}},
+		}, nil
+	}
+
+	configPath := writeAPIConfig(t, "127.0.0.1:9090")
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"provider-update", "--config", configPath, "--provider", "demo", "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+
+	var payload struct {
+		Provider      string `json:"provider"`
+		Updated       bool   `json:"updated"`
+		ProxyProvider struct {
+			Name       string `json:"name"`
+			ProxyCount int    `json:"proxy_count"`
+			Proxies    []struct {
+				Name string `json:"name"`
+			} `json:"proxies"`
+		} `json:"proxy_provider"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("provider-update json invalid: %v\n%s", err, output)
+	}
+	if payload.Provider != "demo" || !payload.Updated || payload.ProxyProvider.Name != "demo" || payload.ProxyProvider.ProxyCount != 1 || payload.ProxyProvider.Proxies[0].Name != "Updated" {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestProviderUpdateCommandRequiresProvider(t *testing.T) {
+	oldUpdate := updateProxyProvider
+	t.Cleanup(func() {
+		updateProxyProvider = oldUpdate
+	})
+	updateProxyProvider = func(ctx context.Context, cfg config.Config, providerName string) (mihomo.ProxyProvider, error) {
+		if strings.TrimSpace(providerName) != "" {
+			t.Fatalf("providerName = %q", providerName)
+		}
+		return mihomo.ProxyProvider{}, fmt.Errorf("proxy provider is required")
+	}
+
+	configPath := writeAPIConfig(t, "127.0.0.1:9090")
+	var exitCode int
+	stderr := captureStderr(t, func() {
+		exitCode = run([]string{"provider-update", "--config", configPath, "--format", "json"})
+	})
+	if exitCode == 0 {
+		t.Fatalf("run() exit = 0, want non-zero")
+	}
+	for _, want := range []string{`"command": "provider-update"`, `"ok": false`, "proxy provider is required"} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("stderr missing %q:\n%s", want, stderr)
+		}
+	}
+}
+
 func TestFormatConnections(t *testing.T) {
 	output := formatConnections(mihomo.ConnectionsSnapshot{
 		UploadTotal:   100,

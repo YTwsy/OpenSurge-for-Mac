@@ -206,6 +206,30 @@ assert_file_contains "$WORK_DIR/providers.json" '"proxy_count": 1'
 assert_file_contains "$WORK_DIR/providers.json" '"name": "provider-proxy"'
 assert_file_contains "$WORK_DIR/providers.json" '"rule_providers"'
 
+section "update provider"
+cat >"$PROVIDER" <<'EOF'
+proxies:
+  - name: "provider-updated"
+    type: http
+    server: "127.0.0.1"
+    port: 18082
+EOF
+"$OMG_BIN" provider-update --config "$CONFIG" --provider demo-provider --format json >"$WORK_DIR/provider-update.json"
+cat "$WORK_DIR/provider-update.json"
+assert_file_contains "$WORK_DIR/provider-update.json" '"provider": "demo-provider"'
+assert_file_contains "$WORK_DIR/provider-update.json" '"updated": true'
+assert_file_contains "$WORK_DIR/provider-update.json" '"name": "provider-updated"'
+
+"$OMG_BIN" providers --config "$CONFIG" --format json >"$WORK_DIR/providers-updated.json"
+cat "$WORK_DIR/providers-updated.json"
+assert_file_contains "$WORK_DIR/providers-updated.json" '"name": "demo-provider"'
+assert_file_contains "$WORK_DIR/providers-updated.json" '"name": "provider-updated"'
+
+"$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-provider-updated.json"
+cat "$WORK_DIR/policies-provider-updated.json"
+assert_file_contains "$WORK_DIR/policies-provider-updated.json" '"selected": "DIRECT"'
+assert_file_contains "$WORK_DIR/policies-provider-updated.json" '"provider-updated"'
+
 section "snapshot"
 "$OMG_BIN" snapshot --config "$CONFIG" --tail 5 --format json >"$WORK_DIR/snapshot.json"
 cat "$WORK_DIR/snapshot.json"
@@ -222,6 +246,7 @@ assert_file_contains "$WORK_DIR/snapshot.json" '"name": "Proxy"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"connections"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"providers"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"name": "demo-provider"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"name": "provider-updated"'
 
 section "done"
 printf 'policy-control integration passed\n'

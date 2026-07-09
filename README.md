@@ -94,6 +94,7 @@ go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
 go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg providers --config examples/config.imported-profile.example.yaml --format json
+go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
 sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
@@ -101,6 +102,8 @@ sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 
 `policy-select` first reads the live mihomo policy groups and rejects unknown
 groups or policies before sending the selection change.
+`provider-update --provider <name>` asks mihomo to refresh one proxy provider
+and returns the refreshed provider state.
 `logs --tail N --format json` includes recent `dnsmasq` and `mihomo` log lines
 with per-file existence and read-error fields for control surfaces.
 `snapshot --format json` aggregates status, doctor checks, leases, log tails,
@@ -140,8 +143,8 @@ imported profile fixture.
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
 checks `policies`, invalid and valid `policy-select`, persisted selection
-restore after mihomo restart, `connections`, `providers`, and `snapshot` against
-the live external-controller API.
+restore after mihomo restart, `connections`, `providers`, `provider-update`,
+and `snapshot` against the live external-controller API.
 
 Use `make same-lan-start-tun` and `make same-lan-adb-check` for the narrow
 same-LAN default-gateway smoke. This gate keeps DHCP disabled, requires TUN, and

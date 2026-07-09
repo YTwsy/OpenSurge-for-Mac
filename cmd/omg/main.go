@@ -20,11 +20,12 @@ import (
 const defaultConfigPath = "examples/config.example.yaml"
 
 var (
-	fetchProxyGroups  = mihomo.FetchProxyGroups
-	selectProxyGroup  = mihomo.SelectProxyGroup
-	fetchConnections  = mihomo.FetchConnections
-	fetchProviders    = mihomo.FetchProviders
-	newGatewayManager = func(cfg config.Config) gatewayManager {
+	fetchProxyGroups    = mihomo.FetchProxyGroups
+	selectProxyGroup    = mihomo.SelectProxyGroup
+	fetchConnections    = mihomo.FetchConnections
+	fetchProviders      = mihomo.FetchProviders
+	updateProxyProvider = mihomo.UpdateProxyProvider
+	newGatewayManager   = func(cfg config.Config) gatewayManager {
 		return gateway.New(cfg)
 	}
 )
@@ -52,6 +53,7 @@ func run(args []string) int {
 	outputFormat := fs.String("format", "text", "output format: text or json")
 	policyGroup := fs.String("group", "", "mihomo policy group name")
 	policyName := fs.String("policy", "", "mihomo policy name to select")
+	providerName := fs.String("provider", "", "mihomo proxy provider name")
 	logTail := fs.Int("tail", 0, "number of recent log lines to include")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
@@ -184,6 +186,19 @@ func run(args []string) int {
 			return writeJSONExit(providers)
 		}
 		fmt.Print(formatProviders(providers))
+	case "provider-update":
+		provider, err := updateProxyProvider(ctx, cfg, *providerName)
+		if err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "provider-update", err)
+		}
+		if jsonOutput {
+			return writeJSONExit(providerUpdateJSON{
+				Provider:      provider.Name,
+				Updated:       true,
+				ProxyProvider: provider,
+			})
+		}
+		fmt.Print(formatProviderUpdate(provider))
 	case "render-mihomo":
 		rendered, err := mihomo.RenderConfig(cfg)
 		if err != nil {
@@ -302,6 +317,12 @@ type policiesJSON struct {
 type policySelectJSON struct {
 	Group    string `json:"group"`
 	Selected string `json:"selected"`
+}
+
+type providerUpdateJSON struct {
+	Provider      string               `json:"provider"`
+	Updated       bool                 `json:"updated"`
+	ProxyProvider mihomo.ProxyProvider `json:"proxy_provider"`
 }
 
 type validateMihomoJSON struct {
@@ -637,6 +658,10 @@ func formatProviders(snapshot mihomo.ProvidersSnapshot) string {
 	return out.String()
 }
 
+func formatProviderUpdate(provider mihomo.ProxyProvider) string {
+	return fmt.Sprintf("Provider %q updated (%d proxies)\n", provider.Name, provider.ProxyCount)
+}
+
 func formatConnections(snapshot mihomo.ConnectionsSnapshot) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "Connections: %d\n", len(snapshot.Connections))
@@ -715,6 +740,8 @@ Commands:
            print current mihomo connections from the external-controller API
   providers
            print mihomo proxy/rule providers from the external-controller API
+  provider-update --provider <name>
+           refresh a mihomo proxy provider through the external-controller API
   render-mihomo
            print the final mihomo config without starting services
   validate-mihomo

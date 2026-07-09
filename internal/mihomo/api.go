@@ -163,6 +163,11 @@ func FetchProviders(ctx context.Context, cfg config.Config) (ProvidersSnapshot, 
 	return fetchProvidersWithClient(ctx, cfg, client)
 }
 
+func UpdateProxyProvider(ctx context.Context, cfg config.Config, providerName string) (ProxyProvider, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	return updateProxyProviderWithClient(ctx, cfg, client, providerName)
+}
+
 func fetchVersionWithClient(ctx context.Context, cfg config.Config, client *http.Client) (Version, error) {
 	req, err := newAPIRequest(ctx, cfg, http.MethodGet, "/version", nil)
 	if err != nil {
@@ -342,6 +347,45 @@ func fetchProxyProvidersWithClient(ctx context.Context, cfg config.Config, clien
 		return providers[i].Name < providers[j].Name
 	})
 	return providers, nil
+}
+
+func updateProxyProviderWithClient(ctx context.Context, cfg config.Config, client *http.Client, providerName string) (ProxyProvider, error) {
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		return ProxyProvider{}, fmt.Errorf("proxy provider is required")
+	}
+
+	req, err := newAPIRequest(ctx, cfg, http.MethodPut, "/providers/proxies/"+url.PathEscape(providerName), nil)
+	if err != nil {
+		return ProxyProvider{}, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ProxyProvider{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ProxyProvider{}, fmt.Errorf("mihomo API returned %s", resp.Status)
+	}
+
+	providers, err := fetchProxyProvidersWithClient(ctx, cfg, client)
+	if err != nil {
+		return ProxyProvider{}, err
+	}
+	provider, ok := findProxyProvider(providers, providerName)
+	if !ok {
+		return ProxyProvider{}, fmt.Errorf("proxy provider %q not found after update", providerName)
+	}
+	return provider, nil
+}
+
+func findProxyProvider(providers []ProxyProvider, providerName string) (ProxyProvider, bool) {
+	for _, provider := range providers {
+		if provider.Name == providerName {
+			return provider, true
+		}
+	}
+	return ProxyProvider{}, false
 }
 
 func fetchRuleProvidersWithClient(ctx context.Context, cfg config.Config, client *http.Client) ([]RuleProvider, error) {

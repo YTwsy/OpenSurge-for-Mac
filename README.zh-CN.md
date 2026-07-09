@@ -87,14 +87,17 @@ go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
 go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg providers --config examples/config.imported-profile.example.yaml --format json
+go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
 sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 ```
 
 `policy-select` 会先读取 live mihomo 策略组，并在发送切换请求前拒绝未知 group
-或 policy。`logs --tail N --format json` 会包含最近的 `dnsmasq` 和 `mihomo`
-日志行，并为每个日志文件返回存在状态和读取错误字段，方便控制面消费。
+或 policy。`provider-update --provider <name>` 会请求 mihomo 刷新一个 proxy
+provider，并返回刷新后的 provider 状态。`logs --tail N --format json` 会包含最近的
+`dnsmasq` 和 `mihomo` 日志行，并为每个日志文件返回存在状态和读取错误字段，方便
+控制面消费。
 `snapshot --format json` 会聚合 status、doctor、leases、日志尾部、策略组、连接
 和 provider 状态；mihomo API 失败会留在 `mihomo` 字段内部，不影响其余 snapshot
 可用。
@@ -127,8 +130,8 @@ TUN 门禁。
 策略组控制面和机器可读 CLI 改动优先使用 `make policy-control-test`。它会启动真实
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller
 API 检查 `policies`、`policy-select`、mihomo 重启后的策略选择恢复，以及
-`connections`、`providers` 和 `snapshot`；其中也会验证未知 policy 会被
-`policy-select` 拒绝。
+`connections`、`providers`、`provider-update` 和 `snapshot`；其中也会验证未知
+policy 会被 `policy-select` 拒绝。
 
 使用 `make same-lan-start-tun` 和 `make same-lan-adb-check` 验证窄范围的同
 LAN 默认网关 smoke。这个 gate 会保持 DHCP disabled，要求 TUN，并通过 ADB 检查

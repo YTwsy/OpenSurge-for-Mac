@@ -26,11 +26,11 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
 边界。
 
 当前控制面契约优先保持机器可读：`status`、`doctor`、`leases`、`logs`、
-`policies`、`connections`、`providers` 和 `snapshot` 支持 JSON 输出。`logs --tail N
---format json` 会返回最近的 dnsmasq/mihomo 日志行，并对每个日志文件标出存在状态
-和读取错误。`snapshot --format json` 聚合 status、doctor、leases、日志尾部、
-策略组、连接和 provider 状态，并把 mihomo API 不可用记录在局部字段里，适合后续
-轻 UI 或菜单栏诊断界面复用。
+`policies`、`connections`、`providers`、`provider-update` 和 `snapshot` 支持 JSON
+输出。`logs --tail N --format json` 会返回最近的 dnsmasq/mihomo 日志行，并对每个
+日志文件标出存在状态和读取错误。`snapshot --format json` 聚合 status、doctor、
+leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo API 不可用记录在局部
+字段里，适合后续轻 UI 或菜单栏诊断界面复用。
 `start --format json` 和 `stop --format json` 在动作成功后返回结构化成功 payload；
 失败仍保留非零退出码，并在 `--format json` 时把
 `{"command":"...","ok":false,"error":"..."}` 写到 stderr。
