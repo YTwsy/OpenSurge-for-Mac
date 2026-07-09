@@ -140,6 +140,16 @@ assert_file_contains "$WORK_DIR/policies-before.json" '"name": "Proxy"'
 assert_file_contains "$WORK_DIR/policies-before.json" '"selected": "demo-proxy"'
 assert_file_contains "$WORK_DIR/policies-before.json" '"DIRECT"'
 
+section "reject unknown policy"
+if "$OMG_BIN" policy-select --config "$CONFIG" --group Proxy --policy Missing >"$WORK_DIR/policy-select-invalid.json" 2>"$WORK_DIR/policy-select-invalid.err"; then
+  echo "policy-select accepted an unknown policy" >&2
+  cat "$WORK_DIR/policy-select-invalid.json" >&2
+  exit 1
+fi
+cat "$WORK_DIR/policy-select-invalid.err"
+assert_file_contains "$WORK_DIR/policy-select-invalid.err" 'policy "Missing" is not a member of group "Proxy"'
+assert_file_contains "$WORK_DIR/policy-select-invalid.err" 'demo-proxy, DIRECT'
+
 section "select DIRECT"
 "$OMG_BIN" policy-select --config "$CONFIG" --group Proxy --policy DIRECT --format json >"$WORK_DIR/policy-select.json"
 cat "$WORK_DIR/policy-select.json"

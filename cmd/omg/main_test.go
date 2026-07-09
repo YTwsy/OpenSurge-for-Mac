@@ -277,10 +277,23 @@ func TestPoliciesCommandPrintsJSON(t *testing.T) {
 }
 
 func TestPolicySelectCommandCallsMihomoAPI(t *testing.T) {
+	oldFetch := fetchProxyGroups
 	oldSelect := selectProxyGroup
 	t.Cleanup(func() {
+		fetchProxyGroups = oldFetch
 		selectProxyGroup = oldSelect
 	})
+	fetchProxyGroups = func(ctx context.Context, cfg config.Config) ([]mihomo.ProxyGroup, error) {
+		if cfg.Mihomo.APIAddr != "127.0.0.1:9090" {
+			t.Fatalf("api_addr = %q", cfg.Mihomo.APIAddr)
+		}
+		if cfg.Mihomo.Secret != "test-secret" {
+			t.Fatalf("secret = %q", cfg.Mihomo.Secret)
+		}
+		return []mihomo.ProxyGroup{
+			{Name: "Proxy Group", Type: "Selector", Selected: "DIRECT", Options: []string{"DIRECT", "HK"}},
+		}, nil
+	}
 	var selectedGroup string
 	var selectedPolicy string
 	selectProxyGroup = func(ctx context.Context, cfg config.Config, groupName, selected string) error {
@@ -310,6 +323,78 @@ func TestPolicySelectCommandCallsMihomoAPI(t *testing.T) {
 	}
 	if selectedGroup != "Proxy Group" || selectedPolicy != "HK" {
 		t.Fatalf("selected = %q/%q", selectedGroup, selectedPolicy)
+	}
+}
+
+func TestPolicySelectCommandRejectsUnknownPolicy(t *testing.T) {
+	oldFetch := fetchProxyGroups
+	oldSelect := selectProxyGroup
+	t.Cleanup(func() {
+		fetchProxyGroups = oldFetch
+		selectProxyGroup = oldSelect
+	})
+	fetchProxyGroups = func(ctx context.Context, cfg config.Config) ([]mihomo.ProxyGroup, error) {
+		return []mihomo.ProxyGroup{
+			{Name: "Proxy", Type: "Selector", Selected: "DIRECT", Options: []string{"DIRECT", "HK"}},
+		}, nil
+	}
+	selectCalled := false
+	selectProxyGroup = func(ctx context.Context, cfg config.Config, groupName, selected string) error {
+		selectCalled = true
+		return nil
+	}
+
+	configPath := writeAPIConfig(t, "127.0.0.1:9090")
+	var exitCode int
+	stderr := captureStderr(t, func() {
+		exitCode = run([]string{"policy-select", "--config", configPath, "--group", "Proxy", "--policy", "Missing"})
+	})
+	if exitCode == 0 {
+		t.Fatalf("run() exit = 0, want non-zero")
+	}
+	if selectCalled {
+		t.Fatalf("selectProxyGroup called for unknown policy")
+	}
+	for _, want := range []string{`policy "Missing" is not a member of group "Proxy"`, "DIRECT, HK"} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("stderr missing %q:\n%s", want, stderr)
+		}
+	}
+}
+
+func TestValidatePolicySelection(t *testing.T) {
+	groups := []mihomo.ProxyGroup{
+		{Name: "Fallback", Type: "Fallback", Selected: "JP", Options: []string{"JP", "US"}},
+		{Name: "Proxy", Type: "Selector", Selected: "DIRECT", Options: []string{"DIRECT", "HK"}},
+	}
+
+	for _, tc := range []struct {
+		name      string
+		groupName string
+		selected  string
+		wantError string
+	}{
+		{name: "accepts member", groupName: "Proxy", selected: "HK"},
+		{name: "requires group", groupName: " ", selected: "HK", wantError: "policy group is required"},
+		{name: "requires policy", groupName: "Proxy", selected: "", wantError: "selected policy is required"},
+		{name: "unknown group", groupName: "Missing", selected: "HK", wantError: `policy group "Missing" not found`},
+		{name: "unknown policy", groupName: "Proxy", selected: "US", wantError: `policy "US" is not a member of group "Proxy"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validatePolicySelection(groups, tc.groupName, tc.selected)
+			if tc.wantError == "" {
+				if err != nil {
+					t.Fatalf("validatePolicySelection() error = %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("validatePolicySelection() error = nil, want %q", tc.wantError)
+			}
+			if !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("validatePolicySelection() error = %q, want %q", err.Error(), tc.wantError)
+			}
+		})
 	}
 }
 
@@ -526,6 +611,34 @@ func captureStdout(t *testing.T, fn func()) string {
 	os.Stdout = writer
 	defer func() {
 		os.Stdout = old
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, reader); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+
+	old := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = writer
+	defer func() {
+		os.Stderr = old
 	}()
 
 	fn()

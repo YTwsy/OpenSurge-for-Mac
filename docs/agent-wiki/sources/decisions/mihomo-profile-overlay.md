@@ -49,9 +49,10 @@ When mihomo is running, `omg policies --config <path>` lists policy groups from
 the mihomo external-controller API, `omg policy-select --config <path> --group
 <name> --policy <name>` switches a group selection, and `omg connections
 --config <path>` inspects current mihomo connections. This control surface is
-API/config behavior and should be covered by unit or fixture-level tests first;
-real-device tests are only needed when proving the gateway path or whole-LAN
-client behavior.
+API/config behavior: `policy-select` first reads live groups and rejects unknown
+group or policy names before sending the selection change. Cover this layer with
+unit or fixture-level tests first; real-device tests are only needed when
+proving the gateway path or whole-LAN client behavior.
 
 `make policy-control-test` is the non-root live mihomo gate for this layer. It
 starts mihomo without dnsmasq, pf, or TUN, switches the imported fixture's

@@ -92,6 +92,9 @@ sudo go run ./cmd/omg start --config examples/config.example.yaml
 sudo go run ./cmd/omg stop --config examples/config.example.yaml
 ```
 
+`policy-select` first reads the live mihomo policy groups and rejects unknown
+groups or policies before sending the selection change.
+
 ## Safety
 
 `start` and `stop` are intended to run with `sudo` because they manage DHCP,

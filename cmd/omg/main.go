@@ -122,6 +122,15 @@ func run(args []string) int {
 		}
 		fmt.Print(formatProxyGroups(groups))
 	case "policy-select":
+		groups, err := fetchProxyGroups(ctx, cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "policy-select: %v\n", err)
+			return 1
+		}
+		if err := validatePolicySelection(groups, *policyGroup, *policyName); err != nil {
+			fmt.Fprintf(os.Stderr, "policy-select: %v\n", err)
+			return 1
+		}
 		if err := selectProxyGroup(ctx, cfg, *policyGroup, *policyName); err != nil {
 			fmt.Fprintf(os.Stderr, "policy-select: %v\n", err)
 			return 1
@@ -216,6 +225,37 @@ func writeJSONExit(value any) int {
 		return 1
 	}
 	return 0
+}
+
+func validatePolicySelection(groups []mihomo.ProxyGroup, groupName, selected string) error {
+	if strings.TrimSpace(groupName) == "" {
+		return fmt.Errorf("policy group is required")
+	}
+	if strings.TrimSpace(selected) == "" {
+		return fmt.Errorf("selected policy is required")
+	}
+
+	for _, group := range groups {
+		if group.Name != groupName {
+			continue
+		}
+		for _, option := range group.Options {
+			if option == selected {
+				return nil
+			}
+		}
+		return fmt.Errorf("policy %q is not a member of group %q (available: %s)", selected, groupName, strings.Join(group.Options, ", "))
+	}
+
+	return fmt.Errorf("policy group %q not found (available: %s)", groupName, strings.Join(policyGroupNames(groups), ", "))
+}
+
+func policyGroupNames(groups []mihomo.ProxyGroup) []string {
+	names := make([]string, 0, len(groups))
+	for _, group := range groups {
+		names = append(names, group.Name)
+	}
+	return names
 }
 
 func formatProxyGroups(groups []mihomo.ProxyGroup) string {

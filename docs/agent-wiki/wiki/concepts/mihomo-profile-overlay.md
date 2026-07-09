@@ -55,9 +55,10 @@ in the OpenSurge config to point to an installed mihomo binary.
 When mihomo is running, use `omg policies --config <path>` to list policy groups,
 `omg policy-select --config <path> --group <name> --policy <name>` to switch the
 selected member, and `omg connections --config <path>` to inspect active mihomo
-connections. These are control-plane checks; they do not require real-device
-validation unless the change also touches gateway, DNS, TUN, or traffic-capture
-behavior.
+connections. `policy-select` first reads live groups and rejects unknown group or
+policy names before sending the selection change. These are control-plane checks;
+they do not require real-device validation unless the change also touches
+gateway, DNS, TUN, or traffic-capture behavior.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:
