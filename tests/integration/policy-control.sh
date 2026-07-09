@@ -9,7 +9,7 @@ WORK_DIR="${OMG_POLICY_CONTROL_WORK_DIR:-$BASE_DIR/run-$$}"
 CONFIG="$WORK_DIR/config.yaml"
 PROFILE="$WORK_DIR/profile.yaml"
 MIHOMO_CONFIG="$WORK_DIR/mihomo.yaml"
-MIHOMO_LOG="$WORK_DIR/mihomo.log"
+MIHOMO_LOG="$WORK_DIR/logs/mihomo.log"
 OMG_BIN="$WORK_DIR/omg"
 MIHOMO_BINARY="${OMG_POLICY_CONTROL_MIHOMO_BINARY:-$ROOT/runtime/tools/bin/mihomo}"
 API_ADDR="${OMG_POLICY_CONTROL_API_ADDR:-127.0.0.1:19091}"
@@ -36,7 +36,7 @@ require_file() {
 }
 
 write_fixture() {
-  mkdir -p "$WORK_DIR"
+  mkdir -p "$WORK_DIR/logs"
   cat >"$PROFILE" <<'EOF'
 proxies:
   - name: "demo-proxy"
@@ -175,6 +175,21 @@ section "connections"
 "$OMG_BIN" connections --config "$CONFIG" --format json >"$WORK_DIR/connections.json"
 cat "$WORK_DIR/connections.json"
 assert_file_contains "$WORK_DIR/connections.json" '"connections"'
+
+section "snapshot"
+"$OMG_BIN" snapshot --config "$CONFIG" --tail 5 --format json >"$WORK_DIR/snapshot.json"
+cat "$WORK_DIR/snapshot.json"
+assert_file_contains "$WORK_DIR/snapshot.json" '"status"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"doctor"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"leases"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"logs"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"name": "mihomo"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"exists": true'
+assert_file_contains "$WORK_DIR/snapshot.json" '"mihomo"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"policies"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"available": true'
+assert_file_contains "$WORK_DIR/snapshot.json" '"name": "Proxy"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"connections"'
 
 section "done"
 printf 'policy-control integration passed\n'

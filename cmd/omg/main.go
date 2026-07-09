@@ -123,6 +123,16 @@ func run(args []string) int {
 			return 0
 		}
 		fmt.Printf("Logs directory: %s\n", paths.LogDir)
+	case "snapshot":
+		if *logTail < 0 {
+			fmt.Fprintf(os.Stderr, "snapshot: tail must be greater than or equal to 0\n")
+			return 2
+		}
+		snapshot := buildSnapshot(ctx, cfg, manager, *logTail)
+		if jsonOutput {
+			return writeJSONExit(snapshot)
+		}
+		fmt.Print(formatSnapshot(snapshot))
 	case "policies":
 		groups, err := fetchProxyGroups(ctx, cfg)
 		if err != nil {
@@ -213,6 +223,44 @@ type logFileJSON struct {
 	Error  string   `json:"error"`
 }
 
+type snapshotJSON struct {
+	Status statusSnapshotJSON `json:"status"`
+	Doctor doctorJSON         `json:"doctor"`
+	Leases leasesSnapshotJSON `json:"leases"`
+	Logs   logsJSON           `json:"logs"`
+	Mihomo mihomoSnapshotJSON `json:"mihomo"`
+}
+
+type statusSnapshotJSON struct {
+	gateway.Status
+	Error string `json:"error"`
+}
+
+type leasesSnapshotJSON struct {
+	Clients []device.Client `json:"clients"`
+	Error   string          `json:"error"`
+}
+
+type mihomoSnapshotJSON struct {
+	APIAddr     string                  `json:"api_addr"`
+	Policies    policiesSnapshotJSON    `json:"policies"`
+	Connections connectionsSnapshotJSON `json:"connections"`
+}
+
+type policiesSnapshotJSON struct {
+	Available bool                `json:"available"`
+	Groups    []mihomo.ProxyGroup `json:"groups"`
+	Error     string              `json:"error"`
+}
+
+type connectionsSnapshotJSON struct {
+	Available     bool                `json:"available"`
+	UploadTotal   int64               `json:"upload_total"`
+	DownloadTotal int64               `json:"download_total"`
+	Connections   []mihomo.Connection `json:"connections"`
+	Error         string              `json:"error"`
+}
+
 type policiesJSON struct {
 	Groups []mihomo.ProxyGroup `json:"groups"`
 }
@@ -277,6 +325,86 @@ func policyGroupNames(groups []mihomo.ProxyGroup) []string {
 		names = append(names, group.Name)
 	}
 	return names
+}
+
+func buildSnapshot(ctx context.Context, cfg config.Config, manager gateway.Manager, tail int) snapshotJSON {
+	status, statusErr := manager.Status(ctx)
+	report := doctor.Run(cfg)
+	paths := runtime.NewPaths(cfg)
+	leases := leasesSnapshot(paths.LeaseFile)
+	logs := logsJSON{
+		LogsDir:      paths.LogDir,
+		DNSMasqLog:   paths.DNSMasqLog,
+		MihomoLog:    paths.MihomoLog,
+		StateFile:    paths.StateFile,
+		MihomoConfig: paths.MihomoConfig,
+		Recent:       recentLogFiles(paths, tail),
+	}
+
+	snapshotStatus := statusSnapshotJSON{Status: status}
+	if statusErr != nil {
+		snapshotStatus.Error = statusErr.Error()
+	}
+
+	return snapshotJSON{
+		Status: snapshotStatus,
+		Doctor: doctorJSON{
+			Healthy: report.Healthy(),
+			Checks:  report.Checks,
+		},
+		Leases: leases,
+		Logs:   logs,
+		Mihomo: mihomoSnapshot(ctx, cfg),
+	}
+}
+
+func leasesSnapshot(path string) leasesSnapshotJSON {
+	clients, err := device.LoadLeases(path)
+	if clients == nil {
+		clients = []device.Client{}
+	}
+	snapshot := leasesSnapshotJSON{Clients: clients}
+	if err != nil {
+		snapshot.Error = err.Error()
+	}
+	return snapshot
+}
+
+func mihomoSnapshot(ctx context.Context, cfg config.Config) mihomoSnapshotJSON {
+	return mihomoSnapshotJSON{
+		APIAddr:     cfg.Mihomo.APIAddr,
+		Policies:    policiesSnapshot(ctx, cfg),
+		Connections: connectionsSnapshot(ctx, cfg),
+	}
+}
+
+func policiesSnapshot(ctx context.Context, cfg config.Config) policiesSnapshotJSON {
+	groups, err := fetchProxyGroups(ctx, cfg)
+	if groups == nil {
+		groups = []mihomo.ProxyGroup{}
+	}
+	snapshot := policiesSnapshotJSON{Available: err == nil, Groups: groups}
+	if err != nil {
+		snapshot.Error = err.Error()
+	}
+	return snapshot
+}
+
+func connectionsSnapshot(ctx context.Context, cfg config.Config) connectionsSnapshotJSON {
+	connections, err := fetchConnections(ctx, cfg)
+	if connections.Connections == nil {
+		connections.Connections = []mihomo.Connection{}
+	}
+	snapshot := connectionsSnapshotJSON{
+		Available:     err == nil,
+		UploadTotal:   connections.UploadTotal,
+		DownloadTotal: connections.DownloadTotal,
+		Connections:   connections.Connections,
+	}
+	if err != nil {
+		snapshot.Error = err.Error()
+	}
+	return snapshot
 }
 
 func recentLogFiles(paths runtime.Paths, tail int) []logFileJSON {
@@ -385,6 +513,30 @@ func formatRecentLogs(files []logFileJSON) string {
 	return out.String()
 }
 
+func formatSnapshot(snapshot snapshotJSON) string {
+	var out strings.Builder
+	out.WriteString(snapshot.Status.Format())
+	if snapshot.Status.Error != "" {
+		fmt.Fprintf(&out, "Status error: %s\n", snapshot.Status.Error)
+	}
+	fmt.Fprintf(&out, "Doctor healthy: %t\n", snapshot.Doctor.Healthy)
+	fmt.Fprintf(&out, "Leases: %d\n", len(snapshot.Leases.Clients))
+	if snapshot.Leases.Error != "" {
+		fmt.Fprintf(&out, "Leases error: %s\n", snapshot.Leases.Error)
+	}
+	if snapshot.Mihomo.Policies.Available {
+		fmt.Fprintf(&out, "Policy groups: %d\n", len(snapshot.Mihomo.Policies.Groups))
+	} else {
+		fmt.Fprintf(&out, "Policy groups unavailable: %s\n", snapshot.Mihomo.Policies.Error)
+	}
+	if snapshot.Mihomo.Connections.Available {
+		fmt.Fprintf(&out, "Connections: %d\n", len(snapshot.Mihomo.Connections.Connections))
+	} else {
+		fmt.Fprintf(&out, "Connections unavailable: %s\n", snapshot.Mihomo.Connections.Error)
+	}
+	return out.String()
+}
+
 func formatConnections(snapshot mihomo.ConnectionsSnapshot) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "Connections: %d\n", len(snapshot.Connections))
@@ -454,6 +606,7 @@ Commands:
   doctor   run environment checks
   leases   print DHCP leases
   logs     print runtime log location or recent log lines with --tail
+  snapshot collect status, doctor, leases, logs, policies, and connections
   policies
            list mihomo policy groups from the external-controller API
   policy-select --group <name> --policy <name>

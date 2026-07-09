@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -300,6 +301,206 @@ runtime:
 	var exitCode int
 	stderr := captureStderr(t, func() {
 		exitCode = run([]string{"logs", "--config", configPath, "--tail", "-1"})
+	})
+	if exitCode != 2 {
+		t.Fatalf("run() exit = %d, stderr:\n%s", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "tail must be greater than or equal to 0") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestSnapshotCommandPrintsPartialJSON(t *testing.T) {
+	oldFetchGroups := fetchProxyGroups
+	oldFetchConnections := fetchConnections
+	t.Cleanup(func() {
+		fetchProxyGroups = oldFetchGroups
+		fetchConnections = oldFetchConnections
+	})
+	fetchProxyGroups = func(ctx context.Context, cfg config.Config) ([]mihomo.ProxyGroup, error) {
+		if cfg.Mihomo.APIAddr != "127.0.0.1:9090" {
+			t.Fatalf("api_addr = %q", cfg.Mihomo.APIAddr)
+		}
+		return []mihomo.ProxyGroup{
+			{Name: "Proxy", Type: "Selector", Selected: "DIRECT", Options: []string{"DIRECT", "HK"}},
+		}, nil
+	}
+	fetchConnections = func(ctx context.Context, cfg config.Config) (mihomo.ConnectionsSnapshot, error) {
+		return mihomo.ConnectionsSnapshot{}, errors.New("mihomo API unavailable")
+	}
+
+	dir := t.TempDir()
+	runtimeDir := filepath.Join(dir, "runtime")
+	logDir := filepath.Join(runtimeDir, "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(time.Hour).Unix()
+	leaseBody := fmt.Sprintf("%d aa:bb:cc:dd:ee:ff 192.168.50.100 phone *\n", expires)
+	if err := os.WriteFile(filepath.Join(runtimeDir, "dnsmasq.leases"), []byte(leaseBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logDir, "mihomo.log"), []byte("mihomo-1\nmihomo-2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+mihomo:
+  api_addr: "127.0.0.1:9090"
+  config: "` + filepath.Join(runtimeDir, "mihomo.yaml") + `"
+runtime:
+  dir: "` + runtimeDir + `"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"snapshot", "--config", configPath, "--tail", "1", "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+
+	var payload struct {
+		Status struct {
+			Gateway     string `json:"gateway"`
+			ClientCount int    `json:"client_count"`
+		} `json:"status"`
+		Doctor struct {
+			Healthy bool `json:"healthy"`
+			Checks  []struct {
+				Name string `json:"name"`
+			} `json:"checks"`
+		} `json:"doctor"`
+		Leases struct {
+			Clients []struct {
+				IP string `json:"ip"`
+			} `json:"clients"`
+			Error string `json:"error"`
+		} `json:"leases"`
+		Logs struct {
+			Recent []struct {
+				Name  string   `json:"name"`
+				Lines []string `json:"lines"`
+			} `json:"recent"`
+		} `json:"logs"`
+		Mihomo struct {
+			APIAddr  string `json:"api_addr"`
+			Policies struct {
+				Available bool `json:"available"`
+				Groups    []struct {
+					Name string `json:"name"`
+				} `json:"groups"`
+				Error string `json:"error"`
+			} `json:"policies"`
+			Connections struct {
+				Available   bool   `json:"available"`
+				Connections []any  `json:"connections"`
+				Error       string `json:"error"`
+			} `json:"connections"`
+		} `json:"mihomo"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("snapshot json invalid: %v\n%s", err, output)
+	}
+	if payload.Status.Gateway != "stopped" || payload.Status.ClientCount != 1 {
+		t.Fatalf("status = %#v", payload.Status)
+	}
+	if len(payload.Doctor.Checks) == 0 {
+		t.Fatalf("doctor checks empty")
+	}
+	if len(payload.Leases.Clients) != 1 || payload.Leases.Clients[0].IP != "192.168.50.100" || payload.Leases.Error != "" {
+		t.Fatalf("leases = %#v", payload.Leases)
+	}
+	if len(payload.Logs.Recent) != 2 || payload.Logs.Recent[1].Name != "mihomo" || strings.Join(payload.Logs.Recent[1].Lines, ",") != "mihomo-2" {
+		t.Fatalf("logs = %#v", payload.Logs)
+	}
+	if payload.Mihomo.APIAddr != "127.0.0.1:9090" {
+		t.Fatalf("api_addr = %q", payload.Mihomo.APIAddr)
+	}
+	if !payload.Mihomo.Policies.Available || len(payload.Mihomo.Policies.Groups) != 1 || payload.Mihomo.Policies.Groups[0].Name != "Proxy" || payload.Mihomo.Policies.Error != "" {
+		t.Fatalf("policies = %#v", payload.Mihomo.Policies)
+	}
+	if payload.Mihomo.Connections.Available || !strings.Contains(payload.Mihomo.Connections.Error, "mihomo API unavailable") || len(payload.Mihomo.Connections.Connections) != 0 {
+		t.Fatalf("connections = %#v", payload.Mihomo.Connections)
+	}
+}
+
+func TestSnapshotCommandReportsLeaseParseErrorsInJSON(t *testing.T) {
+	oldFetchGroups := fetchProxyGroups
+	oldFetchConnections := fetchConnections
+	t.Cleanup(func() {
+		fetchProxyGroups = oldFetchGroups
+		fetchConnections = oldFetchConnections
+	})
+	fetchProxyGroups = func(ctx context.Context, cfg config.Config) ([]mihomo.ProxyGroup, error) {
+		return nil, errors.New("mihomo API unavailable")
+	}
+	fetchConnections = func(ctx context.Context, cfg config.Config) (mihomo.ConnectionsSnapshot, error) {
+		return mihomo.ConnectionsSnapshot{}, errors.New("mihomo API unavailable")
+	}
+
+	dir := t.TempDir()
+	runtimeDir := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "dnsmasq.leases"), []byte("not-a-valid-lease\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+runtime:
+  dir: "` + runtimeDir + `"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"snapshot", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+
+	var payload struct {
+		Status struct {
+			Error string `json:"error"`
+		} `json:"status"`
+		Leases struct {
+			Clients []any  `json:"clients"`
+			Error   string `json:"error"`
+		} `json:"leases"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("snapshot json invalid: %v\n%s", err, output)
+	}
+	if !strings.Contains(payload.Status.Error, "expected dnsmasq lease fields") {
+		t.Fatalf("status error = %q", payload.Status.Error)
+	}
+	if len(payload.Leases.Clients) != 0 || !strings.Contains(payload.Leases.Error, "expected dnsmasq lease fields") {
+		t.Fatalf("leases = %#v", payload.Leases)
+	}
+}
+
+func TestSnapshotCommandRejectsNegativeTail(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+runtime:
+  dir: "` + filepath.Join(dir, "runtime") + `"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var exitCode int
+	stderr := captureStderr(t, func() {
+		exitCode = run([]string{"snapshot", "--config", configPath, "--tail", "-1"})
 	})
 	if exitCode != 2 {
 		t.Fatalf("run() exit = %d, stderr:\n%s", exitCode, stderr)

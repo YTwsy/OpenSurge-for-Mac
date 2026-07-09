@@ -21,11 +21,13 @@ make policy-control-test
 This gate writes an imported mihomo fixture under `runtime/integration/`, renders
 OpenSurge's gateway overlay, starts the real mihomo binary without dnsmasq, pf,
 TUN, or sudo, and verifies `omg policies`, `omg policy-select`, and
-`omg connections` against the live external-controller API. It rejects an
-unknown policy before switching, then restarts mihomo in the same runtime
-directory to verify `profile.store-selected` restores the selected policy. It
-proves the control-plane contract with mihomo, not whole-LAN routing or
-transparent proxy capture.
+`omg connections` against the live external-controller API. It also verifies
+`omg snapshot` can aggregate status, doctor, leases, logs, policies, and
+connections while mihomo is running. The gate rejects an unknown policy before
+switching, then restarts mihomo in the same runtime directory to verify
+`profile.store-selected` restores the selected policy. It proves the
+control-plane contract with mihomo, not whole-LAN routing or transparent proxy
+capture.
 
 The transparent proxy gate is `make lab-test-tun`. It is stricter than the
 default lab path because clients do not use `mixed-port`; the test must prove
