@@ -19,8 +19,9 @@ make policy-control-test
 这个 gate 会在 `runtime/integration/` 下写入 imported mihomo fixture，渲染
 OpenSurge 的 gateway overlay，启动真实 mihomo 二进制，但不启动 dnsmasq、pf、
 TUN，也不需要 sudo。它会用 live external-controller API 验证 `omg policies`、
-`omg policy-select` 和 `omg connections`，也会验证 `omg snapshot` 可以在
-mihomo 运行时聚合 status、doctor、leases、logs、policies 和 connections。
+`omg policy-select` 和 `omg connections`，也会验证 `omg providers` 可以读取
+imported file proxy-provider，且 `omg snapshot` 可以在 mihomo 运行时聚合
+status、doctor、leases、logs、policies、providers 和 connections。
 它会先验证未知 policy 会以机器可读 JSON 错误被拒绝，再在同一个 runtime 目录内
 重启 mihomo，验证 `profile.store-selected` 能恢复选中的策略。它证明的是 mihomo
 控制面契约，不证明全 LAN 路由或透明代理捕获。

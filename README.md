@@ -30,6 +30,7 @@ Today OpenSurge for Mac can:
 - support explicit proxy traffic through mihomo `mixed-port`;
 - support transparent proxying through mihomo TUN on macOS;
 - list and switch mihomo policy groups from the CLI when mihomo is running;
+- inspect imported mihomo proxy/rule provider status from the CLI;
 - inspect current mihomo connections from the CLI;
 - inspect runtime log paths and recent dnsmasq/mihomo log lines from the CLI;
 - collect a partial-failure JSON snapshot for UI and diagnostics surfaces;
@@ -92,6 +93,7 @@ go run ./cmd/omg snapshot --config examples/config.example.yaml --tail 50 --form
 go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
 go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
+go run ./cmd/omg providers --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
 sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
@@ -102,8 +104,8 @@ groups or policies before sending the selection change.
 `logs --tail N --format json` includes recent `dnsmasq` and `mihomo` log lines
 with per-file existence and read-error fields for control surfaces.
 `snapshot --format json` aggregates status, doctor checks, leases, log tails,
-policy groups, and connections; mihomo API failures are reported inside the
-`mihomo` fields so the rest of the snapshot remains usable.
+policy groups, connections, and provider status; mihomo API failures are
+reported inside the `mihomo` fields so the rest of the snapshot remains usable.
 `start --format json` and `stop --format json` return a success payload with
 `command`, `ok`, and `config_path` after the gateway action succeeds.
 When `--format json` is used, command failures are emitted to stderr as
@@ -138,8 +140,8 @@ imported profile fixture.
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
 checks `policies`, invalid and valid `policy-select`, persisted selection
-restore after mihomo restart, `connections`, and `snapshot` against the live
-external-controller API.
+restore after mihomo restart, `connections`, `providers`, and `snapshot` against
+the live external-controller API.
 
 Use `make same-lan-start-tun` and `make same-lan-adb-check` for the narrow
 same-LAN default-gateway smoke. This gate keeps DHCP disabled, requires TUN, and

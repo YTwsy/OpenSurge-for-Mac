@@ -8,6 +8,7 @@ BASE_DIR="$ROOT/runtime/integration/policy-control"
 WORK_DIR="${OMG_POLICY_CONTROL_WORK_DIR:-$BASE_DIR/run-$$}"
 CONFIG="$WORK_DIR/config.yaml"
 PROFILE="$WORK_DIR/profile.yaml"
+PROVIDER="$WORK_DIR/provider.yaml"
 MIHOMO_CONFIG="$WORK_DIR/mihomo.yaml"
 MIHOMO_LOG="$WORK_DIR/logs/mihomo.log"
 OMG_BIN="$WORK_DIR/omg"
@@ -44,9 +45,18 @@ proxies:
     server: "127.0.0.1"
     port: 18080
 
+proxy-providers:
+  demo-provider:
+    type: file
+    path: ./provider.yaml
+    health-check:
+      enable: false
+
 proxy-groups:
   - name: "Proxy"
     type: select
+    use:
+      - demo-provider
     proxies:
       - "demo-proxy"
       - DIRECT
@@ -54,6 +64,14 @@ proxy-groups:
 rules:
   - DOMAIN,example.com,Proxy
   - MATCH,DIRECT
+EOF
+
+  cat >"$PROVIDER" <<'EOF'
+proxies:
+  - name: "provider-proxy"
+    type: http
+    server: "127.0.0.1"
+    port: 18081
 EOF
 
   cat >"$CONFIG" <<EOF
@@ -178,6 +196,16 @@ section "connections"
 cat "$WORK_DIR/connections.json"
 assert_file_contains "$WORK_DIR/connections.json" '"connections"'
 
+section "providers"
+"$OMG_BIN" providers --config "$CONFIG" --format json >"$WORK_DIR/providers.json"
+cat "$WORK_DIR/providers.json"
+assert_file_contains "$WORK_DIR/providers.json" '"proxy_providers"'
+assert_file_contains "$WORK_DIR/providers.json" '"name": "demo-provider"'
+assert_file_contains "$WORK_DIR/providers.json" '"vehicle_type": "File"'
+assert_file_contains "$WORK_DIR/providers.json" '"proxy_count": 1'
+assert_file_contains "$WORK_DIR/providers.json" '"name": "provider-proxy"'
+assert_file_contains "$WORK_DIR/providers.json" '"rule_providers"'
+
 section "snapshot"
 "$OMG_BIN" snapshot --config "$CONFIG" --tail 5 --format json >"$WORK_DIR/snapshot.json"
 cat "$WORK_DIR/snapshot.json"
@@ -192,6 +220,8 @@ assert_file_contains "$WORK_DIR/snapshot.json" '"policies"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"available": true'
 assert_file_contains "$WORK_DIR/snapshot.json" '"name": "Proxy"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"connections"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"providers"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"name": "demo-provider"'
 
 section "done"
 printf 'policy-control integration passed\n'

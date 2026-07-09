@@ -45,6 +45,37 @@ type Connection struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
+type ProvidersSnapshot struct {
+	ProxyProviders []ProxyProvider `json:"proxy_providers"`
+	RuleProviders  []RuleProvider  `json:"rule_providers"`
+}
+
+type ProxyProvider struct {
+	Name           string          `json:"name"`
+	Type           string          `json:"type"`
+	VehicleType    string          `json:"vehicle_type"`
+	UpdatedAt      string          `json:"updated_at,omitempty"`
+	TestURL        string          `json:"test_url,omitempty"`
+	ExpectedStatus string          `json:"expected_status,omitempty"`
+	ProxyCount     int             `json:"proxy_count"`
+	Proxies        []ProviderProxy `json:"proxies"`
+}
+
+type ProviderProxy struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Alive bool   `json:"alive"`
+}
+
+type RuleProvider struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	VehicleType string `json:"vehicle_type"`
+	Behavior    string `json:"behavior,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+	RuleCount   int    `json:"rule_count"`
+}
+
 type proxyRecord struct {
 	Name string   `json:"name"`
 	Type string   `json:"type"`
@@ -60,6 +91,40 @@ type connectionsResponse struct {
 	UploadTotal   int64              `json:"uploadTotal"`
 	DownloadTotal int64              `json:"downloadTotal"`
 	Connections   []connectionRecord `json:"connections"`
+}
+
+type proxyProvidersResponse struct {
+	Providers map[string]proxyProviderRecord `json:"providers"`
+}
+
+type proxyProviderRecord struct {
+	Name           string                `json:"name"`
+	Type           string                `json:"type"`
+	VehicleType    string                `json:"vehicleType"`
+	UpdatedAt      string                `json:"updatedAt"`
+	TestURL        string                `json:"testUrl"`
+	ExpectedStatus string                `json:"expectedStatus"`
+	Proxies        []providerProxyRecord `json:"proxies"`
+}
+
+type providerProxyRecord struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Alive bool   `json:"alive"`
+}
+
+type ruleProvidersResponse struct {
+	Providers map[string]ruleProviderRecord `json:"providers"`
+}
+
+type ruleProviderRecord struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	VehicleType string `json:"vehicleType"`
+	Behavior    string `json:"behavior"`
+	UpdatedAt   string `json:"updatedAt"`
+	RuleCount   int    `json:"ruleCount"`
+	Rules       []any  `json:"rules"`
 }
 
 type connectionRecord struct {
@@ -91,6 +156,11 @@ func SelectProxyGroup(ctx context.Context, cfg config.Config, groupName, selecte
 func FetchConnections(ctx context.Context, cfg config.Config) (ConnectionsSnapshot, error) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	return fetchConnectionsWithClient(ctx, cfg, client)
+}
+
+func FetchProviders(ctx context.Context, cfg config.Config) (ProvidersSnapshot, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	return fetchProvidersWithClient(ctx, cfg, client)
 }
 
 func fetchVersionWithClient(ctx context.Context, cfg config.Config, client *http.Client) (Version, error) {
@@ -204,6 +274,121 @@ func fetchConnectionsWithClient(ctx context.Context, cfg config.Config, client *
 		DownloadTotal: body.DownloadTotal,
 		Connections:   connections,
 	}, nil
+}
+
+func fetchProvidersWithClient(ctx context.Context, cfg config.Config, client *http.Client) (ProvidersSnapshot, error) {
+	proxyProviders, err := fetchProxyProvidersWithClient(ctx, cfg, client)
+	if err != nil {
+		return ProvidersSnapshot{}, err
+	}
+	ruleProviders, err := fetchRuleProvidersWithClient(ctx, cfg, client)
+	if err != nil {
+		return ProvidersSnapshot{}, err
+	}
+	return ProvidersSnapshot{
+		ProxyProviders: proxyProviders,
+		RuleProviders:  ruleProviders,
+	}, nil
+}
+
+func fetchProxyProvidersWithClient(ctx context.Context, cfg config.Config, client *http.Client) ([]ProxyProvider, error) {
+	req, err := newAPIRequest(ctx, cfg, http.MethodGet, "/providers/proxies", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("mihomo API returned %s", resp.Status)
+	}
+
+	var body proxyProvidersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("empty mihomo API response")
+		}
+		return nil, err
+	}
+
+	providers := make([]ProxyProvider, 0, len(body.Providers))
+	for name, provider := range body.Providers {
+		if provider.Name == "" {
+			provider.Name = name
+		}
+		proxies := make([]ProviderProxy, 0, len(provider.Proxies))
+		for _, proxy := range provider.Proxies {
+			proxies = append(proxies, ProviderProxy{
+				Name:  proxy.Name,
+				Type:  proxy.Type,
+				Alive: proxy.Alive,
+			})
+		}
+		providers = append(providers, ProxyProvider{
+			Name:           provider.Name,
+			Type:           provider.Type,
+			VehicleType:    provider.VehicleType,
+			UpdatedAt:      provider.UpdatedAt,
+			TestURL:        provider.TestURL,
+			ExpectedStatus: provider.ExpectedStatus,
+			ProxyCount:     len(proxies),
+			Proxies:        proxies,
+		})
+	}
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i].Name < providers[j].Name
+	})
+	return providers, nil
+}
+
+func fetchRuleProvidersWithClient(ctx context.Context, cfg config.Config, client *http.Client) ([]RuleProvider, error) {
+	req, err := newAPIRequest(ctx, cfg, http.MethodGet, "/providers/rules", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("mihomo API returned %s", resp.Status)
+	}
+
+	var body ruleProvidersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("empty mihomo API response")
+		}
+		return nil, err
+	}
+
+	providers := make([]RuleProvider, 0, len(body.Providers))
+	for name, provider := range body.Providers {
+		if provider.Name == "" {
+			provider.Name = name
+		}
+		ruleCount := provider.RuleCount
+		if ruleCount == 0 && len(provider.Rules) > 0 {
+			ruleCount = len(provider.Rules)
+		}
+		providers = append(providers, RuleProvider{
+			Name:        provider.Name,
+			Type:        provider.Type,
+			VehicleType: provider.VehicleType,
+			Behavior:    provider.Behavior,
+			UpdatedAt:   provider.UpdatedAt,
+			RuleCount:   ruleCount,
+		})
+	}
+	sort.Slice(providers, func(i, j int) bool {
+		return providers[i].Name < providers[j].Name
+	})
+	return providers, nil
 }
 
 func selectProxyGroupWithClient(ctx context.Context, cfg config.Config, client *http.Client, groupName, selected string) error {

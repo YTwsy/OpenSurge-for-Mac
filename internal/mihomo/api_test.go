@@ -181,6 +181,87 @@ func TestFetchConnections(t *testing.T) {
 	}
 }
 
+func TestFetchProviders(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.APIAddr = "127.0.0.1:9090"
+	cfg.Mihomo.Secret = "test-secret"
+
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.Header.Get("Authorization"); got != "Bearer test-secret" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		switch req.URL.String() {
+		case "http://127.0.0.1:9090/providers/proxies":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body: io.NopCloser(strings.NewReader(`{
+				  "providers": {
+				    "demo": {
+				      "name": "demo",
+				      "type": "Proxy",
+				      "vehicleType": "File",
+				      "testUrl": "https://www.gstatic.com/generate_204",
+				      "expectedStatus": "*",
+				      "updatedAt": "2026-07-10T07:42:26+08:00",
+				      "proxies": [
+				        {"name":"HK","type":"Http","alive":true},
+				        {"name":"JP","type":"Socks5","alive":false}
+				      ]
+				    },
+				    "default": {
+				      "name": "default",
+				      "type": "Proxy",
+				      "vehicleType": "Compatible",
+				      "proxies": [{"name":"DIRECT","type":"Direct","alive":true}]
+				    }
+				  }
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		case "http://127.0.0.1:9090/providers/rules":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body: io.NopCloser(strings.NewReader(`{
+				  "providers": {
+				    "cn": {
+				      "name": "cn",
+				      "type": "Rule",
+				      "vehicleType": "File",
+				      "behavior": "classical",
+				      "updatedAt": "2026-07-10T08:00:00+08:00",
+				      "rules": ["DOMAIN,example.com,DIRECT", "DOMAIN,example.org,DIRECT"]
+				    }
+				  }
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		default:
+			t.Fatalf("URL = %q", req.URL.String())
+			return nil, nil
+		}
+	})}
+
+	providers, err := fetchProvidersWithClient(context.Background(), cfg, client)
+	if err != nil {
+		t.Fatalf("fetchProvidersWithClient() error = %v", err)
+	}
+	if len(providers.ProxyProviders) != 2 {
+		t.Fatalf("proxy providers = %#v", providers.ProxyProviders)
+	}
+	if providers.ProxyProviders[0].Name != "default" || providers.ProxyProviders[0].ProxyCount != 1 {
+		t.Fatalf("proxy providers[0] = %#v", providers.ProxyProviders[0])
+	}
+	demo := providers.ProxyProviders[1]
+	if demo.Name != "demo" || demo.VehicleType != "File" || demo.ProxyCount != 2 || demo.Proxies[0].Name != "HK" || !demo.Proxies[0].Alive {
+		t.Fatalf("demo provider = %#v", demo)
+	}
+	if len(providers.RuleProviders) != 1 || providers.RuleProviders[0].Name != "cn" || providers.RuleProviders[0].RuleCount != 2 {
+		t.Fatalf("rule providers = %#v", providers.RuleProviders)
+	}
+}
+
 func TestImportedProfilePolicySwitchFixture(t *testing.T) {
 	cfg := config.Default()
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported

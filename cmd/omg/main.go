@@ -23,6 +23,7 @@ var (
 	fetchProxyGroups  = mihomo.FetchProxyGroups
 	selectProxyGroup  = mihomo.SelectProxyGroup
 	fetchConnections  = mihomo.FetchConnections
+	fetchProviders    = mihomo.FetchProviders
 	newGatewayManager = func(cfg config.Config) gatewayManager {
 		return gateway.New(cfg)
 	}
@@ -174,6 +175,15 @@ func run(args []string) int {
 			return writeJSONExit(connections)
 		}
 		fmt.Print(formatConnections(connections))
+	case "providers":
+		providers, err := fetchProviders(ctx, cfg)
+		if err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "providers", err)
+		}
+		if jsonOutput {
+			return writeJSONExit(providers)
+		}
+		fmt.Print(formatProviders(providers))
 	case "render-mihomo":
 		rendered, err := mihomo.RenderConfig(cfg)
 		if err != nil {
@@ -261,6 +271,7 @@ type mihomoSnapshotJSON struct {
 	APIAddr     string                  `json:"api_addr"`
 	Policies    policiesSnapshotJSON    `json:"policies"`
 	Connections connectionsSnapshotJSON `json:"connections"`
+	Providers   providersSnapshotJSON   `json:"providers"`
 }
 
 type policiesSnapshotJSON struct {
@@ -275,6 +286,13 @@ type connectionsSnapshotJSON struct {
 	DownloadTotal int64               `json:"download_total"`
 	Connections   []mihomo.Connection `json:"connections"`
 	Error         string              `json:"error"`
+}
+
+type providersSnapshotJSON struct {
+	Available      bool                   `json:"available"`
+	ProxyProviders []mihomo.ProxyProvider `json:"proxy_providers"`
+	RuleProviders  []mihomo.RuleProvider  `json:"rule_providers"`
+	Error          string                 `json:"error"`
 }
 
 type policiesJSON struct {
@@ -408,6 +426,7 @@ func mihomoSnapshot(ctx context.Context, cfg config.Config) mihomoSnapshotJSON {
 		APIAddr:     cfg.Mihomo.APIAddr,
 		Policies:    policiesSnapshot(ctx, cfg),
 		Connections: connectionsSnapshot(ctx, cfg),
+		Providers:   providersSnapshot(ctx, cfg),
 	}
 }
 
@@ -433,6 +452,25 @@ func connectionsSnapshot(ctx context.Context, cfg config.Config) connectionsSnap
 		UploadTotal:   connections.UploadTotal,
 		DownloadTotal: connections.DownloadTotal,
 		Connections:   connections.Connections,
+	}
+	if err != nil {
+		snapshot.Error = err.Error()
+	}
+	return snapshot
+}
+
+func providersSnapshot(ctx context.Context, cfg config.Config) providersSnapshotJSON {
+	providers, err := fetchProviders(ctx, cfg)
+	if providers.ProxyProviders == nil {
+		providers.ProxyProviders = []mihomo.ProxyProvider{}
+	}
+	if providers.RuleProviders == nil {
+		providers.RuleProviders = []mihomo.RuleProvider{}
+	}
+	snapshot := providersSnapshotJSON{
+		Available:      err == nil,
+		ProxyProviders: providers.ProxyProviders,
+		RuleProviders:  providers.RuleProviders,
 	}
 	if err != nil {
 		snapshot.Error = err.Error()
@@ -567,6 +605,35 @@ func formatSnapshot(snapshot snapshotJSON) string {
 	} else {
 		fmt.Fprintf(&out, "Connections unavailable: %s\n", snapshot.Mihomo.Connections.Error)
 	}
+	if snapshot.Mihomo.Providers.Available {
+		fmt.Fprintf(&out, "Proxy providers: %d\n", len(snapshot.Mihomo.Providers.ProxyProviders))
+	} else {
+		fmt.Fprintf(&out, "Providers unavailable: %s\n", snapshot.Mihomo.Providers.Error)
+	}
+	return out.String()
+}
+
+func formatProviders(snapshot mihomo.ProvidersSnapshot) string {
+	var out strings.Builder
+	fmt.Fprintf(&out, "Proxy providers: %d\n", len(snapshot.ProxyProviders))
+	for _, provider := range snapshot.ProxyProviders {
+		fmt.Fprintf(&out, "%s (%s/%s): %d proxies", provider.Name, provider.Type, provider.VehicleType, provider.ProxyCount)
+		if provider.UpdatedAt != "" && !strings.HasPrefix(provider.UpdatedAt, "0001-01-01") {
+			fmt.Fprintf(&out, " updated %s", provider.UpdatedAt)
+		}
+		out.WriteByte('\n')
+		for _, proxy := range provider.Proxies {
+			status := "dead"
+			if proxy.Alive {
+				status = "alive"
+			}
+			fmt.Fprintf(&out, "  %s (%s): %s\n", proxy.Name, proxy.Type, status)
+		}
+	}
+	fmt.Fprintf(&out, "Rule providers: %d\n", len(snapshot.RuleProviders))
+	for _, provider := range snapshot.RuleProviders {
+		fmt.Fprintf(&out, "%s (%s/%s): %d rules\n", provider.Name, provider.Type, provider.VehicleType, provider.RuleCount)
+	}
 	return out.String()
 }
 
@@ -639,13 +706,15 @@ Commands:
   doctor   run environment checks
   leases   print DHCP leases
   logs     print runtime log location or recent log lines with --tail
-  snapshot collect status, doctor, leases, logs, policies, and connections
+  snapshot collect status, doctor, leases, logs, policies, providers, and connections
   policies
            list mihomo policy groups from the external-controller API
   policy-select --group <name> --policy <name>
            switch the selected policy in a mihomo policy group
   connections
            print current mihomo connections from the external-controller API
+  providers
+           print mihomo proxy/rule providers from the external-controller API
   render-mihomo
            print the final mihomo config without starting services
   validate-mihomo

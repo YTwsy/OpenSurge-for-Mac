@@ -452,9 +452,11 @@ runtime:
 func TestSnapshotCommandPrintsPartialJSON(t *testing.T) {
 	oldFetchGroups := fetchProxyGroups
 	oldFetchConnections := fetchConnections
+	oldFetchProviders := fetchProviders
 	t.Cleanup(func() {
 		fetchProxyGroups = oldFetchGroups
 		fetchConnections = oldFetchConnections
+		fetchProviders = oldFetchProviders
 	})
 	fetchProxyGroups = func(ctx context.Context, cfg config.Config) ([]mihomo.ProxyGroup, error) {
 		if cfg.Mihomo.APIAddr != "127.0.0.1:9090" {
@@ -466,6 +468,13 @@ func TestSnapshotCommandPrintsPartialJSON(t *testing.T) {
 	}
 	fetchConnections = func(ctx context.Context, cfg config.Config) (mihomo.ConnectionsSnapshot, error) {
 		return mihomo.ConnectionsSnapshot{}, errors.New("mihomo API unavailable")
+	}
+	fetchProviders = func(ctx context.Context, cfg config.Config) (mihomo.ProvidersSnapshot, error) {
+		return mihomo.ProvidersSnapshot{
+			ProxyProviders: []mihomo.ProxyProvider{
+				{Name: "demo", Type: "Proxy", VehicleType: "File", ProxyCount: 1, Proxies: []mihomo.ProviderProxy{{Name: "HK", Type: "Http", Alive: true}}},
+			},
+		}, nil
 	}
 
 	dir := t.TempDir()
@@ -539,6 +548,18 @@ runtime:
 				Connections []any  `json:"connections"`
 				Error       string `json:"error"`
 			} `json:"connections"`
+			Providers struct {
+				Available      bool `json:"available"`
+				ProxyProviders []struct {
+					Name       string `json:"name"`
+					ProxyCount int    `json:"proxy_count"`
+					Proxies    []struct {
+						Name  string `json:"name"`
+						Alive bool   `json:"alive"`
+					} `json:"proxies"`
+				} `json:"proxy_providers"`
+				Error string `json:"error"`
+			} `json:"providers"`
 		} `json:"mihomo"`
 	}
 	if err := json.Unmarshal([]byte(output), &payload); err != nil {
@@ -565,20 +586,28 @@ runtime:
 	if payload.Mihomo.Connections.Available || !strings.Contains(payload.Mihomo.Connections.Error, "mihomo API unavailable") || len(payload.Mihomo.Connections.Connections) != 0 {
 		t.Fatalf("connections = %#v", payload.Mihomo.Connections)
 	}
+	if !payload.Mihomo.Providers.Available || len(payload.Mihomo.Providers.ProxyProviders) != 1 || payload.Mihomo.Providers.ProxyProviders[0].Name != "demo" || payload.Mihomo.Providers.ProxyProviders[0].Proxies[0].Name != "HK" || !payload.Mihomo.Providers.ProxyProviders[0].Proxies[0].Alive {
+		t.Fatalf("providers = %#v", payload.Mihomo.Providers)
+	}
 }
 
 func TestSnapshotCommandReportsLeaseParseErrorsInJSON(t *testing.T) {
 	oldFetchGroups := fetchProxyGroups
 	oldFetchConnections := fetchConnections
+	oldFetchProviders := fetchProviders
 	t.Cleanup(func() {
 		fetchProxyGroups = oldFetchGroups
 		fetchConnections = oldFetchConnections
+		fetchProviders = oldFetchProviders
 	})
 	fetchProxyGroups = func(ctx context.Context, cfg config.Config) ([]mihomo.ProxyGroup, error) {
 		return nil, errors.New("mihomo API unavailable")
 	}
 	fetchConnections = func(ctx context.Context, cfg config.Config) (mihomo.ConnectionsSnapshot, error) {
 		return mihomo.ConnectionsSnapshot{}, errors.New("mihomo API unavailable")
+	}
+	fetchProviders = func(ctx context.Context, cfg config.Config) (mihomo.ProvidersSnapshot, error) {
+		return mihomo.ProvidersSnapshot{}, errors.New("mihomo API unavailable")
 	}
 
 	dir := t.TempDir()
@@ -870,6 +899,59 @@ func TestConnectionsCommandPrintsJSON(t *testing.T) {
 	}
 	if payload.Connections[0].Metadata["host"] != "example.com" {
 		t.Fatalf("metadata = %#v", payload.Connections[0].Metadata)
+	}
+}
+
+func TestProvidersCommandPrintsJSON(t *testing.T) {
+	oldFetch := fetchProviders
+	t.Cleanup(func() {
+		fetchProviders = oldFetch
+	})
+	fetchProviders = func(ctx context.Context, cfg config.Config) (mihomo.ProvidersSnapshot, error) {
+		if cfg.Mihomo.APIAddr != "127.0.0.1:9090" {
+			t.Fatalf("api_addr = %q", cfg.Mihomo.APIAddr)
+		}
+		return mihomo.ProvidersSnapshot{
+			ProxyProviders: []mihomo.ProxyProvider{
+				{Name: "demo", Type: "Proxy", VehicleType: "File", ProxyCount: 1, Proxies: []mihomo.ProviderProxy{{Name: "HK", Type: "Http", Alive: true}}},
+			},
+			RuleProviders: []mihomo.RuleProvider{
+				{Name: "cn", Type: "Rule", VehicleType: "File", Behavior: "classical", RuleCount: 2},
+			},
+		}, nil
+	}
+
+	configPath := writeAPIConfig(t, "127.0.0.1:9090")
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"providers", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+
+	var payload struct {
+		ProxyProviders []struct {
+			Name       string `json:"name"`
+			ProxyCount int    `json:"proxy_count"`
+			Proxies    []struct {
+				Name  string `json:"name"`
+				Alive bool   `json:"alive"`
+			} `json:"proxies"`
+		} `json:"proxy_providers"`
+		RuleProviders []struct {
+			Name      string `json:"name"`
+			RuleCount int    `json:"rule_count"`
+		} `json:"rule_providers"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("providers json invalid: %v\n%s", err, output)
+	}
+	if len(payload.ProxyProviders) != 1 || payload.ProxyProviders[0].Name != "demo" || payload.ProxyProviders[0].ProxyCount != 1 || payload.ProxyProviders[0].Proxies[0].Name != "HK" || !payload.ProxyProviders[0].Proxies[0].Alive {
+		t.Fatalf("proxy providers = %#v", payload.ProxyProviders)
+	}
+	if len(payload.RuleProviders) != 1 || payload.RuleProviders[0].Name != "cn" || payload.RuleProviders[0].RuleCount != 2 {
+		t.Fatalf("rule providers = %#v", payload.RuleProviders)
 	}
 }
 
