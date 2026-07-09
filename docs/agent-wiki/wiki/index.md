@@ -32,7 +32,8 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
 策略组和连接，并把 mihomo API 不可用记录在局部字段里，适合后续轻 UI 或菜单栏
 诊断界面复用。
 `start --format json` 和 `stop --format json` 在动作成功后返回结构化成功 payload；
-失败仍通过非零退出码和 stderr 表达。
+失败仍保留非零退出码，并在 `--format json` 时把
+`{"command":"...","ok":false,"error":"..."}` 写到 stderr。
 
 ## 事实来源
 

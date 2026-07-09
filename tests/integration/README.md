@@ -23,8 +23,9 @@ OpenSurge's gateway overlay, starts the real mihomo binary without dnsmasq, pf,
 TUN, or sudo, and verifies `omg policies`, `omg policy-select`, and
 `omg connections` against the live external-controller API. It also verifies
 `omg snapshot` can aggregate status, doctor, leases, logs, policies, and
-connections while mihomo is running. The gate rejects an unknown policy before
-switching, then restarts mihomo in the same runtime directory to verify
+connections while mihomo is running. The gate rejects an unknown policy with a
+machine-readable JSON error before switching, then restarts mihomo in the same
+runtime directory to verify
 `profile.store-selected` restores the selected policy. It proves the
 control-plane contract with mihomo, not whole-LAN routing or transparent proxy
 capture.

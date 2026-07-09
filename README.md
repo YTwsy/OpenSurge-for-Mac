@@ -106,6 +106,9 @@ policy groups, and connections; mihomo API failures are reported inside the
 `mihomo` fields so the rest of the snapshot remains usable.
 `start --format json` and `stop --format json` return a success payload with
 `command`, `ok`, and `config_path` after the gateway action succeeds.
+When `--format json` is used, command failures are emitted to stderr as
+`{"command":"...","ok":false,"error":"..."}` while preserving the non-zero exit
+code.
 
 ## Safety
 

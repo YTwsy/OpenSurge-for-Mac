@@ -97,6 +97,8 @@ sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 连接；mihomo API 失败会留在 `mihomo` 字段内部，不影响其余 snapshot 可用。
 `start --format json` 和 `stop --format json` 会在网关动作成功后返回包含
 `command`、`ok` 和 `config_path` 的成功 payload。
+使用 `--format json` 时，命令失败会在 stderr 输出
+`{"command":"...","ok":false,"error":"..."}`，同时保留非零退出码。
 
 ## 安全
 

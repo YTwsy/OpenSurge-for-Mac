@@ -63,8 +63,7 @@ func run(args []string) int {
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config: %v\n", err)
-		return 1
+		return writeErrorExit(command, jsonOutput, 1, "config", err)
 	}
 
 	ctx := context.Background()
@@ -73,16 +72,14 @@ func run(args []string) int {
 	switch command {
 	case "start":
 		if err := manager.Start(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "start: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "start", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(commandResultJSON{Command: "start", OK: true, ConfigPath: *configPath})
 		}
 	case "stop":
 		if err := manager.Stop(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "stop: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "stop", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(commandResultJSON{Command: "stop", OK: true, ConfigPath: *configPath})
@@ -90,8 +87,7 @@ func run(args []string) int {
 	case "status":
 		status, err := manager.Status(ctx)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "status: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "status", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(status)
@@ -109,8 +105,7 @@ func run(args []string) int {
 	case "leases":
 		clients, err := device.LoadLeases(runtime.NewPaths(cfg).LeaseFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "leases: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "leases", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(leasesJSON{Clients: clients})
@@ -118,8 +113,7 @@ func run(args []string) int {
 		fmt.Print(device.FormatClients(clients))
 	case "logs":
 		if *logTail < 0 {
-			fmt.Fprintf(os.Stderr, "logs: tail must be greater than or equal to 0\n")
-			return 2
+			return writeErrorMessageExit(command, jsonOutput, 2, "logs: tail must be greater than or equal to 0")
 		}
 		paths := runtime.NewPaths(cfg)
 		recent := recentLogFiles(paths, *logTail)
@@ -140,8 +134,7 @@ func run(args []string) int {
 		fmt.Printf("Logs directory: %s\n", paths.LogDir)
 	case "snapshot":
 		if *logTail < 0 {
-			fmt.Fprintf(os.Stderr, "snapshot: tail must be greater than or equal to 0\n")
-			return 2
+			return writeErrorMessageExit(command, jsonOutput, 2, "snapshot: tail must be greater than or equal to 0")
 		}
 		snapshot := buildSnapshot(ctx, cfg, manager, *logTail)
 		if jsonOutput {
@@ -151,8 +144,7 @@ func run(args []string) int {
 	case "policies":
 		groups, err := fetchProxyGroups(ctx, cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "policies: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "policies", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(policiesJSON{Groups: groups})
@@ -161,16 +153,13 @@ func run(args []string) int {
 	case "policy-select":
 		groups, err := fetchProxyGroups(ctx, cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "policy-select: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "policy-select", err)
 		}
 		if err := validatePolicySelection(groups, *policyGroup, *policyName); err != nil {
-			fmt.Fprintf(os.Stderr, "policy-select: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "policy-select", err)
 		}
 		if err := selectProxyGroup(ctx, cfg, *policyGroup, *policyName); err != nil {
-			fmt.Fprintf(os.Stderr, "policy-select: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "policy-select", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(policySelectJSON{Group: *policyGroup, Selected: *policyName})
@@ -179,8 +168,7 @@ func run(args []string) int {
 	case "connections":
 		connections, err := fetchConnections(ctx, cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "connections: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "connections", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(connections)
@@ -189,21 +177,22 @@ func run(args []string) int {
 	case "render-mihomo":
 		rendered, err := mihomo.RenderConfig(cfg)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "render-mihomo: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "render-mihomo", err)
 		}
 		fmt.Print(rendered)
 	case "validate-mihomo":
 		paths := runtime.NewPaths(cfg)
 		if err := mihomo.New(cfg, paths).ValidateConfig(); err != nil {
-			fmt.Fprintf(os.Stderr, "validate-mihomo: %v\n", err)
-			return 1
+			return writeErrorExit(command, jsonOutput, 1, "validate-mihomo", err)
 		}
 		if jsonOutput {
 			return writeJSONExit(validateMihomoJSON{Valid: true, MihomoConfig: paths.MihomoConfig})
 		}
 		fmt.Printf("mihomo config valid: %s\n", paths.MihomoConfig)
 	default:
+		if jsonOutput {
+			return writeErrorMessageExit(command, jsonOutput, 2, fmt.Sprintf("unknown command %q", command))
+		}
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", command)
 		printUsage(os.Stderr)
 		return 2
@@ -225,6 +214,12 @@ type commandResultJSON struct {
 	Command    string `json:"command"`
 	OK         bool   `json:"ok"`
 	ConfigPath string `json:"config_path"`
+}
+
+type commandErrorJSON struct {
+	Command string `json:"command"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error"`
 }
 
 type logsJSON struct {
@@ -315,6 +310,23 @@ func writeJSONExit(value any) int {
 		return 1
 	}
 	return 0
+}
+
+func writeErrorExit(command string, jsonOutput bool, code int, label string, err error) int {
+	return writeErrorMessageExit(command, jsonOutput, code, fmt.Sprintf("%s: %v", label, err))
+}
+
+func writeErrorMessageExit(command string, jsonOutput bool, code int, message string) int {
+	if jsonOutput {
+		encoder := json.NewEncoder(os.Stderr)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(commandErrorJSON{Command: command, OK: false, Error: message}); err != nil {
+			fmt.Fprintf(os.Stderr, "json: %v\n", err)
+		}
+		return code
+	}
+	fmt.Fprintln(os.Stderr, message)
+	return code
 }
 
 func validatePolicySelection(groups []mihomo.ProxyGroup, groupName, selected string) error {

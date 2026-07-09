@@ -143,6 +143,33 @@ func TestStartCommandPrintsJSON(t *testing.T) {
 	}
 }
 
+func TestStartCommandPrintsJSONError(t *testing.T) {
+	oldNewGatewayManager := newGatewayManager
+	t.Cleanup(func() {
+		newGatewayManager = oldNewGatewayManager
+	})
+	newGatewayManager = func(cfg config.Config) gatewayManager {
+		return &fakeGatewayManager{startErr: errors.New("boom")}
+	}
+
+	configPath := writeRuntimeConfig(t)
+	var exitCode int
+	stderr := captureStderr(t, func() {
+		exitCode = run([]string{"start", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 1 {
+		t.Fatalf("run() exit = %d, stderr:\n%s", exitCode, stderr)
+	}
+
+	var payload commandErrorJSON
+	if err := json.Unmarshal([]byte(stderr), &payload); err != nil {
+		t.Fatalf("start error json invalid: %v\n%s", err, stderr)
+	}
+	if payload.Command != "start" || payload.OK || payload.Error != "start: boom" {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
 func TestStopCommandPrintsJSON(t *testing.T) {
 	oldNewGatewayManager := newGatewayManager
 	t.Cleanup(func() {
@@ -170,6 +197,25 @@ func TestStopCommandPrintsJSON(t *testing.T) {
 		t.Fatalf("stop json invalid: %v\n%s", err, output)
 	}
 	if payload.Command != "stop" || !payload.OK || payload.ConfigPath != configPath {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestConfigLoadErrorPrintsJSON(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "missing.yaml")
+	var exitCode int
+	stderr := captureStderr(t, func() {
+		exitCode = run([]string{"status", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 1 {
+		t.Fatalf("run() exit = %d, stderr:\n%s", exitCode, stderr)
+	}
+
+	var payload commandErrorJSON
+	if err := json.Unmarshal([]byte(stderr), &payload); err != nil {
+		t.Fatalf("config error json invalid: %v\n%s", err, stderr)
+	}
+	if payload.Command != "status" || payload.OK || !strings.Contains(payload.Error, "config:") || !strings.Contains(payload.Error, "missing.yaml") {
 		t.Fatalf("payload = %#v", payload)
 	}
 }
@@ -373,6 +419,33 @@ runtime:
 	}
 	if !strings.Contains(stderr, "tail must be greater than or equal to 0") {
 		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestLogsCommandRejectsNegativeTailJSON(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+runtime:
+  dir: "` + filepath.Join(dir, "runtime") + `"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var exitCode int
+	stderr := captureStderr(t, func() {
+		exitCode = run([]string{"logs", "--config", configPath, "--tail", "-1", "--format", "json"})
+	})
+	if exitCode != 2 {
+		t.Fatalf("run() exit = %d, stderr:\n%s", exitCode, stderr)
+	}
+	var payload commandErrorJSON
+	if err := json.Unmarshal([]byte(stderr), &payload); err != nil {
+		t.Fatalf("logs error json invalid: %v\n%s", err, stderr)
+	}
+	if payload.Command != "logs" || payload.OK || payload.Error != "logs: tail must be greater than or equal to 0" {
+		t.Fatalf("payload = %#v", payload)
 	}
 }
 

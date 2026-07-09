@@ -21,9 +21,9 @@ OpenSurge 的 gateway overlay，启动真实 mihomo 二进制，但不启动 dns
 TUN，也不需要 sudo。它会用 live external-controller API 验证 `omg policies`、
 `omg policy-select` 和 `omg connections`，也会验证 `omg snapshot` 可以在
 mihomo 运行时聚合 status、doctor、leases、logs、policies 和 connections。
-它会先验证未知 policy 会被拒绝，再在同一个 runtime 目录内重启 mihomo，验证
-`profile.store-selected` 能恢复选中的策略。它证明的是 mihomo 控制面契约，不证明
-全 LAN 路由或透明代理捕获。
+它会先验证未知 policy 会以机器可读 JSON 错误被拒绝，再在同一个 runtime 目录内
+重启 mihomo，验证 `profile.store-selected` 能恢复选中的策略。它证明的是 mihomo
+控制面契约，不证明全 LAN 路由或透明代理捕获。
 
 透明代理门禁是 `make lab-test-tun`。它比默认 lab 路径更严格，因为客户端不使用
 `mixed-port`；测试必须证明 mihomo 通过 TUN 观察到了客户端 HTTPS 连接。
