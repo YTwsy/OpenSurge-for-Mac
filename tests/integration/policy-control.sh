@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-WORK_DIR="$ROOT/runtime/integration/policy-control"
+BASE_DIR="$ROOT/runtime/integration/policy-control"
+WORK_DIR="${OMG_POLICY_CONTROL_WORK_DIR:-$BASE_DIR/run-$$}"
 CONFIG="$WORK_DIR/config.yaml"
 PROFILE="$WORK_DIR/profile.yaml"
 MIHOMO_CONFIG="$WORK_DIR/mihomo.yaml"
@@ -74,6 +75,22 @@ build_omg() {
   GOCACHE="${GOCACHE:-$WORK_DIR/go-cache}" go build -o "$OMG_BIN" ./cmd/omg
 }
 
+start_mihomo() {
+  local label=$1
+  printf '\n# %s\n' "$label" >>"$MIHOMO_LOG"
+  "$MIHOMO_BINARY" -d "$WORK_DIR" -f "$MIHOMO_CONFIG" >>"$MIHOMO_LOG" 2>&1 &
+  PID=$!
+  wait_for_api
+}
+
+stop_mihomo() {
+  if [[ -n "$PID" ]] && kill -0 "$PID" 2>/dev/null; then
+    kill "$PID" 2>/dev/null || true
+    wait "$PID" 2>/dev/null || true
+  fi
+  PID=""
+}
+
 wait_for_api() {
   local url="http://$API_ADDR/version"
   local attempt
@@ -114,9 +131,7 @@ assert_file_contains "$MIHOMO_CONFIG" "store-selected: true"
 assert_file_contains "$MIHOMO_CONFIG" "- DIRECT"
 
 section "start mihomo"
-"$MIHOMO_BINARY" -d "$WORK_DIR" -f "$MIHOMO_CONFIG" >"$MIHOMO_LOG" 2>&1 &
-PID=$!
-wait_for_api
+start_mihomo "initial start"
 
 section "list policies"
 "$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-before.json"
@@ -134,6 +149,17 @@ section "verify selected policy"
 "$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-after.json"
 cat "$WORK_DIR/policies-after.json"
 assert_file_contains "$WORK_DIR/policies-after.json" '"selected": "DIRECT"'
+
+section "restart mihomo"
+stop_mihomo
+start_mihomo "restart after policy-select"
+
+section "verify restored policy"
+"$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-restored.json"
+cat "$WORK_DIR/policies-restored.json"
+assert_file_contains "$WORK_DIR/policies-restored.json" '"name": "Proxy"'
+assert_file_contains "$WORK_DIR/policies-restored.json" '"selected": "DIRECT"'
+assert_file_contains "$WORK_DIR/policies-restored.json" '"DIRECT"'
 
 section "connections"
 "$OMG_BIN" connections --config "$CONFIG" --format json >"$WORK_DIR/connections.json"

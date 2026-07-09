@@ -53,6 +53,11 @@ API/config behavior and should be covered by unit or fixture-level tests first;
 real-device tests are only needed when proving the gateway path or whole-LAN
 client behavior.
 
+`make policy-control-test` is the non-root live mihomo gate for this layer. It
+starts mihomo without dnsmasq, pf, or TUN, switches the imported fixture's
+`Proxy` group to `DIRECT`, restarts mihomo in the same runtime directory, and
+requires the `DIRECT` selection to be restored through `profile.store-selected`.
+
 Use `make lab-test-tun-imported-profile` for a reproducible TUN lab gate that
 starts OpenSurge with an imported profile fixture. The fixture keeps
 `MATCH,DIRECT`, so it proves imported overlay compatibility with TUN startup and
