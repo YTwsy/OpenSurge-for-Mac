@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -41,6 +42,7 @@ func run(args []string) int {
 	outputFormat := fs.String("format", "text", "output format: text or json")
 	policyGroup := fs.String("group", "", "mihomo policy group name")
 	policyName := fs.String("policy", "", "mihomo policy name to select")
+	logTail := fs.Int("tail", 0, "number of recent log lines to include")
 	if err := fs.Parse(args[1:]); err != nil {
 		return 2
 	}
@@ -100,7 +102,12 @@ func run(args []string) int {
 		}
 		fmt.Print(device.FormatClients(clients))
 	case "logs":
+		if *logTail < 0 {
+			fmt.Fprintf(os.Stderr, "logs: tail must be greater than or equal to 0\n")
+			return 2
+		}
 		paths := runtime.NewPaths(cfg)
+		recent := recentLogFiles(paths, *logTail)
 		if jsonOutput {
 			return writeJSONExit(logsJSON{
 				LogsDir:      paths.LogDir,
@@ -108,7 +115,12 @@ func run(args []string) int {
 				MihomoLog:    paths.MihomoLog,
 				StateFile:    paths.StateFile,
 				MihomoConfig: paths.MihomoConfig,
+				Recent:       recent,
 			})
+		}
+		if *logTail > 0 {
+			fmt.Print(formatRecentLogs(recent))
+			return 0
 		}
 		fmt.Printf("Logs directory: %s\n", paths.LogDir)
 	case "policies":
@@ -185,11 +197,20 @@ type leasesJSON struct {
 }
 
 type logsJSON struct {
-	LogsDir      string `json:"logs_dir"`
-	DNSMasqLog   string `json:"dnsmasq_log"`
-	MihomoLog    string `json:"mihomo_log"`
-	StateFile    string `json:"state_file"`
-	MihomoConfig string `json:"mihomo_config"`
+	LogsDir      string        `json:"logs_dir"`
+	DNSMasqLog   string        `json:"dnsmasq_log"`
+	MihomoLog    string        `json:"mihomo_log"`
+	StateFile    string        `json:"state_file"`
+	MihomoConfig string        `json:"mihomo_config"`
+	Recent       []logFileJSON `json:"recent,omitempty"`
+}
+
+type logFileJSON struct {
+	Name   string   `json:"name"`
+	Path   string   `json:"path"`
+	Exists bool     `json:"exists"`
+	Lines  []string `json:"lines"`
+	Error  string   `json:"error"`
 }
 
 type policiesJSON struct {
@@ -258,6 +279,73 @@ func policyGroupNames(groups []mihomo.ProxyGroup) []string {
 	return names
 }
 
+func recentLogFiles(paths runtime.Paths, tail int) []logFileJSON {
+	if tail <= 0 {
+		return nil
+	}
+
+	files := []struct {
+		name string
+		path string
+	}{
+		{name: "dnsmasq", path: paths.DNSMasqLog},
+		{name: "mihomo", path: paths.MihomoLog},
+	}
+
+	recent := make([]logFileJSON, 0, len(files))
+	for _, file := range files {
+		lines, exists, err := tailFile(file.path, tail)
+		if lines == nil {
+			lines = []string{}
+		}
+		entry := logFileJSON{
+			Name:   file.name,
+			Path:   file.path,
+			Exists: exists,
+			Lines:  lines,
+		}
+		if err != nil {
+			entry.Error = err.Error()
+		}
+		recent = append(recent, entry)
+	}
+	return recent
+}
+
+func tailFile(path string, limit int) ([]string, bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	if info.IsDir() {
+		return nil, true, fmt.Errorf("is a directory")
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, true, err
+	}
+	defer file.Close()
+
+	lines := make([]string, 0, limit)
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		if len(lines) == limit {
+			copy(lines, lines[1:])
+			lines[len(lines)-1] = scanner.Text()
+			continue
+		}
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return lines, true, err
+	}
+	return lines, true, nil
+}
+
 func formatProxyGroups(groups []mihomo.ProxyGroup) string {
 	if len(groups) == 0 {
 		return "No mihomo policy groups found.\n"
@@ -272,6 +360,26 @@ func formatProxyGroups(groups []mihomo.ProxyGroup) string {
 				marker = "*"
 			}
 			fmt.Fprintf(&out, "  %s %s\n", marker, option)
+		}
+	}
+	return out.String()
+}
+
+func formatRecentLogs(files []logFileJSON) string {
+	var out strings.Builder
+	for _, file := range files {
+		fmt.Fprintf(&out, "== %s (%s) ==\n", file.Name, file.Path)
+		switch {
+		case file.Error != "":
+			fmt.Fprintf(&out, "error: %s\n", file.Error)
+		case !file.Exists:
+			fmt.Fprintln(&out, "missing")
+		case len(file.Lines) == 0:
+			fmt.Fprintln(&out, "empty")
+		default:
+			for _, line := range file.Lines {
+				fmt.Fprintln(&out, line)
+			}
 		}
 	}
 	return out.String()
@@ -345,7 +453,7 @@ Commands:
   status   print gateway status
   doctor   run environment checks
   leases   print DHCP leases
-  logs     print runtime log location
+  logs     print runtime log location or recent log lines with --tail
   policies
            list mihomo policy groups from the external-controller API
   policy-select --group <name> --policy <name>

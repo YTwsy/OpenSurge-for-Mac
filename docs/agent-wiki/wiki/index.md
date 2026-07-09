@@ -25,6 +25,11 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
 当前仓库是 CLI-driven MVP。把 CLI 当作当前控制面，不要把它误认为最终产品
 边界。
 
+当前控制面契约优先保持机器可读：`status`、`doctor`、`leases`、`logs`、
+`policies` 和 `connections` 支持 JSON 输出。`logs --tail N --format json`
+会返回最近的 dnsmasq/mihomo 日志行，并对每个日志文件标出存在状态和读取错误，
+适合后续轻 UI 或菜单栏诊断界面复用。
+
 ## 事实来源
 
 - 公开范围：`README.md`

@@ -24,6 +24,10 @@ OpenSurge for Mac 的目标，是成为一个开源的 Surge for Mac 风格 macO
 实现必须保持可审计、可回滚、可验证。高风险网络行为要先在隔离的 virtual
 LAN lab 中验证，再进入普通 LAN 场景。
 
+当前 CLI 是控制面 MVP。`status`、`doctor`、`leases`、`logs`、`policies` 和
+`connections` 都有机器可读 JSON 形态；`logs --tail N --format json` 会返回
+最近的 dnsmasq/mihomo 日志行，并对每个日志文件标出存在状态和读取错误。
+
 ## 当前事实来源
 
 - `README.md` 描述公开产品范围和 CLI 工作流。

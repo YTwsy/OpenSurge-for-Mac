@@ -232,6 +232,83 @@ runtime:
 	}
 }
 
+func TestLogsCommandPrintsTailJSON(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	runtimeDir := filepath.Join(dir, "runtime")
+	logDir := filepath.Join(runtimeDir, "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logDir, "dnsmasq.log"), []byte("dns-1\ndns-2\ndns-3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configBody := `
+mihomo:
+  config: "` + filepath.Join(runtimeDir, "mihomo.yaml") + `"
+runtime:
+  dir: "` + runtimeDir + `"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"logs", "--config", configPath, "--tail", "2", "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+
+	var payload struct {
+		Recent []struct {
+			Name   string   `json:"name"`
+			Path   string   `json:"path"`
+			Exists bool     `json:"exists"`
+			Lines  []string `json:"lines"`
+			Error  string   `json:"error"`
+		} `json:"recent"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("logs json invalid: %v\n%s", err, output)
+	}
+	if len(payload.Recent) != 2 {
+		t.Fatalf("recent = %#v", payload.Recent)
+	}
+	dnsmasq := payload.Recent[0]
+	if dnsmasq.Name != "dnsmasq" || !dnsmasq.Exists || strings.Join(dnsmasq.Lines, ",") != "dns-2,dns-3" || dnsmasq.Error != "" {
+		t.Fatalf("dnsmasq tail = %#v", dnsmasq)
+	}
+	mihomo := payload.Recent[1]
+	if mihomo.Name != "mihomo" || mihomo.Exists || len(mihomo.Lines) != 0 || mihomo.Error != "" {
+		t.Fatalf("mihomo tail = %#v", mihomo)
+	}
+}
+
+func TestLogsCommandRejectsNegativeTail(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+runtime:
+  dir: "` + filepath.Join(dir, "runtime") + `"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var exitCode int
+	stderr := captureStderr(t, func() {
+		exitCode = run([]string{"logs", "--config", configPath, "--tail", "-1"})
+	})
+	if exitCode != 2 {
+		t.Fatalf("run() exit = %d, stderr:\n%s", exitCode, stderr)
+	}
+	if !strings.Contains(stderr, "tail must be greater than or equal to 0") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
 func TestPoliciesCommandPrintsJSON(t *testing.T) {
 	oldFetch := fetchProxyGroups
 	t.Cleanup(func() {
