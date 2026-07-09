@@ -10,6 +10,18 @@ DHCP/DNS、直连 HTTPS，以及通过 mihomo `mixed-port` 的显式 HTTPS。mac
 CI 当前只运行快速单元测试门禁。对任何可能改变真实流量或主机网络状态的改动，
 请在本地、夜间任务或手动 macOS 门禁中运行 `make lab-test`。
 
+策略组控制面改动可以先运行一个更小的非 root 集成门禁：
+
+```sh
+make policy-control-test
+```
+
+这个 gate 会在 `runtime/integration/` 下写入 imported mihomo fixture，渲染
+OpenSurge 的 gateway overlay，启动真实 mihomo 二进制，但不启动 dnsmasq、pf、
+TUN，也不需要 sudo。它会用 live external-controller API 验证 `omg policies`、
+`omg policy-select` 和 `omg connections`。它证明的是 mihomo 控制面契约，不证明
+全 LAN 路由或透明代理捕获。
+
 透明代理门禁是 `make lab-test-tun`。它比默认 lab 路径更严格，因为客户端不使用
 `mixed-port`；测试必须证明 mihomo 通过 TUN 观察到了客户端 HTTPS 连接。
 

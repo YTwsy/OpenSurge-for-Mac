@@ -12,13 +12,13 @@ import (
 )
 
 type Check struct {
-	Name    string
-	OK      bool
-	Message string
+	Name    string `json:"name"`
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
 }
 
 type Report struct {
-	Checks []Check
+	Checks []Check `json:"checks"`
 }
 
 func Run(cfg config.Config) Report {

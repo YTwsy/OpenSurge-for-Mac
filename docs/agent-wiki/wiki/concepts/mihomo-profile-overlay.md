@@ -29,7 +29,10 @@ Imported profiles must not become raw pass-through configs. OpenSurge still
 renders and owns:
 
 - LAN binding through `mixed-port`, `allow-lan`, and `bind-address`;
-- `external-controller`, so `status` and `doctor` have the expected API target;
+- `external-controller`, so `status`, `doctor`, and policy-group CLI commands
+  have the expected API target;
+- `profile.store-selected: true`, so mihomo can persist selected policy-group
+  members across restarts;
 - DNS listener, fake-ip behavior, and TUN DNS hijack;
 - TUN device, stack, routing flags, and LAN/private route exclusions.
 
@@ -48,6 +51,13 @@ final overlaid mihomo config without root or service startup. Use
 that renders the final config and runs mihomo's own `-t` validation with the same
 `-d` directory OpenSurge uses at startup. This command requires `mihomo.binary`
 in the OpenSurge config to point to an installed mihomo binary.
+
+When mihomo is running, use `omg policies --config <path>` to list policy groups,
+`omg policy-select --config <path> --group <name> --policy <name>` to switch the
+selected member, and `omg connections --config <path>` to inspect active mihomo
+connections. These are control-plane checks; they do not require real-device
+validation unless the change also touches gateway, DNS, TUN, or traffic-capture
+behavior.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:

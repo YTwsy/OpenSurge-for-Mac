@@ -22,6 +22,9 @@ external-controller: {{ .APIAddr }}
 secret: {{ .Secret }}
 {{- end }}
 
+profile:
+  store-selected: true
+
 dns:
   enable: true
   listen: 0.0.0.0:1053

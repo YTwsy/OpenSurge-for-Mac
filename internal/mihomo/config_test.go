@@ -19,6 +19,8 @@ func TestRenderConfig(t *testing.T) {
 	for _, want := range []string{
 		"mixed-port: 7890",
 		"external-controller: 127.0.0.1:9090",
+		"profile:",
+		"  store-selected: true",
 		"enhanced-mode: fake-ip",
 		"- MATCH,DIRECT",
 	} {

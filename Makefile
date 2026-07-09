@@ -1,4 +1,4 @@
-.PHONY: test build doctor status
+.PHONY: test build doctor status policy-control-test
 .PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
 .PHONY: lab-test-tun lab-test-tun-imported-profile lab-down lab-destroy
 .PHONY: real-device-start-off real-device-start-tun real-device-start-tun-proxy
@@ -16,6 +16,9 @@ doctor:
 
 status:
 	go run ./cmd/omg status --config examples/config.example.yaml
+
+policy-control-test:
+	./tests/integration/policy-control.sh
 
 lab-install:
 	./tests/lab/install-host-deps.sh

@@ -14,15 +14,15 @@ import (
 )
 
 type Status struct {
-	Gateway     string
-	Interface   string
-	LANIP       string
-	DHCP        string
-	DHCPEnabled bool
-	Mihomo      string
-	PFAnchor    string
-	Forwarding  string
-	ClientCount int
+	Gateway     string `json:"gateway"`
+	Interface   string `json:"interface"`
+	LANIP       string `json:"lan_ip"`
+	DHCP        string `json:"dhcp"`
+	DHCPEnabled bool   `json:"dhcp_enabled"`
+	Mihomo      string `json:"mihomo"`
+	PFAnchor    string `json:"pf_anchor"`
+	Forwarding  string `json:"forwarding"`
+	ClientCount int    `json:"client_count"`
 }
 
 func (m Manager) Status(ctx context.Context) (Status, error) {

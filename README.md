@@ -16,9 +16,10 @@ control surface.
 
 The current implementation is a CLI-driven MVP:
 
-1. CLI, config, runtime state, and basic status/doctor commands.
+1. CLI, config, runtime state, and text/JSON status/doctor commands.
 2. dnsmasq config, process management, and lease parsing.
-3. mihomo config, process management, and version API checks.
+3. mihomo config, process management, version API checks, and policy-group
+   selection through the mihomo external-controller API.
 4. pf anchor management and IPv4 forwarding restore.
 
 Today OpenSurge for Mac can:
@@ -27,6 +28,8 @@ Today OpenSurge for Mac can:
 - start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback;
 - support explicit proxy traffic through mihomo `mixed-port`;
 - support transparent proxying through mihomo TUN on macOS;
+- list and switch mihomo policy groups from the CLI when mihomo is running;
+- inspect current mihomo connections from the CLI;
 - validate risky network behavior in an isolated virtual LAN before touching a
   normal LAN segment.
 
@@ -56,6 +59,8 @@ mihomo:
 Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
 directory. Relative `path:` entries inside imported `proxy-providers` and
 `rule-providers` are resolved from the imported mihomo profile's directory.
+OpenSurge renders `profile.store-selected: true` so mihomo can persist policy
+group choices across restarts.
 
 Preview the final generated mihomo config before starting gateway services:
 
@@ -78,6 +83,10 @@ go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.examp
 ```sh
 go run ./cmd/omg doctor --config examples/config.example.yaml
 go run ./cmd/omg status --config examples/config.example.yaml
+go run ./cmd/omg status --config examples/config.example.yaml --format json
+go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
+go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
+go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml
 sudo go run ./cmd/omg stop --config examples/config.example.yaml
@@ -107,6 +116,11 @@ keeps clients proxy-free and requires mihomo to log the direct HTTPS connection
 through its TUN inbound. Use `make lab-test-tun-imported-profile` when changing
 mihomo profile import or overlay behavior; it runs the same TUN gate with an
 imported profile fixture.
+
+Use `make policy-control-test` for policy-control and machine-readable CLI
+changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
+checks `policies`, `policy-select`, and `connections` against the live
+external-controller API.
 
 Use `make same-lan-start-tun` and `make same-lan-adb-check` for the narrow
 same-LAN default-gateway smoke. This gate keeps DHCP disabled, requires TUN, and

@@ -30,6 +30,7 @@ OpenSurge continues to render and own gateway-critical fields, including:
 - `allow-lan`
 - `bind-address`
 - `external-controller`
+- `profile.store-selected: true`
 - DNS listener and fake-ip settings
 - TUN settings and LAN/private route exclusions
 - runtime config path
@@ -43,6 +44,14 @@ mihomo config before running root-required gateway startup. Use
 `go run ./cmd/omg validate-mihomo --config <path>` to run mihomo's own `-t`
 validation with the same `-d` directory OpenSurge uses at startup. This command
 requires `mihomo.binary` to point to an installed mihomo binary.
+
+When mihomo is running, `omg policies --config <path>` lists policy groups from
+the mihomo external-controller API, `omg policy-select --config <path> --group
+<name> --policy <name>` switches a group selection, and `omg connections
+--config <path>` inspects current mihomo connections. This control surface is
+API/config behavior and should be covered by unit or fixture-level tests first;
+real-device tests are only needed when proving the gateway path or whole-LAN
+client behavior.
 
 Use `make lab-test-tun-imported-profile` for a reproducible TUN lab gate that
 starts OpenSurge with an imported profile fixture. The fixture keeps

@@ -128,7 +128,8 @@ Policy-group switching is a separate smoke. The current generated group has one
 proxy member, so it can prove "matched proxy" but not meaningful selection
 changes. To validate switching, add at least two group candidates, for example
 the LAN proxy and `DIRECT`, then switch the selected `open-surge-egress` member
-through the mihomo API and repeat the `api.ipify.org` probe.
+with `omg policy-select --config <path> --group open-surge-egress --policy <member>`
+and repeat the `api.ipify.org` probe.
 
 ## Stop
 

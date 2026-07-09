@@ -87,7 +87,8 @@ same exit IP observed when the Mac used that LAN proxy directly.
 This does not prove imported subscriptions or policy-group switching. For
 policy switching, the generated group must contain at least two selectable
 members, such as the LAN proxy and `DIRECT`, and the selected member should be
-changed through the mihomo API before repeating the same exit-IP probe.
+changed with `omg policy-select --config <path> --group <name> --policy <name>`
+before repeating the same exit-IP probe.
 
 ## Acceptance
 
