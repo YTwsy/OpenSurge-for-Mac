@@ -70,6 +70,13 @@ behavior, or real proxy egress semantics, use the matching network gate:
 `make lab-test`, `make lab-test-tun`, `make lab-test-tun-imported-profile`,
 `make lab-test-tun-imported-egress`, or a documented real-device smoke.
 
+When `device_policy.file` is configured, its device overrides are inserted
+before imported global rules, while per-device default selectors are inserted
+after them and before an imported terminal `MATCH`. An imported profile with
+rules after `MATCH` is rejected. Device identity and the selector data path use
+`make lab-test-tun-device-policy`; template and rule-provider compilation use
+`make test`.
+
 `make lab-test-tun-imported-profile` runs the TUN gate with
 `tests/lab/mihomo-profile.imported-tun.yaml`, which keeps rules at
 `MATCH,DIRECT`. It proves the imported profile overlay can start in the TUN lab;

@@ -134,6 +134,34 @@ mihomo:
 	}
 }
 
+func TestLoadResolvesAndValidatesRelativeDevicePolicyFile(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{
+  "profiles":[{"id":"default","default_policies":["DIRECT"]}],
+  "devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"default"}]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+device_policy:
+  file: "./devices.json"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.DevicePolicy.File != policyPath {
+		t.Fatalf("DevicePolicy.File = %q, want %q", cfg.DevicePolicy.File, policyPath)
+	}
+}
+
 func TestLoadImportedProfileExampleConfig(t *testing.T) {
 	cfg, err := Load(filepath.Join("..", "..", "examples", "config.imported-profile.example.yaml"))
 	if err != nil {

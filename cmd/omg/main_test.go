@@ -808,6 +808,68 @@ func TestPolicySelectCommandRejectsUnknownPolicy(t *testing.T) {
 	}
 }
 
+func TestDevicesCommandPrintsConfiguredPolicyAndLeaseState(t *testing.T) {
+	configPath := writeDevicePolicyConfig(t)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"devices", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+	var payload devicePoliciesJSON
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("devices json invalid: %v\n%s", err, output)
+	}
+	if len(payload.Devices) != 1 {
+		t.Fatalf("devices = %#v", payload.Devices)
+	}
+	device := payload.Devices[0]
+	if device.ID != "phone" || device.IPv4 != "192.168.50.101" || device.Hostname != "phone-host" || !device.Online {
+		t.Fatalf("device = %#v", device)
+	}
+	if device.Groups["default"] != "device/phone/default" || device.Groups["streaming"] != "device/phone/streaming" {
+		t.Fatalf("groups = %#v", device.Groups)
+	}
+}
+
+func TestDevicePolicySelectCommandTargetsOnlyDeviceGroup(t *testing.T) {
+	oldFetch := fetchProxyGroups
+	oldSelect := selectProxyGroup
+	t.Cleanup(func() {
+		fetchProxyGroups = oldFetch
+		selectProxyGroup = oldSelect
+	})
+	var selectedGroup, selectedPolicy string
+	fetchProxyGroups = func(context.Context, config.Config) ([]mihomo.ProxyGroup, error) {
+		return []mihomo.ProxyGroup{{Name: "device/phone/streaming", Type: "Selector", Selected: "DIRECT", Options: []string{"DIRECT", "Proxy"}}}, nil
+	}
+	selectProxyGroup = func(_ context.Context, _ config.Config, group, policy string) error {
+		selectedGroup = group
+		selectedPolicy = policy
+		return nil
+	}
+
+	configPath := writeDevicePolicyConfig(t)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"device-policy-select", "--config", configPath, "--device", "phone", "--slot", "streaming", "--policy", "Proxy", "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+	if selectedGroup != "device/phone/streaming" || selectedPolicy != "Proxy" {
+		t.Fatalf("selected = %q/%q", selectedGroup, selectedPolicy)
+	}
+	var payload devicePolicySelectJSON
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("device-policy-select json invalid: %v\n%s", err, output)
+	}
+	if payload.Device != "phone" || payload.Slot != "streaming" || payload.Group != selectedGroup || payload.Selected != selectedPolicy {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
 func TestValidatePolicySelection(t *testing.T) {
 	groups := []mihomo.ProxyGroup{
 		{Name: "Fallback", Type: "Fallback", Selected: "JP", Options: []string{"JP", "US"}},
@@ -1183,6 +1245,37 @@ func writeRuntimeConfig(t *testing.T) string {
 runtime:
   dir: "` + filepath.Join(dir, "runtime") + `"
 `
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return configPath
+}
+
+func writeDevicePolicyConfig(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	runtimeDir := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{
+  "profiles":[{
+    "id":"default",
+    "default_policies":["DIRECT","Proxy"],
+    "rules":[{"id":"streaming","match":{"domains":["example.com"]},"policies":["DIRECT","Proxy"]}]
+  }],
+  "devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"default"}]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lease := fmt.Sprintf("%d aa:bb:cc:dd:ee:01 192.168.50.101 phone-host 01:aa\n", time.Now().Add(time.Hour).Unix())
+	if err := os.WriteFile(filepath.Join(runtimeDir, "dnsmasq.leases"), []byte(lease), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := "runtime:\n  dir: \"" + runtimeDir + "\"\n\ndevice_policy:\n  file: \"" + policyPath + "\"\n"
 	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}

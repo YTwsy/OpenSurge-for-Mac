@@ -1,6 +1,8 @@
 package dhcp
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -21,6 +23,35 @@ func TestRenderConfig(t *testing.T) {
 		"dhcp-range=192.168.50.100,192.168.50.200,12h",
 		"dhcp-option=option:router,192.168.50.1",
 		"port=53",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestRenderConfigWithDevicePolicyReservations(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{
+  "profiles":[{"id":"default","default_policies":["DIRECT"]}],
+  "devices":[
+    {"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"default"},
+    {"id":"tablet","mac":"aa:bb:cc:dd:ee:02","ipv4":"192.168.50.102","profile":"default"}
+  ]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.DevicePolicy.File = policyPath
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	for _, want := range []string{
+		"dhcp-host=aa:bb:cc:dd:ee:01,192.168.50.101",
+		"dhcp-host=aa:bb:cc:dd:ee:02,192.168.50.102",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)

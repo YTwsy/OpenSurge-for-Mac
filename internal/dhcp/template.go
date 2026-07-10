@@ -5,6 +5,7 @@ import (
 	"text/template"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -16,6 +17,8 @@ dhcp-range={{ .RangeStart }},{{ .RangeEnd }},{{ .LeaseTime }}
 dhcp-option=option:router,{{ .GatewayIP }}
 dhcp-option=option:dns-server,{{ .GatewayIP }}
 domain={{ .Domain }}
+{{ range .Reservations }}dhcp-host={{ .MAC }},{{ .IPv4 }}
+{{ end }}
 
 log-dhcp
 dhcp-leasefile={{ .LeaseFile }}
@@ -33,34 +36,48 @@ server={{ .DNSUpstream }}
 `
 
 type templateData struct {
-	DHCPEnabled bool
-	Interface   string
-	RangeStart  string
-	RangeEnd    string
-	LeaseTime   string
-	GatewayIP   string
-	Domain      string
-	LeaseFile   string
-	PIDFile     string
-	DNSPort     int
-	DNSListen   string
-	DNSUpstream string
+	DHCPEnabled  bool
+	Interface    string
+	RangeStart   string
+	RangeEnd     string
+	LeaseTime    string
+	GatewayIP    string
+	Domain       string
+	LeaseFile    string
+	PIDFile      string
+	DNSPort      int
+	DNSListen    string
+	DNSUpstream  string
+	Reservations []device.Reservation
 }
 
 func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
+	var reservations []device.Reservation
+	if cfg.DevicePolicy.File != "" {
+		set, err := device.LoadPolicySet(cfg.DevicePolicy.File)
+		if err != nil {
+			return "", err
+		}
+		compiled, err := device.CompilePolicySet(set)
+		if err != nil {
+			return "", err
+		}
+		reservations = compiled.Reservations
+	}
 	data := templateData{
-		DHCPEnabled: cfg.DHCP.Enabled,
-		Interface:   cfg.Gateway.Interface,
-		RangeStart:  cfg.DHCP.RangeStart,
-		RangeEnd:    cfg.DHCP.RangeEnd,
-		LeaseTime:   cfg.DHCP.LeaseTime,
-		GatewayIP:   cfg.Gateway.LANIP,
-		Domain:      cfg.DHCP.Domain,
-		LeaseFile:   paths.LeaseFile,
-		PIDFile:     paths.DNSMasqPIDFile,
-		DNSPort:     cfg.DNS.Port,
-		DNSListen:   cfg.DNS.Listen,
-		DNSUpstream: cfg.DNS.Upstream,
+		DHCPEnabled:  cfg.DHCP.Enabled,
+		Interface:    cfg.Gateway.Interface,
+		RangeStart:   cfg.DHCP.RangeStart,
+		RangeEnd:     cfg.DHCP.RangeEnd,
+		LeaseTime:    cfg.DHCP.LeaseTime,
+		GatewayIP:    cfg.Gateway.LANIP,
+		Domain:       cfg.DHCP.Domain,
+		LeaseFile:    paths.LeaseFile,
+		PIDFile:      paths.DNSMasqPIDFile,
+		DNSPort:      cfg.DNS.Port,
+		DNSListen:    cfg.DNS.Listen,
+		DNSUpstream:  cfg.DNS.Upstream,
+		Reservations: reservations,
 	}
 
 	tmpl, err := template.New("dnsmasq").Parse(dnsmasqTemplate)

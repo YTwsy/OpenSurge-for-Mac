@@ -3,7 +3,10 @@ package config
 import (
 	"fmt"
 	"net"
+	"os"
 	"strings"
+
+	"open-mihomo-gateway/internal/device"
 )
 
 func Validate(cfg Config) error {
@@ -34,6 +37,9 @@ func Validate(cfg Config) error {
 		if strings.TrimSpace(cfg.DHCP.LeaseTime) == "" {
 			return fmt.Errorf("dhcp.lease_time is required")
 		}
+	}
+	if err := validateDevicePolicy(cfg); err != nil {
+		return err
 	}
 	if net.ParseIP(cfg.DNS.Listen).To4() == nil {
 		return fmt.Errorf("dns.listen must be a valid IPv4 address")
@@ -97,6 +103,27 @@ func Validate(cfg Config) error {
 	}
 	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
 		return fmt.Errorf("runtime.dir is required")
+	}
+	return nil
+}
+
+func validateDevicePolicy(cfg Config) error {
+	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
+		return nil
+	}
+	info, err := os.Stat(cfg.DevicePolicy.File)
+	if err != nil {
+		return fmt.Errorf("device_policy.file: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("device_policy.file must not be a directory")
+	}
+	set, err := device.LoadPolicySet(cfg.DevicePolicy.File)
+	if err != nil {
+		return fmt.Errorf("device_policy.file: %w", err)
+	}
+	if err := device.ValidatePolicySetForLAN(set, cfg.Gateway.LANIP); err != nil {
+		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	return nil
 }

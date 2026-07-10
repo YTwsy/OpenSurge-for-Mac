@@ -16,20 +16,33 @@ var importableProfileSections = map[string]bool{
 }
 
 func LoadImportedProfileSections(path string) (string, error) {
+	blocks, err := loadImportedProfileBlocks(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(renderImportedProfileBlocks(blocks, ""), "\n") + "\n", nil
+}
+
+func loadImportedProfileBlocks(path string) ([]importedProfileBlock, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("read imported mihomo profile: %w", err)
+		return nil, fmt.Errorf("read imported mihomo profile: %w", err)
 	}
 
 	blocks, found := extractImportableProfileSections(string(data))
 	if !found["rules"] {
-		return "", fmt.Errorf("imported mihomo profile must contain a top-level rules section")
+		return nil, fmt.Errorf("imported mihomo profile must contain a top-level rules section")
 	}
 	if len(blocks) == 0 {
-		return "", fmt.Errorf("imported mihomo profile contains no importable sections")
+		return nil, fmt.Errorf("imported mihomo profile contains no importable sections")
 	}
-
-	return strings.TrimRight(renderImportedProfileBlocks(blocks, filepath.Dir(path)), "\n") + "\n", nil
+	profileDir := filepath.Dir(path)
+	for i, block := range blocks {
+		if block.key == "proxy-providers" || block.key == "rule-providers" {
+			blocks[i].text = rewriteProviderPaths(block.text, profileDir)
+		}
+	}
+	return blocks, nil
 }
 
 type importedProfileBlock struct {
@@ -83,12 +96,11 @@ func extractImportableProfileSections(profile string) ([]importedProfileBlock, m
 func renderImportedProfileBlocks(blocks []importedProfileBlock, profileDir string) string {
 	rendered := make([]string, 0, len(blocks))
 	for _, block := range blocks {
-		switch block.key {
-		case "proxy-providers", "rule-providers":
+		if profileDir != "" && (block.key == "proxy-providers" || block.key == "rule-providers") {
 			rendered = append(rendered, rewriteProviderPaths(block.text, profileDir))
-		default:
-			rendered = append(rendered, block.text)
+			continue
 		}
+		rendered = append(rendered, block.text)
 	}
 	return strings.Join(rendered, "\n")
 }

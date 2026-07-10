@@ -28,6 +28,12 @@ HTTPS，以及清理行为。
 要求 `mihomo.log` 中的 TUN 目标连接和受控 proxy 日志同时反映切换结果。这个门槛
 不证明真实订阅节点、真实远端出口 IP 或 real-device/same-LAN 兼容性。
 
+`make lab-test-tun-device-policy` 是每设备策略的数据面门槛。它让两个 Lima 客户端
+分别获得 `.101` 和 `.102` 的 MAC 绑定租约，要求各自的 `device/<id>/default`
+selector 独立改变 TUN 出口，最后要求设备级域名 `REJECT` 生效。它覆盖设备身份、
+设备默认出口和设备覆盖；模板、domain/protocol 组合与 HTTP/MRS rule-provider 的
+编译由 `make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
+
 ## 什么时候必须跑 lab
 
 宣称下列改动具备 runtime 覆盖前，应运行 `make lab-test`：

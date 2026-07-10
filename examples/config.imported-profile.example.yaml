@@ -11,6 +11,11 @@ dhcp:
   lease_time: "12h"
   domain: "lan"
 
+# Optional JSON control-plane file for fixed device leases and per-device
+# mihomo policy overlays. Imported rules remain the global layer.
+device_policy:
+  file: ""
+
 dns:
   listen: "192.168.50.1"
   port: 53

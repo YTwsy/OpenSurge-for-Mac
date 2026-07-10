@@ -55,6 +55,9 @@ func resolveRelativePaths(configPath string, cfg *Config) {
 	if cfg.Mihomo.Profile != "" && !filepath.IsAbs(cfg.Mihomo.Profile) {
 		cfg.Mihomo.Profile = filepath.Join(filepath.Dir(configPath), cfg.Mihomo.Profile)
 	}
+	if cfg.DevicePolicy.File != "" && !filepath.IsAbs(cfg.DevicePolicy.File) {
+		cfg.DevicePolicy.File = filepath.Join(filepath.Dir(configPath), cfg.DevicePolicy.File)
+	}
 }
 
 func stripComment(line string) string {
@@ -115,6 +118,8 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.DHCP.LeaseTime = value
 	case "dhcp.domain":
 		cfg.DHCP.Domain = value
+	case "device_policy.file":
+		cfg.DevicePolicy.File = value
 	case "dns.listen":
 		cfg.DNS.Listen = value
 	case "dns.port":

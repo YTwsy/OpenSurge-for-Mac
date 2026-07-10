@@ -211,3 +211,103 @@ func TestRenderConfigWithTUN(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderConfigWithDevicePolicyOverlayPreservesImportedRuleOrder(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	policyPath := filepath.Join(dir, "devices.json")
+	profile := `proxies: []
+proxy-groups:
+  - name: Global
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - DOMAIN-SUFFIX,global.example,Global
+  - MATCH,DIRECT
+`
+	policy := `{
+  "rule_sets": [{"id":"streaming","behavior":"domain","payload":["netflix.com"]}],
+  "profiles": [{
+    "id":"home",
+    "default_policies":["DIRECT","Global"],
+    "rules":[
+      {"id":"block-video","match":{"domains":["youtube.com"],"protocols":["tcp"]},"action":"REJECT"},
+      {"id":"streaming","match":{"rule_sets":["streaming"]},"policies":["Global","DIRECT"]}
+    ]
+  }],
+  "devices": [{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home"}]
+}`
+	if err := os.WriteFile(profilePath, []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	cfg.DevicePolicy.File = policyPath
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	for _, want := range []string{
+		"  - name: device/phone/default",
+		"  - name: device/phone/streaming",
+		"  open-surge-ruleset-streaming:",
+		"    type: inline",
+		"    behavior: domain",
+		"      - \"netflix.com\"",
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,youtube.com),(NETWORK,tcp)),REJECT",
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(RULE-SET,open-surge-ruleset-streaming)),device/phone/streaming",
+		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+		"MATCH,DIRECT",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
+	}
+	assertOrdered(t, rendered,
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,youtube.com),(NETWORK,tcp)),REJECT",
+		"DOMAIN-SUFFIX,global.example,Global",
+		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+		"MATCH,DIRECT",
+	)
+}
+
+func TestRenderConfigRejectsImportedRuleAfterTerminalMatchWhenDevicePolicyEnabled(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	policyPath := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(profilePath, []byte("rules:\n  - MATCH,DIRECT\n  - DOMAIN,example.com,DIRECT\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath, []byte(`{
+  "profiles":[{"id":"default","default_policies":["DIRECT"]}],
+  "devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"default"}]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	cfg.DevicePolicy.File = policyPath
+	_, err := RenderConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "MATCH rule must be terminal") {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+}
+
+func assertOrdered(t *testing.T, value string, ordered ...string) {
+	t.Helper()
+	position := -1
+	for _, part := range ordered {
+		next := strings.Index(value, part)
+		if next < 0 || next <= position {
+			t.Fatalf("expected ordered %q after offset %d:\n%s", part, position, value)
+		}
+		position = next
+	}
+}

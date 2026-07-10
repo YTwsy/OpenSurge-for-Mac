@@ -2,7 +2,6 @@ package mihomo
 
 import (
 	"bytes"
-	"strconv"
 	"text/template"
 
 	"open-mihomo-gateway/internal/config"
@@ -55,42 +54,11 @@ tun:
     - 255.255.255.255/32
 
 {{ end }}
-{{ if .ImportedProfile }}
-{{ .ImportedProfileSections }}
-{{ else if .UpstreamProxy.Enabled }}
-proxies:
-  - name: {{ yamlQuote .UpstreamProxy.Name }}
-    type: {{ .UpstreamProxy.Type }}
-    server: {{ yamlQuote .UpstreamProxy.Server }}
-    port: {{ .UpstreamProxy.Port }}
-{{ if .UpstreamProxy.Username }}
-    username: {{ yamlQuote .UpstreamProxy.Username }}
-{{ end }}
-{{ if .UpstreamProxy.Password }}
-    password: {{ yamlQuote .UpstreamProxy.Password }}
-{{ end }}
-
-proxy-groups:
-  - name: open-surge-egress
-    type: select
-    proxies:
-      - {{ yamlQuote .UpstreamProxy.Name }}
-
-rules:
-  - DOMAIN,{{ .UpstreamProxy.MatchDomain }},open-surge-egress
-  - MATCH,DIRECT
-{{ else }}
-proxies: []
-
-rules:
-  - MATCH,DIRECT
-{{ end }}
+{{ .PolicySections }}
 `
 
 func RenderConfig(cfg config.Config) (string, error) {
-	tmpl, err := template.New("mihomo").Funcs(template.FuncMap{
-		"yamlQuote": strconv.Quote,
-	}).Parse(configTemplate)
+	tmpl, err := template.New("mihomo").Parse(configTemplate)
 	if err != nil {
 		return "", err
 	}
@@ -107,17 +75,16 @@ func RenderConfig(cfg config.Config) (string, error) {
 
 type templateData struct {
 	config.MihomoConfig
-	TUNEnabled              bool
-	TUNDevice               string
-	TUNStack                string
-	TUNAutoRoute            bool
-	TUNAutoDetectInterface  bool
-	TUNStrictRoute          bool
-	UpstreamInterface       string
-	LANPrefix               string
-	UpstreamProxy           config.UpstreamProxyConfig
-	ImportedProfile         bool
-	ImportedProfileSections string
+	TUNEnabled             bool
+	TUNDevice              string
+	TUNStack               string
+	TUNAutoRoute           bool
+	TUNAutoDetectInterface bool
+	TUNStrictRoute         bool
+	UpstreamInterface      string
+	LANPrefix              string
+	UpstreamProxy          config.UpstreamProxyConfig
+	PolicySections         string
 }
 
 func newTemplateData(cfg config.Config) (templateData, error) {
@@ -125,26 +92,22 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err != nil {
 		return templateData{}, err
 	}
-	importedProfileSections := ""
-	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
-		importedProfileSections, err = LoadImportedProfileSections(cfg.Mihomo.Profile)
-		if err != nil {
-			return templateData{}, err
-		}
+	policySections, err := renderPolicySections(cfg)
+	if err != nil {
+		return templateData{}, err
 	}
 	transparent := cfg.Transparent
 	return templateData{
-		MihomoConfig:            cfg.Mihomo,
-		TUNEnabled:              transparent.TUNEnabled(),
-		TUNDevice:               transparent.TUNDevice,
-		TUNStack:                transparent.TUNStack,
-		TUNAutoRoute:            transparent.TUNAutoRoute,
-		TUNAutoDetectInterface:  transparent.TUNAutoDetectInterface,
-		TUNStrictRoute:          transparent.TUNStrictRoute,
-		UpstreamInterface:       cfg.Gateway.UpstreamInterface,
-		LANPrefix:               lanPrefix,
-		UpstreamProxy:           cfg.UpstreamProxy,
-		ImportedProfile:         cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported,
-		ImportedProfileSections: importedProfileSections,
+		MihomoConfig:           cfg.Mihomo,
+		TUNEnabled:             transparent.TUNEnabled(),
+		TUNDevice:              transparent.TUNDevice,
+		TUNStack:               transparent.TUNStack,
+		TUNAutoRoute:           transparent.TUNAutoRoute,
+		TUNAutoDetectInterface: transparent.TUNAutoDetectInterface,
+		TUNStrictRoute:         transparent.TUNStrictRoute,
+		UpstreamInterface:      cfg.Gateway.UpstreamInterface,
+		LANPrefix:              lanPrefix,
+		UpstreamProxy:          cfg.UpstreamProxy,
+		PolicySections:         policySections,
 	}, nil
 }

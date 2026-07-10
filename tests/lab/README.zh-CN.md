@@ -57,6 +57,7 @@ make lab-test
 make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
+make lab-test-tun-device-policy
 make lab-down
 ```
 
@@ -74,6 +75,11 @@ artifact 会写入 `artifacts/lab`。
 CONNECT proxy，然后通过 `omg policy-select` 把 `TunEgress` 从 `DIRECT` 切到受控
 代理。它证明 provider-backed 策略选择会改变透明 TUN 出口路径；它不证明真实订阅
 节点或远端出口 IP。
+
+`lab-test-tun-device-policy` 会把两个客户端作为独立识别的 LAN 设备，给它们分配
+固定 `.101`/`.102` DHCP 租约，证明两台设备的 selector group 可以互不影响地选择
+不同出口，再验证设备专属域名 `REJECT`。它是设备身份、设备默认出口和设备覆盖的
+数据面门禁；规则、模板和 provider 的编译仍由单元测试覆盖。
 
 请把 `make lab-test` 视为高风险网络改动所需的本地门禁：DHCP/DNS 行为、mihomo
 进程或配置生成、pf/NAT 规则、forwarding 和 rollback、网关生命周期清理、lab
@@ -110,6 +116,7 @@ make lab-test     # 运行端到端测试并恢复主机
 make lab-test-tun # 运行 TUN 透明代理门禁
 make lab-test-tun-imported-profile # 使用 imported profile fixture 跑 TUN
 make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
+make lab-test-tun-device-policy # 验证独立的每设备 TUN 策略
 make lab-down     # 停止客户端并移除 host network
 make lab-destroy  # 同时删除持久化的 Lima 客户端磁盘
 ```

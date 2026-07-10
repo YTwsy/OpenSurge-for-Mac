@@ -9,12 +9,19 @@ import (
 type Config struct {
 	Gateway       GatewayConfig
 	DHCP          DHCPConfig
+	DevicePolicy  DevicePolicyConfig
 	DNS           DNSConfig
 	Mihomo        MihomoConfig
 	PF            PFConfig
 	Transparent   TransparentConfig
 	UpstreamProxy UpstreamProxyConfig
 	Runtime       RuntimeConfig
+}
+
+// DevicePolicyConfig points at the optional JSON control-plane file that
+// defines DHCP reservations and per-device mihomo policy overlays.
+type DevicePolicyConfig struct {
+	File string
 }
 
 type GatewayConfig struct {
@@ -119,6 +126,7 @@ func Default() Config {
 			LeaseTime:  "12h",
 			Domain:     "lan",
 		},
+		DevicePolicy: DevicePolicyConfig{},
 		DNS: DNSConfig{
 			Listen: "192.168.50.1",
 			Port:   53,

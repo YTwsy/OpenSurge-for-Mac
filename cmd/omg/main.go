@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"open-mihomo-gateway/internal/config"
@@ -53,6 +54,8 @@ func run(args []string) int {
 	outputFormat := fs.String("format", "text", "output format: text or json")
 	policyGroup := fs.String("group", "", "mihomo policy group name")
 	policyName := fs.String("policy", "", "mihomo policy name to select")
+	deviceID := fs.String("device", "", "configured device id")
+	deviceSlot := fs.String("slot", "default", "device policy slot: default or a rule id")
 	providerName := fs.String("provider", "", "mihomo proxy provider name")
 	logTail := fs.Int("tail", 0, "number of recent log lines to include")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -114,6 +117,15 @@ func run(args []string) int {
 			return writeJSONExit(leasesJSON{Clients: clients})
 		}
 		fmt.Print(device.FormatClients(clients))
+	case "devices":
+		devices, err := configuredDevices(cfg)
+		if err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "devices", err)
+		}
+		if jsonOutput {
+			return writeJSONExit(devicePoliciesJSON{Devices: devices})
+		}
+		fmt.Print(formatConfiguredDevices(devices))
 	case "logs":
 		if *logTail < 0 {
 			return writeErrorMessageExit(command, jsonOutput, 2, "logs: tail must be greater than or equal to 0")
@@ -168,6 +180,30 @@ func run(args []string) int {
 			return writeJSONExit(policySelectJSON{Group: *policyGroup, Selected: *policyName})
 		}
 		fmt.Printf("Policy group %q selected %q\n", *policyGroup, *policyName)
+	case "device-policy-select":
+		set, err := loadConfiguredPolicySet(cfg)
+		if err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
+		}
+		group, err := device.DeviceGroup(set, *deviceID, *deviceSlot)
+		if err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
+		}
+		groups, err := fetchProxyGroups(ctx, cfg)
+		if err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
+		}
+		if err := validatePolicySelection(groups, group, *policyName); err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
+		}
+		if err := selectProxyGroup(ctx, cfg, group, *policyName); err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
+		}
+		result := devicePolicySelectJSON{Device: *deviceID, Slot: *deviceSlot, Group: group, Selected: *policyName}
+		if jsonOutput {
+			return writeJSONExit(result)
+		}
+		fmt.Printf("Device %q slot %q selected %q in policy group %q\n", result.Device, result.Slot, result.Selected, result.Group)
 	case "connections":
 		connections, err := fetchConnections(ctx, cfg)
 		if err != nil {
@@ -325,6 +361,27 @@ type providerUpdateJSON struct {
 	ProxyProvider mihomo.ProxyProvider `json:"proxy_provider"`
 }
 
+type configuredDeviceJSON struct {
+	ID       string            `json:"id"`
+	MAC      string            `json:"mac"`
+	IPv4     string            `json:"ipv4"`
+	Profile  string            `json:"profile"`
+	Groups   map[string]string `json:"groups"`
+	Hostname string            `json:"hostname,omitempty"`
+	Online   bool              `json:"online"`
+}
+
+type devicePoliciesJSON struct {
+	Devices []configuredDeviceJSON `json:"devices"`
+}
+
+type devicePolicySelectJSON struct {
+	Device   string `json:"device"`
+	Slot     string `json:"slot"`
+	Group    string `json:"group"`
+	Selected string `json:"selected"`
+}
+
 type validateMihomoJSON struct {
 	Valid        bool   `json:"valid"`
 	MihomoConfig string `json:"mihomo_config"`
@@ -389,6 +446,48 @@ func validatePolicySelection(groups []mihomo.ProxyGroup, groupName, selected str
 	}
 
 	return fmt.Errorf("policy group %q not found (available: %s)", groupName, strings.Join(policyGroupNames(groups), ", "))
+}
+
+func loadConfiguredPolicySet(cfg config.Config) (device.PolicySet, error) {
+	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
+		return device.PolicySet{}, fmt.Errorf("device_policy.file is not configured")
+	}
+	return device.LoadPolicySet(cfg.DevicePolicy.File)
+}
+
+func configuredDevices(cfg config.Config) ([]configuredDeviceJSON, error) {
+	set, err := loadConfiguredPolicySet(cfg)
+	if err != nil {
+		return nil, err
+	}
+	compiled, err := device.CompilePolicySet(set)
+	if err != nil {
+		return nil, err
+	}
+	leases, err := device.LoadLeases(runtime.NewPaths(cfg).LeaseFile)
+	if err != nil {
+		return nil, err
+	}
+	leasesByMAC := make(map[string]device.Client, len(leases))
+	for _, lease := range leases {
+		leasesByMAC[strings.ToLower(lease.MAC)] = lease
+	}
+	devices := make([]configuredDeviceJSON, 0, len(compiled.Devices))
+	for _, managed := range compiled.Devices {
+		entry := configuredDeviceJSON{
+			ID:      managed.ID,
+			MAC:     managed.MAC,
+			IPv4:    managed.IPv4,
+			Profile: managed.Profile,
+			Groups:  managed.Groups,
+		}
+		if lease, exists := leasesByMAC[managed.MAC]; exists {
+			entry.Hostname = lease.Hostname
+			entry.Online = lease.Online
+		}
+		devices = append(devices, entry)
+	}
+	return devices, nil
 }
 
 func policyGroupNames(groups []mihomo.ProxyGroup) []string {
@@ -585,6 +684,36 @@ func formatProxyGroups(groups []mihomo.ProxyGroup) string {
 	return out.String()
 }
 
+func formatConfiguredDevices(devices []configuredDeviceJSON) string {
+	if len(devices) == 0 {
+		return "No configured device policies found.\n"
+	}
+	var out strings.Builder
+	for _, device := range devices {
+		status := "offline"
+		if device.Online {
+			status = "online"
+		}
+		fmt.Fprintf(&out, "%s %s %s (%s, %s)\n", device.ID, device.IPv4, device.MAC, device.Profile, status)
+		if device.Hostname != "" {
+			fmt.Fprintf(&out, "  hostname: %s\n", device.Hostname)
+		}
+		for _, slot := range sortedDeviceSlots(device.Groups) {
+			fmt.Fprintf(&out, "  %s: %s\n", slot, device.Groups[slot])
+		}
+	}
+	return out.String()
+}
+
+func sortedDeviceSlots(groups map[string]string) []string {
+	slots := make([]string, 0, len(groups))
+	for slot := range groups {
+		slots = append(slots, slot)
+	}
+	sort.Strings(slots)
+	return slots
+}
+
 func formatRecentLogs(files []logFileJSON) string {
 	var out strings.Builder
 	for _, file := range files {
@@ -730,12 +859,15 @@ Commands:
   status   print gateway status
   doctor   run environment checks
   leases   print DHCP leases
+  devices  print configured device identities, DHCP state, and policy slots
   logs     print runtime log location or recent log lines with --tail
   snapshot collect status, doctor, leases, logs, policies, providers, and connections
   policies
            list mihomo policy groups from the external-controller API
   policy-select --group <name> --policy <name>
            switch the selected policy in a mihomo policy group
+  device-policy-select --device <id> --slot <default|rule-id> --policy <name>
+           switch one configured device's independent policy selector
   connections
            print current mihomo connections from the external-controller API
   providers

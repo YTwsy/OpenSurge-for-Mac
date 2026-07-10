@@ -37,6 +37,19 @@ Today OpenSurge for Mac can:
 - validate risky network behavior in an isolated virtual LAN before touching a
   normal LAN segment.
 
+## Per-device policies
+
+One mihomo process can apply independent policies to registered LAN devices.
+OpenSurge gives each device a MAC-backed fixed IPv4 DHCP lease, then emits
+per-device mihomo selector groups and `SRC-IP-CIDR` rules. The optional JSON
+policy file supports a device default egress, direct device-specific actions
+such as `REJECT`, and later domain/IP/protocol/port/rule-provider overlays.
+
+OpenSurge intentionally ships no household templates or third-party rule
+lists. Operators supply their own policy content; the empty starter file is
+valid. See [per-device policy overlays](docs/device-policy.md) for the JSON
+model, precedence, CLI commands, and validation boundary.
+
 ## Transparent proxying
 
 TUN is the supported transparent proxy path on macOS. Mihomo `redir-port` and
@@ -92,6 +105,9 @@ go run ./cmd/omg logs --config examples/config.example.yaml --tail 50 --format j
 go run ./cmd/omg snapshot --config examples/config.example.yaml --tail 50 --format json
 go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
 go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
+# after configuring device_policy.file:
+go run ./cmd/omg devices --config ./config.yaml --format json
+go run ./cmd/omg device-policy-select --config ./config.yaml --device alice-phone --slot default --policy DIRECT
 go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg providers --config examples/config.imported-profile.example.yaml --format json
 go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
@@ -144,6 +160,13 @@ TUN traffic; it uses a local HTTP provider and controlled HTTP CONNECT proxy to
 prove `policy-select` changes the TUN egress path between `DIRECT` and the
 controlled proxy.
 
+Use `make lab-test-tun-device-policy` when changing the MAC reservation,
+per-device selector, or device override data path. It proves two clients get
+their distinct fixed leases, independently select different TUN egress paths,
+and that a device-specific domain `REJECT` takes effect. Domain/protocol rule
+compilation, templates, and HTTP/MRS rule-provider configuration are covered by
+unit tests; they do not require one Lab run per operator-defined rule.
+
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
 checks `policies`, invalid and valid `policy-select`, persisted selection
@@ -190,6 +213,7 @@ make lab-test
 make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
+make lab-test-tun-device-policy
 make lab-down
 ```
 

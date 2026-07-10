@@ -29,6 +29,7 @@ LAN_IP=192.168.50.1
 CLIENTS="${OMG_LAB_CLIENTS:-omg-lab-client-1 omg-lab-client-2}"
 TEST_URL="${OMG_LAB_TEST_URL:-https://example.com/}"
 LAB_MIHOMO_PROFILE="${OMG_LAB_MIHOMO_PROFILE:-}"
+LAB_DEVICE_POLICY_FILE=""
 TUN_EGRESS_PROFILE=0
 EGRESS_PROBE_PID=""
 
@@ -54,6 +55,19 @@ require_cached_sudo() {
     echo "gateway test requires a cached sudo credential; run 'sudo -v' in a terminal, then retry" >&2
     exit 1
   fi
+}
+
+ensure_lab_state_writable() {
+  mkdir -p "$STATE_DIR"
+  # The gateway itself runs as root and creates runtime logs/configuration.
+  # Reclaim only the disposable lab directory before a new test so the
+  # unprivileged egress fixture can write its own evidence files.
+  sudo -n chown -R "$(id -u):$(id -g)" "$STATE_DIR"
+  mkdir -p "$STATE_DIR/logs"
+  [[ -w "$STATE_DIR" && -w "$STATE_DIR/logs" ]] || {
+    echo "lab runtime directory is not writable: $STATE_DIR" >&2
+    exit 1
+  }
 }
 
 instance_dir() {
@@ -150,7 +164,7 @@ render_tun_egress_profile() {
 }
 
 write_config() {
-  local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line
+  local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line device_policy_file
   local profile_mode profile_path profile_source
 	mode="${1:-off}"
   TUN_EGRESS_PROFILE=0
@@ -159,6 +173,7 @@ write_config() {
 	dnsmasq_bin="$(command -v dnsmasq)"
 	mihomo_bin="$(command -v mihomo)"
   runtime_dir="$STATE_DIR"
+  device_policy_file="$LAB_DEVICE_POLICY_FILE"
   dns_upstream_line=""
   profile_mode="managed"
   profile_path=""
@@ -201,6 +216,7 @@ write_config() {
 	  -e "s|__MIHOMO_BINARY__|$(sed_escape "$mihomo_bin")|g" \
     -e "s|__MIHOMO_PROFILE_MODE__|$(sed_escape "$profile_mode")|g" \
     -e "s|__MIHOMO_PROFILE__|$(sed_escape "$profile_path")|g" \
+    -e "s|__DEVICE_POLICY_FILE__|$(sed_escape "$device_policy_file")|g" \
     -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
     -e "s|__TRANSPARENT_MODE__|$(sed_escape "$mode")|g" \
     -e "s|__RUNTIME_DIR__|$(sed_escape "$runtime_dir")|g" \
@@ -264,6 +280,8 @@ collect_artifacts() {
   artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$artifact_dir"
   cp "$CONFIG" "$artifact_dir/config.yaml" 2>/dev/null || true
+  cp "$LAB_DEVICE_POLICY_FILE" "$artifact_dir/device-policy.json" 2>/dev/null || true
+  cp "$LAB_MIHOMO_PROFILE" "$artifact_dir/device-policy-profile.yaml" 2>/dev/null || true
   cp "$EGRESS_PROVIDER" "$artifact_dir/tun-egress-provider.yaml" 2>/dev/null || true
   cp -R "$STATE_DIR/egress" "$artifact_dir/egress" 2>/dev/null || true
   cp -R "$STATE_DIR/logs" "$artifact_dir/logs" 2>/dev/null || true
@@ -318,6 +336,43 @@ wait_for_tun_policy_log() {
   done
   echo "mihomo did not log transparent TUN traffic for $host:443 using $group[$policy]" >&2
   tail -100 "$log_file" >&2 || true
+  exit 1
+}
+
+wait_for_tun_policy_log_for_host() {
+  local group policy host i log_file
+  group="$1"
+  policy="$2"
+  host="$3"
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..20}; do
+    if [[ -f "$log_file" ]] &&
+      grep -F -- "--> $host:443" "$log_file" | grep -Fq -- "using $group[$policy]"; then
+      echo "device TUN policy log observed for $host:443 using $group[$policy]"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "mihomo did not log device TUN traffic for $host:443 using $group[$policy]" >&2
+  tail -120 "$log_file" >&2 || true
+  exit 1
+}
+
+wait_for_tun_action_log() {
+  local host action i log_file
+  host="$1"
+  action="$2"
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..20}; do
+    if [[ -f "$log_file" ]] &&
+      grep -F -- "--> $host:443" "$log_file" | grep -Fq -- "using $action"; then
+      echo "device TUN action log observed for $host:443 using $action"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "mihomo did not log device TUN traffic for $host:443 using $action" >&2
+  tail -120 "$log_file" >&2 || true
   exit 1
 }
 
@@ -402,12 +457,225 @@ assert_tun_egress_proxy_used() {
   fi
 }
 
+client_mac() {
+  local client=$1
+  limactl shell "$client" -- cat /sys/class/net/omg0/address | tr -d '\r\n'
+}
+
+assert_client_ipv4() {
+  local client=$1 expected=$2 actual
+  actual="$(limactl shell "$client" -- bash -lc "ip -4 -o addr show dev omg0 scope global | awk 'NR == 1 { split(\$4, value, \"/\"); print value[1] }'" | tr -d '\r\n')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "$client IPv4 $actual, want DHCP reservation $expected" >&2
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status >&2 || true
+    exit 1
+  fi
+}
+
+write_device_policy_fixture() {
+  local client_one client_two mac_one mac_two
+  set -- $CLIENTS
+  if [[ "$#" -ne 2 ]]; then
+    echo "device-policy lab requires exactly two clients; set OMG_LAB_CLIENTS to two names" >&2
+    exit 1
+  fi
+  client_one="$1"
+  client_two="$2"
+  mac_one="$(client_mac "$client_one")"
+  mac_two="$(client_mac "$client_two")"
+  [[ -n "$mac_one" && -n "$mac_two" && "$mac_one" != "$mac_two" ]] || {
+    echo "device-policy lab could not resolve two distinct client MAC addresses" >&2
+    exit 1
+  }
+
+  LAB_DEVICE_POLICY_FILE="$STATE_DIR/device-policy.json"
+  LAB_MIHOMO_PROFILE="$STATE_DIR/mihomo-profile.device-policy.yaml"
+  cat >"$LAB_MIHOMO_PROFILE" <<EOF
+proxies:
+  - name: lab-controlled
+    type: http
+    server: 127.0.0.1
+    port: $EGRESS_PROXY_PORT
+rules:
+  - MATCH,DIRECT
+EOF
+  cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
+{
+  "profiles": [
+    {
+      "id": "controlled",
+      "default_policies": ["lab-controlled", "DIRECT"]
+    },
+    {
+      "id": "direct-blocked",
+      "default_policies": ["DIRECT", "lab-controlled"]
+    }
+  ],
+  "devices": [
+    {
+      "id": "$client_one",
+      "mac": "$mac_one",
+      "ipv4": "192.168.50.101",
+      "profile": "controlled"
+    },
+    {
+      "id": "$client_two",
+      "mac": "$mac_two",
+      "ipv4": "192.168.50.102",
+      "profile": "direct-blocked"
+    }
+  ]
+}
+EOF
+}
+
+write_device_block_rule() {
+  local client_one=$1 client_two=$2 mac_one mac_two host=$3
+  mac_one="$(client_mac "$client_one")"
+  mac_two="$(client_mac "$client_two")"
+  cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
+{
+  "profiles": [
+    {
+      "id": "controlled",
+      "default_policies": ["lab-controlled", "DIRECT"]
+    },
+    {
+      "id": "direct-blocked",
+      "default_policies": ["DIRECT", "lab-controlled"],
+      "rules": [
+        {
+          "id": "block-test-host",
+          "match": {"domains": ["$host"]},
+          "action": "REJECT"
+        }
+      ]
+    }
+  ],
+  "devices": [
+    {
+      "id": "$client_one",
+      "mac": "$mac_one",
+      "ipv4": "192.168.50.101",
+      "profile": "controlled"
+    },
+    {
+      "id": "$client_two",
+      "mac": "$mac_two",
+      "ipv4": "192.168.50.102",
+      "profile": "direct-blocked"
+    }
+  ]
+}
+EOF
+}
+
+run_device_policy_test() {
+  local client_one client_two gateway_started egress_probe_started host
+  require_installed_lab
+  [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
+  require_cached_sudo
+  ensure_lab_state_writable
+  set -- $CLIENTS
+  [[ "$#" -eq 2 ]] || { echo "device-policy lab requires exactly two clients" >&2; exit 1; }
+  client_one="$1"
+  client_two="$2"
+  host="$(url_host "$TEST_URL")"
+
+  mkdir -p "$STATE_DIR"
+  rm -f "$STATE_DIR/cache.db" "$STATE_DIR/cache.db-journal"
+  write_device_policy_fixture
+  write_config tun
+  require_command go
+  mkdir -p "$ROOT/bin"
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+    go build -o "$BINARY" ./cmd/omg
+  build_egress_probe
+
+  gateway_started=0
+  egress_probe_started=0
+  cleanup_test() {
+    status=$?
+    collect_artifacts || true
+    if [[ "$gateway_started" == 1 ]]; then
+      sudo -n "$BINARY" stop --config "$CONFIG" || true
+    fi
+    if [[ "$egress_probe_started" == 1 ]]; then
+      stop_egress_probe || true
+    fi
+    exit "$status"
+  }
+  trap cleanup_test EXIT INT TERM
+
+  start_egress_probe
+  egress_probe_started=1
+  sudo -n "$BINARY" start --config "$CONFIG"
+  gateway_started=1
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+  assert_client_ipv4 "$client_one" "192.168.50.101"
+  assert_client_ipv4 "$client_two" "192.168.50.102"
+  "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies.json"
+  grep -Fq '"ipv4": "192.168.50.101"' "$STATE_DIR/device-policies.json"
+  grep -Fq '"ipv4": "192.168.50.102"' "$STATE_DIR/device-policies.json"
+
+  : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_one/default" "lab-controlled" "$host"
+  assert_tun_egress_proxy_used
+
+  : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_two/default" "DIRECT" "$host"
+  assert_tun_egress_proxy_unused
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct.json"
+  : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_one/default" "DIRECT" "$host"
+  assert_tun_egress_proxy_unused
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-controlled.json"
+  : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_two/default" "lab-controlled" "$host"
+  assert_tun_egress_proxy_used
+  "$BINARY" policies --config "$CONFIG" --format json >"$STATE_DIR/device-policies-live.json"
+  grep -A 4 -F "\"name\": \"device/$client_one/default\"" "$STATE_DIR/device-policies-live.json" | grep -Fq '"selected": "DIRECT"'
+  grep -A 4 -F "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-live.json" | grep -Fq '"selected": "lab-controlled"'
+
+  sudo -n "$BINARY" stop --config "$CONFIG"
+  gateway_started=0
+  write_device_block_rule "$client_one" "$client_two" "$host"
+  write_config tun
+  sudo -n "$BINARY" start --config "$CONFIG"
+  gateway_started=1
+
+  : >"$STATE_DIR/egress/proxy.log"
+  if limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"; then
+    echo "device-specific REJECT unexpectedly allowed $host" >&2
+    exit 1
+  fi
+  wait_for_tun_action_log "$host" "REJECT"
+  assert_tun_egress_proxy_unused
+
+  sudo -n "$BINARY" stop --config "$CONFIG"
+  gateway_started=0
+  stop_egress_probe
+  egress_probe_started=0
+  [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
+  trap - EXIT INT TERM
+  collect_artifacts
+  echo "virtual LAN device-policy TUN test passed"
+}
+
 run_test() {
   local mode client gateway_started egress_probe_started
   mode="${1:-off}"
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
+  ensure_lab_state_writable
   write_config "$mode"
   require_command go
   mkdir -p "$ROOT/bin"
@@ -537,6 +805,9 @@ case "${1:-}" in
   test-tun)
     run_test tun
     ;;
+  test-tun-device-policy)
+    run_device_policy_test
+    ;;
   down)
     stop_clients
     if [[ -x "$NETWORK_HELPER" ]]; then
@@ -550,7 +821,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 <check|up|status|test|test-tun|down|destroy>" >&2
+    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|down|destroy>" >&2
     exit 2
     ;;
 esac

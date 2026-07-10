@@ -256,6 +256,24 @@ proxy 日志出现 `CONNECT <host>:443`。它证明 imported provider-backed 策
 改变透明 TUN egress path；它不证明真实订阅节点、真实远端出口 IP、same-LAN 或真实
 设备兼容性。
 
+## 每设备策略门槛
+
+运行：
+
+```sh
+make lab-test-tun-device-policy
+```
+
+当改动 MAC 绑定 DHCP reservation、每设备 selector 或设备规则覆盖的数据路径时，
+使用此门槛。它使用两个 Lima VM，验证两个设备获得 `.101`/`.102` 固定 IPv4、各自的
+`device/<id>/default` selector 可以独立选择不同 TUN egress，随后验证设备专属域名
+`REJECT`。它证明设备身份、默认出口和覆盖规则的真实 LAN/TUN 数据路径。
+
+大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
+`make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。当前设备身份
+边界是 MAC 绑定 IPv4 DHCP reservation 加 IPv4 `SRC-IP-CIDR`，不是 IPv6 或 mihomo
+内的 MAC 匹配。
+
 ## 结论纪律
 
 最终报告必须明确说出实际运行了哪些命令。如果只运行了 `make test`，不要暗示

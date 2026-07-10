@@ -13,6 +13,8 @@
   TUN 是透明代理主线，以及哪些旧旋钮必须保持 inactive。
 - [mihomo profile overlay](concepts/mihomo-profile-overlay.md)：如何导入
   mihomo 代理/规则 section，同时保持 OpenSurge 接管网关字段。
+- [每设备策略覆盖](concepts/device-policy-overlays.md)：如何以 DHCP reservation 和
+  `SRC-IP-CIDR` 在一个 mihomo 进程中实现独立的设备策略。
 - [验证门槛](concepts/validation-gates.md)：哪些检查能证明哪些结论。
 
 ## 项目形态
@@ -26,7 +28,7 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
 边界。
 
 当前控制面契约优先保持机器可读：`status`、`doctor`、`leases`、`logs`、
-`policies`、`connections`、`providers`、`provider-update` 和 `snapshot` 支持 JSON
+`policies`、`devices`、`connections`、`providers`、`provider-update` 和 `snapshot` 支持 JSON
 输出。`logs --tail N --format json` 会返回最近的 dnsmasq/mihomo 日志行，并对每个
 日志文件标出存在状态和读取错误。`snapshot --format json` 聚合 status、doctor、
 leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo API 不可用记录在局部
