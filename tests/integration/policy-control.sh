@@ -9,6 +9,7 @@ WORK_DIR="${OMG_POLICY_CONTROL_WORK_DIR:-$BASE_DIR/run-$$}"
 CONFIG="$WORK_DIR/config.yaml"
 PROFILE="$WORK_DIR/profile.yaml"
 PROVIDER="$WORK_DIR/provider.yaml"
+REMOTE_PROVIDER="$WORK_DIR/remote-provider.yaml"
 MIHOMO_CONFIG="$WORK_DIR/mihomo.yaml"
 MIHOMO_LOG="$WORK_DIR/logs/mihomo.log"
 OMG_BIN="$WORK_DIR/omg"
@@ -63,12 +64,20 @@ proxy-providers:
     path: ./provider.yaml
     health-check:
       enable: false
+  remote-provider:
+    type: http
+    url: http://127.0.0.1:$EGRESS_ORIGIN_PORT/remote-provider.yaml
+    path: ./remote-provider-cache.yaml
+    interval: 3600
+    health-check:
+      enable: false
 
 proxy-groups:
   - name: "Proxy"
     type: select
     use:
       - demo-provider
+      - remote-provider
     proxies:
       - "demo-proxy"
       - DIRECT
@@ -90,6 +99,14 @@ proxies:
     type: http
     server: "127.0.0.1"
     port: 18081
+EOF
+
+  cat >"$REMOTE_PROVIDER" <<'EOF'
+proxies:
+  - name: "remote-provider-proxy"
+    type: http
+    server: "127.0.0.1"
+    port: 18083
 EOF
 
   cat >"$CONFIG" <<EOF
@@ -125,6 +142,8 @@ start_egress_probe() {
   "$EGRESS_PROBE_BIN" \
     --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
     --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
+    --provider-file "$REMOTE_PROVIDER" \
+    --provider-path "/remote-provider.yaml" \
     --log-dir "$WORK_DIR/egress" >"$log_file" 2>&1 &
   EGRESS_PROBE_PID=$!
   local attempt
@@ -166,6 +185,26 @@ wait_for_api() {
   return 1
 }
 
+wait_for_policy_option() {
+  local group=$1
+  local option=$2
+  local output="$WORK_DIR/policies-wait.json"
+  local attempt
+  for attempt in $(seq 1 50); do
+    if "$OMG_BIN" policies --config "$CONFIG" --format json >"$output" 2>"$WORK_DIR/policies-wait.err" &&
+      grep -Fq -- "\"name\": \"$group\"" "$output" &&
+      grep -Fq -- "\"$option\"" "$output"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "policy group $group did not include option $option" >&2
+  cat "$output" >&2 || true
+  cat "$WORK_DIR/policies-wait.err" >&2 || true
+  tail -n 120 "$MIHOMO_LOG" 2>/dev/null || true
+  return 1
+}
+
 assert_file_contains() {
   local file=$1
   local pattern=$2
@@ -186,18 +225,19 @@ section "build omg"
 build_omg
 printf 'binary: %s\n' "${OMG_BIN#$ROOT/}"
 
-section "validate mihomo config"
-"$OMG_BIN" validate-mihomo --config "$CONFIG" --format json
-assert_file_contains "$MIHOMO_CONFIG" "store-selected: true"
-assert_file_contains "$MIHOMO_CONFIG" "- DIRECT"
-
 section "start egress probe"
 start_egress_probe
 printf 'origin: 127.0.0.1:%s\n' "$EGRESS_ORIGIN_PORT"
 printf 'proxy: 127.0.0.1:%s\n' "$EGRESS_PROXY_PORT"
 
+section "validate mihomo config"
+"$OMG_BIN" validate-mihomo --config "$CONFIG" --format json
+assert_file_contains "$MIHOMO_CONFIG" "store-selected: true"
+assert_file_contains "$MIHOMO_CONFIG" "- DIRECT"
+
 section "start mihomo"
 start_mihomo "initial start"
+wait_for_policy_option Proxy remote-provider-proxy
 
 section "list policies"
 "$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-before.json"
@@ -205,6 +245,7 @@ cat "$WORK_DIR/policies-before.json"
 assert_file_contains "$WORK_DIR/policies-before.json" '"name": "Proxy"'
 assert_file_contains "$WORK_DIR/policies-before.json" '"selected": "demo-proxy"'
 assert_file_contains "$WORK_DIR/policies-before.json" '"DIRECT"'
+assert_file_contains "$WORK_DIR/policies-before.json" '"remote-provider-proxy"'
 
 section "reject unknown policy"
 if "$OMG_BIN" policy-select --config "$CONFIG" --group Proxy --policy Missing --format json >"$WORK_DIR/policy-select-invalid.out" 2>"$WORK_DIR/policy-select-invalid.json"; then
@@ -231,6 +272,7 @@ assert_file_contains "$WORK_DIR/policies-after.json" '"selected": "DIRECT"'
 section "restart mihomo"
 stop_mihomo
 start_mihomo "restart after policy-select"
+wait_for_policy_option Proxy remote-provider-proxy
 
 section "verify restored policy"
 "$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-restored.json"
@@ -238,6 +280,7 @@ cat "$WORK_DIR/policies-restored.json"
 assert_file_contains "$WORK_DIR/policies-restored.json" '"name": "Proxy"'
 assert_file_contains "$WORK_DIR/policies-restored.json" '"selected": "DIRECT"'
 assert_file_contains "$WORK_DIR/policies-restored.json" '"DIRECT"'
+assert_file_contains "$WORK_DIR/policies-restored.json" '"remote-provider-proxy"'
 
 section "verify policy egress switch"
 curl --noproxy '' --proxy "http://127.0.0.1:$MIXED_PORT" --fail --silent --show-error --max-time 5 \
@@ -270,6 +313,11 @@ cat "$WORK_DIR/policies-egress.json"
 assert_file_contains "$WORK_DIR/policies-egress.json" '"name": "EgressSwitch"'
 assert_file_contains "$WORK_DIR/policies-egress.json" '"selected": "egress-proxy"'
 
+"$OMG_BIN" policy-select --config "$CONFIG" --group EgressSwitch --policy DIRECT --format json >"$WORK_DIR/policy-egress-direct.json"
+cat "$WORK_DIR/policy-egress-direct.json"
+assert_file_contains "$WORK_DIR/policy-egress-direct.json" '"group": "EgressSwitch"'
+assert_file_contains "$WORK_DIR/policy-egress-direct.json" '"selected": "DIRECT"'
+
 section "connections"
 "$OMG_BIN" connections --config "$CONFIG" --format json >"$WORK_DIR/connections.json"
 cat "$WORK_DIR/connections.json"
@@ -283,9 +331,36 @@ assert_file_contains "$WORK_DIR/providers.json" '"name": "demo-provider"'
 assert_file_contains "$WORK_DIR/providers.json" '"vehicle_type": "File"'
 assert_file_contains "$WORK_DIR/providers.json" '"proxy_count": 1'
 assert_file_contains "$WORK_DIR/providers.json" '"name": "provider-proxy"'
+assert_file_contains "$WORK_DIR/providers.json" '"name": "remote-provider"'
+assert_file_contains "$WORK_DIR/providers.json" '"name": "remote-provider-proxy"'
 assert_file_contains "$WORK_DIR/providers.json" '"rule_providers"'
+assert_file_contains "$WORK_DIR/egress/origin.log" "GET /remote-provider.yaml"
 
-section "update provider"
+section "update remote provider"
+cat >"$REMOTE_PROVIDER" <<'EOF'
+proxies:
+  - name: "remote-provider-updated"
+    type: http
+    server: "127.0.0.1"
+    port: 18084
+EOF
+"$OMG_BIN" provider-update --config "$CONFIG" --provider remote-provider --format json >"$WORK_DIR/remote-provider-update.json"
+cat "$WORK_DIR/remote-provider-update.json"
+assert_file_contains "$WORK_DIR/remote-provider-update.json" '"provider": "remote-provider"'
+assert_file_contains "$WORK_DIR/remote-provider-update.json" '"updated": true'
+assert_file_contains "$WORK_DIR/remote-provider-update.json" '"name": "remote-provider-updated"'
+
+"$OMG_BIN" providers --config "$CONFIG" --format json >"$WORK_DIR/remote-providers-updated.json"
+cat "$WORK_DIR/remote-providers-updated.json"
+assert_file_contains "$WORK_DIR/remote-providers-updated.json" '"name": "remote-provider"'
+assert_file_contains "$WORK_DIR/remote-providers-updated.json" '"name": "remote-provider-updated"'
+
+"$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-remote-provider-updated.json"
+cat "$WORK_DIR/policies-remote-provider-updated.json"
+assert_file_contains "$WORK_DIR/policies-remote-provider-updated.json" '"selected": "DIRECT"'
+assert_file_contains "$WORK_DIR/policies-remote-provider-updated.json" '"remote-provider-updated"'
+
+section "update file provider"
 cat >"$PROVIDER" <<'EOF'
 proxies:
   - name: "provider-updated"
@@ -308,6 +383,7 @@ assert_file_contains "$WORK_DIR/providers-updated.json" '"name": "provider-updat
 cat "$WORK_DIR/policies-provider-updated.json"
 assert_file_contains "$WORK_DIR/policies-provider-updated.json" '"selected": "DIRECT"'
 assert_file_contains "$WORK_DIR/policies-provider-updated.json" '"provider-updated"'
+assert_file_contains "$WORK_DIR/policies-provider-updated.json" '"remote-provider-updated"'
 
 section "snapshot"
 "$OMG_BIN" snapshot --config "$CONFIG" --tail 5 --format json >"$WORK_DIR/snapshot.json"
@@ -326,6 +402,8 @@ assert_file_contains "$WORK_DIR/snapshot.json" '"connections"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"providers"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"name": "demo-provider"'
 assert_file_contains "$WORK_DIR/snapshot.json" '"name": "provider-updated"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"name": "remote-provider"'
+assert_file_contains "$WORK_DIR/snapshot.json" '"name": "remote-provider-updated"'
 
 section "done"
 printf 'policy-control integration passed\n'

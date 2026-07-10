@@ -131,8 +131,8 @@ TUN 门禁。
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller
 API 检查 `policies`、`policy-select`、mihomo 重启后的策略选择恢复、通过
 mixed-port 进行的本机 DIRECT/代理出口切换，以及 `connections`、`providers`、
-`provider-update` 和 `snapshot`；其中也会验证未知 policy 会被 `policy-select`
-拒绝。
+针对 file 与 HTTP proxy provider 的 `provider-update` 和 `snapshot`；其中也会验证
+未知 policy 会被 `policy-select` 拒绝。
 
 使用 `make same-lan-start-tun` 和 `make same-lan-adb-check` 验证窄范围的同
 LAN 默认网关 smoke。这个 gate 会保持 DHCP disabled，要求 TUN，并通过 ADB 检查

@@ -22,11 +22,11 @@ This gate writes an imported mihomo fixture under `runtime/integration/`, render
 OpenSurge's gateway overlay, starts the real mihomo binary without dnsmasq, pf,
 TUN, or sudo, and verifies `omg policies`, `omg policy-select`, and
 `omg connections` against the live external-controller API. It also verifies
-`omg providers` can read an imported file proxy-provider, `omg provider-update`
-can refresh it, and `omg snapshot` can aggregate status, doctor, leases, logs,
-policies, providers, and connections while mihomo is running. The gate rejects
-an unknown policy with a machine-readable JSON error before switching, then
-restarts mihomo in the same runtime directory to verify
+`omg providers` can read imported file and HTTP proxy-providers,
+`omg provider-update` can refresh both kinds, and `omg snapshot` can aggregate
+status, doctor, leases, logs, policies, providers, and connections while mihomo
+is running. The gate rejects an unknown policy with a machine-readable JSON
+error before switching, then restarts mihomo in the same runtime directory to verify
 `profile.store-selected` restores the selected policy. It also starts a local
 origin and controlled HTTP CONNECT proxy, then proves an `EgressSwitch` policy
 selection changes one mixed-port request from `DIRECT` to the controlled proxy.

@@ -20,6 +20,8 @@ func main() {
 	originAddr := flag.String("origin", "", "origin HTTP listen address")
 	proxyAddr := flag.String("proxy", "", "HTTP CONNECT proxy listen address")
 	logDir := flag.String("log-dir", "", "directory for origin.log and proxy.log")
+	providerFile := flag.String("provider-file", "", "optional provider YAML file served by the origin")
+	providerPath := flag.String("provider-path", "/remote-provider.yaml", "origin path for provider YAML")
 	flag.Parse()
 
 	if *originAddr == "" || *proxyAddr == "" || *logDir == "" {
@@ -45,7 +47,11 @@ func main() {
 
 	originLog := filepath.Join(*logDir, "origin.log")
 	proxyLog := filepath.Join(*logDir, "proxy.log")
-	originServer := &http.Server{Handler: &originHandler{logPath: originLog}}
+	originServer := &http.Server{Handler: &originHandler{
+		logPath:      originLog,
+		providerFile: *providerFile,
+		providerPath: *providerPath,
+	}}
 	proxyServer := &http.Server{Handler: &connectProxyHandler{logPath: proxyLog}}
 
 	var serverWG sync.WaitGroup
@@ -75,12 +81,24 @@ func serve(wg *sync.WaitGroup, server *http.Server, listener net.Listener, name 
 }
 
 type originHandler struct {
-	logPath string
-	mu      sync.Mutex
+	logPath      string
+	providerFile string
+	providerPath string
+	mu           sync.Mutex
 }
 
 func (h *originHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.appendLog(fmt.Sprintf("%s %s", r.Method, r.URL.RequestURI()))
+	if h.providerFile != "" && r.URL.Path == h.providerPath {
+		data, err := os.ReadFile(h.providerFile)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = w.Write(data)
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain")
 	_, _ = io.WriteString(w, "origin-ok\n")
 }

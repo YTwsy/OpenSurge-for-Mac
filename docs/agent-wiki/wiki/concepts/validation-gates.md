@@ -48,7 +48,7 @@ make policy-control-test
 external-controller API 工作，并会重启 mihomo 证明 `profile.store-selected` 可以
 恢复选中的策略。它还会启动本机 origin 和受控 HTTP CONNECT proxy，证明
 `EgressSwitch` 可以把一次 mixed-port 请求从 `DIRECT` 切到受控代理。它适合策略组
-控制、provider 状态读取和刷新、机器可读 CLI、mihomo API wrapper 和
+控制、file/HTTP provider 状态读取和刷新、机器可读 CLI、mihomo API wrapper 和
 `profile.store-selected` 相关改动；不要用它宣称 DHCP、DNS 下发、TUN 透明代理、
 same-LAN、真实设备路径或真实远端代理出口已验证。
 

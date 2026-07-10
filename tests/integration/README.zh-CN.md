@@ -20,9 +20,9 @@ make policy-control-test
 OpenSurge 的 gateway overlay，启动真实 mihomo 二进制，但不启动 dnsmasq、pf、
 TUN，也不需要 sudo。它会用 live external-controller API 验证 `omg policies`、
 `omg policy-select` 和 `omg connections`，也会验证 `omg providers` 可以读取
-imported file proxy-provider，`omg provider-update` 可以刷新它，且 `omg snapshot`
-可以在 mihomo 运行时聚合 status、doctor、leases、logs、policies、providers 和
-connections。
+imported file 与 HTTP proxy-provider，`omg provider-update` 可以刷新这两类 provider，
+且 `omg snapshot` 可以在 mihomo 运行时聚合 status、doctor、leases、logs、policies、
+providers 和 connections。
 它会先验证未知 policy 会以机器可读 JSON 错误被拒绝，再在同一个 runtime 目录内
 重启 mihomo，验证 `profile.store-selected` 能恢复选中的策略。它也会启动本机
 origin 和受控 HTTP CONNECT proxy，证明 `EgressSwitch` 策略选择可以把一次
