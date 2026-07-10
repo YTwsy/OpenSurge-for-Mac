@@ -172,6 +172,16 @@ egress-proxy` 切换后命中 `TunEgress[egress-proxy]`，同时受控 proxy 日
 `CONNECT <host>:443`。这个 smoke 证明 same-LAN TUN 下的 imported provider-backed
 策略切换可以命中受控本地代理；它不证明完整订阅兼容性或真实远端出口 IP。
 
+2026-07-10 已用一台人工操作的 Android（未使用 ADB）完成这个 gate：手机手动把
+网关和 DNS 指向 Mac、保持无显式代理；同一运行期内，`example.com:443` 先记录为
+`TunEgress[DIRECT]` 且受控 proxy 日志为空，切换后记录为
+`TunEgress[egress-proxy]` 且出现 `CONNECT example.com:443`。两次浏览器访问均成功，
+随后 `make same-lan-stop` 恢复了 PF、IPv4 forwarding、监听端口和 runtime state。
+
+生成的 imported profile 路径相对 `runtime/same-lan/config-tun.yaml` 解析，必须写为
+`./mihomo-profile.imported-tun-egress.yaml`。同时，helper 必须同时监听本地 HTTP
+provider 与受控 CONNECT proxy 两个端口才可开始客户端探针。
+
 ## 透明代理门槛
 
 运行：

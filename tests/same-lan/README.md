@@ -148,6 +148,9 @@ make same-lan-start-tun-imported-egress
 This writes `runtime/same-lan/config-tun.yaml` with
 `mihomo.profile_mode: "imported"` and renders
 `runtime/same-lan/mihomo-profile.imported-tun-egress.yaml` from the lab fixture.
+Because imported profile paths are resolved from the config file's directory,
+the generated config references this profile as
+`./mihomo-profile.imported-tun-egress.yaml`.
 The rendered profile contains:
 
 - an HTTP `proxy-provider` named `tun-egress-provider`;
@@ -157,7 +160,9 @@ The rendered profile contains:
 - `MATCH,DIRECT` for all other traffic.
 
 The runner also starts a user-level local helper that serves the HTTP provider
-and listens as a controlled HTTP CONNECT proxy on `127.0.0.1`.
+and listens as a controlled HTTP CONNECT proxy on `127.0.0.1`. It reports
+ready only after both the provider and proxy ports accept connections; both
+must remain alive through the two client probes.
 
 After the Android test phone points gateway and DNS at the Mac LAN IP, run:
 
@@ -175,6 +180,27 @@ probe. It requires `mihomo.log` to show both `TunEgress[DIRECT]` and
 
 This smoke proves same-LAN transparent TUN policy switching to a controlled
 local proxy. It does not prove a real subscription node or remote exit IP.
+
+### Manual Phone Check (without ADB)
+
+When Android must be operated manually, do not run the ADB target. Instead:
+
+1. On the test phone, use an unused static IPv4 address on the same Wi-Fi
+   subnet, point both its gateway and DNS at the Mac LAN IP, and keep its
+   explicit proxy disabled.
+2. Start the fixture, select `DIRECT`, clear the controlled proxy log, then
+   access `https://example.com/` in a fresh private browser tab.
+3. Confirm `mihomo.log` records
+   `example.com:443 ... using TunEgress[DIRECT]` and that the controlled proxy
+   log is empty.
+4. Select `egress-proxy` with `omg policy-select`, then repeat the browser
+   access in a fresh private tab. Confirm `mihomo.log` records
+   `TunEgress[egress-proxy]` and the controlled proxy log records
+   `CONNECT example.com:443`.
+
+The 2026-07-10 manual Android run completed both browser probes successfully
+without ADB and completed `make same-lan-stop` cleanup. It remains evidence for
+the controlled local proxy only, not a real subscription node or remote exit.
 
 ## Stop
 

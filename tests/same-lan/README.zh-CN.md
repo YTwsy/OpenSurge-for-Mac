@@ -141,13 +141,17 @@ make same-lan-start-tun-imported-egress
 `mihomo.profile_mode: "imported"`，并基于 lab fixture 渲染
 `runtime/same-lan/mihomo-profile.imported-tun-egress.yaml`。渲染后的 profile 包含：
 
+由于 imported profile 路径是相对于 config 文件所在目录解析的，生成的 config
+会把该 profile 写为 `./mihomo-profile.imported-tun-egress.yaml`。
+
 - 名为 `tun-egress-provider` 的 HTTP `proxy-provider`；
 - 包含 `DIRECT` 和 provider-backed `egress-proxy` 的 `TunEgress` select group；
 - 针对 `OMG_SAME_LAN_TEST_HOST` 的域名规则，默认是 `example.com`；
 - 其他流量使用 `MATCH,DIRECT`。
 
 runner 还会启动一个用户态本地 helper：一边提供 HTTP provider，一边在
-`127.0.0.1` 上作为受控 HTTP CONNECT proxy 监听。
+`127.0.0.1` 上作为受控 HTTP CONNECT proxy 监听。只有 provider 和 proxy 两个
+端口都可连接时它才报告 ready；两轮客户端探针期间两者都必须保持存活。
 
 当 Android 测试手机的网关和 DNS 指向 Mac LAN IP 后，运行：
 
@@ -164,6 +168,23 @@ make same-lan-adb-check-imported-egress
 
 这个 smoke 证明 same-LAN 透明 TUN 路径下的 imported provider-backed 策略切换可以
 命中受控本地代理；它不证明真实订阅节点或远端出口 IP。
+
+### 不使用 ADB 的手动手机检查
+
+当 Android 必须由人工操作时，不要运行 ADB target，而是：
+
+1. 在测试手机上给同一 Wi-Fi 网段设置一个未占用的静态 IPv4 地址，把网关和 DNS
+   都指向 Mac LAN IP，并保持显式代理关闭。
+2. 启动 fixture，选择 `DIRECT`，清空受控 proxy 日志后，用新的无痕浏览器标签访问
+   `https://example.com/`。
+3. 确认 `mihomo.log` 出现
+   `example.com:443 ... using TunEgress[DIRECT]`，且受控 proxy 日志为空。
+4. 通过 `omg policy-select` 选择 `egress-proxy`，再用新的无痕标签重复访问。确认
+   `mihomo.log` 出现 `TunEgress[egress-proxy]`，并且受控 proxy 日志出现
+   `CONNECT example.com:443`。
+
+2026-07-10 的人工 Android run 未使用 ADB，两个浏览器探针均成功，并已完成
+`make same-lan-stop` 清理。它仍只证明受控本地代理，不证明真实订阅节点或远端出口。
 
 ## 停止
 

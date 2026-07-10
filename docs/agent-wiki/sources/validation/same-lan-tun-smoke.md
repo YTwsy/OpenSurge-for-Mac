@@ -122,6 +122,26 @@ This proves same-LAN transparent TUN policy switching to a controlled local
 proxy. It does not prove a real subscription node, a real remote exit IP, or
 whole-LAN rollout readiness.
 
+### Manual Android evidence
+
+The 2026-07-10 real-device run deliberately used no ADB control. An Android
+test phone was manually configured with the Mac as its gateway and DNS and no
+explicit proxy. A fresh browser request to `example.com:443` first logged
+`TunEgress[DIRECT]` with no controlled-proxy entry. After selecting
+`egress-proxy`, a second fresh request logged `TunEgress[egress-proxy]` and the
+controlled proxy logged `CONNECT example.com:443`; both browser requests
+loaded successfully. `make same-lan-stop` then removed the runtime state,
+same-LAN PF anchor, forwarding, listeners, and helper.
+
+### Imported egress runner contract
+
+`runtime/same-lan/config-tun.yaml` is already in the imported profile's
+directory, so its generated `mihomo.profile` must be
+`./mihomo-profile.imported-tun-egress.yaml`, not a path prefixed with
+`runtime/same-lan/`. The helper's readiness requires both the local HTTP
+provider and controlled CONNECT proxy ports to accept connections; a provider
+response alone is not sufficient evidence that the egress switch can work.
+
 ## Acceptance
 
 The first same-LAN TUN acceptance requires:

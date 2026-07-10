@@ -158,7 +158,9 @@ write_config() {
     fi
     render_tun_egress_profile
     profile_mode="imported"
-    profile_path="./runtime/same-lan/$(basename "$EGRESS_PROFILE")"
+    # Imported profile paths are resolved from CONFIG_TUN's directory, which is
+    # already runtime/same-lan. Keep this path local to that directory.
+    profile_path="./$(basename "$EGRESS_PROFILE")"
     upstream_proxy_enabled=false
   fi
 
@@ -262,16 +264,18 @@ start_egress_probe() {
   mkdir -p "$SAME_DIR/logs"
   rm -rf "$SAME_DIR/egress"
   log_file="$SAME_DIR/logs/egress-probe.log"
-  "$EGRESS_PROBE_BIN" \
+  nohup "$EGRESS_PROBE_BIN" \
     --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
     --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
     --provider-file "$EGRESS_PROVIDER" \
     --provider-path "/tun-egress-provider.yaml" \
-    --log-dir "$SAME_DIR/egress" >"$log_file" 2>&1 &
+    --log-dir "$SAME_DIR/egress" >"$log_file" 2>&1 < /dev/null &
   pid=$!
   printf '%s\n' "$pid" >"$EGRESS_PROBE_PID_FILE"
   for _ in $(seq 1 50); do
-    if grep -Fq READY "$log_file" 2>/dev/null; then
+    if grep -Fq READY "$log_file" 2>/dev/null &&
+      /usr/bin/nc -z 127.0.0.1 "$EGRESS_ORIGIN_PORT" &&
+      /usr/bin/nc -z 127.0.0.1 "$EGRESS_PROXY_PORT"; then
       printf 'TUN egress probe ready: provider=%s proxy=127.0.0.1:%s\n' "$EGRESS_PROVIDER_URL" "$EGRESS_PROXY_PORT"
       return 0
     fi

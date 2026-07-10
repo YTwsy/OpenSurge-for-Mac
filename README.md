@@ -162,6 +162,9 @@ as `api.ipify.org`, before importing a full subscription. Use
 that imports a provider-backed `TunEgress` group, then switches same-LAN TUN
 traffic from `DIRECT` to a controlled local HTTP CONNECT proxy. These gates do
 not claim whole-LAN rollout readiness or real remote subscription exits.
+When ADB is intentionally unavailable, the same imported egress evidence can
+be collected with manual Android browser probes; see
+[`tests/same-lan/README.md`](tests/same-lan/README.md#manual-phone-check-without-adb).
 
 ## Virtual LAN lab
 
