@@ -131,6 +131,46 @@ the LAN proxy and `DIRECT`, then switch the selected `open-surge-egress` member
 with `omg policy-select --config <path> --group open-surge-egress --policy <member>`
 and repeat the `api.ipify.org` probe.
 
+## Imported Policy Egress Smoke
+
+To exercise a path closer to imported subscriptions while still keeping the
+proxy endpoint controlled and local, start the same-LAN imported egress fixture:
+
+```sh
+make same-lan-start-tun-imported-egress
+```
+
+This writes `runtime/same-lan/config-tun.yaml` with
+`mihomo.profile_mode: "imported"` and renders
+`runtime/same-lan/mihomo-profile.imported-tun-egress.yaml` from the lab fixture.
+The rendered profile contains:
+
+- an HTTP `proxy-provider` named `tun-egress-provider`;
+- a `TunEgress` select group containing `DIRECT` and provider-backed
+  `egress-proxy`;
+- a domain rule for `OMG_SAME_LAN_TEST_HOST`, defaulting to `example.com`;
+- `MATCH,DIRECT` for all other traffic.
+
+The runner also starts a user-level local helper that serves the HTTP provider
+and listens as a controlled HTTP CONNECT proxy on `127.0.0.1`.
+
+After the Android test phone points gateway and DNS at the Mac LAN IP, run:
+
+```sh
+make same-lan-adb-check-imported-egress
+```
+
+That ADB check verifies the Android route/DNS/no-explicit-proxy preflight,
+checks that `TunEgress` contains `egress-proxy`, sends one no-explicit-proxy
+HTTPS probe while `TunEgress[DIRECT]` is selected, switches with
+`omg policy-select --group TunEgress --policy egress-proxy`, then repeats the
+probe. It requires `mihomo.log` to show both `TunEgress[DIRECT]` and
+`TunEgress[egress-proxy]`, and requires the controlled proxy log to observe
+`CONNECT <host>:443` only after the switch.
+
+This smoke proves same-LAN transparent TUN policy switching to a controlled
+local proxy. It does not prove a real subscription node or remote exit IP.
+
 ## Stop
 
 ```sh
@@ -150,6 +190,9 @@ Expected cleanup:
 This smoke only proves that one Android test device on the same LAN can point
 its default gateway and DNS at the Mac, then send no-explicit-proxy traffic into
 the OpenSurge TUN path. With `same-lan-start-tun-proxy`, it can also prove one
-domain's real upstream proxy egress. It does not prove global router DHCP
-rollout, all-device compatibility, IPv6, DoH/Private Relay, UDP/QUIC, imported
-subscriptions, or policy-group switching.
+domain's real upstream proxy egress. With
+`same-lan-start-tun-imported-egress` plus `same-lan-adb-check-imported-egress`,
+it can prove imported provider-backed policy switching to a controlled local
+proxy. It does not prove global router DHCP rollout, all-device compatibility,
+IPv6, DoH/Private Relay, UDP/QUIC, full subscription compatibility, or a real
+remote exit IP.

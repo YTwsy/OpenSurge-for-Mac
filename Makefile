@@ -3,7 +3,8 @@
 .PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-down lab-destroy
 .PHONY: real-device-start-off real-device-start-tun real-device-start-tun-proxy
 .PHONY: real-device-stop real-device-status real-device-client-check
-.PHONY: same-lan-start-tun same-lan-start-tun-proxy same-lan-stop same-lan-status same-lan-adb-check
+.PHONY: same-lan-start-tun same-lan-start-tun-proxy same-lan-start-tun-imported-egress
+.PHONY: same-lan-stop same-lan-status same-lan-adb-check same-lan-adb-check-imported-egress
 
 test:
 	go test ./...
@@ -77,6 +78,9 @@ same-lan-start-tun:
 same-lan-start-tun-proxy:
 	OMG_SAME_LAN_UPSTREAM_PROXY_ENABLED=true ./tests/same-lan/smoke.sh start-tun
 
+same-lan-start-tun-imported-egress:
+	OMG_SAME_LAN_IMPORTED_EGRESS=true ./tests/same-lan/smoke.sh start-tun-imported-egress
+
 same-lan-stop:
 	./tests/same-lan/smoke.sh stop
 
@@ -85,3 +89,6 @@ same-lan-status:
 
 same-lan-adb-check:
 	./tests/same-lan/smoke.sh adb-check
+
+same-lan-adb-check-imported-egress:
+	OMG_SAME_LAN_IMPORTED_EGRESS=true ./tests/same-lan/smoke.sh adb-check-imported-egress

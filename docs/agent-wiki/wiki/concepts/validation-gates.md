@@ -125,7 +125,9 @@ TUN smoke 被验证。
 ```sh
 make same-lan-start-tun
 make same-lan-start-tun-proxy
+make same-lan-start-tun-imported-egress
 make same-lan-adb-check
+make same-lan-adb-check-imported-egress
 make same-lan-stop
 ```
 
@@ -139,10 +141,10 @@ DNS 查询、无显式代理探针结果，并回看 Mac 侧 `dnsmasq.log` 和 `
 同时看到 Android 默认路由包含 `via <mac-lan-ip>`、DNS 查询走 Mac、客户端触发目标
 连接、`mihomo.log` 中出现 TUN 路径目标连接，才可以宣称 same-LAN TUN smoke 通过。
 
-这个 gate 不证明主路由 DHCP 全局下发、所有设备兼容、IPv6、DoH/Private Relay、
-UDP/QUIC、imported profile 或策略组切换。Android 镜像如果缺少 `curl`、`wget`、
-`nc`、`nslookup` 或 `dig`，应把结果记录为 ADB 客户端探针能力不足，而不是把人工
-浏览器页面成功当成完整自动化证据。
+基础 `same-lan-start-tun` gate 不证明主路由 DHCP 全局下发、所有设备兼容、IPv6、
+DoH/Private Relay、UDP/QUIC、imported profile 或策略组切换。Android 镜像如果缺少
+`curl`、`wget`、`nc`、`nslookup` 或 `dig`，应把结果记录为 ADB 客户端探针能力不足，
+而不是把人工浏览器页面成功当成完整自动化证据。
 
 same-LAN 的真实代理出口可以先用最小 `upstream_proxy` 切片验证，不必先导入完整
 订阅。2026-07-09 已用 `api.ipify.org`、Pixel 测试手机和 LAN HTTP 代理完成这一
@@ -155,6 +157,15 @@ IP 查询 `api.ipify.org`、`mihomo.log` 显示
 证明命中代理；要证明切换，应让 group 至少包含 LAN 代理和 `DIRECT` 两个候选，通过
 `omg policy-select --config <path> --group <name> --policy <member>` 切换选中项后
 重复出口 IP 探针。
+
+same-LAN imported provider 策略切换的入口是
+`make same-lan-start-tun-imported-egress` 和
+`make same-lan-adb-check-imported-egress`。前者渲染 imported profile fixture，并启动本地
+HTTP provider/受控 HTTP CONNECT proxy；后者要求 Android 无显式代理路径先命中
+`TunEgress[DIRECT]`，再通过 `omg policy-select --group TunEgress --policy
+egress-proxy` 切换后命中 `TunEgress[egress-proxy]`，同时受控 proxy 日志出现
+`CONNECT <host>:443`。这个 smoke 证明 same-LAN TUN 下的 imported provider-backed
+策略切换可以命中受控本地代理；它不证明完整订阅兼容性或真实远端出口 IP。
 
 ## 透明代理门槛
 

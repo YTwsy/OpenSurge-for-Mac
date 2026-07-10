@@ -38,7 +38,9 @@ The runner is `tests/same-lan/smoke.sh` with Makefile entrypoints:
 
 - `make same-lan-start-tun`;
 - `make same-lan-start-tun-proxy`;
+- `make same-lan-start-tun-imported-egress`;
 - `make same-lan-adb-check`;
+- `make same-lan-adb-check-imported-egress`;
 - `make same-lan-status`;
 - `make same-lan-stop`.
 
@@ -90,6 +92,30 @@ members, such as the LAN proxy and `DIRECT`, and the selected member should be
 changed with `omg policy-select --config <path> --group <name> --policy <name>`
 before repeating the same exit-IP probe.
 
+## Imported provider policy switching
+
+`make same-lan-start-tun-imported-egress` starts the same-LAN TUN config with an
+imported profile rendered from `tests/lab/mihomo-profile.imported-tun-egress.yaml`.
+It also starts a user-level local helper that serves the HTTP provider and a
+controlled HTTP CONNECT proxy. The rendered profile contributes:
+
+- `tun-egress-provider`;
+- `TunEgress` with `DIRECT` and provider-backed `egress-proxy`;
+- a domain rule for `OMG_SAME_LAN_TEST_HOST`;
+- `MATCH,DIRECT` fallback.
+
+`make same-lan-adb-check-imported-egress` is the evidence entrypoint. It keeps
+the Android device on the no-explicit-proxy same-LAN path, checks that the live
+policy/provider state contains `TunEgress` and `egress-proxy`, probes once while
+`TunEgress[DIRECT]` is selected, switches to `egress-proxy` through
+`omg policy-select`, then probes again. The required signals are `mihomo.log`
+entries for both selected policies and the controlled proxy log observing
+`CONNECT <host>:443` only after the switch.
+
+This proves same-LAN transparent TUN policy switching to a controlled local
+proxy. It does not prove a real subscription node, a real remote exit IP, or
+whole-LAN rollout readiness.
+
 ## Acceptance
 
 The first same-LAN TUN acceptance requires:
@@ -102,6 +128,9 @@ The first same-LAN TUN acceptance requires:
 - stop restores PF, IPv4 forwarding, runtime state, and DNS listener state.
 
 With `same-lan-start-tun-proxy`, the gate can additionally prove one-domain
-remote proxy egress through a controlled LAN proxy. It still does not prove IPv6,
-DoH/Private Relay, UDP/QUIC, global router DHCP rollout, all-device
-compatibility, imported profiles, or policy-group switching.
+remote proxy egress through a controlled LAN proxy. With
+`same-lan-start-tun-imported-egress` and `same-lan-adb-check-imported-egress`,
+it can prove imported provider-backed policy switching to a controlled local
+proxy. It still does not prove IPv6, DoH/Private Relay, UDP/QUIC, global router
+DHCP rollout, all-device compatibility, full subscription compatibility, or a
+real remote exit IP.

@@ -156,8 +156,12 @@ same-LAN default-gateway smoke. This gate keeps DHCP disabled, requires TUN, and
 uses ADB to inspect one Android test device whose gateway and DNS point at the
 Mac's LAN IP. Use `make same-lan-start-tun-proxy` with `OMG_SAME_LAN_*`
 upstream-proxy environment overrides to prove one-domain real proxy egress, such
-as `api.ipify.org`, before importing a full subscription. It does not claim
-whole-LAN rollout readiness or policy-group switching.
+as `api.ipify.org`, before importing a full subscription. Use
+`make same-lan-start-tun-imported-egress` plus
+`make same-lan-adb-check-imported-egress` for the closer-to-real-device smoke
+that imports a provider-backed `TunEgress` group, then switches same-LAN TUN
+traffic from `DIRECT` to a controlled local HTTP CONNECT proxy. These gates do
+not claim whole-LAN rollout readiness or real remote subscription exits.
 
 ## Virtual LAN lab
 
