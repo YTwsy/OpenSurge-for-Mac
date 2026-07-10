@@ -64,6 +64,19 @@ make same-wifi-dhcp-stop
 兼容的完整 target 名称也保留为 `same-lan-*-wifi-dhcp-*`，但新名称更准确地表达了
 same-WiFi DHCP 接管的边界。
 
+## 2026-07-11 已记录的手动成功验证
+
+一次真实专用 Wi-Fi run 已完成：路由器 DHCP 由人工关闭，Mac 保持静态地址
+`192.168.1.20`，`192.168.1.101` 作为不在 `.120-.199` 池内的受保护地址。Android
+测试手机从 OpenSurge DHCP 获得 `192.168.1.141`；dnsmasq 记录到它对 `example.com`
+的 DNS 查询。live provider 刷新后，手机浏览器探针先产生 `TunEgress[DIRECT]`，再在
+策略切到 `egress-proxy` 后产生 `TunEgress[egress-proxy]`。受控 helper 记录了 CONNECT，
+操作者确认浏览器可通过该 egress 路径访问。`make same-wifi-dhcp-stop` 已完成
+OpenSurge 清理检查。
+
+这是一台设备的人工证据：它不是自动 ADB gate 通过记录，也不代表路由器 DHCP 已恢复
+或所有设备均兼容。
+
 ## runner 的证据
 
 ADB gate 成功时会要求：

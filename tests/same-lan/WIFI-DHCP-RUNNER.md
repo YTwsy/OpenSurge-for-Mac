@@ -80,6 +80,20 @@ tail -n 120 runtime/same-wifi-dhcp/egress/proxy.log
 This is operator-recorded evidence rather than a replacement for the automated
 ADB gate. Run `make same-wifi-dhcp-stop` as soon as the probes are complete.
 
+## Recorded successful manual run — 2026-07-11
+
+A real dedicated-Wi-Fi run completed with router DHCP manually disabled, the
+Mac held at static address `192.168.1.20`, and `192.168.1.101` protected outside
+the `.120-.199` pool. The Android test phone received `192.168.1.141` from
+OpenSurge DHCP; dnsmasq recorded its `example.com` DNS query. After the live
+provider refresh, browser probes produced `TunEgress[DIRECT]` and then,
+following policy selection, `TunEgress[egress-proxy]`. The controlled helper
+recorded the CONNECT request and the operator confirmed browser access on that
+egress path. `make same-wifi-dhcp-stop` completed the OpenSurge cleanup checks.
+
+This is one-device manual evidence. It does not represent an automated ADB-gate
+pass, router-DHCP recovery, or a general compatibility claim.
+
 ## Evidence and boundary
 
 The ADB gate requires the Android lease and DHCPACK in OpenSurge evidence, a
