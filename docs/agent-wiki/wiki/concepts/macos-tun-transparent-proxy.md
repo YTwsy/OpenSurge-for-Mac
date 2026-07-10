@@ -43,4 +43,10 @@ mihomo TUN 路径出现。当前脚本的直接信号包括客户端 helper 的 
 测试、`mihomo.log` 中的 `--> <host>:443`，以及成功时的
 `transparent TUN log observed for <host>:443` 输出。
 
+如果变更涉及 imported profile provider 或通过 `policy-select` 改变透明 TUN
+出口路径，使用 `make lab-test-tun-imported-egress`。这个 gate 使用本地 HTTP
+provider 和受控 HTTP CONNECT proxy，证明无显式代理客户端的 TUN 流量可以从
+`TunEgress[DIRECT]` 切到 `TunEgress[egress-proxy]`。它仍然不是真实订阅节点或远端
+出口 IP 验收。
+
 除非这个 gate 实际运行过，否则不要宣称 TUN lab coverage。

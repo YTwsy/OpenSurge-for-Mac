@@ -125,7 +125,10 @@ lab 脚本，以及会影响运行时流量的示例配置。除非有专用 mac
 并要求 mihomo 日志中出现通过 TUN inbound 观察到的直连 HTTPS 请求。修改
 mihomo profile 导入或 overlay 行为时，使用
 `make lab-test-tun-imported-profile`；它会用 imported profile fixture 跑同一个
-TUN 门禁。
+TUN 门禁。修改 imported provider 或会影响透明 TUN 流量的策略选择行为时，使用
+`make lab-test-tun-imported-egress`；它会使用本地 HTTP provider 和受控 HTTP
+CONNECT proxy，证明 `policy-select` 可以把 TUN 出口路径在 `DIRECT` 与受控代理
+之间切换。
 
 策略组控制面和机器可读 CLI 改动优先使用 `make policy-control-test`。它会启动真实
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller
@@ -154,6 +157,7 @@ sudo -v
 make lab-test
 make lab-test-tun
 make lab-test-tun-imported-profile
+make lab-test-tun-imported-egress
 make lab-down
 ```
 

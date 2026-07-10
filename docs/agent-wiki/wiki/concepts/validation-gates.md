@@ -196,6 +196,21 @@ make lab-test-tun-imported-profile
 配置，并保持规则为 `MATCH,DIRECT`。它证明 imported profile overlay 可以进入 TUN
 lab 路径；它不证明外部代理出口或远端节点可用。
 
+验证 imported provider 和策略组切换会影响透明 TUN 出口时，使用：
+
+```sh
+make lab-test-tun-imported-egress
+```
+
+这个门禁使用 `tests/lab/mihomo-profile.imported-tun-egress.yaml`，在 lab host 上
+启动本地 HTTP provider 和受控 HTTP CONNECT proxy。脚本先让无显式代理客户端通过
+TUN 访问测试 HTTPS host，并要求 `mihomo.log` 显示 `using TunEgress[DIRECT]` 且受控
+proxy 未被使用；随后执行 `omg policy-select --group TunEgress --policy egress-proxy`
+并重复透明请求，要求 `mihomo.log` 显示 `using TunEgress[egress-proxy]`，同时受控
+proxy 日志出现 `CONNECT <host>:443`。它证明 imported provider-backed 策略选择能
+改变透明 TUN egress path；它不证明真实订阅节点、真实远端出口 IP、same-LAN 或真实
+设备兼容性。
+
 ## 结论纪律
 
 最终报告必须明确说出实际运行了哪些命令。如果只运行了 `make test`，不要暗示

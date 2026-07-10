@@ -18,6 +18,16 @@ HTTPS，以及清理行为。
 保持客户端没有显式代理配置，并要求无显式代理的 HTTPS 请求出现在
 `mihomo.log` 的透明 TUN 路径中。
 
+`make lab-test-tun-imported-profile` 是 imported profile overlay 的 TUN 门槛。
+它使用 `tests/lab/mihomo-profile.imported-tun.yaml`，保持规则为 `MATCH,DIRECT`，
+证明 imported profile 可以进入透明 TUN lab 路径。
+
+`make lab-test-tun-imported-egress` 是 imported provider + policy-select 的 TUN
+出口切换门槛。它使用本地 HTTP provider 注入 `egress-proxy`，通过
+`omg policy-select` 把 `TunEgress` 从 `DIRECT` 切到受控 HTTP CONNECT proxy，并
+要求 `mihomo.log` 中的 TUN 目标连接和受控 proxy 日志同时反映切换结果。这个门槛
+不证明真实订阅节点、真实远端出口 IP 或 real-device/same-LAN 兼容性。
+
 ## 什么时候必须跑 lab
 
 宣称下列改动具备 runtime 覆盖前，应运行 `make lab-test`：
@@ -54,6 +64,14 @@ lab 的 root-required 步骤依赖当前终端会话里的 sudo 缓存。`sudo -
 - 成功时输出类似 `transparent TUN log observed for <host>:443`；
 - 测试结束后停止 gateway，并确认 `runtime/lab/state.json` 被移除；
 - artifacts 被写入 `artifacts/lab` 以便失败后排查。
+
+`make lab-test-tun-imported-egress` 还应看到：
+
+- `omg providers --format json` 中出现 `tun-egress-provider` 和 `egress-proxy`；
+- `TunEgress[DIRECT]` 阶段受控 proxy 没有收到 `CONNECT <host>:443`；
+- 执行 `omg policy-select --group TunEgress --policy egress-proxy` 后，`mihomo.log`
+  出现 `using TunEgress[egress-proxy]`；
+- 受控 proxy 日志出现 `CONNECT <host>:443`。
 
 如果使用历史 lab 结果或人工观察提到 fake-IP DNS 行为，要明确它不是当前脚本
 里唯一的直接断言。

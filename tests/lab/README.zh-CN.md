@@ -55,6 +55,8 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-imported-profile
+make lab-test-tun-imported-egress
 make lab-down
 ```
 
@@ -66,6 +68,12 @@ artifact 会写入 `artifacts/lab`。
 `lab-test-tun` 是 TUN 透明代理门禁。它会把 lab 配置改写成
 `transparent.mode: "tun"`，让 dnsmasq 转发到 mihomo DNS，让客户端不设置显式代理，
 并要求无代理 HTTPS 请求出现在 `mihomo.log` 中。
+
+`lab-test-tun-imported-profile` 会使用 imported profile fixture 跑 TUN 门禁。
+`lab-test-tun-imported-egress` 会在这条路径上加入本地 HTTP provider 和受控 HTTP
+CONNECT proxy，然后通过 `omg policy-select` 把 `TunEgress` 从 `DIRECT` 切到受控
+代理。它证明 provider-backed 策略选择会改变透明 TUN 出口路径；它不证明真实订阅
+节点或远端出口 IP。
 
 请把 `make lab-test` 视为高风险网络改动所需的本地门禁：DHCP/DNS 行为、mihomo
 进程或配置生成、pf/NAT 规则、forwarding 和 rollback、网关生命周期清理、lab
@@ -100,6 +108,8 @@ make lab-up       # 创建/启动网络和客户端
 make lab-status   # 检查主机和客户端状态
 make lab-test     # 运行端到端测试并恢复主机
 make lab-test-tun # 运行 TUN 透明代理门禁
+make lab-test-tun-imported-profile # 使用 imported profile fixture 跑 TUN
+make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
 make lab-down     # 停止客户端并移除 host network
 make lab-destroy  # 同时删除持久化的 Lima 客户端磁盘
 ```

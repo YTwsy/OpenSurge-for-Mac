@@ -138,7 +138,11 @@ Use `make lab-test-tun` for the supported transparent proxy path. That test
 keeps clients proxy-free and requires mihomo to log the direct HTTPS connection
 through its TUN inbound. Use `make lab-test-tun-imported-profile` when changing
 mihomo profile import or overlay behavior; it runs the same TUN gate with an
-imported profile fixture.
+imported profile fixture. Use `make lab-test-tun-imported-egress` when changing
+imported provider or policy-selection behavior that should affect transparent
+TUN traffic; it uses a local HTTP provider and controlled HTTP CONNECT proxy to
+prove `policy-select` changes the TUN egress path between `DIRECT` and the
+controlled proxy.
 
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
@@ -169,6 +173,7 @@ sudo -v
 make lab-test
 make lab-test-tun
 make lab-test-tun-imported-profile
+make lab-test-tun-imported-egress
 make lab-down
 ```
 

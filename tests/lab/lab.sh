@@ -20,10 +20,17 @@ STATE_DIR="$ROOT/runtime/lab"
 CONFIG="$STATE_DIR/config.yaml"
 CLIENT_CONFIG="$STATE_DIR/client.yaml"
 BINARY="$ROOT/bin/omg-lab"
+EGRESS_PROBE_BINARY="$STATE_DIR/egress-probe"
+EGRESS_PROVIDER="$STATE_DIR/tun-egress-provider.yaml"
+EGRESS_ORIGIN_PORT="${OMG_LAB_TUN_EGRESS_ORIGIN_PORT:-19093}"
+EGRESS_PROXY_PORT="${OMG_LAB_TUN_EGRESS_PROXY_PORT:-19094}"
+EGRESS_PROVIDER_URL="http://127.0.0.1:$EGRESS_ORIGIN_PORT/tun-egress-provider.yaml"
 LAN_IP=192.168.50.1
 CLIENTS="${OMG_LAB_CLIENTS:-omg-lab-client-1 omg-lab-client-2}"
 TEST_URL="${OMG_LAB_TEST_URL:-https://example.com/}"
 LAB_MIHOMO_PROFILE="${OMG_LAB_MIHOMO_PROFILE:-}"
+TUN_EGRESS_PROFILE=0
+EGRESS_PROBE_PID=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -122,10 +129,31 @@ resolve_lab_profile() {
   esac
 }
 
+write_tun_egress_provider() {
+  cat >"$EGRESS_PROVIDER" <<EOF
+proxies:
+  - name: "egress-proxy"
+    type: http
+    server: "127.0.0.1"
+    port: $EGRESS_PROXY_PORT
+EOF
+}
+
+render_tun_egress_profile() {
+  local source=$1 destination=$2 host
+  host="$(url_host "$TEST_URL")"
+  write_tun_egress_provider
+  sed \
+    -e "s|__TUN_EGRESS_PROVIDER_URL__|$(sed_escape "$EGRESS_PROVIDER_URL")|g" \
+    -e "s|__TUN_EGRESS_HOST__|$(sed_escape "$host")|g" \
+    "$source" >"$destination"
+}
+
 write_config() {
   local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line
   local profile_mode profile_path profile_source
 	mode="${1:-off}"
+  TUN_EGRESS_PROFILE=0
 	iface="$(lab_interface)"
 	upstream="$(upstream_interface)"
 	dnsmasq_bin="$(command -v dnsmasq)"
@@ -139,7 +167,12 @@ write_config() {
     profile_source="$(resolve_lab_profile "$LAB_MIHOMO_PROFILE")"
     [[ -f "$profile_source" ]] || { echo "mihomo profile not found: $profile_source" >&2; exit 1; }
     profile_path="$profile_source"
-    if [[ "$profile_source" == "$ROOT/tests/lab/mihomo-profile.imported-tun.yaml" ]]; then
+    if [[ "$profile_source" == "$ROOT/tests/lab/mihomo-profile.imported-tun-egress.yaml" ]]; then
+      mkdir -p "$STATE_DIR"
+      profile_path="$STATE_DIR/$(basename "$profile_source")"
+      render_tun_egress_profile "$profile_source" "$profile_path"
+      TUN_EGRESS_PROFILE=1
+    elif [[ "$profile_source" == "$ROOT/tests/lab/mihomo-profile.imported-tun.yaml" ]]; then
       mkdir -p "$STATE_DIR"
       profile_path="$STATE_DIR/$(basename "$profile_source")"
       cp "$profile_source" "$profile_path"
@@ -231,6 +264,8 @@ collect_artifacts() {
   artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$artifact_dir"
   cp "$CONFIG" "$artifact_dir/config.yaml" 2>/dev/null || true
+  cp "$EGRESS_PROVIDER" "$artifact_dir/tun-egress-provider.yaml" 2>/dev/null || true
+  cp -R "$STATE_DIR/egress" "$artifact_dir/egress" 2>/dev/null || true
   cp -R "$STATE_DIR/logs" "$artifact_dir/logs" 2>/dev/null || true
   "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
   "$BINARY" leases --config "$CONFIG" >"$artifact_dir/leases.txt" 2>&1 || true
@@ -267,8 +302,108 @@ wait_for_transparent_log() {
   exit 1
 }
 
+wait_for_tun_policy_log() {
+  local group policy host i log_file
+  group="$1"
+  policy="$2"
+  host="$(url_host "$TEST_URL")"
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..20}; do
+    if [[ -f "$log_file" ]] &&
+      grep -F -- "--> $host:443" "$log_file" | grep -Fq -- "using $group[$policy]"; then
+      echo "transparent TUN policy log observed for $host:443 using $group[$policy]"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "mihomo did not log transparent TUN traffic for $host:443 using $group[$policy]" >&2
+  tail -100 "$log_file" >&2 || true
+  exit 1
+}
+
+wait_for_policy_option() {
+  local group option output error i
+  group="$1"
+  option="$2"
+  output="$STATE_DIR/policies-wait.json"
+  error="$STATE_DIR/policies-wait.err"
+  for i in {1..50}; do
+    if "$BINARY" policies --config "$CONFIG" --format json >"$output" 2>"$error" &&
+      grep -Fq -- "\"name\": \"$group\"" "$output" &&
+      grep -Fq -- "\"$option\"" "$output"; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "policy group $group did not include option $option" >&2
+  cat "$output" >&2 || true
+  cat "$error" >&2 || true
+  tail -120 "$STATE_DIR/logs/mihomo.log" >&2 || true
+  exit 1
+}
+
+build_egress_probe() {
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+    go build -o "$EGRESS_PROBE_BINARY" ./tests/integration/egressprobe
+}
+
+start_egress_probe() {
+  local log_file i
+  mkdir -p "$STATE_DIR/logs"
+  rm -rf "$STATE_DIR/egress"
+  log_file="$STATE_DIR/logs/egress-probe.log"
+  "$EGRESS_PROBE_BINARY" \
+    --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
+    --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
+    --provider-file "$EGRESS_PROVIDER" \
+    --provider-path "/tun-egress-provider.yaml" \
+    --log-dir "$STATE_DIR/egress" >"$log_file" 2>&1 &
+  EGRESS_PROBE_PID=$!
+  for i in {1..50}; do
+    if grep -Fq READY "$log_file" 2>/dev/null; then
+      echo "TUN egress probe ready: provider=$EGRESS_PROVIDER_URL proxy=127.0.0.1:$EGRESS_PROXY_PORT"
+      return 0
+    fi
+    if ! kill -0 "$EGRESS_PROBE_PID" 2>/dev/null; then
+      echo "TUN egress probe exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "TUN egress probe did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_egress_probe() {
+  if [[ -n "$EGRESS_PROBE_PID" ]] && kill -0 "$EGRESS_PROBE_PID" 2>/dev/null; then
+    kill "$EGRESS_PROBE_PID" 2>/dev/null || true
+    wait "$EGRESS_PROBE_PID" 2>/dev/null || true
+  fi
+  EGRESS_PROBE_PID=""
+}
+
+assert_tun_egress_proxy_unused() {
+  if [[ -s "$STATE_DIR/egress/proxy.log" ]]; then
+    echo "TunEgress DIRECT unexpectedly used the controlled proxy" >&2
+    cat "$STATE_DIR/egress/proxy.log" >&2
+    exit 1
+  fi
+}
+
+assert_tun_egress_proxy_used() {
+  local host
+  host="$(url_host "$TEST_URL")"
+  if ! grep -Fq -- "CONNECT $host:443" "$STATE_DIR/egress/proxy.log" 2>/dev/null; then
+    echo "controlled proxy did not observe CONNECT $host:443" >&2
+    cat "$STATE_DIR/egress/proxy.log" >&2 || true
+    exit 1
+  fi
+}
+
 run_test() {
-  local mode client gateway_started
+  local mode client gateway_started egress_probe_started
   mode="${1:-off}"
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
@@ -280,29 +415,61 @@ run_test() {
     go build -o "$BINARY" ./cmd/omg
 
   gateway_started=0
+  egress_probe_started=0
   cleanup_test() {
     status=$?
     collect_artifacts || true
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
     fi
+    if [[ "$egress_probe_started" == 1 ]]; then
+      stop_egress_probe || true
+    fi
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
+
+  if [[ "$TUN_EGRESS_PROFILE" == 1 ]]; then
+    build_egress_probe
+    start_egress_probe
+    egress_probe_started=1
+  fi
 
   sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
 
   for client in $CLIENTS; do
     limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
-    if [[ "$mode" == "tun" ]]; then
-      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
-    else
-      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client test "$LAN_IP" "$TEST_URL"
-    fi
   done
-  if [[ "$mode" == "tun" ]]; then
-    wait_for_transparent_log
+
+  if [[ "$mode" == "tun" && "$TUN_EGRESS_PROFILE" == 1 ]]; then
+    wait_for_policy_option TunEgress egress-proxy
+    "$BINARY" providers --config "$CONFIG" --format json >"$STATE_DIR/tun-egress-providers.json"
+    grep -Fq '"name": "tun-egress-provider"' "$STATE_DIR/tun-egress-providers.json"
+    grep -Fq '"name": "egress-proxy"' "$STATE_DIR/tun-egress-providers.json"
+    for client in $CLIENTS; do
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+    done
+    wait_for_tun_policy_log TunEgress DIRECT
+    assert_tun_egress_proxy_unused
+
+    "$BINARY" policy-select --config "$CONFIG" --group TunEgress --policy egress-proxy --format json
+    for client in $CLIENTS; do
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+    done
+    wait_for_tun_policy_log TunEgress egress-proxy
+    assert_tun_egress_proxy_used
+  else
+    for client in $CLIENTS; do
+      if [[ "$mode" == "tun" ]]; then
+        limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+      else
+        limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client test "$LAN_IP" "$TEST_URL"
+      fi
+    done
+    if [[ "$mode" == "tun" ]]; then
+      wait_for_transparent_log
+    fi
   fi
 
   "$BINARY" status --config "$CONFIG"
@@ -316,6 +483,10 @@ run_test() {
 
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
+  if [[ "$egress_probe_started" == 1 ]]; then
+    stop_egress_probe
+    egress_probe_started=0
+  fi
   [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
   trap - EXIT INT TERM
   collect_artifacts

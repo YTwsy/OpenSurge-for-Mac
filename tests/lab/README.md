@@ -62,6 +62,8 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-imported-profile
+make lab-test-tun-imported-egress
 make lab-down
 ```
 
@@ -75,6 +77,13 @@ under `artifacts/lab`.
 with `transparent.mode: "tun"`, forwards dnsmasq to mihomo DNS, leaves the
 clients without explicit proxy settings, and requires the no-proxy HTTPS
 request to appear in `mihomo.log`.
+
+`lab-test-tun-imported-profile` runs the TUN gate with an imported profile
+fixture. `lab-test-tun-imported-egress` extends that path with a local HTTP
+provider and controlled HTTP CONNECT proxy, then switches `TunEgress` from
+`DIRECT` to the controlled proxy through `omg policy-select`. It proves
+provider-backed policy selection changes the transparent TUN egress path; it
+does not prove a real subscription node or remote exit IP.
 
 Treat `make lab-test` as the required local gate for high-risk network changes:
 DHCP/DNS behavior, mihomo process or config generation, pf/NAT rules,
@@ -112,6 +121,8 @@ make lab-up       # create/start network and clients
 make lab-status   # inspect host and client state
 make lab-test     # run the end-to-end test and restore the host
 make lab-test-tun # run the TUN transparent proxy gate
+make lab-test-tun-imported-profile # run TUN with an imported profile fixture
+make lab-test-tun-imported-egress  # switch TUN egress through a controlled proxy
 make lab-down     # stop clients and remove the host network
 make lab-destroy  # delete the persistent Lima client disks too
 ```

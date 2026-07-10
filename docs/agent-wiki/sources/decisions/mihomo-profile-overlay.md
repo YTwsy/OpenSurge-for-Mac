@@ -72,5 +72,14 @@ starts OpenSurge with an imported profile fixture. The fixture keeps
 `MATCH,DIRECT`, so it proves imported overlay compatibility with TUN startup and
 transparent routing, not external proxy egress.
 
+Use `make lab-test-tun-imported-egress` when the imported profile change needs
+TUN evidence for provider-backed policy selection. That gate renders
+`tests/lab/mihomo-profile.imported-tun-egress.yaml`, serves a local HTTP provider
+that contributes `egress-proxy`, switches `TunEgress` from `DIRECT` to
+`egress-proxy` through `omg policy-select`, and requires both the mihomo TUN log
+and the controlled proxy log to reflect the change. It proves controlled local
+proxy egress switching through TUN; it does not prove a real subscription node,
+real remote exit IP, same-LAN, or real-device behavior.
+
 Do not treat imported profiles as permission to re-enable `redir-port` or PF TCP
 redirection. macOS transparent proxying remains TUN-first.

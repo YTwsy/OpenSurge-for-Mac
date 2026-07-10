@@ -1,0 +1,25 @@
+# Imported profile fixture for the TUN egress-switch lab gate.
+# OpenSurge still owns gateway-critical TUN/DNS/controller fields; this profile
+# contributes a provider-backed policy group and rules for one transparent HTTPS
+# probe host.
+
+proxy-providers:
+  tun-egress-provider:
+    type: http
+    url: "__TUN_EGRESS_PROVIDER_URL__"
+    path: ./tun-egress-provider-cache.yaml
+    interval: 3600
+    health-check:
+      enable: false
+
+proxy-groups:
+  - name: "TunEgress"
+    type: select
+    use:
+      - tun-egress-provider
+    proxies:
+      - DIRECT
+
+rules:
+  - DOMAIN,__TUN_EGRESS_HOST__,TunEgress
+  - MATCH,DIRECT

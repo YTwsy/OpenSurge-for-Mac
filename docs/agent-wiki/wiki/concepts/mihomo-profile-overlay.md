@@ -67,10 +67,20 @@ the change also touches gateway, DNS, TUN, or traffic-capture behavior.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:
-`make lab-test`, `make lab-test-tun`, `make lab-test-tun-imported-profile`, or a
-documented real-device smoke.
+`make lab-test`, `make lab-test-tun`, `make lab-test-tun-imported-profile`,
+`make lab-test-tun-imported-egress`, or a documented real-device smoke.
 
 `make lab-test-tun-imported-profile` runs the TUN gate with
 `tests/lab/mihomo-profile.imported-tun.yaml`, which keeps rules at
 `MATCH,DIRECT`. It proves the imported profile overlay can start in the TUN lab;
 it does not prove an external proxy egress.
+
+`make lab-test-tun-imported-egress` runs the TUN gate with
+`tests/lab/mihomo-profile.imported-tun-egress.yaml`. The fixture uses a local
+HTTP provider to add `egress-proxy`, then the lab switches `TunEgress` from
+`DIRECT` to `egress-proxy` through `omg policy-select`. The direct signals are
+`mihomo.log` entries for `TunEgress[DIRECT]` and `TunEgress[egress-proxy]`, plus
+the controlled proxy observing `CONNECT <host>:443` only after the switch. This
+proves controlled local proxy egress switching through transparent TUN; it does
+not prove a real subscription node, remote exit IP, same-LAN, or real-device
+behavior.
