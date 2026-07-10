@@ -59,8 +59,10 @@ connections. Use `omg providers --config <path>` to inspect proxy/rule
 providers, and `omg provider-update --config <path> --provider <name>` to
 refresh one proxy provider. `policy-select` first reads live groups and rejects
 unknown group or policy names before sending the selection change. These are
-control-plane checks; they do not require real-device validation unless the
-change also touches gateway, DNS, TUN, or traffic-capture behavior.
+control-plane checks. `make policy-control-test` also proves one local
+mixed-port request can be switched from `DIRECT` to a controlled HTTP CONNECT
+proxy with `policy-select`, but it still does not require real-device validation
+unless the change also touches gateway, DNS, TUN, or traffic-capture behavior.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:

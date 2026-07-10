@@ -27,9 +27,11 @@ can refresh it, and `omg snapshot` can aggregate status, doctor, leases, logs,
 policies, providers, and connections while mihomo is running. The gate rejects
 an unknown policy with a machine-readable JSON error before switching, then
 restarts mihomo in the same runtime directory to verify
-`profile.store-selected` restores the selected policy. It proves the
-control-plane contract with mihomo, not whole-LAN routing or transparent proxy
-capture.
+`profile.store-selected` restores the selected policy. It also starts a local
+origin and controlled HTTP CONNECT proxy, then proves an `EgressSwitch` policy
+selection changes one mixed-port request from `DIRECT` to the controlled proxy.
+It proves the control-plane contract with mihomo, not whole-LAN routing,
+transparent proxy capture, or a real remote proxy exit.
 
 The transparent proxy gate is `make lab-test-tun`. It is stricter than the
 default lab path because clients do not use `mixed-port`; the test must prove

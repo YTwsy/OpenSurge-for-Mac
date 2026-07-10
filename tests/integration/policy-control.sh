@@ -12,10 +12,14 @@ PROVIDER="$WORK_DIR/provider.yaml"
 MIHOMO_CONFIG="$WORK_DIR/mihomo.yaml"
 MIHOMO_LOG="$WORK_DIR/logs/mihomo.log"
 OMG_BIN="$WORK_DIR/omg"
+EGRESS_PROBE_BIN="$WORK_DIR/egress-probe"
 MIHOMO_BINARY="${OMG_POLICY_CONTROL_MIHOMO_BINARY:-$ROOT/runtime/tools/bin/mihomo}"
 API_ADDR="${OMG_POLICY_CONTROL_API_ADDR:-127.0.0.1:19091}"
 MIXED_PORT="${OMG_POLICY_CONTROL_MIXED_PORT:-19092}"
+EGRESS_ORIGIN_PORT="${OMG_POLICY_CONTROL_EGRESS_ORIGIN_PORT:-19093}"
+EGRESS_PROXY_PORT="${OMG_POLICY_CONTROL_EGRESS_PROXY_PORT:-19094}"
 PID=""
+EGRESS_PROBE_PID=""
 
 section() {
   printf '\n== %s ==\n' "$1"
@@ -25,6 +29,10 @@ cleanup() {
   if [[ -n "$PID" ]] && kill -0 "$PID" 2>/dev/null; then
     kill "$PID" 2>/dev/null || true
     wait "$PID" 2>/dev/null || true
+  fi
+  if [[ -n "$EGRESS_PROBE_PID" ]] && kill -0 "$EGRESS_PROBE_PID" 2>/dev/null; then
+    kill "$EGRESS_PROBE_PID" 2>/dev/null || true
+    wait "$EGRESS_PROBE_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -38,12 +46,16 @@ require_file() {
 
 write_fixture() {
   mkdir -p "$WORK_DIR/logs"
-  cat >"$PROFILE" <<'EOF'
+  cat >"$PROFILE" <<EOF
 proxies:
   - name: "demo-proxy"
     type: http
     server: "127.0.0.1"
     port: 18080
+  - name: "egress-proxy"
+    type: http
+    server: "127.0.0.1"
+    port: $EGRESS_PROXY_PORT
 
 proxy-providers:
   demo-provider:
@@ -60,8 +72,14 @@ proxy-groups:
     proxies:
       - "demo-proxy"
       - DIRECT
+  - name: "EgressSwitch"
+    type: select
+    proxies:
+      - DIRECT
+      - "egress-proxy"
 
 rules:
+  - IP-CIDR,127.0.0.1/32,EgressSwitch,no-resolve
   - DOMAIN,example.com,Proxy
   - MATCH,DIRECT
 EOF
@@ -91,6 +109,7 @@ EOF
 
 build_omg() {
   GOCACHE="${GOCACHE:-$WORK_DIR/go-cache}" go build -o "$OMG_BIN" ./cmd/omg
+  GOCACHE="${GOCACHE:-$WORK_DIR/go-cache}" go build -o "$EGRESS_PROBE_BIN" ./tests/integration/egressprobe
 }
 
 start_mihomo() {
@@ -99,6 +118,30 @@ start_mihomo() {
   "$MIHOMO_BINARY" -d "$WORK_DIR" -f "$MIHOMO_CONFIG" >>"$MIHOMO_LOG" 2>&1 &
   PID=$!
   wait_for_api
+}
+
+start_egress_probe() {
+  local log_file="$WORK_DIR/logs/egress-probe.log"
+  "$EGRESS_PROBE_BIN" \
+    --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
+    --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
+    --log-dir "$WORK_DIR/egress" >"$log_file" 2>&1 &
+  EGRESS_PROBE_PID=$!
+  local attempt
+  for attempt in $(seq 1 50); do
+    if grep -Fq READY "$log_file" 2>/dev/null; then
+      return 0
+    fi
+    if ! kill -0 "$EGRESS_PROBE_PID" 2>/dev/null; then
+      echo "egress probe exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      return 1
+    fi
+    sleep 0.1
+  done
+  echo "egress probe did not become ready" >&2
+  cat "$log_file" >&2 || true
+  return 1
 }
 
 stop_mihomo() {
@@ -148,6 +191,11 @@ section "validate mihomo config"
 assert_file_contains "$MIHOMO_CONFIG" "store-selected: true"
 assert_file_contains "$MIHOMO_CONFIG" "- DIRECT"
 
+section "start egress probe"
+start_egress_probe
+printf 'origin: 127.0.0.1:%s\n' "$EGRESS_ORIGIN_PORT"
+printf 'proxy: 127.0.0.1:%s\n' "$EGRESS_PROXY_PORT"
+
 section "start mihomo"
 start_mihomo "initial start"
 
@@ -190,6 +238,37 @@ cat "$WORK_DIR/policies-restored.json"
 assert_file_contains "$WORK_DIR/policies-restored.json" '"name": "Proxy"'
 assert_file_contains "$WORK_DIR/policies-restored.json" '"selected": "DIRECT"'
 assert_file_contains "$WORK_DIR/policies-restored.json" '"DIRECT"'
+
+section "verify policy egress switch"
+curl --noproxy '' --proxy "http://127.0.0.1:$MIXED_PORT" --fail --silent --show-error --max-time 5 \
+  "http://127.0.0.1:$EGRESS_ORIGIN_PORT/egress-direct" >"$WORK_DIR/egress-direct.out"
+cat "$WORK_DIR/egress-direct.out"
+assert_file_contains "$WORK_DIR/egress-direct.out" "origin-ok"
+assert_file_contains "$WORK_DIR/egress/origin.log" "GET /egress-direct"
+if [[ -s "$WORK_DIR/egress/proxy.log" ]]; then
+  echo "DIRECT egress unexpectedly used the controlled proxy" >&2
+  cat "$WORK_DIR/egress/proxy.log" >&2
+  exit 1
+fi
+
+"$OMG_BIN" policy-select --config "$CONFIG" --group EgressSwitch --policy egress-proxy --format json >"$WORK_DIR/policy-egress-proxy.json"
+cat "$WORK_DIR/policy-egress-proxy.json"
+assert_file_contains "$WORK_DIR/policy-egress-proxy.json" '"group": "EgressSwitch"'
+assert_file_contains "$WORK_DIR/policy-egress-proxy.json" '"selected": "egress-proxy"'
+
+curl --noproxy '' --proxy "http://127.0.0.1:$MIXED_PORT" --fail --silent --show-error --max-time 5 \
+  "http://127.0.0.1:$EGRESS_ORIGIN_PORT/egress-proxy" >"$WORK_DIR/egress-proxy.out"
+cat "$WORK_DIR/egress-proxy.out"
+assert_file_contains "$WORK_DIR/egress-proxy.out" "origin-ok"
+assert_file_contains "$WORK_DIR/egress/origin.log" "GET /egress-proxy"
+assert_file_contains "$WORK_DIR/egress/proxy.log" "CONNECT 127.0.0.1:$EGRESS_ORIGIN_PORT"
+assert_file_contains "$MIHOMO_LOG" "using EgressSwitch[DIRECT]"
+assert_file_contains "$MIHOMO_LOG" "using EgressSwitch[egress-proxy]"
+
+"$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/policies-egress.json"
+cat "$WORK_DIR/policies-egress.json"
+assert_file_contains "$WORK_DIR/policies-egress.json" '"name": "EgressSwitch"'
+assert_file_contains "$WORK_DIR/policies-egress.json" '"selected": "egress-proxy"'
 
 section "connections"
 "$OMG_BIN" connections --config "$CONFIG" --format json >"$WORK_DIR/connections.json"

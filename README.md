@@ -143,8 +143,9 @@ imported profile fixture.
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
 checks `policies`, invalid and valid `policy-select`, persisted selection
-restore after mihomo restart, `connections`, `providers`, `provider-update`,
-and `snapshot` against the live external-controller API.
+restore after mihomo restart, local DIRECT-vs-proxy egress switching through
+mihomo's mixed-port, `connections`, `providers`, `provider-update`, and
+`snapshot` against the live external-controller API.
 
 Use `make same-lan-start-tun` and `make same-lan-adb-check` for the narrow
 same-LAN default-gateway smoke. This gate keeps DHCP disabled, requires TUN, and
