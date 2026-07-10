@@ -150,6 +150,14 @@ group，并把同 LAN TUN 流量从 `DIRECT` 切到受控本地 HTTP CONNECT pro
 如果明确不使用 ADB，也可以通过人工 Android 浏览器探针收集同一 imported egress
 证据；见[`tests/same-lan/README.zh-CN.md`](tests/same-lan/README.zh-CN.md#不使用-adb-的手动手机检查)。
 
+对于专门测试 Wi-Fi，路由器 DHCP 已由人工关闭后，可使用
+`make same-wifi-dhcp-start-imported-egress`，让 Android 以 DHCP 模式重新加入，再运行
+`make same-wifi-dhcp-adb-check-imported-egress`。这个独立高风险 runner 使用
+`gateway.mode: "same_wifi_dhcp"`，要求显式提供受保护的静态地址列表和路由器 DHCP
+已关闭的操作确认。其 stop gate 会验证 OpenSurge 清理，但路由器 DHCP 与客户端自动
+获取仍需人工恢复；详见
+[`tests/same-lan/WIFI-DHCP-RUNNER.zh-CN.md`](tests/same-lan/WIFI-DHCP-RUNNER.zh-CN.md)。
+
 ## 虚拟 LAN lab
 
 集成 lab 会用两个轻量 Linux 客户端测试真实的 macOS 网关。Lima 提供客户端，

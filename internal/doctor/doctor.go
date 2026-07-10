@@ -116,9 +116,9 @@ func checkGatewayInterfaceTopology(cfg config.GatewayConfig) Check {
 	sameInterface := strings.TrimSpace(cfg.Interface) == strings.TrimSpace(cfg.UpstreamInterface)
 	if cfg.SameLAN() {
 		if !sameInterface {
-			return Check{Name: name, OK: false, Message: "same_lan requires gateway and upstream interfaces to match"}
+			return Check{Name: name, OK: false, Message: fmt.Sprintf("%s requires gateway and upstream interfaces to match", cfg.Mode)}
 		}
-		return Check{Name: name, OK: true, Message: "same_lan uses one LAN interface"}
+		return Check{Name: name, OK: true, Message: cfg.Mode + " uses one LAN interface"}
 	}
 	if sameInterface {
 		return Check{Name: name, OK: false, Message: "isolated_lan requires separate downstream and upstream interfaces"}

@@ -32,11 +32,50 @@ The first supported same-LAN slice is:
 Do not run OpenSurge DHCP on the main home or office LAN for this smoke. Do not
 claim whole-home readiness from this gate.
 
-For the future same-WiFi DHCP takeover slice, where router DHCP is disabled and
+For the same-WiFi DHCP takeover runner, where router DHCP is disabled and
 OpenSurge serves DHCP/DNS on the same Wi-Fi, read
 `tests/same-lan/WIFI-DHCP-RECOVERY.zh-CN.md` first. Recovery is part of the
 validation contract: the router DHCP must be restored, the Mac must return to
 DHCP, and at least one client must automatically obtain an address again.
+
+## same-WiFi DHCP imported egress runner
+
+The explicit high-risk mode is `gateway.mode: "same_wifi_dhcp"`; `same_lan`
+continues to require DHCP disabled. The entrypoints are:
+
+- `make same-wifi-dhcp-start-imported-egress`;
+- `make same-wifi-dhcp-adb-check-imported-egress`;
+- `make same-wifi-dhcp-stop`.
+
+The start command requires `OMG_SAME_WIFI_DHCP_ROUTER_DHCP_DISABLED=confirmed`
+after the operator manually disables router DHCP, plus a non-empty
+`OMG_SAME_WIFI_DHCP_PROTECTED_IPS` list. The confirmation is a safety receipt,
+not an automated router-state check. The runner requires the Mac Wi-Fi service
+to remain manually addressed, defaults its range to `.120-.199` within that
+`/24`, and refuses any range that includes the Mac gateway or a protected static
+address.
+
+The ADB gate must observe an Android address inside the new range in both
+`omg leases` and a dnsmasq DHCPACK log, DNS source evidence, no Android explicit
+proxy, live provider plus `provider-update`, TUN traffic through
+`TunEgress[DIRECT]`, followed by `policy-select` to `egress-proxy` and a
+controlled `CONNECT <host>:443` observation. Stop verifies removal of the
+runtime state, PF anchor, listeners, and egress helper while restoring IPv4
+forwarding. It deliberately does not re-enable router DHCP or return clients to
+DHCP; those remain explicit recovery steps.
+
+### 2026-07-11 manual-phone validation
+
+On a dedicated test Wi-Fi, router DHCP was manually disabled while the Mac kept
+the static address `192.168.1.20`. With `192.168.1.101` protected outside the
+`.120-.199` lease pool, the controlled helper used that address's HTTP proxy as
+its upstream to avoid re-entering TUN. A manually operated Android phone received
+`192.168.1.141`; dnsmasq logged its `example.com` query. Browser probes produced
+both `TunEgress[DIRECT]` and, after policy selection, `TunEgress[egress-proxy]`
+with a controlled CONNECT observation. The operator confirmed browser access on
+the latter path. `same-wifi-dhcp-stop` then removed the runtime state, services,
+PF anchor, helper, and forwarding state. This is one-device, manual evidence;
+it does not broaden the runner's compatibility or recovery claims.
 
 ## Runner
 

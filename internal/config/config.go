@@ -56,8 +56,9 @@ type PFConfig struct {
 }
 
 const (
-	GatewayModeIsolatedLAN = "isolated_lan"
-	GatewayModeSameLAN     = "same_lan"
+	GatewayModeIsolatedLAN  = "isolated_lan"
+	GatewayModeSameLAN      = "same_lan"
+	GatewayModeSameWiFiDHCP = "same_wifi_dhcp"
 )
 
 const (
@@ -84,7 +85,7 @@ func (c TransparentConfig) TUNEnabled() bool {
 }
 
 func (c GatewayConfig) SameLAN() bool {
-	return c.Mode == GatewayModeSameLAN
+	return c.Mode == GatewayModeSameLAN || c.Mode == GatewayModeSameWiFiDHCP
 }
 
 type UpstreamProxyConfig struct {

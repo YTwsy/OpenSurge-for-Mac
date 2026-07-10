@@ -29,6 +29,10 @@ serve DHCP/DNS on that same Wi-Fi, read the
 [same-WiFi DHCP recovery reference](WIFI-DHCP-RECOVERY.md) first. Recovery is
 part of the acceptance criteria.
 
+For the separate full DHCP/TUN/provider/policy/egress gate, use the
+[same-WiFi DHCP imported egress runner](WIFI-DHCP-RUNNER.md). It uses
+`same_wifi_dhcp`; this page's `same_lan` runner remains DHCP-disabled.
+
 ## Start
 
 The runner infers the interface from the macOS default route and reads the Mac
@@ -231,3 +235,6 @@ it can prove imported provider-backed policy switching to a controlled local
 proxy. It does not prove global router DHCP rollout, all-device compatibility,
 IPv6, DoH/Private Relay, UDP/QUIC, full subscription compatibility, or a real
 remote exit IP.
+
+Router-DHCP takeover is not an implied capability of these narrow targets. Use
+the `same-wifi-dhcp-*` full runner and its recovery contract instead.

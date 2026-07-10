@@ -41,6 +41,13 @@ func TestCheckGatewayInterfaceTopology(t *testing.T) {
 	if check.OK {
 		t.Fatalf("checkGatewayInterfaceTopology() same_lan with different interfaces OK = true")
 	}
+
+	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
+	cfg.Gateway.UpstreamInterface = "en0"
+	check = checkGatewayInterfaceTopology(cfg.Gateway)
+	if !check.OK || !strings.Contains(check.Message, "same_wifi_dhcp") {
+		t.Fatalf("checkGatewayInterfaceTopology() same_wifi_dhcp = %#v", check)
+	}
 }
 
 func TestCheckInterfaceIPv4RejectsInvalidIP(t *testing.T) {

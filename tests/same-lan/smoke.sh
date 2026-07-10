@@ -4,7 +4,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-SAME_DIR="$ROOT/runtime/same-lan"
+WIFI_DHCP_ENABLED="${OMG_SAME_WIFI_DHCP_ENABLED:-false}"
+case "$WIFI_DHCP_ENABLED" in
+  1|true|TRUE|yes|YES)
+    SAME_DIR="$ROOT/runtime/same-wifi-dhcp"
+    SMOKE_LABEL="same-WiFi DHCP"
+    ;;
+  *)
+    SAME_DIR="$ROOT/runtime/same-lan"
+    SMOKE_LABEL="same-LAN"
+    ;;
+esac
 CONFIG_TUN="$SAME_DIR/config-tun.yaml"
 OMG_BIN="$ROOT/bin/omg"
 EGRESS_PROBE_BIN="$SAME_DIR/egress-probe"
@@ -12,16 +22,23 @@ EGRESS_PROBE_PID_FILE="$SAME_DIR/egress-probe.pid"
 EGRESS_PROVIDER="$SAME_DIR/tun-egress-provider.yaml"
 EGRESS_PROFILE_TEMPLATE="$ROOT/tests/lab/mihomo-profile.imported-tun-egress.yaml"
 EGRESS_PROFILE="$SAME_DIR/mihomo-profile.imported-tun-egress.yaml"
-EGRESS_ORIGIN_PORT="${OMG_SAME_LAN_TUN_EGRESS_ORIGIN_PORT:-19093}"
-EGRESS_PROXY_PORT="${OMG_SAME_LAN_TUN_EGRESS_PROXY_PORT:-19094}"
+EGRESS_ORIGIN_PORT="${OMG_SAME_WIFI_DHCP_TUN_EGRESS_ORIGIN_PORT:-${OMG_SAME_LAN_TUN_EGRESS_ORIGIN_PORT:-19093}}"
+EGRESS_PROXY_PORT="${OMG_SAME_WIFI_DHCP_TUN_EGRESS_PROXY_PORT:-${OMG_SAME_LAN_TUN_EGRESS_PROXY_PORT:-19094}}"
 EGRESS_PROVIDER_URL="http://127.0.0.1:$EGRESS_ORIGIN_PORT/tun-egress-provider.yaml"
+EGRESS_UPSTREAM_HTTP_PROXY="${OMG_SAME_WIFI_DHCP_EGRESS_UPSTREAM_HTTP_PROXY:-${OMG_SAME_LAN_TUN_EGRESS_UPSTREAM_HTTP_PROXY:-}}"
+WIFI_DHCP_FORWARDING_FILE="$SAME_DIR/ip-forwarding-before"
 
-IFACE="${OMG_SAME_LAN_IFACE:-}"
-MAC_IP="${OMG_SAME_LAN_MAC_IP:-}"
-TEST_HOST="${OMG_SAME_LAN_TEST_HOST:-example.com}"
+IFACE="${OMG_SAME_WIFI_DHCP_IFACE:-${OMG_SAME_LAN_IFACE:-}}"
+MAC_IP="${OMG_SAME_WIFI_DHCP_MAC_IP:-${OMG_SAME_LAN_MAC_IP:-}}"
+TEST_HOST="${OMG_SAME_WIFI_DHCP_TEST_HOST:-${OMG_SAME_LAN_TEST_HOST:-example.com}}"
 ADB_BIN="${ADB:-adb}"
-ADB_SERIAL="${OMG_SAME_LAN_ADB_SERIAL:-}"
+ADB_SERIAL="${OMG_SAME_WIFI_DHCP_ADB_SERIAL:-${OMG_SAME_LAN_ADB_SERIAL:-}}"
 IMPORTED_EGRESS_ENABLED="${OMG_SAME_LAN_IMPORTED_EGRESS:-false}"
+WIFI_DHCP_NETWORK_SERVICE="${OMG_SAME_WIFI_DHCP_NETWORK_SERVICE:-Wi-Fi}"
+WIFI_DHCP_ROUTER_DHCP_DISABLED="${OMG_SAME_WIFI_DHCP_ROUTER_DHCP_DISABLED:-}"
+WIFI_DHCP_PROTECTED_IPS="${OMG_SAME_WIFI_DHCP_PROTECTED_IPS:-}"
+WIFI_DHCP_RANGE_START="${OMG_SAME_WIFI_DHCP_RANGE_START:-}"
+WIFI_DHCP_RANGE_END="${OMG_SAME_WIFI_DHCP_RANGE_END:-}"
 
 UPSTREAM_PROXY_ENABLED="${OMG_SAME_LAN_UPSTREAM_PROXY_ENABLED:-false}"
 UPSTREAM_PROXY_NAME="${OMG_SAME_LAN_UPSTREAM_PROXY_NAME:-same-lan-egress}"
@@ -47,7 +64,11 @@ Commands:
   status                       show gateway status and recent logs without sudo
   adb-check                    verify one Android client over ADB after its gateway/DNS point at the Mac
   adb-check-imported-egress    verify policy-select switches same-LAN TUN egress on one Android client
-  write-config                 write runtime/same-lan/config-tun.yaml
+  start-wifi-dhcp-imported-egress
+                               start the high-risk same-WiFi DHCP imported-egress fixture
+  adb-check-wifi-dhcp-imported-egress
+                               prove DHCP lease, DNS/TUN, provider, policy switch, and controlled egress
+  write-config                 write the mode-specific runtime config
 
 Environment overrides:
   OMG_SAME_LAN_IFACE=en0
@@ -62,6 +83,13 @@ Environment overrides:
   OMG_SAME_LAN_UPSTREAM_PROXY_MATCH_DOMAIN=example.com
   OMG_SAME_LAN_TUN_EGRESS_ORIGIN_PORT=19093
   OMG_SAME_LAN_TUN_EGRESS_PROXY_PORT=19094
+  OMG_SAME_WIFI_DHCP_ENABLED=true
+  OMG_SAME_WIFI_DHCP_ROUTER_DHCP_DISABLED=confirmed
+  OMG_SAME_WIFI_DHCP_PROTECTED_IPS=192.168.1.101
+  OMG_SAME_WIFI_DHCP_RANGE_START=192.168.1.120
+  OMG_SAME_WIFI_DHCP_RANGE_END=192.168.1.199
+  OMG_SAME_WIFI_DHCP_NETWORK_SERVICE=Wi-Fi
+  OMG_SAME_WIFI_DHCP_EGRESS_UPSTREAM_HTTP_PROXY=192.168.1.101:8080
 EOF
 }
 
@@ -80,13 +108,17 @@ imported_egress_enabled() {
   flag_enabled "$IMPORTED_EGRESS_ENABLED"
 }
 
+wifi_dhcp_enabled() {
+  flag_enabled "$WIFI_DHCP_ENABLED"
+}
+
 sed_escape() {
   printf '%s' "$1" | sed 's/[&|]/\\&/g'
 }
 
 require_macos() {
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    echo "same-LAN smoke currently targets macOS only" >&2
+    echo "same-LAN and same-WiFi DHCP smoke targets macOS only" >&2
     exit 1
   fi
 }
@@ -118,6 +150,94 @@ resolve_mac_ip() {
   interface_ipv4 "$iface"
 }
 
+hydrate_wifi_dhcp_runtime_interface() {
+  local config_iface config_ip
+  wifi_dhcp_enabled || return 0
+  [[ -f "$CONFIG_TUN" ]] || return 0
+  config_iface="$(/usr/bin/awk '
+    $0 == "gateway:" { in_gateway = 1; next }
+    in_gateway && /^[^[:space:]]/ { exit }
+    in_gateway && $1 == "interface:" { gsub(/"/, "", $2); print $2; exit }
+  ' "$CONFIG_TUN")"
+  config_ip="$(/usr/bin/awk '
+    $0 == "gateway:" { in_gateway = 1; next }
+    in_gateway && /^[^[:space:]]/ { exit }
+    in_gateway && $1 == "lan_ip:" { gsub(/"/, "", $2); print $2; exit }
+  ' "$CONFIG_TUN")"
+  if [[ -n "$config_iface" && -n "$config_ip" ]]; then
+    IFACE="$config_iface"
+    MAC_IP="$config_ip"
+  fi
+}
+
+resolve_wifi_dhcp_range() {
+  local mac_ip=$1 prefix
+  prefix="${mac_ip%.*}"
+  if [[ -z "$WIFI_DHCP_RANGE_START" ]]; then
+    WIFI_DHCP_RANGE_START="$prefix.120"
+  fi
+  if [[ -z "$WIFI_DHCP_RANGE_END" ]]; then
+    WIFI_DHCP_RANGE_END="$prefix.199"
+  fi
+}
+
+ip_is_in_wifi_dhcp_range() {
+  local ip=$1 start_octet end_octet ip_octet
+  [[ "${ip%.*}" == "${WIFI_DHCP_RANGE_START%.*}" ]] || return 1
+  [[ "${WIFI_DHCP_RANGE_START%.*}" == "${WIFI_DHCP_RANGE_END%.*}" ]] || return 1
+  start_octet="${WIFI_DHCP_RANGE_START##*.}"
+  end_octet="${WIFI_DHCP_RANGE_END##*.}"
+  ip_octet="${ip##*.}"
+  [[ "$start_octet" =~ ^[0-9]+$ && "$end_octet" =~ ^[0-9]+$ && "$ip_octet" =~ ^[0-9]+$ ]] || return 1
+  (( 10#$ip_octet >= 10#$start_octet && 10#$ip_octet <= 10#$end_octet ))
+}
+
+require_wifi_dhcp_start_preflight() {
+  local iface mac_ip info ip upstream_host upstream_port
+  wifi_dhcp_enabled || return 0
+  if [[ "$WIFI_DHCP_ROUTER_DHCP_DISABLED" != "confirmed" ]]; then
+    echo "same-WiFi DHCP requires OMG_SAME_WIFI_DHCP_ROUTER_DHCP_DISABLED=confirmed after router DHCP is disabled" >&2
+    exit 1
+  fi
+  if [[ -z "$WIFI_DHCP_PROTECTED_IPS" ]]; then
+    echo "same-WiFi DHCP requires OMG_SAME_WIFI_DHCP_PROTECTED_IPS; include every static address that must never receive a lease" >&2
+    exit 1
+  fi
+  if [[ "$EGRESS_UPSTREAM_HTTP_PROXY" != *:* ]]; then
+    echo "same-WiFi DHCP requires OMG_SAME_WIFI_DHCP_EGRESS_UPSTREAM_HTTP_PROXY=<protected-lan-http-proxy-host:port> so the controlled proxy cannot re-enter TUN" >&2
+    exit 1
+  fi
+  upstream_host="${EGRESS_UPSTREAM_HTTP_PROXY%:*}"
+  upstream_port="${EGRESS_UPSTREAM_HTTP_PROXY##*:}"
+  if [[ -z "$upstream_host" || ! "$upstream_port" =~ ^[0-9]+$ ]] ||
+    ! /usr/bin/nc -z "$upstream_host" "$upstream_port"; then
+    echo "same-WiFi DHCP controlled-proxy upstream is not reachable: $EGRESS_UPSTREAM_HTTP_PROXY" >&2
+    exit 1
+  fi
+  iface="$(resolve_interface)"
+  mac_ip="$(resolve_mac_ip "$iface")"
+  resolve_wifi_dhcp_range "$mac_ip"
+  info="$(/usr/sbin/networksetup -getinfo "$WIFI_DHCP_NETWORK_SERVICE" 2>/dev/null || true)"
+  if [[ "$info" != *"Manual Configuration"* || "$info" != *"IP address: $mac_ip"* ]]; then
+    echo "same-WiFi DHCP requires $WIFI_DHCP_NETWORK_SERVICE to keep Mac $mac_ip as a manual IPv4 address before start" >&2
+    exit 1
+  fi
+  if ip_is_in_wifi_dhcp_range "$mac_ip"; then
+    echo "same-WiFi DHCP range $WIFI_DHCP_RANGE_START-$WIFI_DHCP_RANGE_END includes the Mac gateway $mac_ip" >&2
+    exit 1
+  fi
+  local IFS=',' protected
+  read -r -a protected <<< "$WIFI_DHCP_PROTECTED_IPS"
+  for ip in "${protected[@]}"; do
+    ip="${ip//[[:space:]]/}"
+    [[ -n "$ip" ]] || continue
+    if ip_is_in_wifi_dhcp_range "$ip"; then
+      echo "same-WiFi DHCP range $WIFI_DHCP_RANGE_START-$WIFI_DHCP_RANGE_END includes protected static address $ip" >&2
+      exit 1
+    fi
+  done
+}
+
 write_tun_egress_provider() {
   cat >"$EGRESS_PROVIDER" <<EOF
 proxies:
@@ -139,7 +259,7 @@ render_tun_egress_profile() {
 }
 
 write_config() {
-  local iface mac_ip profile_mode profile_path upstream_proxy_enabled
+  local iface mac_ip profile_mode profile_path upstream_proxy_enabled gateway_mode dhcp_enabled range_start range_end domain runtime_dir anchor_name
   iface="$(resolve_interface)"
   mac_ip="$(resolve_mac_ip "$iface")"
   if [[ -z "$iface" || -z "$mac_ip" ]]; then
@@ -151,6 +271,23 @@ write_config() {
   profile_mode="managed"
   profile_path=""
   upstream_proxy_enabled="$UPSTREAM_PROXY_ENABLED"
+  gateway_mode="same_lan"
+  dhcp_enabled=false
+  range_start="192.168.50.100"
+  range_end="192.168.50.200"
+  domain="same-lan"
+  runtime_dir="runtime/same-lan"
+  anchor_name="com.apple/open_mihomo_gateway_same_lan"
+  if wifi_dhcp_enabled; then
+    resolve_wifi_dhcp_range "$mac_ip"
+    gateway_mode="same_wifi_dhcp"
+    dhcp_enabled=true
+    range_start="$WIFI_DHCP_RANGE_START"
+    range_end="$WIFI_DHCP_RANGE_END"
+    domain="same-wifi-dhcp"
+    runtime_dir="runtime/same-wifi-dhcp"
+    anchor_name="com.apple/open_mihomo_gateway_same_wifi_dhcp"
+  fi
   if imported_egress_enabled; then
     if flag_enabled "$UPSTREAM_PROXY_ENABLED"; then
       echo "same-LAN imported egress uses its own controlled provider/proxy; leave OMG_SAME_LAN_UPSTREAM_PROXY_ENABLED unset" >&2
@@ -158,26 +295,26 @@ write_config() {
     fi
     render_tun_egress_profile
     profile_mode="imported"
-    # Imported profile paths are resolved from CONFIG_TUN's directory, which is
-    # already runtime/same-lan. Keep this path local to that directory.
+    # Imported profile paths are resolved from CONFIG_TUN's directory. Keep
+    # this path local to that mode-specific runtime directory.
     profile_path="./$(basename "$EGRESS_PROFILE")"
     upstream_proxy_enabled=false
   fi
 
   cat >"$CONFIG_TUN" <<EOF
 gateway:
-  mode: "same_lan"
+  mode: "$gateway_mode"
   interface: "$iface"
   lan_ip: "$mac_ip"
   upstream_interface: "$iface"
 
 dhcp:
   binary: "./runtime/tools/bin/dnsmasq"
-  enabled: false
-  range_start: "192.168.50.100"
-  range_end: "192.168.50.200"
+  enabled: $dhcp_enabled
+  range_start: "$range_start"
+  range_end: "$range_end"
   lease_time: "30m"
-  domain: "same-lan"
+  domain: "$domain"
 
 dns:
   listen: "$mac_ip"
@@ -186,7 +323,7 @@ dns:
 
 mihomo:
   binary: "./runtime/tools/bin/mihomo"
-  config: "./runtime/same-lan/mihomo.yaml"
+  config: "./$runtime_dir/mihomo.yaml"
   profile_mode: "$profile_mode"
   profile: "$profile_path"
   mixed_port: 17890
@@ -195,7 +332,7 @@ mihomo:
   secret: ""
 
 pf:
-  anchor_name: "com.apple/open_mihomo_gateway_same_lan"
+  anchor_name: "$anchor_name"
   redirect_tcp_to: 0
 
 transparent:
@@ -217,12 +354,15 @@ upstream_proxy:
   match_domain: "$UPSTREAM_PROXY_MATCH_DOMAIN"
 
 runtime:
-  dir: "./runtime/same-lan"
+  dir: "./$runtime_dir"
 EOF
 
   section "config"
   printf 'wrote %s\n' "${CONFIG_TUN#$ROOT/}"
-  printf 'same-LAN interface=%s mac_ip=%s test_host=%s\n' "$iface" "$mac_ip" "$TEST_HOST"
+  printf '%s interface=%s mac_ip=%s test_host=%s\n' "$SMOKE_LABEL" "$iface" "$mac_ip" "$TEST_HOST"
+  if wifi_dhcp_enabled; then
+    printf 'DHCP range=%s-%s protected=%s\n' "$WIFI_DHCP_RANGE_START" "$WIFI_DHCP_RANGE_END" "$WIFI_DHCP_PROTECTED_IPS"
+  fi
   if imported_egress_enabled; then
     printf 'imported egress profile=%s provider=%s proxy=127.0.0.1:%s\n' \
       "${EGRESS_PROFILE#$ROOT/}" "$EGRESS_PROVIDER_URL" "$EGRESS_PROXY_PORT"
@@ -259,24 +399,30 @@ stop_egress_probe() {
 
 start_egress_probe() {
   local log_file pid
+  local -a probe_args
   section "start egress probe"
   stop_egress_probe
   mkdir -p "$SAME_DIR/logs"
   rm -rf "$SAME_DIR/egress"
   log_file="$SAME_DIR/logs/egress-probe.log"
-  nohup "$EGRESS_PROBE_BIN" \
-    --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
-    --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
-    --provider-file "$EGRESS_PROVIDER" \
-    --provider-path "/tun-egress-provider.yaml" \
-    --log-dir "$SAME_DIR/egress" >"$log_file" 2>&1 < /dev/null &
+  probe_args=(
+    --origin "127.0.0.1:$EGRESS_ORIGIN_PORT"
+    --proxy "127.0.0.1:$EGRESS_PROXY_PORT"
+    --provider-file "$EGRESS_PROVIDER"
+    --provider-path "/tun-egress-provider.yaml"
+    --log-dir "$SAME_DIR/egress"
+  )
+  if [[ -n "$EGRESS_UPSTREAM_HTTP_PROXY" ]]; then
+    probe_args+=(--upstream-http-proxy "$EGRESS_UPSTREAM_HTTP_PROXY")
+  fi
+  nohup "$EGRESS_PROBE_BIN" "${probe_args[@]}" >"$log_file" 2>&1 < /dev/null &
   pid=$!
   printf '%s\n' "$pid" >"$EGRESS_PROBE_PID_FILE"
   for _ in $(seq 1 50); do
     if grep -Fq READY "$log_file" 2>/dev/null &&
       /usr/bin/nc -z 127.0.0.1 "$EGRESS_ORIGIN_PORT" &&
       /usr/bin/nc -z 127.0.0.1 "$EGRESS_PROXY_PORT"; then
-      printf 'TUN egress probe ready: provider=%s proxy=127.0.0.1:%s\n' "$EGRESS_PROVIDER_URL" "$EGRESS_PROXY_PORT"
+      printf 'TUN egress probe ready: provider=%s proxy=127.0.0.1:%s upstream=%s\n' "$EGRESS_PROVIDER_URL" "$EGRESS_PROXY_PORT" "${EGRESS_UPSTREAM_HTTP_PROXY:-direct}"
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
@@ -296,12 +442,24 @@ start_egress_probe() {
 require_egress_probe_running() {
   local pid
   if [[ ! -r "$EGRESS_PROBE_PID_FILE" ]]; then
-    echo "same-LAN imported egress probe is not running; start with make same-lan-start-tun-imported-egress" >&2
+    echo "imported egress probe is not running; start the matching same-LAN or same-WiFi runner first" >&2
     exit 1
   fi
   pid="$(cat "$EGRESS_PROBE_PID_FILE")"
   if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
-    echo "same-LAN imported egress probe pid is stale; restart with make same-lan-start-tun-imported-egress" >&2
+    echo "imported egress probe pid is stale; restart the matching same-LAN or same-WiFi runner" >&2
+    exit 1
+  fi
+}
+
+assert_egress_probe_stopped() {
+  if [[ -e "$EGRESS_PROBE_PID_FILE" ]]; then
+    echo "same-WiFi DHCP egress probe PID file still exists after stop" >&2
+    exit 1
+  fi
+  if /usr/bin/nc -z 127.0.0.1 "$EGRESS_ORIGIN_PORT" 2>/dev/null ||
+    /usr/bin/nc -z 127.0.0.1 "$EGRESS_PROXY_PORT" 2>/dev/null; then
+    echo "same-WiFi DHCP egress helper still listens after stop" >&2
     exit 1
   fi
 }
@@ -329,13 +487,44 @@ run_root() {
     OMG_SAME_LAN_UPSTREAM_PROXY_PASSWORD="$UPSTREAM_PROXY_PASSWORD" \
     OMG_SAME_LAN_UPSTREAM_PROXY_MATCH_DOMAIN="$UPSTREAM_PROXY_MATCH_DOMAIN" \
     OMG_SAME_LAN_IMPORTED_EGRESS="$IMPORTED_EGRESS_ENABLED" \
+    OMG_SAME_WIFI_DHCP_ENABLED="$WIFI_DHCP_ENABLED" \
     /bin/bash "$0" "__root_$command" "$@"
+}
+
+assert_wifi_dhcp_stop_cleanup() {
+  local expected actual
+  [[ ! -e "$SAME_DIR/state.json" ]] || { echo "same-WiFi DHCP runtime state still exists after stop" >&2; exit 1; }
+  if /sbin/pfctl -s Anchors | /usr/bin/grep -Fq "com.apple/open_mihomo_gateway_same_wifi_dhcp"; then
+    echo "same-WiFi DHCP PF anchor remains after stop" >&2
+    exit 1
+  fi
+  if [[ ! -r "$WIFI_DHCP_FORWARDING_FILE" ]]; then
+    echo "same-WiFi DHCP forwarding baseline is missing" >&2
+    exit 1
+  fi
+  expected="$(cat "$WIFI_DHCP_FORWARDING_FILE")"
+  actual="$(/usr/sbin/sysctl -n net.inet.ip.forwarding)"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "same-WiFi DHCP stop did not restore IPv4 forwarding: expected $expected, got $actual" >&2
+    exit 1
+  fi
+  if /usr/sbin/lsof -nP -iUDP:53 2>/dev/null | /usr/bin/grep -Fq dnsmasq ||
+    /usr/sbin/lsof -nP -iUDP:1053 2>/dev/null | /usr/bin/grep -Fq mihomo ||
+    /usr/sbin/lsof -nP -iTCP:17890 -sTCP:LISTEN 2>/dev/null | /usr/bin/grep -Fq mihomo; then
+    echo "same-WiFi DHCP listener remains after stop" >&2
+    exit 1
+  fi
+  printf 'same-WiFi DHCP stop cleanup verified\n'
 }
 
 root_stop() {
   require_macos
   section "stop"
-  "$OMG_BIN" stop --config "$CONFIG_TUN" || true
+  if wifi_dhcp_enabled; then
+    "$OMG_BIN" stop --config "$CONFIG_TUN"
+  else
+    "$OMG_BIN" stop --config "$CONFIG_TUN" || true
+  fi
 
   section "status"
   "$OMG_BIN" status --config "$CONFIG_TUN" || true
@@ -343,18 +532,25 @@ root_stop() {
   section "host cleanup checks"
   /usr/sbin/sysctl -n net.inet.ip.forwarding || true
   /sbin/pfctl -s Anchors || true
+  if wifi_dhcp_enabled; then
+    assert_wifi_dhcp_stop_cleanup
+  fi
 }
 
 root_start() {
   require_macos
 
-  section "stop existing same-LAN smoke"
+  section "stop existing $SMOKE_LABEL smoke"
   "$OMG_BIN" stop --config "$CONFIG_TUN" || true
+
+  if wifi_dhcp_enabled; then
+    /usr/sbin/sysctl -n net.inet.ip.forwarding >"$WIFI_DHCP_FORWARDING_FILE"
+  fi
 
   section "root doctor"
   env PATH="$PATH" "$OMG_BIN" doctor --config "$CONFIG_TUN"
 
-  section "start same-LAN TUN"
+  section "start $SMOKE_LABEL TUN"
   "$OMG_BIN" start --config "$CONFIG_TUN"
   sleep 2
 
@@ -479,7 +675,18 @@ adb_common_preflight() {
   esac
 
   section "adb no explicit proxy"
-  adb_shell 'settings get global http_proxy || true'
+  local explicit_proxy
+  explicit_proxy="$(adb_shell 'settings get global http_proxy || true' | /usr/bin/tr -d '\r\n')"
+  printf '%s\n' "$explicit_proxy"
+  if wifi_dhcp_enabled; then
+    case "$explicit_proxy" in
+      ""|null|:0) ;;
+      *)
+        echo "Android explicit proxy is set to $explicit_proxy; clear it before same-WiFi DHCP validation" >&2
+        exit 1
+        ;;
+    esac
+  fi
 }
 
 adb_check() {
@@ -556,24 +763,78 @@ assert_egress_proxy_used() {
   fi
 }
 
+assert_wifi_dhcp_lease() {
+  local android_ip mac_ip
+  android_ip="$(cat "$SAME_DIR/adb-android-ip" 2>/dev/null || true)"
+  mac_ip="$(resolve_mac_ip "$(resolve_interface)")"
+  resolve_wifi_dhcp_range "$mac_ip"
+  if [[ -z "$android_ip" ]] || ! ip_is_in_wifi_dhcp_range "$android_ip"; then
+    echo "Android IPv4 $android_ip is not inside same-WiFi DHCP range $WIFI_DHCP_RANGE_START-$WIFI_DHCP_RANGE_END" >&2
+    exit 1
+  fi
+  section "DHCP lease"
+  "$OMG_BIN" leases --config "$CONFIG_TUN" --format json >"$SAME_DIR/wifi-dhcp-leases.json"
+  if ! /usr/bin/grep -Fq "\"ip\": \"$android_ip\"" "$SAME_DIR/wifi-dhcp-leases.json" ||
+    ! /usr/bin/grep -Fq "DHCPACK" "$SAME_DIR/logs/dnsmasq.log" ||
+    ! /usr/bin/grep -Fq "$android_ip" "$SAME_DIR/logs/dnsmasq.log"; then
+    echo "OpenSurge DHCP did not prove an ACK and lease for Android $android_ip" >&2
+    cat "$SAME_DIR/wifi-dhcp-leases.json" >&2 || true
+    /usr/bin/tail -n 160 "$SAME_DIR/logs/dnsmasq.log" >&2 || true
+    exit 1
+  fi
+  printf 'same-WiFi DHCP lease observed for Android %s via Mac %s\n' "$android_ip" "$mac_ip"
+}
+
+wait_for_wifi_dhcp_dns_log() {
+  local android_ip=$1
+  for _ in $(seq 1 15); do
+    if /usr/bin/grep -F "$TEST_HOST" "$SAME_DIR/logs/dnsmasq.log" 2>/dev/null |
+      /usr/bin/grep -Fq "from $android_ip"; then
+      printf 'same-WiFi DHCP DNS log observed for %s from %s\n' "$TEST_HOST" "$android_ip"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "dnsmasq did not log $TEST_HOST from Android $android_ip" >&2
+  /usr/bin/tail -n 160 "$SAME_DIR/logs/dnsmasq.log" >&2 || true
+  exit 1
+}
+
 adb_check_imported_egress() {
-  local before_log
+  local before_log android_ip
   require_egress_probe_running
   adb_common_preflight
+  android_ip="$(cat "$SAME_DIR/adb-android-ip" 2>/dev/null || true)"
+  if wifi_dhcp_enabled; then
+    assert_wifi_dhcp_lease
+  fi
 
   section "providers and policies"
   wait_for_policy_option TunEgress egress-proxy
   "$OMG_BIN" providers --config "$CONFIG_TUN" --format json >"$SAME_DIR/tun-egress-providers.json"
   grep -Fq '"name": "tun-egress-provider"' "$SAME_DIR/tun-egress-providers.json"
   grep -Fq '"name": "egress-proxy"' "$SAME_DIR/tun-egress-providers.json"
+  if wifi_dhcp_enabled; then
+    "$OMG_BIN" provider-update --config "$CONFIG_TUN" --provider tun-egress-provider --format json >"$SAME_DIR/tun-egress-provider-update.json"
+    grep -Fq '"provider": "tun-egress-provider"' "$SAME_DIR/tun-egress-provider-update.json"
+    grep -Fq '"updated": true' "$SAME_DIR/tun-egress-provider-update.json"
+    grep -Fq '"name": "egress-proxy"' "$SAME_DIR/tun-egress-provider-update.json"
+    wait_for_policy_option TunEgress egress-proxy
+  fi
 
   mkdir -p "$SAME_DIR/egress"
   : >"$SAME_DIR/egress/proxy.log"
+
+  section "select TunEgress DIRECT"
+  "$OMG_BIN" policy-select --config "$CONFIG_TUN" --group TunEgress --policy DIRECT --format json
 
   section "adb https probe TunEgress DIRECT"
   before_log="$(log_line_count "$SAME_DIR/logs/mihomo.log")"
   adb_https_probe
   wait_for_tun_policy_log_since DIRECT "$before_log"
+  if wifi_dhcp_enabled; then
+    wait_for_wifi_dhcp_dns_log "$android_ip"
+  fi
   assert_egress_proxy_unused
 
   section "select TunEgress egress-proxy"
@@ -593,6 +854,10 @@ adb_check_imported_egress() {
 
 start_tun() {
   require_macos
+  if wifi_dhcp_enabled; then
+    echo "same-WiFi DHCP only supports the imported egress full runner; use start-wifi-dhcp-imported-egress" >&2
+    exit 1
+  fi
   write_config
   build_omg
   run_root start
@@ -600,6 +865,7 @@ start_tun() {
 
 start_tun_imported_egress() {
   require_macos
+  require_wifi_dhcp_start_preflight
   IMPORTED_EGRESS_ENABLED=true
   write_config
   build_omg
@@ -611,12 +877,35 @@ start_tun_imported_egress() {
   fi
 }
 
+start_wifi_dhcp_imported_egress() {
+  if ! wifi_dhcp_enabled; then
+    echo "set OMG_SAME_WIFI_DHCP_ENABLED=true before starting the same-WiFi DHCP runner" >&2
+    exit 1
+  fi
+  start_tun_imported_egress
+}
+
+adb_check_wifi_dhcp_imported_egress() {
+  if ! wifi_dhcp_enabled; then
+    echo "set OMG_SAME_WIFI_DHCP_ENABLED=true before running the same-WiFi DHCP ADB gate" >&2
+    exit 1
+  fi
+  adb_check_imported_egress
+}
+
 stop_smoke() {
   require_macos
+  hydrate_wifi_dhcp_runtime_interface
   write_config
   build_omg
-  run_root stop
+  if ! run_root stop; then
+    stop_egress_probe
+    exit 1
+  fi
   stop_egress_probe
+  if wifi_dhcp_enabled; then
+    assert_egress_probe_stopped
+  fi
 }
 
 case "${1:-}" in
@@ -625,6 +914,9 @@ case "${1:-}" in
     ;;
   start-tun-imported-egress)
     start_tun_imported_egress
+    ;;
+  start-wifi-dhcp-imported-egress)
+    start_wifi_dhcp_imported_egress
     ;;
   stop)
     stop_smoke
@@ -637,6 +929,9 @@ case "${1:-}" in
     ;;
   adb-check-imported-egress)
     adb_check_imported_egress
+    ;;
+  adb-check-wifi-dhcp-imported-egress)
+    adb_check_wifi_dhcp_imported_egress
     ;;
   write-config)
     write_config

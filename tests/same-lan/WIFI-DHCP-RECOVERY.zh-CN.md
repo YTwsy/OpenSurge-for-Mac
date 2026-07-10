@@ -93,7 +93,7 @@ curl --max-time 3 http://192.168.1.1/ >/dev/null || true
 先停止 OpenSurge，再恢复主路由 DHCP：
 
 ```sh
-make same-lan-stop
+make same-wifi-dhcp-stop
 ```
 
 在路由器管理页重新启用 DHCP，并确认地址池恢复为测试前记录的范围。

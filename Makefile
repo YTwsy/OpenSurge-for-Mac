@@ -5,6 +5,10 @@
 .PHONY: real-device-stop real-device-status real-device-client-check
 .PHONY: same-lan-start-tun same-lan-start-tun-proxy same-lan-start-tun-imported-egress
 .PHONY: same-lan-stop same-lan-status same-lan-adb-check same-lan-adb-check-imported-egress
+.PHONY: same-lan-start-wifi-dhcp-imported-egress same-lan-adb-check-wifi-dhcp-imported-egress
+.PHONY: same-lan-stop-wifi-dhcp same-lan-status-wifi-dhcp
+.PHONY: same-wifi-dhcp-start-imported-egress same-wifi-dhcp-adb-check-imported-egress
+.PHONY: same-wifi-dhcp-stop same-wifi-dhcp-status
 
 test:
 	go test ./...
@@ -92,3 +96,23 @@ same-lan-adb-check:
 
 same-lan-adb-check-imported-egress:
 	OMG_SAME_LAN_IMPORTED_EGRESS=true ./tests/same-lan/smoke.sh adb-check-imported-egress
+
+same-lan-start-wifi-dhcp-imported-egress:
+	OMG_SAME_WIFI_DHCP_ENABLED=true OMG_SAME_LAN_IMPORTED_EGRESS=true ./tests/same-lan/smoke.sh start-wifi-dhcp-imported-egress
+
+same-lan-adb-check-wifi-dhcp-imported-egress:
+	OMG_SAME_WIFI_DHCP_ENABLED=true OMG_SAME_LAN_IMPORTED_EGRESS=true ./tests/same-lan/smoke.sh adb-check-wifi-dhcp-imported-egress
+
+same-lan-stop-wifi-dhcp:
+	OMG_SAME_WIFI_DHCP_ENABLED=true OMG_SAME_LAN_IMPORTED_EGRESS=true ./tests/same-lan/smoke.sh stop
+
+same-lan-status-wifi-dhcp:
+	OMG_SAME_WIFI_DHCP_ENABLED=true ./tests/same-lan/smoke.sh status
+
+same-wifi-dhcp-start-imported-egress: same-lan-start-wifi-dhcp-imported-egress
+
+same-wifi-dhcp-adb-check-imported-egress: same-lan-adb-check-wifi-dhcp-imported-egress
+
+same-wifi-dhcp-stop: same-lan-stop-wifi-dhcp
+
+same-wifi-dhcp-status: same-lan-status-wifi-dhcp

@@ -96,6 +96,86 @@ func TestValidateRejectsInvalidSameLANConfig(t *testing.T) {
 	}
 }
 
+func TestValidateSameWiFiDHCPGatewayMode(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{
+			name: "accepts a protected range outside the gateway address",
+			edit: func(cfg *Config) {},
+		},
+		{
+			name: "requires DHCP",
+			edit: func(cfg *Config) { cfg.DHCP.Enabled = false },
+			want: "dhcp.enabled: true",
+		},
+		{
+			name: "requires TUN",
+			edit: func(cfg *Config) { cfg.Transparent.Mode = TransparentModeOff },
+			want: `transparent.mode: "tun"`,
+		},
+		{
+			name: "rejects a range outside the LAN subnet",
+			edit: func(cfg *Config) { cfg.DHCP.RangeStart = "192.168.2.120" },
+			want: "DHCP range to remain",
+		},
+		{
+			name: "rejects a range end outside the LAN subnet",
+			edit: func(cfg *Config) { cfg.DHCP.RangeEnd = "192.168.2.199" },
+			want: "DHCP range to remain",
+		},
+		{
+			name: "rejects a reversed range",
+			edit: func(cfg *Config) {
+				cfg.DHCP.RangeStart = "192.168.1.199"
+				cfg.DHCP.RangeEnd = "192.168.1.120"
+			},
+			want: "dhcp.range_start must not be after",
+		},
+		{
+			name: "rejects the broadcast address in the range",
+			edit: func(cfg *Config) { cfg.DHCP.RangeEnd = "192.168.1.255" },
+			want: "network or broadcast",
+		},
+		{
+			name: "rejects gateway address in the range",
+			edit: func(cfg *Config) {
+				cfg.DHCP.RangeStart = "192.168.1.20"
+				cfg.DHCP.RangeEnd = "192.168.1.199"
+			},
+			want: "gateway.lan_ip must not be inside",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Default()
+			cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
+			cfg.Gateway.Interface = "en0"
+			cfg.Gateway.UpstreamInterface = "en0"
+			cfg.Gateway.LANIP = "192.168.1.20"
+			cfg.DHCP.Enabled = true
+			cfg.DHCP.RangeStart = "192.168.1.120"
+			cfg.DHCP.RangeEnd = "192.168.1.199"
+			cfg.Transparent.Mode = TransparentModeTUN
+			tt.edit(&cfg)
+
+			err := Validate(cfg)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateAcceptsUpstreamProxy(t *testing.T) {
 	cfg := Default()
 	cfg.UpstreamProxy.Enabled = true

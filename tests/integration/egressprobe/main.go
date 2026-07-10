@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 func main() {
 	originAddr := flag.String("origin", "", "origin HTTP listen address")
 	proxyAddr := flag.String("proxy", "", "HTTP CONNECT proxy listen address")
+	upstreamHTTPProxy := flag.String("upstream-http-proxy", "", "optional HTTP CONNECT proxy used by the controlled proxy for upstream dialing")
 	logDir := flag.String("log-dir", "", "directory for origin.log and proxy.log")
 	providerFile := flag.String("provider-file", "", "optional provider YAML file served by the origin")
 	providerPath := flag.String("provider-path", "/remote-provider.yaml", "origin path for provider YAML")
@@ -52,7 +54,10 @@ func main() {
 		providerFile: *providerFile,
 		providerPath: *providerPath,
 	}}
-	proxyServer := &http.Server{Handler: &connectProxyHandler{logPath: proxyLog}}
+	proxyServer := &http.Server{Handler: &connectProxyHandler{
+		logPath:           proxyLog,
+		upstreamHTTPProxy: *upstreamHTTPProxy,
+	}}
 
 	var serverWG sync.WaitGroup
 	serverWG.Add(2)
@@ -110,8 +115,9 @@ func (h *originHandler) appendLog(line string) {
 }
 
 type connectProxyHandler struct {
-	logPath string
-	mu      sync.Mutex
+	logPath           string
+	upstreamHTTPProxy string
+	mu                sync.Mutex
 }
 
 func (h *connectProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +137,7 @@ func (h *connectProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	h.appendLog("CONNECT " + target)
 
-	upstream, err := net.DialTimeout("tcp", target, 5*time.Second)
+	upstream, err := h.dialUpstream(target)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -164,6 +170,50 @@ func (h *connectProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	go tunnel(done, upstream, client)
 	go tunnel(done, client, upstream)
 	<-done
+}
+
+func (h *connectProxyHandler) dialUpstream(target string) (net.Conn, error) {
+	if h.upstreamHTTPProxy == "" {
+		return net.DialTimeout("tcp", target, 5*time.Second)
+	}
+
+	conn, err := net.DialTimeout("tcp", h.upstreamHTTPProxy, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	request := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Connection: Keep-Alive\r\n\r\n", target, target)
+	if _, err := io.WriteString(conn, request); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	reader := bufio.NewReader(conn)
+	response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	if response.StatusCode != http.StatusOK {
+		conn.Close()
+		return nil, fmt.Errorf("upstream HTTP proxy %s CONNECT %s returned %s", h.upstreamHTTPProxy, target, response.Status)
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return &bufferedConn{Conn: conn, reader: reader}, nil
+}
+
+type bufferedConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (c *bufferedConn) Read(p []byte) (int, error) {
+	return c.reader.Read(p)
 }
 
 func (h *connectProxyHandler) appendLog(line string) {

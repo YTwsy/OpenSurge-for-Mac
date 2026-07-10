@@ -99,7 +99,7 @@ Recover in this order and avoid factory reset unless necessary:
 Stop OpenSurge first, then restore router DHCP:
 
 ```sh
-make same-lan-stop
+make same-wifi-dhcp-stop
 ```
 
 In the router admin page, re-enable DHCP and confirm the pool matches the values

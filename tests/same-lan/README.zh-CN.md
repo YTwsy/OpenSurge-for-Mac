@@ -26,6 +26,10 @@ Home router / main Wi-Fi: 192.168.1.1
 DHCP/DNS，请先阅读 [same-WiFi DHCP 恢复参考](WIFI-DHCP-RECOVERY.zh-CN.md)。
 恢复方案本身也是验收的一部分。
 
+已具备恢复通道并要实际验证 DHCP 租约、DNS、TUN、provider、策略切换与受控 egress
+时，使用独立的 [same-WiFi DHCP imported egress 全功能 runner](WIFI-DHCP-RUNNER.zh-CN.md)。
+它使用 `same_wifi_dhcp`，不会放宽本页 `same_lan` 的 DHCP disabled 边界。
+
 ## 启动
 
 默认 runner 会从 macOS 默认路由推断接口，并从该接口读取 Mac IPv4 地址：
@@ -213,3 +217,7 @@ Wi-Fi DHCP 和测试客户端自动获取地址。
 它可以证明 imported provider-backed 策略切换会命中受控本地代理。它不证明主路由
 DHCP 全局下发、所有设备兼容、IPv6、DoH/Private Relay、UDP/QUIC、完整订阅兼容性
 或真实远端出口 IP。
+
+关闭路由器 DHCP 后的 DHCP 接管不是本页这些窄范围 target 的隐含能力；它必须使用
+`same-wifi-dhcp-*` 全功能 runner，并按
+[WIFI-DHCP-RUNNER.zh-CN.md](WIFI-DHCP-RUNNER.zh-CN.md) 的恢复契约执行。

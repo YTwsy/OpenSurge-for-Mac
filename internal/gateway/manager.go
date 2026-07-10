@@ -252,7 +252,7 @@ func (m Manager) preflight(dhcpManager dhcpService, mihomoManager mihomoService,
 	sameInterface := strings.TrimSpace(m.cfg.Gateway.Interface) == strings.TrimSpace(m.cfg.Gateway.UpstreamInterface)
 	if m.cfg.Gateway.SameLAN() {
 		if !sameInterface {
-			return fmt.Errorf("gateway.mode same_lan requires gateway and upstream interfaces to match")
+			return fmt.Errorf("gateway.mode %s requires gateway and upstream interfaces to match", m.cfg.Gateway.Mode)
 		}
 	} else if sameInterface {
 		return fmt.Errorf("gateway and upstream interfaces must differ")

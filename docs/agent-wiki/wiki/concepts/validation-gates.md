@@ -141,6 +141,25 @@ make same-lan-stop
 的一部分：需要证明路由器 DHCP 已恢复、Mac Wi-Fi 回到 DHCP、至少一台客户端能重新
 自动获取地址并上网。
 
+这个高风险切片使用独立的 `gateway.mode: "same_wifi_dhcp"`，而不是放宽
+`same_lan` 的 `dhcp.enabled: false` 不变量。入口是：
+
+```sh
+OMG_SAME_WIFI_DHCP_ROUTER_DHCP_DISABLED=confirmed \
+OMG_SAME_WIFI_DHCP_PROTECTED_IPS=<static-ip-list> \
+make same-wifi-dhcp-start-imported-egress
+make same-wifi-dhcp-adb-check-imported-egress
+make same-wifi-dhcp-stop
+```
+
+runner 不会改变路由器设置；`confirmed` 只是要求操作者在手动关闭路由器 DHCP 后明确
+确认。它拒绝把 Mac gateway 或 `OMG_SAME_WIFI_DHCP_PROTECTED_IPS` 中的静态地址放进
+租约池。ADB gate 要求 Android 的地址在池内且出现在 `omg leases` 与 DHCPACK 日志中，
+并继续要求 DNS、无显式代理 TUN、provider/update、`TunEgress` 的 DIRECT 与
+egress-proxy 切换，以及受控 CONNECT 证据。stop 检查 OpenSurge runtime/PF/listener/
+helper 清理和 IPv4 forwarding 恢复；随后仍必须由操作者恢复路由器 DHCP 和客户端自动
+获取。完整 runbook 在 `tests/same-lan/WIFI-DHCP-RUNNER.zh-CN.md`。
+
 `make same-lan-adb-check` 是客户端证据入口。它应通过 ADB 采集 Android 默认路由、
 DNS 查询、无显式代理探针结果，并回看 Mac 侧 `dnsmasq.log` 和 `mihomo.log`。只有
 同时看到 Android 默认路由包含 `via <mac-lan-ip>`、DNS 查询走 Mac、客户端触发目标

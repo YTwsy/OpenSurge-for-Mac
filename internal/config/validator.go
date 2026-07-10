@@ -8,9 +8,9 @@ import (
 
 func Validate(cfg Config) error {
 	switch cfg.Gateway.Mode {
-	case GatewayModeIsolatedLAN, GatewayModeSameLAN:
+	case GatewayModeIsolatedLAN, GatewayModeSameLAN, GatewayModeSameWiFiDHCP:
 	default:
-		return fmt.Errorf("gateway.mode must be isolated_lan or same_lan")
+		return fmt.Errorf("gateway.mode must be isolated_lan, same_lan, or same_wifi_dhcp")
 	}
 	if strings.TrimSpace(cfg.Gateway.Interface) == "" {
 		return fmt.Errorf("gateway.interface is required")
@@ -75,11 +75,21 @@ func Validate(cfg Config) error {
 		return err
 	}
 	if cfg.Gateway.SameLAN() {
+		if cfg.Transparent.Mode != TransparentModeTUN {
+			return fmt.Errorf("gateway.mode %s requires transparent.mode: \"tun\"", cfg.Gateway.Mode)
+		}
+	}
+	switch cfg.Gateway.Mode {
+	case GatewayModeSameLAN:
 		if cfg.DHCP.Enabled {
 			return fmt.Errorf("gateway.mode same_lan requires dhcp.enabled: false")
 		}
-		if cfg.Transparent.Mode != TransparentModeTUN {
-			return fmt.Errorf("gateway.mode same_lan requires transparent.mode: \"tun\"")
+	case GatewayModeSameWiFiDHCP:
+		if !cfg.DHCP.Enabled {
+			return fmt.Errorf("gateway.mode same_wifi_dhcp requires dhcp.enabled: true")
+		}
+		if err := validateDHCPRangeInLAN(cfg); err != nil {
+			return err
 		}
 	}
 	if err := validateUpstreamProxy(cfg.UpstreamProxy); err != nil {
@@ -87,6 +97,29 @@ func Validate(cfg Config) error {
 	}
 	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
 		return fmt.Errorf("runtime.dir is required")
+	}
+	return nil
+}
+
+func validateDHCPRangeInLAN(cfg Config) error {
+	lanIP := cfg.LANIP().To4()
+	start := net.ParseIP(cfg.DHCP.RangeStart).To4()
+	end := net.ParseIP(cfg.DHCP.RangeEnd).To4()
+	if lanIP == nil || start == nil || end == nil {
+		return fmt.Errorf("same_wifi_dhcp requires IPv4 LAN and DHCP range addresses")
+	}
+	if lanIP[0] != start[0] || lanIP[1] != start[1] || lanIP[2] != start[2] ||
+		lanIP[0] != end[0] || lanIP[1] != end[1] || lanIP[2] != end[2] {
+		return fmt.Errorf("gateway.mode same_wifi_dhcp requires the DHCP range to remain in %d.%d.%d.0/24", lanIP[0], lanIP[1], lanIP[2])
+	}
+	if start[3] > end[3] {
+		return fmt.Errorf("dhcp.range_start must not be after dhcp.range_end")
+	}
+	if start[3] == 0 || end[3] == 255 {
+		return fmt.Errorf("same_wifi_dhcp DHCP range must not include the network or broadcast address")
+	}
+	if lanIP[3] >= start[3] && lanIP[3] <= end[3] {
+		return fmt.Errorf("gateway.lan_ip must not be inside the DHCP range")
 	}
 	return nil
 }

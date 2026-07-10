@@ -166,6 +166,15 @@ When ADB is intentionally unavailable, the same imported egress evidence can
 be collected with manual Android browser probes; see
 [`tests/same-lan/README.md`](tests/same-lan/README.md#manual-phone-check-without-adb).
 
+For a dedicated test Wi-Fi where router DHCP is manually disabled, use
+`make same-wifi-dhcp-start-imported-egress`, then reconnect the Android client
+in DHCP mode and run `make same-wifi-dhcp-adb-check-imported-egress`. This
+separate high-risk runner uses `gateway.mode: "same_wifi_dhcp"` and requires an
+explicit protected-static-address list plus an operator confirmation that router
+DHCP is disabled. Its stop gate verifies OpenSurge cleanup, but router DHCP and
+client automatic addressing must still be restored manually; see
+[`tests/same-lan/WIFI-DHCP-RUNNER.md`](tests/same-lan/WIFI-DHCP-RUNNER.md).
+
 ## Virtual LAN lab
 
 The integration lab runs the real macOS gateway against two lightweight Linux

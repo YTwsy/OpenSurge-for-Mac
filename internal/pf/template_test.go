@@ -60,6 +60,23 @@ func TestRenderAnchorSameLANExcludesLocalLAN(t *testing.T) {
 	}
 }
 
+func TestRenderAnchorSameWiFiDHCPExcludesLocalLAN(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
+	cfg.Gateway.Interface = "en0"
+	cfg.Gateway.UpstreamInterface = "en0"
+	cfg.Gateway.LANIP = "192.168.1.20"
+
+	rendered, err := RenderAnchor(cfg)
+	if err != nil {
+		t.Fatalf("RenderAnchor() error = %v", err)
+	}
+	want := "nat on en0 from 192.168.1.0/24 to ! 192.168.1.0/24 -> (en0)"
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("rendered same-WiFi DHCP anchor missing %q:\n%s", want, rendered)
+	}
+}
+
 func TestParseEnabled(t *testing.T) {
 	if !parseEnabled("Status: Enabled for 0 days\n") {
 		t.Fatalf("enabled status parsed as false")

@@ -165,3 +165,37 @@ func TestLoadSameLANExampleConfig(t *testing.T) {
 		t.Fatalf("Transparent.Mode = %q", cfg.Transparent.Mode)
 	}
 }
+
+func TestLoadSameWiFiDHCPGatewayMode(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+gateway:
+  mode: "same_wifi_dhcp"
+  interface: "en0"
+  lan_ip: "192.168.1.20"
+  upstream_interface: "en0"
+
+dhcp:
+  enabled: true
+  range_start: "192.168.1.120"
+  range_end: "192.168.1.199"
+
+transparent:
+  mode: "tun"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Gateway.Mode != GatewayModeSameWiFiDHCP {
+		t.Fatalf("Gateway.Mode = %q", cfg.Gateway.Mode)
+	}
+	if !cfg.DHCP.Enabled {
+		t.Fatal("DHCP.Enabled = false")
+	}
+}
