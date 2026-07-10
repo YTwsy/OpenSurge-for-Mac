@@ -136,6 +136,11 @@ make same-lan-stop
 `transparent.mode: "tun"`。OpenSurge 不在主 LAN 上发 DHCP；测试手机需要手动或由
 外部 DHCP 配置把默认网关和 DNS 指向 Mac 的 LAN IP。
 
+如果进入“同一个 Wi-Fi 关闭主路由 DHCP、由 OpenSurge 接管 DHCP/DNS”的测试切片，
+先阅读 `tests/same-lan/WIFI-DHCP-RECOVERY.zh-CN.md`。恢复不是附属步骤，而是验收
+的一部分：需要证明路由器 DHCP 已恢复、Mac Wi-Fi 回到 DHCP、至少一台客户端能重新
+自动获取地址并上网。
+
 `make same-lan-adb-check` 是客户端证据入口。它应通过 ADB 采集 Android 默认路由、
 DNS 查询、无显式代理探针结果，并回看 Mac 侧 `dnsmasq.log` 和 `mihomo.log`。只有
 同时看到 Android 默认路由包含 `via <mac-lan-ip>`、DNS 查询走 Mac、客户端触发目标

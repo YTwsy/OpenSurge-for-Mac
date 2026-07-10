@@ -32,6 +32,12 @@ The first supported same-LAN slice is:
 Do not run OpenSurge DHCP on the main home or office LAN for this smoke. Do not
 claim whole-home readiness from this gate.
 
+For the future same-WiFi DHCP takeover slice, where router DHCP is disabled and
+OpenSurge serves DHCP/DNS on the same Wi-Fi, read
+`tests/same-lan/WIFI-DHCP-RECOVERY.zh-CN.md` first. Recovery is part of the
+validation contract: the router DHCP must be restored, the Mac must return to
+DHCP, and at least one client must automatically obtain an address again.
+
 ## Runner
 
 The runner is `tests/same-lan/smoke.sh` with Makefile entrypoints:

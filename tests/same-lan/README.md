@@ -24,6 +24,11 @@ The first acceptance slice targets one test phone. Do not run OpenSurge DHCP on
 the main LAN, and do not globally change the router's DHCP options to the Mac
 unless you are ready to affect every device on that LAN.
 
+If you plan to disable router DHCP on a dedicated test Wi-Fi and let OpenSurge
+serve DHCP/DNS on that same Wi-Fi, read the
+[same-WiFi DHCP recovery reference](WIFI-DHCP-RECOVERY.md) first. Recovery is
+part of the acceptance criteria.
+
 ## Start
 
 The runner infers the interface from the macOS default route and reads the Mac
@@ -184,6 +189,10 @@ Expected cleanup:
 - IPv4 forwarding is restored to the pre-start value;
 - the DNS listener no longer occupies port 53 on the Mac LAN IP;
 - the Mac and main LAN return to the pre-start normal network state.
+
+If router DHCP was disabled during the test, follow the
+[same-WiFi DHCP recovery reference](WIFI-DHCP-RECOVERY.md) to restore router
+DHCP, Mac Wi-Fi DHCP, and automatic addressing on test clients.
 
 ## Current Boundary
 

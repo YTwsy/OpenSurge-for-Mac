@@ -22,6 +22,10 @@ Home router / main Wi-Fi: 192.168.1.1
 第一轮验收只面向一台测试手机。不要在主 LAN 上启动 OpenSurge DHCP，也不要把主
 路由器的 DHCP 全局下发改成 Mac，除非你已经准备好影响所有设备。
 
+如果要在专门测试 Wi-Fi 上关闭主路由 DHCP，让 OpenSurge 接管同一 Wi-Fi 的
+DHCP/DNS，请先阅读 [same-WiFi DHCP 恢复参考](WIFI-DHCP-RECOVERY.zh-CN.md)。
+恢复方案本身也是验收的一部分。
+
 ## 启动
 
 默认 runner 会从 macOS 默认路由推断接口，并从该接口读取 Mac IPv4 地址：
@@ -174,6 +178,10 @@ make same-lan-stop
 - IPv4 forwarding 恢复到启动前状态；
 - DNS listener 不再占用 Mac LAN IP 的 53 端口；
 - Mac 和主 LAN 恢复到启动前的普通网络状态。
+
+如果测试期间关闭过主路由 DHCP，请按
+[same-WiFi DHCP 恢复参考](WIFI-DHCP-RECOVERY.zh-CN.md) 恢复路由器 DHCP、Mac
+Wi-Fi DHCP 和测试客户端自动获取地址。
 
 ## 当前边界
 
