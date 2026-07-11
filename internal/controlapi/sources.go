@@ -52,19 +52,13 @@ func (s *Server) importURL(ctx context.Context, req SourceImportRequest) (Source
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return Source{}, fmt.Errorf("source returned %s", resp.Status)
 	}
+	before, _ := s.store.Sources()
 	source, err := s.importReader(req.Name, req.Kind, redactURL(req.URL), io.LimitReader(resp.Body, maxSourceSize+1))
 	if err != nil {
 		return Source{}, err
 	}
 	if err := s.credentials.Put(ctx, source.ID, req.URL); err != nil {
-		sources, _ := s.store.Sources()
-		kept := sources[:0]
-		for _, candidate := range sources {
-			if candidate.ID != source.ID {
-				kept = append(kept, candidate)
-			}
-		}
-		_ = s.store.SaveSources(kept)
+		_ = s.store.SaveSources(before)
 		_ = os.Remove(source.SnapshotPath)
 		return Source{}, err
 	}
@@ -151,6 +145,8 @@ func (s *Server) importReader(name, kind, origin string, reader io.Reader) (Sour
 		Validation:    validation,
 		Inventory:     inventory,
 		ImportedAt:    time.Now().UTC(),
+		Versions:      []SourceVersion{},
+		Diff:          emptySourceDiff(),
 	}
 	if strings.HasPrefix(origin, "https://") {
 		source.Origin = redactURL(origin)
@@ -161,12 +157,69 @@ func (s *Server) importReader(name, kind, origin string, reader io.Reader) (Sour
 	}
 	for i := range sources {
 		if sources[i].ID == source.ID {
+			previous := sources[i]
+			if previous.Digest == source.Digest {
+				source.Versions = append([]SourceVersion{}, previous.Versions...)
+				source.Applied = previous.Applied
+				source.Diff.PreviousDigest = previous.Digest
+			} else {
+				source.Versions = append(append([]SourceVersion{}, previous.Versions...), sourceVersion(previous))
+				source.Diff = diffInventory(previous.Digest, previous.Inventory, source.Inventory)
+			}
 			sources[i] = source
 			return source, s.store.SaveSources(sources)
 		}
 	}
 	sources = append(sources, source)
 	return source, s.store.SaveSources(sources)
+}
+
+func sourceVersion(source Source) SourceVersion {
+	return SourceVersion{Digest: source.Digest, Size: source.Size, Valid: source.Valid, Validation: source.Validation, Inventory: source.Inventory, ImportedAt: source.ImportedAt, Applied: source.Applied, SnapshotPath: source.SnapshotPath}
+}
+
+func emptySourceDiff() SourceDiff {
+	return SourceDiff{ProxiesAdded: []string{}, ProxiesRemoved: []string{}, GroupsAdded: []string{}, GroupsRemoved: []string{}, ProxyProvidersAdded: []string{}, ProxyProvidersRemoved: []string{}, RuleProvidersAdded: []string{}, RuleProvidersRemoved: []string{}}
+}
+
+func diffInventory(previousDigest string, before, after Inventory) SourceDiff {
+	diff := emptySourceDiff()
+	diff.PreviousDigest = previousDigest
+	diff.ProxiesAdded, diff.ProxiesRemoved = diffNames(before.Proxies, after.Proxies)
+	diff.GroupsAdded, diff.GroupsRemoved = diffNames(before.ProxyGroups, after.ProxyGroups)
+	diff.ProxyProvidersAdded, diff.ProxyProvidersRemoved = diffNames(before.ProxyProviders, after.ProxyProviders)
+	diff.RuleProvidersAdded, diff.RuleProvidersRemoved = diffNames(before.RuleProviders, after.RuleProviders)
+	diff.RuleCountDelta = after.RuleCount - before.RuleCount
+	return diff
+}
+
+func diffNames(before, after []string) (added, removed []string) {
+	left, right := map[string]bool{}, map[string]bool{}
+	for _, value := range before {
+		left[value] = true
+	}
+	for _, value := range after {
+		right[value] = true
+	}
+	for value := range right {
+		if !left[value] {
+			added = append(added, value)
+		}
+	}
+	for value := range left {
+		if !right[value] {
+			removed = append(removed, value)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+	if added == nil {
+		added = []string{}
+	}
+	if removed == nil {
+		removed = []string{}
+	}
+	return added, removed
 }
 
 func inspectSource(data []byte, kind string) (Inventory, error) {

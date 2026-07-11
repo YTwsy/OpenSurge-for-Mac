@@ -900,6 +900,9 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 	sources, _ := s.store.Sources()
 	for i := range sources {
 		sources[i].Applied = sources[i].ID == source.ID
+		for version := range sources[i].Versions {
+			sources[i].Versions[version].Applied = false
+		}
 	}
 	_ = s.store.SaveSources(sources)
 	source.Applied = true
@@ -1213,8 +1216,17 @@ func (s *Server) sourceByID(id string) (Source, error) {
 func publicSources(sources []Source) []Source {
 	result := append([]Source{}, sources...)
 	for i := range result {
+		if result[i].Versions == nil {
+			result[i].Versions = []SourceVersion{}
+		}
+		if result[i].Diff.ProxiesAdded == nil {
+			result[i].Diff = diffInventory(result[i].Diff.PreviousDigest, Inventory{}, Inventory{})
+		}
 		result[i].SnapshotPath = ""
 		result[i].FetchURL = ""
+		for version := range result[i].Versions {
+			result[i].Versions[version].SnapshotPath = ""
+		}
 	}
 	return result
 }

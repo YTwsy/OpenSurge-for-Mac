@@ -163,20 +163,46 @@ type Operation struct {
 }
 
 type Source struct {
-	SchemaVersion int       `json:"schema_version"`
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Kind          string    `json:"kind"`
-	Origin        string    `json:"origin"`
-	FetchURL      string    `json:"fetch_url,omitempty"`
-	SnapshotPath  string    `json:"snapshot_path,omitempty"`
-	Digest        string    `json:"digest"`
-	Size          int64     `json:"size"`
-	Valid         bool      `json:"valid"`
-	Validation    string    `json:"validation,omitempty"`
-	Inventory     Inventory `json:"inventory"`
-	ImportedAt    time.Time `json:"imported_at"`
-	Applied       bool      `json:"applied"`
+	SchemaVersion int             `json:"schema_version"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Kind          string          `json:"kind"`
+	Origin        string          `json:"origin"`
+	FetchURL      string          `json:"fetch_url,omitempty"`
+	SnapshotPath  string          `json:"snapshot_path,omitempty"`
+	Digest        string          `json:"digest"`
+	Size          int64           `json:"size"`
+	Valid         bool            `json:"valid"`
+	Validation    string          `json:"validation,omitempty"`
+	Inventory     Inventory       `json:"inventory"`
+	ImportedAt    time.Time       `json:"imported_at"`
+	Applied       bool            `json:"applied"`
+	Versions      []SourceVersion `json:"versions"`
+	Diff          SourceDiff      `json:"diff"`
+}
+
+type SourceVersion struct {
+	Digest       string    `json:"digest"`
+	Size         int64     `json:"size"`
+	Valid        bool      `json:"valid"`
+	Validation   string    `json:"validation,omitempty"`
+	Inventory    Inventory `json:"inventory"`
+	ImportedAt   time.Time `json:"imported_at"`
+	Applied      bool      `json:"applied"`
+	SnapshotPath string    `json:"snapshot_path,omitempty"`
+}
+
+type SourceDiff struct {
+	PreviousDigest        string   `json:"previous_digest,omitempty"`
+	ProxiesAdded          []string `json:"proxies_added"`
+	ProxiesRemoved        []string `json:"proxies_removed"`
+	GroupsAdded           []string `json:"groups_added"`
+	GroupsRemoved         []string `json:"groups_removed"`
+	ProxyProvidersAdded   []string `json:"proxy_providers_added"`
+	ProxyProvidersRemoved []string `json:"proxy_providers_removed"`
+	RuleProvidersAdded    []string `json:"rule_providers_added"`
+	RuleProvidersRemoved  []string `json:"rule_providers_removed"`
+	RuleCountDelta        int      `json:"rule_count_delta"`
 }
 
 type Inventory struct {

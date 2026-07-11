@@ -284,6 +284,33 @@ func TestLegacySourceCredentialMigratesOutOfJSON(t *testing.T) {
 	}
 }
 
+func TestSourceRefreshPreservesAppliedVersionAndBuildsInventoryDiff(t *testing.T) {
+	server := newTestServer(t)
+	first, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("proxies:\n  - {name: old, type: direct}\nproxy-groups:\n  - {name: Main, type: select, proxies: [DIRECT]}\nrules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, _ := server.store.Sources()
+	sources[0].Applied = true
+	if err := server.store.SaveSources(sources); err != nil {
+		t.Fatal(err)
+	}
+	second, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("proxies:\n  - {name: new, type: direct}\nproxy-groups:\n  - {name: Main, type: select, proxies: [DIRECT]}\nrules:\n  - DOMAIN,example.com,DIRECT\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Applied || len(second.Versions) != 1 || !second.Versions[0].Applied {
+		t.Fatalf("versions = %#v", second)
+	}
+	if second.Diff.PreviousDigest != first.Digest || len(second.Diff.ProxiesAdded) != 1 || second.Diff.ProxiesAdded[0] != "new" || second.Diff.RuleCountDelta != 1 {
+		t.Fatalf("diff = %#v", second.Diff)
+	}
+	public := publicSources([]Source{second})[0]
+	if public.Versions[0].SnapshotPath != "" {
+		t.Fatal("public version leaked snapshot path")
+	}
+}
+
 func TestDevicePolicyUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) {
 	server := newTestServer(t)
 	get := performAuthorized(server, http.MethodGet, "/api/v1/device-policy", nil)
