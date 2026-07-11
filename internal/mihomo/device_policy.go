@@ -10,6 +10,7 @@ import (
 )
 
 type policySections struct {
+	bundle    *device.PolicyBundle
 	groups    []device.SelectorGroup
 	providers []device.RuleProvider
 	preRules  []string
@@ -17,37 +18,43 @@ type policySections struct {
 }
 
 func renderPolicySections(cfg config.Config) (string, error) {
-	sections, err := loadPolicySections(cfg.DevicePolicy.File)
+	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File)
 	if err != nil {
 		return "", err
 	}
 	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
-		blocks, err := loadImportedProfileBlocks(cfg.Mihomo.Profile)
+		profile, err := loadImportedProfile(cfg.Mihomo.Profile)
 		if err != nil {
 			return "", err
 		}
-		return composeImportedPolicySections(blocks, sections)
+		if err := validateImportedPolicySections(profile.inventory, sections); err != nil {
+			return "", err
+		}
+		return composeImportedPolicySections(profile.blocks, sections)
+	}
+	if err := validateManagedPolicySections(cfg, sections); err != nil {
+		return "", err
 	}
 	return composeManagedPolicySections(cfg, sections), nil
 }
 
-func loadPolicySections(path string) (policySections, error) {
-	if strings.TrimSpace(path) == "" {
+func loadPolicySections(bundle *device.PolicyBundle, path string) (policySections, error) {
+	if bundle == nil && strings.TrimSpace(path) == "" {
 		return policySections{}, nil
 	}
-	set, err := device.LoadPolicySet(path)
-	if err != nil {
-		return policySections{}, err
-	}
-	compiled, err := device.CompilePolicySet(set)
-	if err != nil {
-		return policySections{}, err
+	if bundle == nil {
+		loaded, err := device.LoadPolicyBundle(path)
+		if err != nil {
+			return policySections{}, err
+		}
+		bundle = &loaded
 	}
 	return policySections{
-		groups:    compiled.SelectorGroups,
-		providers: compiled.RuleProviders,
-		preRules:  compiled.OverrideRules,
-		defaults:  compiled.DefaultRules,
+		bundle:    bundle,
+		groups:    bundle.Compiled.SelectorGroups,
+		providers: bundle.Compiled.RuleProviders,
+		preRules:  bundle.Compiled.OverrideRules,
+		defaults:  bundle.Compiled.DefaultRules,
 	}, nil
 }
 
@@ -123,6 +130,68 @@ func composeImportedPolicySections(blocks []importedProfileBlock, policy policyS
 		}
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n", nil
+}
+
+func validateImportedPolicySections(inventory importedProfileInventory, policy policySections) error {
+	if policy.bundle == nil {
+		return nil
+	}
+	for name := range inventory.targets {
+		if strings.HasPrefix(name, "device/") {
+			return fmt.Errorf("imported mihomo profile target %q occupies reserved device/ namespace", name)
+		}
+	}
+	for name := range inventory.ruleProviders {
+		if strings.HasPrefix(name, "open-surge-ruleset-") {
+			return fmt.Errorf("imported mihomo profile rule provider %q occupies reserved open-surge-ruleset- namespace", name)
+		}
+	}
+	for _, group := range policy.groups {
+		if section, exists := inventory.targets[group.Name]; exists {
+			return fmt.Errorf("generated device policy group %q conflicts with imported %s", group.Name, section)
+		}
+	}
+	for _, provider := range policy.providers {
+		if inventory.ruleProviders[provider.Name] {
+			return fmt.Errorf("generated device policy rule provider %q conflicts with imported rule provider", provider.Name)
+		}
+	}
+	for _, target := range append(append([]string(nil), policy.bundle.Compiled.SelectorTargets...), policy.bundle.Compiled.ActionTargets...) {
+		if builtinPolicyTarget(target) {
+			continue
+		}
+		if _, exists := inventory.targets[target]; !exists {
+			return fmt.Errorf("device policy references unknown imported proxy or group %q", target)
+		}
+	}
+	return nil
+}
+
+func validateManagedPolicySections(cfg config.Config, policy policySections) error {
+	if policy.bundle == nil {
+		return nil
+	}
+	available := map[string]bool{}
+	if cfg.UpstreamProxy.Enabled {
+		available[cfg.UpstreamProxy.Name] = true
+		available["open-surge-egress"] = true
+	}
+	for _, target := range append(append([]string(nil), policy.bundle.Compiled.SelectorTargets...), policy.bundle.Compiled.ActionTargets...) {
+		if builtinPolicyTarget(target) || available[target] {
+			continue
+		}
+		return fmt.Errorf("device policy references unknown managed proxy or group %q", target)
+	}
+	return nil
+}
+
+func builtinPolicyTarget(target string) bool {
+	switch strings.ToUpper(target) {
+	case "DIRECT", "REJECT", "REJECT-DROP", "REJECT-TINYGIF":
+		return true
+	default:
+		return false
+	}
 }
 
 func appendYAMLBlock(existing, header, items string) string {

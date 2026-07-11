@@ -32,11 +32,28 @@ making device defaults unreachable.
 The supported identity boundary is MAC-backed IPv4 DHCP reservations plus
 `SRC-IP-CIDR`. It is not IPv6 identity or MAC matching performed inside mihomo.
 Registered addresses must stay in the gateway `/24` and cannot be its network,
-broadcast, or gateway address.
+broadcast, gateway, or declared protected address. same-Wi-Fi DHCP start also
+rejects a reservation when ARP observes a different MAC at that IPv4; no ARP
+reply is only an inconclusive signal, not proof of vacancy.
+
+The configured policy is desired state. One start compiles it exactly once into
+an immutable bundle, validates the final mihomo configuration before forwarding
+is enabled, and saves the bundle plus digest as runtime applied state. Running
+`devices` and `device-policy-select` consume that applied snapshot; a changed
+or invalid desired file is surfaced as drift/error rather than reinterpreting a
+running gateway. Policy updates are stop/start only in this MVP.
+
+Mihomo may continue rule evaluation for UDP when a selected outbound lacks UDP
+support. Generated selector/default rules therefore add a same-condition
+`REJECT` fallback by default; `on_unsupported: fallthrough` is an explicit
+opt-out. Imported profiles are parsed as YAML for namespace/reference checks:
+generated `device/` groups and `open-surge-ruleset-` providers are reserved,
+and candidates/actions must reference known targets or explicit built-ins.
 
 Use `make test` for the compiler, JSON validation, template, and rule-provider
 coverage. Use `make lab-test-tun-device-policy` for data-path changes to
 reservations, independent per-device selectors, or device overrides. That Lab
 gate proves two VM clients receive `.101` and `.102`, choose different TUN
-egress paths without affecting each other, and enforce a device-specific
-domain `REJECT`.
+egress paths without affecting each other, enforce a device-specific domain
+`REJECT`, preserve exact applied DHCP identities, expose desired/applied drift,
+and fail close UDP/443 through an HTTP-only selected outbound.

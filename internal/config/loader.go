@@ -10,6 +10,18 @@ import (
 )
 
 func Load(path string) (Config, error) {
+	return load(path, true)
+}
+
+// LoadRuntime parses and validates the gateway configuration while deliberately
+// deferring the mutable desired device-policy document. It lets stop/status and
+// applied-policy controls continue to work when an operator is editing an
+// invalid next policy on disk.
+func LoadRuntime(path string) (Config, error) {
+	return load(path, false)
+}
+
+func load(path string, loadDevicePolicy bool) (Config, error) {
 	cfg := Default()
 
 	file, err := os.Open(path)
@@ -44,7 +56,12 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 	resolveRelativePaths(path, &cfg)
-	if err := Validate(cfg); err != nil {
+	if loadDevicePolicy {
+		if err := PrepareDevicePolicy(&cfg); err != nil {
+			return Config{}, err
+		}
+	}
+	if err := validate(cfg, loadDevicePolicy); err != nil {
 		return Config{}, err
 	}
 
@@ -120,6 +137,8 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.DHCP.Domain = value
 	case "device_policy.file":
 		cfg.DevicePolicy.File = value
+	case "device_policy.protected_ipv4":
+		cfg.DevicePolicy.ProtectedIPv4 = splitCommaSeparated(value)
 	case "dns.listen":
 		cfg.DNS.Listen = value
 	case "dns.port":
@@ -216,4 +235,18 @@ func applyValue(cfg *Config, section, key, value string) error {
 		return fmt.Errorf("unknown config key %s.%s", section, key)
 	}
 	return nil
+}
+
+func splitCommaSeparated(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	return values
 }

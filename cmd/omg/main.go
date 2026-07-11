@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
@@ -67,7 +69,11 @@ func run(args []string) int {
 		return 2
 	}
 
-	cfg, err := config.Load(*configPath)
+	loadConfig := config.LoadRuntime
+	if commandRequiresDesiredPolicy(command) {
+		loadConfig = config.Load
+	}
+	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		return writeErrorExit(command, jsonOutput, 1, "config", err)
 	}
@@ -181,11 +187,11 @@ func run(args []string) int {
 		}
 		fmt.Printf("Policy group %q selected %q\n", *policyGroup, *policyName)
 	case "device-policy-select":
-		set, err := loadConfiguredPolicySet(cfg)
+		bundle, err := loadAppliedPolicyBundle(cfg)
 		if err != nil {
 			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
 		}
-		group, err := device.DeviceGroup(set, *deviceID, *deviceSlot)
+		group, err := device.DeviceGroup(bundle.Policy, *deviceID, *deviceSlot)
 		if err != nil {
 			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
 		}
@@ -260,6 +266,15 @@ func run(args []string) int {
 	}
 
 	return 0
+}
+
+func commandRequiresDesiredPolicy(command string) bool {
+	switch command {
+	case "start", "doctor", "render-mihomo", "validate-mihomo":
+		return true
+	default:
+		return false
+	}
 }
 
 type doctorJSON struct {
@@ -362,13 +377,27 @@ type providerUpdateJSON struct {
 }
 
 type configuredDeviceJSON struct {
-	ID       string            `json:"id"`
-	MAC      string            `json:"mac"`
-	IPv4     string            `json:"ipv4"`
-	Profile  string            `json:"profile"`
-	Groups   map[string]string `json:"groups"`
-	Hostname string            `json:"hostname,omitempty"`
-	Online   bool              `json:"online"`
+	ID                       string            `json:"id"`
+	MAC                      string            `json:"mac"`
+	IPv4                     string            `json:"ipv4"`
+	ExpectedIP               string            `json:"expected_ip"`
+	Profile                  string            `json:"profile"`
+	Groups                   map[string]string `json:"groups"`
+	PolicySource             string            `json:"policy_source"`
+	DesiredDigest            string            `json:"desired_digest"`
+	DesiredError             string            `json:"desired_error,omitempty"`
+	AppliedDigest            string            `json:"applied_digest,omitempty"`
+	Drift                    bool              `json:"drift"`
+	Applied                  bool              `json:"applied"`
+	ReservationInDynamicPool bool              `json:"reservation_in_dynamic_pool"`
+	Hostname                 string            `json:"hostname,omitempty"`
+	LeaseMACMatch            bool              `json:"lease_mac_match"`
+	LeaseIP                  string            `json:"lease_ip,omitempty"`
+	LeaseIPMatch             bool              `json:"lease_ip_match"`
+	LeaseExpiresAt           *time.Time        `json:"lease_expires_at,omitempty"`
+	LeaseActive              bool              `json:"lease_active"`
+	LeaseMatch               bool              `json:"lease_match"`
+	PolicyIdentityReady      bool              `json:"policy_identity_ready"`
 }
 
 type devicePoliciesJSON struct {
@@ -448,46 +477,141 @@ func validatePolicySelection(groups []mihomo.ProxyGroup, groupName, selected str
 	return fmt.Errorf("policy group %q not found (available: %s)", groupName, strings.Join(policyGroupNames(groups), ", "))
 }
 
-func loadConfiguredPolicySet(cfg config.Config) (device.PolicySet, error) {
+func loadConfiguredPolicyBundle(cfg config.Config) (device.PolicyBundle, error) {
 	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
-		return device.PolicySet{}, fmt.Errorf("device_policy.file is not configured")
+		return device.PolicyBundle{}, fmt.Errorf("device_policy.file is not configured")
 	}
-	return device.LoadPolicySet(cfg.DevicePolicy.File)
+	if cfg.DevicePolicy.Bundle != nil {
+		return *cfg.DevicePolicy.Bundle, nil
+	}
+	return device.LoadPolicyBundle(cfg.DevicePolicy.File)
+}
+
+func loadAppliedPolicyBundle(cfg config.Config) (device.PolicyBundle, error) {
+	paths := runtime.NewPaths(cfg)
+	state, exists, err := runtime.LoadState(paths.StateFile)
+	if err != nil {
+		return device.PolicyBundle{}, err
+	}
+	if !exists || state.DevicePolicyDigest == "" {
+		return device.PolicyBundle{}, fmt.Errorf("no applied device policy is active; start the gateway before selecting a device policy")
+	}
+	bundle, err := device.LoadPolicyBundleSnapshot(paths.DevicePolicyApplied)
+	if err != nil {
+		return device.PolicyBundle{}, fmt.Errorf("load applied device policy: %w", err)
+	}
+	if bundle.Digest != state.DevicePolicyDigest {
+		return device.PolicyBundle{}, fmt.Errorf("applied device policy digest does not match runtime state")
+	}
+	return bundle, nil
 }
 
 func configuredDevices(cfg config.Config) ([]configuredDeviceJSON, error) {
-	set, err := loadConfiguredPolicySet(cfg)
+	desired, desiredErr := loadConfiguredPolicyBundle(cfg)
+	paths := runtime.NewPaths(cfg)
+	bundle := desired
+	policySource := "desired"
+	applied := false
+	appliedDigest := ""
+	state, exists, err := runtime.LoadState(paths.StateFile)
 	if err != nil {
 		return nil, err
 	}
-	compiled, err := device.CompilePolicySet(set)
-	if err != nil {
-		return nil, err
-	}
-	leases, err := device.LoadLeases(runtime.NewPaths(cfg).LeaseFile)
-	if err != nil {
-		return nil, err
-	}
-	leasesByMAC := make(map[string]device.Client, len(leases))
-	for _, lease := range leases {
-		leasesByMAC[strings.ToLower(lease.MAC)] = lease
-	}
-	devices := make([]configuredDeviceJSON, 0, len(compiled.Devices))
-	for _, managed := range compiled.Devices {
-		entry := configuredDeviceJSON{
-			ID:      managed.ID,
-			MAC:     managed.MAC,
-			IPv4:    managed.IPv4,
-			Profile: managed.Profile,
-			Groups:  managed.Groups,
+	if exists && state.DevicePolicyDigest != "" {
+		bundle, err = loadAppliedPolicyBundle(cfg)
+		if err != nil {
+			return nil, err
 		}
-		if lease, exists := leasesByMAC[managed.MAC]; exists {
+		policySource = "applied"
+		applied = true
+		appliedDigest = bundle.Digest
+	} else if desiredErr != nil {
+		return nil, desiredErr
+	}
+	leases, err := device.LoadLeases(paths.LeaseFile)
+	if err != nil {
+		return nil, err
+	}
+	leasesByMAC := make(map[string][]device.Client, len(leases))
+	for _, lease := range leases {
+		key := strings.ToLower(lease.MAC)
+		leasesByMAC[key] = append(leasesByMAC[key], lease)
+	}
+	desiredDigest := desired.Digest
+	desiredError := ""
+	if desiredErr != nil {
+		desiredError = desiredErr.Error()
+	}
+	devices := make([]configuredDeviceJSON, 0, len(bundle.Compiled.Devices))
+	for _, managed := range bundle.Compiled.Devices {
+		entry := configuredDeviceJSON{
+			ID:                       managed.ID,
+			MAC:                      managed.MAC,
+			IPv4:                     managed.IPv4,
+			ExpectedIP:               managed.IPv4,
+			Profile:                  managed.Profile,
+			Groups:                   managed.Groups,
+			PolicySource:             policySource,
+			DesiredDigest:            desiredDigest,
+			DesiredError:             desiredError,
+			AppliedDigest:            appliedDigest,
+			Drift:                    applied && (desiredErr != nil || desiredDigest != appliedDigest),
+			Applied:                  applied,
+			ReservationInDynamicPool: ipv4InDHCPRange(managed.IPv4, cfg.DHCP.RangeStart, cfg.DHCP.RangeEnd),
+		}
+		if lease, exists := selectLease(leasesByMAC[managed.MAC], managed.IPv4); exists {
 			entry.Hostname = lease.Hostname
-			entry.Online = lease.Online
+			entry.LeaseMACMatch = true
+			entry.LeaseIP = lease.IP
+			entry.LeaseIPMatch = lease.IP == managed.IPv4
+			entry.LeaseExpiresAt = &lease.ExpiresAt
+			entry.LeaseActive = lease.Online
+			entry.LeaseMatch = entry.LeaseMACMatch && entry.LeaseIPMatch && entry.LeaseActive
+			entry.PolicyIdentityReady = entry.Applied && entry.LeaseMatch
 		}
 		devices = append(devices, entry)
 	}
 	return devices, nil
+}
+
+func selectLease(leases []device.Client, expectedIP string) (device.Client, bool) {
+	if len(leases) == 0 {
+		return device.Client{}, false
+	}
+	best := leases[0]
+	for _, lease := range leases {
+		if lease.IP == expectedIP && best.IP != expectedIP {
+			best = lease
+			continue
+		}
+		if lease.IP == best.IP && lease.ExpiresAt.After(best.ExpiresAt) {
+			best = lease
+		}
+	}
+	return best, true
+}
+
+func ipv4InDHCPRange(value, start, end string) bool {
+	ip := parseIPv4Uint32(value)
+	first := parseIPv4Uint32(start)
+	last := parseIPv4Uint32(end)
+	return ip != 0 && first != 0 && last != 0 && first <= last && ip >= first && ip <= last
+}
+
+func parseIPv4Uint32(value string) uint32 {
+	parts := strings.Split(value, ".")
+	if len(parts) != 4 {
+		return 0
+	}
+	var result uint32
+	for _, part := range parts {
+		value, err := strconv.ParseUint(part, 10, 8)
+		if err != nil {
+			return 0
+		}
+		result = result<<8 | uint32(value)
+	}
+	return result
 }
 
 func policyGroupNames(groups []mihomo.ProxyGroup) []string {
@@ -690,11 +814,14 @@ func formatConfiguredDevices(devices []configuredDeviceJSON) string {
 	}
 	var out strings.Builder
 	for _, device := range devices {
-		status := "offline"
-		if device.Online {
-			status = "online"
+		status := "lease inactive"
+		if device.LeaseActive {
+			status = "lease active"
 		}
-		fmt.Fprintf(&out, "%s %s %s (%s, %s)\n", device.ID, device.IPv4, device.MAC, device.Profile, status)
+		if device.PolicyIdentityReady {
+			status = "policy identity ready"
+		}
+		fmt.Fprintf(&out, "%s %s %s (%s, %s, %s)\n", device.ID, device.IPv4, device.MAC, device.Profile, device.PolicySource, status)
 		if device.Hostname != "" {
 			fmt.Fprintf(&out, "  hostname: %s\n", device.Hostname)
 		}

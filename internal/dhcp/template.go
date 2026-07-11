@@ -53,16 +53,16 @@ type templateData struct {
 
 func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 	var reservations []device.Reservation
-	if cfg.DevicePolicy.File != "" {
-		set, err := device.LoadPolicySet(cfg.DevicePolicy.File)
+	bundle := cfg.DevicePolicy.Bundle
+	if bundle == nil && cfg.DevicePolicy.File != "" {
+		loaded, err := device.LoadPolicyBundle(cfg.DevicePolicy.File)
 		if err != nil {
 			return "", err
 		}
-		compiled, err := device.CompilePolicySet(set)
-		if err != nil {
-			return "", err
-		}
-		reservations = compiled.Reservations
+		bundle = &loaded
+	}
+	if bundle != nil {
+		reservations = bundle.Compiled.Reservations
 	}
 	data := templateData{
 		DHCPEnabled:  cfg.DHCP.Enabled,

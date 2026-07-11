@@ -176,10 +176,23 @@ __PROXY_EXPORTS__
         printf 'CLIENT_TRANSPARENT_OK interface=%s gateway=%s host=%s url=%s\n' "$iface" "$gateway" "$host" "$test_url"
       }
 
+      udp_probe() {
+        local iface route target port
+        iface="$(lab_interface)"
+        target="${3:-1.1.1.1}"
+        port="${4:-443}"
+        route="$(ip -4 route get "$target")"
+        grep -q "via $gateway" <<<"$route"
+        grep -q "dev $iface" <<<"$route"
+        printf 'open-surge-udp\n' >"/dev/udp/$target/$port"
+        printf 'CLIENT_UDP_PROBE_SENT interface=%s gateway=%s target=%s:%s\n' "$iface" "$gateway" "$target" "$port"
+      }
+
       case "${1:-}" in
         renew) renew ;;
         status) status ;;
         test) test_path ;;
         transparent) transparent_test ;;
-        *) echo "usage: omg-lab-client <renew|status|test|transparent> [gateway] [url]" >&2; exit 2 ;;
+        udp) udp_probe "$@" ;;
+        *) echo "usage: omg-lab-client <renew|status|test|transparent|udp> [gateway] [target] [port]" >&2; exit 2 ;;
       esac

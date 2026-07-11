@@ -1,5 +1,7 @@
 package config
 
+import "open-mihomo-gateway/internal/device"
+
 import (
 	"fmt"
 	"net"
@@ -21,7 +23,9 @@ type Config struct {
 // DevicePolicyConfig points at the optional JSON control-plane file that
 // defines DHCP reservations and per-device mihomo policy overlays.
 type DevicePolicyConfig struct {
-	File string
+	File          string
+	ProtectedIPv4 []string
+	Bundle        *device.PolicyBundle
 }
 
 type GatewayConfig struct {

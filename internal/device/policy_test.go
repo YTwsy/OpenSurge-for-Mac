@@ -209,6 +209,69 @@ func TestCompilePolicySetPreservesHTTPMRSRuleProviderWithoutFetchingIt(t *testin
 	}
 }
 
+func TestCompilePolicySetRejectsUnsupportedUDPByDefault(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{
+			ID:              "home",
+			DefaultPolicies: []string{"HTTP-only"},
+			Rules: []Rule{{
+				ID:       "video",
+				Match:    RuleMatch{Domains: []string{"video.example"}},
+				Policies: []string{"HTTP-only"},
+			}},
+		}},
+		Devices: []ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home"}},
+	}
+	compiled, err := CompilePolicySet(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,video.example)),device/phone/video",
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,video.example)),REJECT",
+		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+		"SRC-IP-CIDR,192.168.50.101/32,REJECT",
+	} {
+		if !containsRule(append(compiled.OverrideRules, compiled.DefaultRules...), want) {
+			t.Fatalf("compiled rules missing %q: %#v", want, append(compiled.OverrideRules, compiled.DefaultRules...))
+		}
+	}
+}
+
+func TestCompilePolicySetAllowsExplicitUnsupportedFallthrough(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"HTTP-only"}, OnUnsupported: "fallthrough"}},
+		Devices:  []ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home"}},
+	}
+	compiled, err := CompilePolicySet(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsRule(compiled.DefaultRules, "SRC-IP-CIDR,192.168.50.101/32,REJECT") {
+		t.Fatalf("fallthrough policy unexpectedly emitted REJECT: %#v", compiled.DefaultRules)
+	}
+}
+
+func TestValidatePolicySetForLANRejectsProtectedAddress(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices:  []ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home"}},
+	}
+	err := ValidatePolicySetForLANWithProtected(set, "192.168.50.1", []string{"192.168.50.101", "192.168.50.253"})
+	if err == nil || !strings.Contains(err.Error(), "conflicts with a protected") {
+		t.Fatalf("ValidatePolicySetForLANWithProtected() error = %v", err)
+	}
+}
+
+func containsRule(rules []string, want string) bool {
+	for _, rule := range rules {
+		if rule == want {
+			return true
+		}
+	}
+	return false
+}
+
 func hasSelectorGroup(groups []SelectorGroup, name string) bool {
 	for _, group := range groups {
 		if group.Name == name {

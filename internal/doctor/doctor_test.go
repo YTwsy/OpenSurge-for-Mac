@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/mihomo"
 )
 
 func TestCheckGatewayInterfaceTopology(t *testing.T) {
@@ -61,6 +62,7 @@ func TestCheckInterfaceIPv4RejectsInvalidIP(t *testing.T) {
 }
 
 func TestCheckMihomoConfigRenderAcceptsImportedProfile(t *testing.T) {
+	useRenderOnlyValidation(t)
 	dir := t.TempDir()
 	profilePath := filepath.Join(dir, "profile.yaml")
 	if err := os.WriteFile(profilePath, []byte("rules:\n  - MATCH,DIRECT\n"), 0o644); err != nil {
@@ -77,6 +79,7 @@ func TestCheckMihomoConfigRenderAcceptsImportedProfile(t *testing.T) {
 }
 
 func TestCheckMihomoConfigRenderRejectsMissingImportedProfile(t *testing.T) {
+	useRenderOnlyValidation(t)
 	cfg := config.Default()
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
 	cfg.Mihomo.Profile = filepath.Join(t.TempDir(), "missing.yaml")
@@ -88,4 +91,38 @@ func TestCheckMihomoConfigRenderRejectsMissingImportedProfile(t *testing.T) {
 	if !strings.Contains(check.Message, "read imported mihomo profile") {
 		t.Fatalf("checkMihomoConfigRender() message = %q", check.Message)
 	}
+}
+
+func TestValidateMihomoConfigWithEngineRunsMihomoTestMode(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args")
+	binary := filepath.Join(dir, "mihomo")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"" + argsPath + "\"\n"
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Mihomo.Binary = binary
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	if err := validateMihomoConfigWithEngine(cfg); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(args), "-t\n") || !strings.Contains(string(args), "-f\n") {
+		t.Fatalf("mihomo arguments = %q", args)
+	}
+}
+
+func useRenderOnlyValidation(t *testing.T) {
+	t.Helper()
+	previous := validateMihomoConfig
+	validateMihomoConfig = func(cfg config.Config) error {
+		_, err := mihomo.RenderConfig(cfg)
+		return err
+	}
+	t.Cleanup(func() { validateMihomoConfig = previous })
 }

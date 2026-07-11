@@ -376,6 +376,27 @@ wait_for_tun_action_log() {
   exit 1
 }
 
+wait_for_tun_udp_reject() {
+  local source_ip=$1 target=$2 port=$3 i log_file
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..20}; do
+    if [[ -f "$log_file" ]] &&
+      grep -E "\\[UDP\\].*$source_ip.*--> $target:$port.*using REJECT" "$log_file" >/dev/null; then
+      if grep -E "\\[UDP\\].*$source_ip.*--> $target:$port.*using DIRECT" "$log_file" >/dev/null; then
+        echo "device UDP probe reached DIRECT instead of failing closed" >&2
+        tail -160 "$log_file" >&2 || true
+        exit 1
+      fi
+      echo "device UDP fail-closed log observed for $source_ip -> $target:$port"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "mihomo did not log device UDP REJECT for $source_ip -> $target:$port" >&2
+  tail -160 "$log_file" >&2 || true
+  exit 1
+}
+
 wait_for_policy_option() {
   local group option output error i
   group="$1"
@@ -470,6 +491,43 @@ assert_client_ipv4() {
     limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status >&2 || true
     exit 1
   fi
+}
+
+assert_device_policy_identity_ready() {
+  local output=$1 digest
+  [[ -f "$STATE_DIR/device-policy.applied.json" ]] || {
+    echo "applied device-policy snapshot was not written" >&2
+    exit 1
+  }
+  [[ -f "$STATE_DIR/state.json" ]] || {
+    echo "runtime state was not written" >&2
+    exit 1
+  }
+  grep -Fq '"policy_source": "applied"' "$output"
+  [[ "$(grep -Fc '"policy_identity_ready": true' "$output")" -eq 2 ]] || {
+    echo "both DHCP reservations were not policy identity ready" >&2
+    cat "$output" >&2
+    exit 1
+  }
+  [[ "$(grep -Fc '"lease_match": true' "$output")" -eq 2 ]] || {
+    echo "both DHCP leases did not match policy identity" >&2
+    cat "$output" >&2
+    exit 1
+  }
+  digest="$(sed -n 's/  "digest": "\([^"]*\)",/\1/p' "$STATE_DIR/device-policy.applied.json" | head -1)"
+  [[ -n "$digest" ]] || { echo "applied policy snapshot has no digest" >&2; exit 1; }
+  grep -Fq "\"device_policy_digest\": \"$digest\"" "$STATE_DIR/state.json"
+}
+
+assert_applied_policy_drift() {
+  local output=$1
+  grep -Fq '"policy_source": "applied"' "$output"
+  grep -Fq '"drift": true' "$output"
+  grep -Fq '"ipv4": "192.168.50.101"' "$output"
+}
+
+mutate_device_policy_desired() {
+  /usr/bin/perl -0pi -e 's/"default_policies": \["lab-controlled", "DIRECT"\]/"default_policies": ["DIRECT", "lab-controlled"]/' "$LAB_DEVICE_POLICY_FILE"
 }
 
 write_device_policy_fixture() {
@@ -618,6 +676,10 @@ run_device_policy_test() {
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies.json"
   grep -Fq '"ipv4": "192.168.50.101"' "$STATE_DIR/device-policies.json"
   grep -Fq '"ipv4": "192.168.50.102"' "$STATE_DIR/device-policies.json"
+  assert_device_policy_identity_ready "$STATE_DIR/device-policies.json"
+
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
+  wait_for_tun_udp_reject "192.168.50.101" "1.1.1.1" 443
 
   : >"$STATE_DIR/egress/proxy.log"
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
@@ -628,6 +690,10 @@ run_device_policy_test() {
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
   wait_for_tun_policy_log_for_host "device/$client_two/default" "DIRECT" "$host"
   assert_tun_egress_proxy_unused
+
+  mutate_device_policy_desired
+  "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-drift.json"
+  assert_applied_policy_drift "$STATE_DIR/device-policies-drift.json"
 
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct.json"
   : >"$STATE_DIR/egress/proxy.log"

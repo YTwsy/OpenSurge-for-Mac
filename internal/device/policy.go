@@ -37,7 +37,10 @@ type Profile struct {
 	ID              string   `json:"id"`
 	Template        string   `json:"template,omitempty"`
 	DefaultPolicies []string `json:"default_policies,omitempty"`
-	Rules           []Rule   `json:"rules,omitempty"`
+	// OnUnsupported determines what happens when the selected default policy
+	// cannot carry a request (notably UDP). The safe default is reject.
+	OnUnsupported string `json:"on_unsupported,omitempty"`
+	Rules         []Rule `json:"rules,omitempty"`
 }
 
 // Template is an optional profile starting point. It carries no built-in rule
@@ -45,14 +48,16 @@ type Profile struct {
 type Template struct {
 	ID              string   `json:"id"`
 	DefaultPolicies []string `json:"default_policies"`
+	OnUnsupported   string   `json:"on_unsupported,omitempty"`
 	Rules           []Rule   `json:"rules,omitempty"`
 }
 
 type Rule struct {
-	ID       string    `json:"id"`
-	Match    RuleMatch `json:"match"`
-	Action   string    `json:"action,omitempty"`
-	Policies []string  `json:"policies,omitempty"`
+	ID            string    `json:"id"`
+	Match         RuleMatch `json:"match"`
+	Action        string    `json:"action,omitempty"`
+	Policies      []string  `json:"policies,omitempty"`
+	OnUnsupported string    `json:"on_unsupported,omitempty"`
 }
 
 // RuleMatch is an AND across populated fields and an OR within each field.
@@ -80,41 +85,43 @@ type RuleSet struct {
 }
 
 type Reservation struct {
-	ID   string
-	MAC  string
-	IPv4 string
+	ID   string `json:"id"`
+	MAC  string `json:"mac"`
+	IPv4 string `json:"ipv4"`
 }
 
 type SelectorGroup struct {
-	Name     string
-	Policies []string
+	Name     string   `json:"name"`
+	Policies []string `json:"policies"`
 }
 
 type RuleProvider struct {
-	Name     string
-	Type     string
-	Behavior string
-	Format   string
-	URL      string
-	Interval int
-	Payload  []string
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Behavior string   `json:"behavior"`
+	Format   string   `json:"format,omitempty"`
+	URL      string   `json:"url,omitempty"`
+	Interval int      `json:"interval,omitempty"`
+	Payload  []string `json:"payload,omitempty"`
 }
 
 type CompiledDevice struct {
-	ID      string
-	MAC     string
-	IPv4    string
-	Profile string
-	Groups  map[string]string // slot (default or rule id) -> mihomo group name
+	ID      string            `json:"id"`
+	MAC     string            `json:"mac"`
+	IPv4    string            `json:"ipv4"`
+	Profile string            `json:"profile"`
+	Groups  map[string]string `json:"groups"` // slot (default or rule id) -> mihomo group name
 }
 
 type CompiledPolicy struct {
-	Reservations   []Reservation
-	SelectorGroups []SelectorGroup
-	RuleProviders  []RuleProvider
-	OverrideRules  []string
-	DefaultRules   []string
-	Devices        []CompiledDevice
+	Reservations    []Reservation    `json:"reservations"`
+	SelectorGroups  []SelectorGroup  `json:"selector_groups"`
+	RuleProviders   []RuleProvider   `json:"rule_providers"`
+	OverrideRules   []string         `json:"override_rules"`
+	DefaultRules    []string         `json:"default_rules"`
+	Devices         []CompiledDevice `json:"devices"`
+	SelectorTargets []string         `json:"selector_targets"`
+	ActionTargets   []string         `json:"action_targets"`
 }
 
 var policyID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -169,6 +176,9 @@ func ValidatePolicySet(set PolicySet) error {
 		if err := validatePolicyList(template.DefaultPolicies, "template "+template.ID+" default_policies"); err != nil {
 			return err
 		}
+		if err := validateUnsupported(template.OnUnsupported, "template "+template.ID+" on_unsupported"); err != nil {
+			return err
+		}
 		templates[template.ID] = template
 	}
 	sets := make(map[string]RuleSet, len(set.RuleSets))
@@ -200,6 +210,9 @@ func ValidatePolicySet(set PolicySet) error {
 			if err := validatePolicyList(profile.DefaultPolicies, "profile "+profile.ID+" default_policies"); err != nil {
 				return err
 			}
+		}
+		if err := validateUnsupported(profile.OnUnsupported, "profile "+profile.ID+" on_unsupported"); err != nil {
+			return err
 		}
 		resolved, err := resolveProfile(profile, templates)
 		if err != nil {
@@ -249,12 +262,31 @@ func ValidatePolicySet(set PolicySet) error {
 }
 
 func ValidatePolicySetForLAN(set PolicySet, gatewayIP string) error {
+	return ValidatePolicySetForLANWithProtected(set, gatewayIP, nil)
+}
+
+// ValidatePolicySetForLANWithProtected validates reservations against the LAN
+// gateway and declared static addresses that must never be reused. It is
+// intentionally separate from live ARP probing, which belongs to start-time
+// validation on a real L2 network.
+func ValidatePolicySetForLANWithProtected(set PolicySet, gatewayIP string, protected []string) error {
 	if err := ValidatePolicySet(set); err != nil {
 		return err
 	}
 	lan := net.ParseIP(gatewayIP).To4()
 	if lan == nil {
 		return fmt.Errorf("gateway LAN IP must be IPv4 when validating device policies")
+	}
+	protectedIPs := make(map[string]bool, len(protected))
+	for _, value := range protected {
+		ip := net.ParseIP(value).To4()
+		if ip == nil {
+			return fmt.Errorf("protected IPv4 %q must be a valid IPv4 address", value)
+		}
+		if ip[0] != lan[0] || ip[1] != lan[1] || ip[2] != lan[2] {
+			return fmt.Errorf("protected IPv4 %s must remain in gateway LAN %d.%d.%d.0/24", ip.String(), lan[0], lan[1], lan[2])
+		}
+		protectedIPs[ip.String()] = true
 	}
 	for _, managed := range set.Devices {
 		ip := net.ParseIP(managed.IPv4).To4()
@@ -266,6 +298,9 @@ func ValidatePolicySetForLAN(set PolicySet, gatewayIP string) error {
 		}
 		if ip.Equal(lan) {
 			return fmt.Errorf("device %q ipv4 must differ from gateway.lan_ip", managed.ID)
+		}
+		if protectedIPs[ip.String()] {
+			return fmt.Errorf("device %q ipv4 %s conflicts with a protected IPv4 address", managed.ID, ip.String())
 		}
 	}
 	return nil
@@ -309,14 +344,19 @@ func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 		defaultGroup := DeviceGroupName(device.ID, "default")
 		device.Groups["default"] = defaultGroup
 		compiled.SelectorGroups = append(compiled.SelectorGroups, SelectorGroup{Name: defaultGroup, Policies: append([]string(nil), profile.DefaultPolicies...)})
+		compiled.SelectorTargets = append(compiled.SelectorTargets, profile.DefaultPolicies...)
 
 		for _, rule := range profile.Rules {
 			action := rule.Action
+			unsupported := resolveUnsupported(rule.OnUnsupported, profile.OnUnsupported)
 			if len(rule.Policies) > 0 {
 				group := DeviceGroupName(device.ID, rule.ID)
 				device.Groups[rule.ID] = group
 				compiled.SelectorGroups = append(compiled.SelectorGroups, SelectorGroup{Name: group, Policies: append([]string(nil), rule.Policies...)})
+				compiled.SelectorTargets = append(compiled.SelectorTargets, rule.Policies...)
 				action = group
+			} else {
+				compiled.ActionTargets = append(compiled.ActionTargets, action)
 			}
 			variants, referenced, err := ruleVariants(rule.Match, ruleSets)
 			if err != nil {
@@ -328,9 +368,15 @@ func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 			for _, variant := range variants {
 				payloads := append([]string{"SRC-IP-CIDR," + ip + "/32"}, variant...)
 				compiled.OverrideRules = append(compiled.OverrideRules, composeRule(payloads, action))
+				if unsupported == "reject" && actionCanFallThrough(action) {
+					compiled.OverrideRules = append(compiled.OverrideRules, composeRule(payloads, "REJECT"))
+				}
 			}
 		}
 		compiled.DefaultRules = append(compiled.DefaultRules, "SRC-IP-CIDR,"+ip+"/32,"+defaultGroup)
+		if resolveUnsupported("", profile.OnUnsupported) == "reject" {
+			compiled.DefaultRules = append(compiled.DefaultRules, "SRC-IP-CIDR,"+ip+"/32,REJECT")
+		}
 		compiled.Devices = append(compiled.Devices, device)
 	}
 
@@ -377,7 +423,7 @@ func DeviceGroup(set PolicySet, deviceID, slot string) (string, error) {
 
 func resolveProfile(profile Profile, templates map[string]Template) (Profile, error) {
 	if profile.Template == "" {
-		return Profile{ID: profile.ID, DefaultPolicies: append([]string(nil), profile.DefaultPolicies...), Rules: append([]Rule(nil), profile.Rules...)}, nil
+		return Profile{ID: profile.ID, DefaultPolicies: append([]string(nil), profile.DefaultPolicies...), OnUnsupported: profile.OnUnsupported, Rules: append([]Rule(nil), profile.Rules...)}, nil
 	}
 	template, exists := templates[profile.Template]
 	if !exists {
@@ -389,7 +435,11 @@ func resolveProfile(profile Profile, templates map[string]Template) (Profile, er
 	}
 	rules := append([]Rule(nil), template.Rules...)
 	rules = append(rules, profile.Rules...)
-	return Profile{ID: profile.ID, DefaultPolicies: defaultPolicies, Rules: rules}, nil
+	onUnsupported := template.OnUnsupported
+	if profile.OnUnsupported != "" {
+		onUnsupported = profile.OnUnsupported
+	}
+	return Profile{ID: profile.ID, DefaultPolicies: defaultPolicies, OnUnsupported: onUnsupported, Rules: rules}, nil
 }
 
 func validateRules(profileID string, rules []Rule, ruleSets map[string]RuleSet) error {
@@ -404,6 +454,9 @@ func validateRules(profileID string, rules []Rule, ruleSets map[string]RuleSet) 
 		seen[rule.ID] = true
 		if err := validateMatch(rule.Match, ruleSets); err != nil {
 			return fmt.Errorf("profile %q rule %q: %w", profileID, rule.ID, err)
+		}
+		if err := validateUnsupported(rule.OnUnsupported, "profile "+profileID+" rule "+rule.ID+" on_unsupported"); err != nil {
+			return err
 		}
 		if len(rule.Policies) > 0 {
 			if rule.Action != "" {
@@ -614,6 +667,34 @@ func validID(value string) bool {
 
 func validPolicy(value string) bool {
 	return value != "" && strings.TrimSpace(value) == value && !strings.ContainsAny(value, ",\t\r\n")
+}
+
+func validateUnsupported(value string, label string) error {
+	switch value {
+	case "", "reject", "fallthrough":
+		return nil
+	default:
+		return fmt.Errorf("%s must be reject or fallthrough", label)
+	}
+}
+
+func resolveUnsupported(ruleValue, profileValue string) string {
+	if ruleValue != "" {
+		return ruleValue
+	}
+	if profileValue != "" {
+		return profileValue
+	}
+	return "reject"
+}
+
+func actionCanFallThrough(action string) bool {
+	switch strings.ToUpper(action) {
+	case "DIRECT", "REJECT", "REJECT-DROP", "REJECT-TINYGIF":
+		return false
+	default:
+		return true
+	}
 }
 
 func validatePolicyList(policies []string, label string) error {

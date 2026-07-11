@@ -39,9 +39,6 @@ func (m Manager) Start() (int, error) {
 	if err := m.Check(); err != nil {
 		return 0, err
 	}
-	if err := m.WriteConfig(); err != nil {
-		return 0, err
-	}
 	binary, err := resolveBinary(m.cfg.DHCP.Binary)
 	if err != nil {
 		return 0, err

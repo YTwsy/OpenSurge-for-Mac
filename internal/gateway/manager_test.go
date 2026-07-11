@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -241,6 +242,75 @@ func TestPreflightRejectsLANIPOnAnotherInterface(t *testing.T) {
 	}
 }
 
+func TestCheckReservationConflictsRejectsObservedDifferentMACInSameWiFiDHCP(t *testing.T) {
+	bundle, err := device.CompilePolicyBundle(device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices:  []device.ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.1.101", Profile: "home"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
+	cfg.DevicePolicy.Bundle = &bundle
+	manager := Manager{cfg: cfg, deps: gatewayDeps{
+		probeReservationIP: func(ip, expectedMAC string) error {
+			if ip != "192.168.1.101" || expectedMAC != "aa:bb:cc:dd:ee:01" {
+				t.Fatalf("probe args = %q/%q", ip, expectedMAC)
+			}
+			return errors.New("reserved IPv4 already present")
+		},
+	}}
+	if err := manager.checkReservationConflicts(manager.deps); err == nil || !strings.Contains(err.Error(), "already present") {
+		t.Fatalf("checkReservationConflicts() error = %v", err)
+	}
+}
+
+func TestStartValidatesMihomoBeforeEnablingForwarding(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "lan0"
+	cfg.Gateway.UpstreamInterface = "wan0"
+	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	mihomoManager := &fakeMihomo{validateErr: errors.New("duplicate group name")}
+	sysctlManager := &fakeSysctl{current: "0"}
+	manager := Manager{
+		cfg:   cfg,
+		paths: runtime.NewPaths(cfg),
+		deps: gatewayDeps{
+			geteuid:     func() int { return 0 },
+			loadState:   runtime.LoadState,
+			saveState:   runtime.SaveState,
+			removeState: runtime.RemoveState,
+			ensure:      runtime.Ensure,
+			newDHCP:     func(config.Config, runtime.Paths) dhcpService { return &fakeDHCP{} },
+			newMihomo:   func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+			newPF:       func(config.Config, runtime.Paths) pfService { return &fakePF{} },
+			newSysctl:   func() sysctlService { return sysctlManager },
+			interfaces:  func() ([]net.Interface, error) { return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil },
+			interfaceByName: func(name string) (*net.Interface, error) {
+				return &net.Interface{Name: name}, nil
+			},
+			interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
+				if iface.Name != "lan0" {
+					return nil, nil
+				}
+				return []net.Addr{&net.IPNet{IP: net.ParseIP("192.168.50.1"), Mask: net.CIDRMask(24, 32)}}, nil
+			},
+		},
+	}
+	if err := manager.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "duplicate group") {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if sysctlManager.enableCalled {
+		t.Fatal("Start() enabled forwarding before mihomo validation")
+	}
+	if _, exists, err := runtime.LoadState(manager.paths.StateFile); err != nil || exists {
+		t.Fatalf("runtime state after validation failure = exists=%v err=%v", exists, err)
+	}
+}
+
 type fakeDHCP struct {
 	checkErr    error
 	writeErr    error
@@ -270,12 +340,13 @@ func (f *fakeDHCP) Stop(int) error {
 }
 
 type fakeMihomo struct {
-	checkErr   error
-	writeErr   error
-	startPID   int
-	startErr   error
-	stopErr    error
-	stopCalled bool
+	checkErr    error
+	writeErr    error
+	validateErr error
+	startPID    int
+	startErr    error
+	stopErr     error
+	stopCalled  bool
 }
 
 func (f *fakeMihomo) Check() error {
@@ -284,6 +355,10 @@ func (f *fakeMihomo) Check() error {
 
 func (f *fakeMihomo) WriteConfig() error {
 	return f.writeErr
+}
+
+func (f *fakeMihomo) ValidateWrittenConfig() error {
+	return f.validateErr
 }
 
 func (f *fakeMihomo) Start() (int, error) {

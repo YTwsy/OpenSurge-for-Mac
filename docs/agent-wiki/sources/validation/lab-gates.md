@@ -30,9 +30,11 @@ HTTPS，以及清理行为。
 
 `make lab-test-tun-device-policy` 是每设备策略的数据面门槛。它让两个 Lima 客户端
 分别获得 `.101` 和 `.102` 的 MAC 绑定租约，要求各自的 `device/<id>/default`
-selector 独立改变 TUN 出口，最后要求设备级域名 `REJECT` 生效。它覆盖设备身份、
-设备默认出口和设备覆盖；模板、domain/protocol 组合与 HTTP/MRS rule-provider 的
-编译由 `make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
+selector 独立改变 TUN 出口，最后要求设备级域名 `REJECT` 生效。它还要求 applied
+snapshot/state digest、一致的 lease identity、desired 文件修改后的 drift，以及 HTTP-only
+selector 上 UDP/443 记录为 `REJECT` 而非 fall through 到 `DIRECT`。它覆盖设备身份、
+设备默认出口和设备覆盖；模板、domain/protocol 组合与 HTTP/MRS rule-provider 的编译由
+`make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
 
 ## 什么时候必须跑 lab
 

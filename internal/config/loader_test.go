@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -159,6 +160,27 @@ device_policy:
 	}
 	if cfg.DevicePolicy.File != policyPath {
 		t.Fatalf("DevicePolicy.File = %q, want %q", cfg.DevicePolicy.File, policyPath)
+	}
+}
+
+func TestLoadRejectsDeviceReservationThatConflictsWithProtectedIPv4(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{"profiles":[{"id":"default","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"default"}]}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+device_policy:
+  file: "./devices.json"
+  protected_ipv4: "192.168.50.101,192.168.50.253"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(configPath); err == nil || !strings.Contains(err.Error(), "conflicts with a protected") {
+		t.Fatalf("Load() error = %v", err)
 	}
 }
 

@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/gateway"
 	"open-mihomo-gateway/internal/mihomo"
+	"open-mihomo-gateway/internal/runtime"
 )
 
 func TestRenderMihomoCommandPrintsOverlayConfig(t *testing.T) {
@@ -252,14 +254,14 @@ runtime:
 	if len(payload.Checks) == 0 {
 		t.Fatalf("doctor checks empty")
 	}
-	foundRenderCheck := false
+	foundValidationCheck := false
 	for _, check := range payload.Checks {
-		if check.Name == "mihomo config render" {
-			foundRenderCheck = true
+		if check.Name == "mihomo config validation" {
+			foundValidationCheck = true
 		}
 	}
-	if !foundRenderCheck {
-		t.Fatalf("doctor json missing mihomo config render check: %#v", payload.Checks)
+	if !foundValidationCheck {
+		t.Fatalf("doctor json missing mihomo config validation check: %#v", payload.Checks)
 	}
 }
 
@@ -825,11 +827,83 @@ func TestDevicesCommandPrintsConfiguredPolicyAndLeaseState(t *testing.T) {
 		t.Fatalf("devices = %#v", payload.Devices)
 	}
 	device := payload.Devices[0]
-	if device.ID != "phone" || device.IPv4 != "192.168.50.101" || device.Hostname != "phone-host" || !device.Online {
+	if device.ID != "phone" || device.IPv4 != "192.168.50.101" || device.Hostname != "phone-host" || !device.LeaseMatch || !device.PolicyIdentityReady || !device.Applied {
 		t.Fatalf("device = %#v", device)
 	}
 	if device.Groups["default"] != "device/phone/default" || device.Groups["streaming"] != "device/phone/streaming" {
 		t.Fatalf("groups = %#v", device.Groups)
+	}
+}
+
+func TestDevicesCommandDoesNotTreatWrongIPLeaseAsPolicyIdentityReady(t *testing.T) {
+	configPath := writeDevicePolicyConfig(t)
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatched := fmt.Sprintf("%d aa:bb:cc:dd:ee:01 192.168.50.141 stale-host 01:aa\n", time.Now().Add(time.Hour).Unix())
+	if err := os.WriteFile(runtime.NewPaths(cfg).LeaseFile, []byte(mismatched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"devices", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+	var payload devicePoliciesJSON
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatal(err)
+	}
+	device := payload.Devices[0]
+	if !device.LeaseMACMatch || device.LeaseIP != "192.168.50.141" || device.LeaseIPMatch || device.LeaseMatch || device.PolicyIdentityReady {
+		t.Fatalf("device = %#v", device)
+	}
+}
+
+func TestDevicesCommandUsesAppliedSnapshotAndReportsDesiredDrift(t *testing.T) {
+	configPath := writeDevicePolicyConfig(t)
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired := `{"profiles":[{"id":"new","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.141","profile":"new"}]}`
+	if err := os.WriteFile(cfg.DevicePolicy.File, []byte(desired), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"devices", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 {
+		t.Fatalf("run() exit = %d, output:\n%s", exitCode, output)
+	}
+	var payload devicePoliciesJSON
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatal(err)
+	}
+	device := payload.Devices[0]
+	if !device.Applied || device.PolicySource != "applied" || !device.Drift || device.IPv4 != "192.168.50.101" || device.DesiredDigest == device.AppliedDigest {
+		t.Fatalf("device = %#v", device)
+	}
+}
+
+func TestStopCommandDoesNotDependOnValidNextDevicePolicy(t *testing.T) {
+	previous := newGatewayManager
+	t.Cleanup(func() { newGatewayManager = previous })
+	manager := &fakeGatewayManager{}
+	newGatewayManager = func(config.Config) gatewayManager { return manager }
+	configPath := writeDevicePolicyConfig(t)
+	cfg, err := config.LoadRuntime(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.DevicePolicy.File, []byte(`{"devices":`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if exitCode := run([]string{"stop", "--config", configPath}); exitCode != 0 || !manager.stopCalled {
+		t.Fatalf("stop exit=%d called=%v", exitCode, manager.stopCalled)
 	}
 }
 
@@ -1277,6 +1351,17 @@ func writeDevicePolicyConfig(t *testing.T) string {
 	configPath := filepath.Join(dir, "config.yaml")
 	configBody := "runtime:\n  dir: \"" + runtimeDir + "\"\n\ndevice_policy:\n  file: \"" + policyPath + "\"\n"
 	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := device.WritePolicyBundleSnapshot(paths.DevicePolicyApplied, *cfg.DevicePolicy.Bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{DevicePolicyDigest: cfg.DevicePolicy.Bundle.Digest}); err != nil {
 		t.Fatal(err)
 	}
 	return configPath

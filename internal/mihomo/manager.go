@@ -33,14 +33,21 @@ func (m Manager) WriteConfig() error {
 }
 
 func (m Manager) ValidateConfig() error {
-	binary, err := resolveBinary(m.cfg.Mihomo.Binary)
-	if err != nil {
-		return err
-	}
 	if err := runtime.Ensure(m.paths); err != nil {
 		return err
 	}
 	if err := m.WriteConfig(); err != nil {
+		return err
+	}
+	return m.ValidateWrittenConfig()
+}
+
+// ValidateWrittenConfig validates the already-rendered configuration. Gateway
+// startup calls this before enabling forwarding, and Start deliberately does
+// not re-read or re-render policy input afterwards.
+func (m Manager) ValidateWrittenConfig() error {
+	binary, err := resolveBinary(m.cfg.Mihomo.Binary)
+	if err != nil {
 		return err
 	}
 	return validateConfig(binary, m.configDir(), m.paths.MihomoConfig)
@@ -51,12 +58,9 @@ func (m Manager) Start() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := m.WriteConfig(); err != nil {
-		return 0, err
-	}
 	configDir := m.configDir()
-	if err := validateConfig(binary, configDir, m.paths.MihomoConfig); err != nil {
-		return 0, err
+	if _, err := os.Stat(m.paths.MihomoConfig); err != nil {
+		return 0, fmt.Errorf("prepared mihomo config: %w", err)
 	}
 	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o644); err != nil {
 		return 0, err

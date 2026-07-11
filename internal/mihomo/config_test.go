@@ -300,6 +300,70 @@ func TestRenderConfigRejectsImportedRuleAfterTerminalMatchWhenDevicePolicyEnable
 	}
 }
 
+func TestRenderConfigRejectsImportedPolicyNamespaceCollisionsAndUnknownTargets(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+		policy  string
+		want    string
+	}{
+		{
+			name: "generated group collision",
+			profile: `proxy-groups:
+  - name: device/phone/default
+    type: select
+    proxies: [DIRECT]
+rules:
+  - MATCH,DIRECT
+`,
+			policy: `{"profiles":[{"id":"home","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home"}]}`,
+			want:   "occupies reserved device/ namespace",
+		},
+		{
+			name: "unknown policy target",
+			profile: `proxies: []
+rules:
+  - MATCH,DIRECT
+`,
+			policy: `{"profiles":[{"id":"home","default_policies":["Missing"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home"}]}`,
+			want:   "unknown imported proxy or group \"Missing\"",
+		},
+		{
+			name: "generated provider collision",
+			profile: `rule-providers:
+  open-surge-ruleset-media:
+    type: inline
+    behavior: domain
+    payload: [example.com]
+rules:
+  - MATCH,DIRECT
+`,
+			policy: `{"rule_sets":[{"id":"media","behavior":"domain","payload":["example.com"]}],"profiles":[{"id":"home","default_policies":["DIRECT"],"rules":[{"id":"media","match":{"rule_sets":["media"]},"action":"DIRECT"}]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home"}]}`,
+			want:   "occupies reserved open-surge-ruleset- namespace",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			profilePath := filepath.Join(dir, "profile.yaml")
+			policyPath := filepath.Join(dir, "policy.json")
+			if err := os.WriteFile(profilePath, []byte(tt.profile), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(policyPath, []byte(tt.policy), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg := config.Default()
+			cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+			cfg.Mihomo.Profile = profilePath
+			cfg.DevicePolicy.File = policyPath
+			if _, err := RenderConfig(cfg); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("RenderConfig() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func assertOrdered(t *testing.T, value string, ordered ...string) {
 	t.Helper()
 	position := -1

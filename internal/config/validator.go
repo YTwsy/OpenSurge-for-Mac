@@ -10,6 +10,17 @@ import (
 )
 
 func Validate(cfg Config) error {
+	return validate(cfg, true)
+}
+
+// ValidateRuntime omits the mutable desired device-policy document. It is for
+// operations that consume the persisted applied snapshot rather than deploying
+// a new policy.
+func ValidateRuntime(cfg Config) error {
+	return validate(cfg, false)
+}
+
+func validate(cfg Config, checkDevicePolicy bool) error {
 	switch cfg.Gateway.Mode {
 	case GatewayModeIsolatedLAN, GatewayModeSameLAN, GatewayModeSameWiFiDHCP:
 	default:
@@ -38,8 +49,10 @@ func Validate(cfg Config) error {
 			return fmt.Errorf("dhcp.lease_time is required")
 		}
 	}
-	if err := validateDevicePolicy(cfg); err != nil {
-		return err
+	if checkDevicePolicy {
+		if err := validateDevicePolicy(cfg); err != nil {
+			return err
+		}
 	}
 	if net.ParseIP(cfg.DNS.Listen).To4() == nil {
 		return fmt.Errorf("dns.listen must be a valid IPv4 address")
@@ -109,23 +122,53 @@ func Validate(cfg Config) error {
 
 func validateDevicePolicy(cfg Config) error {
 	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
+		if len(cfg.DevicePolicy.ProtectedIPv4) > 0 {
+			return fmt.Errorf("device_policy.protected_ipv4 requires device_policy.file")
+		}
 		return nil
 	}
-	info, err := os.Stat(cfg.DevicePolicy.File)
-	if err != nil {
-		return fmt.Errorf("device_policy.file: %w", err)
+	bundle := cfg.DevicePolicy.Bundle
+	if bundle == nil {
+		var err error
+		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File)
+		if err != nil {
+			return fmt.Errorf("device_policy.file: %w", err)
+		}
 	}
-	if info.IsDir() {
-		return fmt.Errorf("device_policy.file must not be a directory")
-	}
-	set, err := device.LoadPolicySet(cfg.DevicePolicy.File)
-	if err != nil {
-		return fmt.Errorf("device_policy.file: %w", err)
-	}
-	if err := device.ValidatePolicySetForLAN(set, cfg.Gateway.LANIP); err != nil {
+	if err := device.ValidatePolicySetForLANWithProtected(bundle.Policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	return nil
+}
+
+// PrepareDevicePolicy loads and compiles the policy exactly once for a config
+// instance. Gateway startup, DHCP rendering and mihomo rendering all consume
+// the resulting immutable bundle.
+func PrepareDevicePolicy(cfg *Config) error {
+	if strings.TrimSpace(cfg.DevicePolicy.File) == "" || cfg.DevicePolicy.Bundle != nil {
+		return nil
+	}
+	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File)
+	if err != nil {
+		return fmt.Errorf("device_policy.file: %w", err)
+	}
+	cfg.DevicePolicy.Bundle = bundle
+	return nil
+}
+
+func loadDevicePolicyBundle(path string) (*device.PolicyBundle, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("must not be a directory")
+	}
+	bundle, err := device.LoadPolicyBundle(path)
+	if err != nil {
+		return nil, err
+	}
+	return &bundle, nil
 }
 
 func validateDHCPRangeInLAN(cfg Config) error {

@@ -18,6 +18,22 @@ The device-policy file is resolved relative to the gateway configuration file.
 All registered IPv4 addresses must be unique, must remain in the gateway `/24`,
 and must not be the network, broadcast, or `gateway.lan_ip` address.
 
+For `same_wifi_dhcp`, declare every router, recovery client, LAN proxy, or
+other static address that must never become a reservation:
+
+```yaml
+device_policy:
+  file: "./devices.json"
+  protected_ipv4: "192.168.1.1,192.168.1.21,192.168.1.101"
+```
+
+Reservations may be inside the dynamic DHCP range; `devices --format json`
+marks that relation explicitly. A reservation may not equal a protected
+address. At same-Wi-Fi DHCP start, OpenSurge also warms ARP and refuses a
+reservation when a different MAC is already observed. No ARP reply is not a
+guarantee that an address is vacant, so router-DHCP isolation and recovery
+evidence remain required.
+
 ## Model
 
 There are no built-in household, parental-control, streaming, or vendor rule
@@ -82,6 +98,12 @@ managed or imported global mihomo profile.
 built-in policy such as `DIRECT` or `REJECT`, or to an existing global mihomo
 group.
 
+Policy candidates and actions are checked against the imported profile's
+proxy/group namespace before start. `DIRECT`, `REJECT`, `REJECT-DROP`, and
+`REJECT-TINYGIF` are the explicit built-ins. OpenSurge reserves `device/` for
+generated groups and `open-surge-ruleset-` for generated rule providers, so an
+imported profile may not occupy those namespaces.
+
 ## Matching and precedence
 
 `domains`, `ip_cidrs`, `protocols` (`tcp` or `udp`), `ports`, and `rule_sets`
@@ -103,6 +125,19 @@ Generated ordering is deliberate:
 An imported profile must keep `MATCH` terminal. OpenSurge rejects an imported
 profile that places later rules after a terminal `MATCH`, because the device
 default could never be reached safely.
+
+## UDP unsupported-outbound behavior
+
+Mihomo continues downward when UDP selects an outbound that does not support
+UDP. Device selectors therefore compile as fail-closed by default: every
+selector/default rule is immediately followed by the same condition with
+`REJECT`. This prevents QUIC or other UDP traffic from silently reaching a
+later global rule or `MATCH,DIRECT`.
+
+Set `on_unsupported: "fallthrough"` on a profile, template, or individual
+rule only when a later rule is intentionally responsible for that fallback.
+The default is `"reject"`. A proxy/group name being present does not prove UDP
+capability; provider-backed candidates require live traffic evidence.
 
 ## Large rule sets and templates
 
@@ -126,6 +161,26 @@ without cloning a full mihomo profile.
 
 The second command changes only the named device selector. It does not switch
 another device's selector or the global policy group.
+
+## Desired and applied policy
+
+`start` compiles the policy once, renders DHCP and mihomo from that same
+immutable bundle, validates mihomo before forwarding is enabled, and writes
+`runtime/device-policy.applied.json` plus its digest in `runtime/state.json`.
+`devices` and `device-policy-select` use that applied snapshot while the
+gateway is running. `devices` compares the current desired digest and reports
+`drift`; an invalid desired file is returned as `desired_error` without hiding
+the running applied policy.
+
+Editing `devices.json` does not reload the gateway. For this MVP, use `stop`,
+update the file, then `start`. Stale lease rows for a managed MAC with the old
+reserved IPv4 are removed at startup; wait for a fresh DHCP ACK before testing
+policy traffic.
+
+`lease_active` means only that dnsmasq has an unexpired lease. It is not a
+reachability claim. `policy_identity_ready` is true only when the gateway is
+using an applied policy and the lease MAC, IPv4, and expiry all match the
+applied reservation.
 
 ## Validation boundary
 

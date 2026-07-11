@@ -5,10 +5,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/mihomo"
+	"open-mihomo-gateway/internal/runtime"
 )
 
 type Check struct {
@@ -20,6 +22,8 @@ type Check struct {
 type Report struct {
 	Checks []Check `json:"checks"`
 }
+
+var validateMihomoConfig = validateMihomoConfigWithEngine
 
 func Run(cfg config.Config) Report {
 	checks := []Check{
@@ -38,10 +42,23 @@ func Run(cfg config.Config) Report {
 }
 
 func checkMihomoConfigRender(cfg config.Config) Check {
-	if _, err := mihomo.RenderConfig(cfg); err != nil {
-		return Check{Name: "mihomo config render", OK: false, Message: err.Error()}
+	if err := validateMihomoConfig(cfg); err != nil {
+		return Check{Name: "mihomo config validation", OK: false, Message: err.Error()}
 	}
-	return Check{Name: "mihomo config render", OK: true}
+	return Check{Name: "mihomo config validation", OK: true}
+}
+
+func validateMihomoConfigWithEngine(cfg config.Config) error {
+	dir, err := os.MkdirTemp("", "open-surge-doctor-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	copy := cfg
+	copy.Runtime.Dir = dir
+	copy.Mihomo.Config = filepath.Join(dir, "mihomo.yaml")
+	paths := runtime.NewPaths(copy)
+	return mihomo.New(copy, paths).ValidateConfig()
 }
 
 func (r Report) Healthy() bool {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/pf"
@@ -37,6 +38,7 @@ type dhcpService interface {
 type mihomoService interface {
 	Check() error
 	WriteConfig() error
+	ValidateWrittenConfig() error
 	Start() (int, error)
 	Stop(int) error
 }
@@ -58,19 +60,20 @@ type sysctlService interface {
 }
 
 type gatewayDeps struct {
-	geteuid         func() int
-	loadState       func(string) (runtime.State, bool, error)
-	saveState       func(string, runtime.State) error
-	removeState     func(string) error
-	ensure          func(runtime.Paths) error
-	newDHCP         func(config.Config, runtime.Paths) dhcpService
-	newMihomo       func(config.Config, runtime.Paths) mihomoService
-	newPF           func(config.Config, runtime.Paths) pfService
-	newSysctl       func() sysctlService
-	interfaces      func() ([]net.Interface, error)
-	interfaceByName func(string) (*net.Interface, error)
-	interfaceAddrs  func(*net.Interface) ([]net.Addr, error)
-	now             func() time.Time
+	geteuid            func() int
+	loadState          func(string) (runtime.State, bool, error)
+	saveState          func(string, runtime.State) error
+	removeState        func(string) error
+	ensure             func(runtime.Paths) error
+	newDHCP            func(config.Config, runtime.Paths) dhcpService
+	newMihomo          func(config.Config, runtime.Paths) mihomoService
+	newPF              func(config.Config, runtime.Paths) pfService
+	newSysctl          func() sysctlService
+	interfaces         func() ([]net.Interface, error)
+	interfaceByName    func(string) (*net.Interface, error)
+	interfaceAddrs     func(*net.Interface) ([]net.Addr, error)
+	probeReservationIP func(ip string, expectedMAC string) error
+	now                func() time.Time
 }
 
 func defaultGatewayDeps() gatewayDeps {
@@ -97,7 +100,8 @@ func defaultGatewayDeps() gatewayDeps {
 		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
 			return iface.Addrs()
 		},
-		now: time.Now,
+		probeReservationIP: probeReservationIPConflict,
+		now:                time.Now,
 	}
 }
 
@@ -118,6 +122,12 @@ func (m Manager) Start(_ context.Context) error {
 	} else if exists {
 		return fmt.Errorf("gateway state already exists; run stop first")
 	}
+	if err := config.PrepareDevicePolicy(&m.cfg); err != nil {
+		return err
+	}
+	if err := config.Validate(m.cfg); err != nil {
+		return err
+	}
 	if err := deps.ensure(m.paths); err != nil {
 		return err
 	}
@@ -129,6 +139,9 @@ func (m Manager) Start(_ context.Context) error {
 	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
 		return err
 	}
+	if err := m.checkReservationConflicts(deps); err != nil {
+		return err
+	}
 	if err := mihomoManager.WriteConfig(); err != nil {
 		return err
 	}
@@ -137,6 +150,17 @@ func (m Manager) Start(_ context.Context) error {
 	}
 	if err := pfManager.WriteAnchor(); err != nil {
 		return err
+	}
+	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
+		return err
+	}
+	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
+		if err := dhcp.ReconcilePolicyLeases(m.paths.LeaseFile, bundle.Compiled.Reservations); err != nil {
+			return err
+		}
+		if err := device.WritePolicyBundleSnapshot(m.paths.DevicePolicyApplied, *bundle); err != nil {
+			return err
+		}
 	}
 
 	ipForwardingBefore, err := sysctlManager.Current()
@@ -153,7 +177,11 @@ func (m Manager) Start(_ context.Context) error {
 		IPForwardingBefore: ipForwardingBefore,
 		PFEnabledBefore:    pfEnabledBefore,
 	}
+	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
+		state.DevicePolicyDigest = bundle.Digest
+	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
+		_ = device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied)
 		return err
 	}
 
@@ -228,6 +256,7 @@ func (m Manager) Stop(_ context.Context) error {
 		cleanupErr = errors.Join(cleanupErr, sysctlManager.Restore(state.IPForwardingBefore))
 	}
 	cleanupErr = errors.Join(cleanupErr, deps.removeState(m.paths.StateFile))
+	cleanupErr = errors.Join(cleanupErr, device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied))
 	if cleanupErr != nil {
 		return cleanupErr
 	}
@@ -339,6 +368,7 @@ func (m Manager) rollback(cause error, state runtime.State, dhcpManager dhcpServ
 	}
 	cleanupErr = errors.Join(cleanupErr, sysctlManager.Restore(state.IPForwardingBefore))
 	cleanupErr = errors.Join(cleanupErr, deps.removeState(m.paths.StateFile))
+	cleanupErr = errors.Join(cleanupErr, device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied))
 	if cleanupErr != nil {
 		return fmt.Errorf("%w; rollback failed: %v", cause, cleanupErr)
 	}

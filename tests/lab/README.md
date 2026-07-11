@@ -90,8 +90,11 @@ does not prove a real subscription node or remote exit IP.
 devices. It assigns them fixed `.101` and `.102` DHCP leases, proves their
 per-device selector groups can choose different egress paths without affecting
 each other, then proves a device-specific domain `REJECT`. It is the required
-data-plane gate for device identity, device defaults, and device overrides;
-rule/template/provider compilation stays in unit tests.
+data-plane gate for device identity, device defaults, and device overrides. It
+also verifies the applied bundle/state digest, both exact DHCP identities,
+desired-vs-applied drift after a policy-file edit, and a UDP/443 request through
+an HTTP-only selected outbound that must log `REJECT` instead of falling through
+to `DIRECT`. Rule/template/provider compilation stays in unit tests.
 
 Treat `make lab-test` as the required local gate for high-risk network changes:
 DHCP/DNS behavior, mihomo process or config generation, pf/NAT rules,

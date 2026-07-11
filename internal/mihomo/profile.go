@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 var importableProfileSections = map[string]bool{
@@ -24,17 +26,40 @@ func LoadImportedProfileSections(path string) (string, error) {
 }
 
 func loadImportedProfileBlocks(path string) ([]importedProfileBlock, error) {
+	profile, err := loadImportedProfile(path)
+	if err != nil {
+		return nil, err
+	}
+	return profile.blocks, nil
+}
+
+type importedProfile struct {
+	blocks    []importedProfileBlock
+	inventory importedProfileInventory
+}
+
+type importedProfileInventory struct {
+	targets        map[string]string
+	proxyProviders map[string]bool
+	ruleProviders  map[string]bool
+}
+
+func loadImportedProfile(path string) (importedProfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read imported mihomo profile: %w", err)
+		return importedProfile{}, fmt.Errorf("read imported mihomo profile: %w", err)
+	}
+	inventory, err := inspectImportedProfileYAML(data)
+	if err != nil {
+		return importedProfile{}, fmt.Errorf("parse imported mihomo profile: %w", err)
 	}
 
 	blocks, found := extractImportableProfileSections(string(data))
 	if !found["rules"] {
-		return nil, fmt.Errorf("imported mihomo profile must contain a top-level rules section")
+		return importedProfile{}, fmt.Errorf("imported mihomo profile must contain a top-level rules section")
 	}
 	if len(blocks) == 0 {
-		return nil, fmt.Errorf("imported mihomo profile contains no importable sections")
+		return importedProfile{}, fmt.Errorf("imported mihomo profile contains no importable sections")
 	}
 	profileDir := filepath.Dir(path)
 	for i, block := range blocks {
@@ -42,12 +67,105 @@ func loadImportedProfileBlocks(path string) ([]importedProfileBlock, error) {
 			blocks[i].text = rewriteProviderPaths(block.text, profileDir)
 		}
 	}
-	return blocks, nil
+	return importedProfile{blocks: blocks, inventory: inventory}, nil
 }
 
 type importedProfileBlock struct {
 	key  string
 	text string
+}
+
+func inspectImportedProfileYAML(data []byte) (importedProfileInventory, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return importedProfileInventory{}, err
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return importedProfileInventory{}, fmt.Errorf("top level must be a mapping")
+	}
+	root := document.Content[0]
+	sections := make(map[string]*yaml.Node, len(root.Content)/2)
+	for i := 0; i < len(root.Content); i += 2 {
+		key, value := root.Content[i], root.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			return importedProfileInventory{}, fmt.Errorf("top-level key must be a scalar")
+		}
+		if _, exists := sections[key.Value]; exists {
+			return importedProfileInventory{}, fmt.Errorf("duplicate top-level section %q", key.Value)
+		}
+		sections[key.Value] = value
+	}
+	inventory := importedProfileInventory{
+		targets:        map[string]string{},
+		proxyProviders: map[string]bool{},
+		ruleProviders:  map[string]bool{},
+	}
+	if err := collectNamedSequence(sections["proxies"], "proxies", inventory.targets); err != nil {
+		return importedProfileInventory{}, err
+	}
+	if err := collectNamedSequence(sections["proxy-groups"], "proxy-groups", inventory.targets); err != nil {
+		return importedProfileInventory{}, err
+	}
+	if err := collectNamedMapping(sections["proxy-providers"], "proxy-providers", inventory.proxyProviders); err != nil {
+		return importedProfileInventory{}, err
+	}
+	if err := collectNamedMapping(sections["rule-providers"], "rule-providers", inventory.ruleProviders); err != nil {
+		return importedProfileInventory{}, err
+	}
+	return inventory, nil
+}
+
+func collectNamedSequence(node *yaml.Node, section string, names map[string]string) error {
+	if node == nil {
+		return nil
+	}
+	if node.Kind != yaml.SequenceNode {
+		return fmt.Errorf("%s must be a sequence", section)
+	}
+	for _, item := range node.Content {
+		if item.Kind != yaml.MappingNode {
+			return fmt.Errorf("%s entries must be mappings", section)
+		}
+		name, ok := mappingScalar(item, "name")
+		if !ok || strings.TrimSpace(name) == "" {
+			return fmt.Errorf("%s entry is missing a scalar name", section)
+		}
+		if prior, exists := names[name]; exists {
+			return fmt.Errorf("duplicate imported target name %q in %s and %s", name, prior, section)
+		}
+		names[name] = section
+	}
+	return nil
+}
+
+func collectNamedMapping(node *yaml.Node, section string, names map[string]bool) error {
+	if node == nil {
+		return nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("%s must be a mapping", section)
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Kind != yaml.ScalarNode || strings.TrimSpace(key.Value) == "" {
+			return fmt.Errorf("%s key must be a non-empty scalar", section)
+		}
+		if names[key.Value] {
+			return fmt.Errorf("duplicate %s name %q", section, key.Value)
+		}
+		names[key.Value] = true
+	}
+	return nil
+}
+
+func mappingScalar(node *yaml.Node, wanted string) (string, bool) {
+	for i := 0; i < len(node.Content); i += 2 {
+		key, value := node.Content[i], node.Content[i+1]
+		if key.Kind == yaml.ScalarNode && key.Value == wanted && value.Kind == yaml.ScalarNode {
+			return value.Value, true
+		}
+	}
+	return "", false
 }
 
 func extractImportableProfileSections(profile string) ([]importedProfileBlock, map[string]bool) {

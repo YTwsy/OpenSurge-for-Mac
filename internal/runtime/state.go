@@ -14,6 +14,7 @@ type State struct {
 	IPForwardingBefore string    `json:"ip_forwarding_before,omitempty"`
 	PFEnabledBefore    bool      `json:"pf_enabled_before"`
 	PFAnchorLoaded     bool      `json:"pf_anchor_loaded"`
+	DevicePolicyDigest string    `json:"device_policy_digest,omitempty"`
 	StartedAt          time.Time `json:"started_at"`
 }
 

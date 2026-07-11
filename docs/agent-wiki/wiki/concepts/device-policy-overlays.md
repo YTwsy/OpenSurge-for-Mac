@@ -22,11 +22,23 @@ mihomo YAML”。
 `examples/device-policy.example.json`。设备 IPv4 必须唯一、在 gateway `/24` 内，
 且不能是网段、广播或网关地址。
 
+same-Wi‑Fi DHCP 场景还必须将 router、recovery device、LAN proxy 等地址写入
+`device_policy.protected_ipv4`；reservation 不得占用。启动前会对 reservation 做 ARP
+冲突探测：观察到不同 MAC 是硬错误；无应答不等于地址必定空闲，因此第二 DHCP server
+仍应由真实客户端的 OFFER/ACK server identifier 证据排除。
+
 ## 和 imported profile 的关系
 
 device override 规则在 imported/managed 全局规则之前，设备默认规则在全局规则之后，
 最终 `MATCH` 之前。imported profile 的 `MATCH` 必须是 terminal；其后还有实质规则
 时，渲染会失败，以免设备默认出口被无声吞掉。
+
+imported profile 使用 YAML AST 收集 proxy/group/provider 名称。生成的 `device/` group 和
+`open-surge-ruleset-` provider namespace 不能与 imported 内容冲突；default candidate、rule
+candidate 与 action 也必须引用已有目标或显式内置目标。
+
+mihomo 对不支持 UDP 的出口会继续向下匹配。设备 selector/default 因而默认在同条件后插入
+`REJECT` fallback；只有 policy 显式写 `on_unsupported: "fallthrough"` 才保留向下匹配。
 
 大型共享 domain/IP 列表使用 HTTP rule-provider；`mrs` 仅适用于 `domain` 和
 `ipcidr` behavior。此处只是配置编译能力，并不代表内置或验证了任何第三方规则集。
@@ -38,8 +50,9 @@ imported profile 的排序。
 
 `make lab-test-tun-device-policy` 是数据面门槛：它使用两个 Lima VM，验证 `.101` 与
 `.102` 的固定租约、两台设备不同的 TUN 出口、互不影响的 selector 切换，以及设备级
-域名 `REJECT`。它不需要、也不会为操作者写的每条 domain/protocol/template 规则重复
-运行 Lab。
+域名 `REJECT`。它还验证 applied snapshot/state digest、精确 lease identity、desired drift，
+以及 HTTP-only selector 选中时 UDP/443 的 fail-closed `REJECT`。它不需要、也不会为
+操作者写的每条 domain/protocol/template 规则重复运行 Lab。
 
 当前只支持 MAC 绑定 IPv4 DHCP 租约和 IPv4 `SRC-IP-CIDR` 身份；未提供 IPv6 设备
 身份或 mihomo 内 MAC 匹配。

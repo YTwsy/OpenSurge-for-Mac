@@ -8,31 +8,33 @@ import (
 )
 
 type Paths struct {
-	Dir            string
-	LogDir         string
-	StateFile      string
-	DNSMasqConf    string
-	DNSMasqPIDFile string
-	DNSMasqLog     string
-	MihomoConfig   string
-	MihomoLog      string
-	PFAnchor       string
-	LeaseFile      string
+	Dir                 string
+	LogDir              string
+	StateFile           string
+	DNSMasqConf         string
+	DNSMasqPIDFile      string
+	DNSMasqLog          string
+	MihomoConfig        string
+	MihomoLog           string
+	PFAnchor            string
+	LeaseFile           string
+	DevicePolicyApplied string
 }
 
 func NewPaths(cfg config.Config) Paths {
 	dir := cfg.Runtime.Dir
 	return Paths{
-		Dir:            dir,
-		LogDir:         filepath.Join(dir, "logs"),
-		StateFile:      filepath.Join(dir, "state.json"),
-		DNSMasqConf:    filepath.Join(dir, "dnsmasq.conf"),
-		DNSMasqPIDFile: filepath.Join(dir, "dnsmasq.pid"),
-		DNSMasqLog:     filepath.Join(dir, "logs", "dnsmasq.log"),
-		MihomoConfig:   cfg.Mihomo.Config,
-		MihomoLog:      filepath.Join(dir, "logs", "mihomo.log"),
-		PFAnchor:       filepath.Join(dir, "pf.anchor"),
-		LeaseFile:      filepath.Join(dir, "dnsmasq.leases"),
+		Dir:                 dir,
+		LogDir:              filepath.Join(dir, "logs"),
+		StateFile:           filepath.Join(dir, "state.json"),
+		DNSMasqConf:         filepath.Join(dir, "dnsmasq.conf"),
+		DNSMasqPIDFile:      filepath.Join(dir, "dnsmasq.pid"),
+		DNSMasqLog:          filepath.Join(dir, "logs", "dnsmasq.log"),
+		MihomoConfig:        cfg.Mihomo.Config,
+		MihomoLog:           filepath.Join(dir, "logs", "mihomo.log"),
+		PFAnchor:            filepath.Join(dir, "pf.anchor"),
+		LeaseFile:           filepath.Join(dir, "dnsmasq.leases"),
+		DevicePolicyApplied: filepath.Join(dir, "device-policy.applied.json"),
 	}
 }
 
