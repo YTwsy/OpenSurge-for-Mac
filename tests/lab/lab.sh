@@ -51,10 +51,17 @@ require_installed_lab() {
 }
 
 require_cached_sudo() {
-  if ! sudo -n true 2>/dev/null; then
-    echo "gateway test requires a cached sudo credential; run 'sudo -v' in a terminal, then retry" >&2
-    exit 1
+  if sudo -n true 2>/dev/null; then
+    return 0
   fi
+  if [[ -n "${OMG_LAB_SUDO_ASKPASS:-}" && -x "${OMG_LAB_SUDO_ASKPASS}" ]]; then
+    SUDO_ASKPASS="$OMG_LAB_SUDO_ASKPASS" sudo -A -v 2>/dev/null || true
+    if sudo -n true 2>/dev/null; then
+      return 0
+    fi
+  fi
+  echo "gateway test requires a cached sudo credential; run 'sudo -v' in a terminal, then retry" >&2
+  exit 1
 }
 
 ensure_lab_state_writable() {
