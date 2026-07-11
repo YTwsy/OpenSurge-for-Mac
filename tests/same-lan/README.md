@@ -33,6 +33,11 @@ For the separate full DHCP/TUN/provider/policy/egress gate, use the
 [same-WiFi DHCP imported egress runner](WIFI-DHCP-RUNNER.md). It uses
 `same_wifi_dhcp`; this page's `same_lan` runner remains DHCP-disabled.
 
+For two exact reservations and independent per-device selectors, use the
+[same-WiFi two-device policy gate](SAME-WIFI-DEVICE-POLICY.md). It adds active
+competing-DHCP detection and a separate recovery gate; until that real run
+passes, the capability remains Experimental / cooperative IPv4.
+
 ## Start
 
 The runner infers the interface from the macOS default route and reads the Mac

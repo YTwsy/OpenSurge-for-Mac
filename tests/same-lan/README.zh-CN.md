@@ -30,6 +30,10 @@ DHCP/DNS，请先阅读 [same-WiFi DHCP 恢复参考](WIFI-DHCP-RECOVERY.zh-CN.m
 时，使用独立的 [same-WiFi DHCP imported egress 全功能 runner](WIFI-DHCP-RUNNER.zh-CN.md)。
 它使用 `same_wifi_dhcp`，不会放宽本页 `same_lan` 的 DHCP disabled 边界。
 
+验证两台客户端精确 reservation、独立 selector、规则槽位和 UDP fail-closed 时，使用
+[same-WiFi 双设备策略真机 gate](SAME-WIFI-DEVICE-POLICY.zh-CN.md)。它增加竞争 DHCP
+主动探测和独立恢复门槛；真机运行通过前保持 Experimental / cooperative IPv4。
+
 ## 启动
 
 默认 runner 会从 macOS 默认路由推断接口，并从该接口读取 Mac IPv4 地址：

@@ -33,6 +33,7 @@ mkdir -p "$ROOT/bin"
 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-control" ./cmd/opensurge-control
 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-helper" ./cmd/opensurge-helper
 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-install-config" ./cmd/opensurge-install-config
+"$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-network" ./cmd/opensurge-network
 "$ROOT/bin/opensurge-install-config" --source "$CONFIG" --validate-package-source
 "$ROOT/scripts/build-menubar-app.sh"
 
@@ -42,6 +43,7 @@ install -m 0755 "$MIHOMO" "$APP_ROOT/bin/mihomo"
 install -m 0755 "$DNSMASQ" "$APP_ROOT/bin/dnsmasq"
 install -m 0755 "$ROOT/bin/omg" "$APP_ROOT/bin/omg"
 install -m 0755 "$ROOT/bin/opensurge-install-config" "$APP_ROOT/bin/opensurge-install-config"
+install -m 0755 "$ROOT/bin/opensurge-network" "$APP_ROOT/bin/opensurge-network"
 install -m 0755 "$ROOT/bin/opensurge-control" "$APP_ROOT/share/opensurge-control"
 install -m 0755 "$ROOT/bin/opensurge-helper" "$PAYLOAD/Library/PrivilegedHelperTools/com.opensurge.helper"
 install -m 0644 "$CONFIG" "$APP_ROOT/share/config.yaml"

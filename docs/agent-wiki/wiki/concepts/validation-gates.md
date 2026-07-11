@@ -285,6 +285,22 @@ make lab-test-tun-device-policy
 `artifacts/lab/20260711-194621`。ARP/ICMP reservation 冲突探测只在 `same_wifi_dhcp`
 模式激活，此 lab（`same_lan`/tun）未在运行时覆盖该路径，由单元测试覆盖。
 
+真实 same-WiFi 双设备门槛是：
+
+```sh
+make same-wifi-dhcp-start-device-policy
+make same-wifi-dhcp-adb-check-device-policy
+make same-wifi-dhcp-stop
+make same-wifi-dhcp-verify-device-policy-recovery
+```
+
+它要求两台真实客户端的 SSID Wi-Fi MAC、固定 reservation 和 ADB serial，启动前主动
+证明不存在其他 DHCP OFFER；数据面验证两台设备 identity、独立 default selector、
+设备规则 selector、准确源 IP 和 UDP REJECT。恢复门槛在操作者重新打开路由器 DHCP 后
+要求主动 OFFER、Mac DHCP `server_identifier`、恢复的默认路由和两台客户端 HTTPS。
+截至本实现落地时该 gate 尚未在本轮真机运行；因此 same-WiFi per-device 只能标记为
+Experimental / cooperative IPv4，不能借用 virtual lab 的通过记录宣称已验收。
+
 ## 结论纪律
 
 最终报告必须明确说出实际运行了哪些命令。如果只运行了 `make test`，不要暗示

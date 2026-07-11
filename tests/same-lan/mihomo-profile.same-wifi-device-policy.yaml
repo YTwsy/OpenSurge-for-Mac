@@ -1,0 +1,11 @@
+# Imported profile fixture for the same-WiFi two-device policy gate.
+# OpenSurge overlays DHCP identity, device selectors, DNS, TUN and controller.
+
+proxies:
+  - name: "same-wifi-controlled"
+    type: http
+    server: "127.0.0.1"
+    port: __CONTROLLED_PROXY_PORT__
+
+rules:
+  - MATCH,DIRECT

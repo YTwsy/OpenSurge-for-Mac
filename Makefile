@@ -9,6 +9,7 @@
 .PHONY: same-lan-start-wifi-dhcp-imported-egress same-lan-adb-check-wifi-dhcp-imported-egress
 .PHONY: same-lan-stop-wifi-dhcp same-lan-status-wifi-dhcp
 .PHONY: same-wifi-dhcp-start-imported-egress same-wifi-dhcp-adb-check-imported-egress
+.PHONY: same-wifi-dhcp-start-device-policy same-wifi-dhcp-adb-check-device-policy same-wifi-dhcp-verify-device-policy-recovery
 .PHONY: same-wifi-dhcp-stop same-wifi-dhcp-status
 
 test:
@@ -154,6 +155,15 @@ same-lan-status-wifi-dhcp:
 same-wifi-dhcp-start-imported-egress: same-lan-start-wifi-dhcp-imported-egress
 
 same-wifi-dhcp-adb-check-imported-egress: same-lan-adb-check-wifi-dhcp-imported-egress
+
+same-wifi-dhcp-start-device-policy:
+	OMG_SAME_WIFI_DHCP_ENABLED=true OMG_SAME_LAN_IMPORTED_EGRESS=true OMG_SAME_WIFI_DEVICE_POLICY_ENABLED=true ./tests/same-lan/smoke.sh start-wifi-dhcp-device-policy
+
+same-wifi-dhcp-adb-check-device-policy:
+	OMG_SAME_WIFI_DHCP_ENABLED=true OMG_SAME_LAN_IMPORTED_EGRESS=true OMG_SAME_WIFI_DEVICE_POLICY_ENABLED=true ./tests/same-lan/smoke.sh adb-check-wifi-dhcp-device-policy
+
+same-wifi-dhcp-verify-device-policy-recovery:
+	OMG_SAME_WIFI_DHCP_ENABLED=true OMG_SAME_WIFI_DEVICE_POLICY_ENABLED=true ./tests/same-lan/smoke.sh verify-wifi-dhcp-device-policy-recovery
 
 same-wifi-dhcp-stop: same-lan-stop-wifi-dhcp
 
