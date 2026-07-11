@@ -11,6 +11,7 @@ export function recoveryLabel(stage: string) {
     mac_static: 'Mac 已使用固定 IPv4',
     router_dhcp_disabled_confirmed: '路由器 DHCP 已关闭',
     gateway_active: 'OpenSurge 已接管',
+    client_validated: '客户端 DHCP、DNS 与 TUN 已验收',
     gateway_stopped_waiting_router_dhcp: '已停止，等待恢复路由器 DHCP',
     router_dhcp_restored: '路由器 DHCP 已恢复',
     complete: 'Mac 与客户端已恢复自动获取',

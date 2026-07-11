@@ -1,6 +1,7 @@
 package controlapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -170,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
 	mux.Handle("POST /api/v1/recovery/prepare", s.auth(http.HandlerFunc(s.handleRecoveryPrepare)))
 	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
+	mux.Handle("POST /api/v1/recovery/client-validated", s.auth(http.HandlerFunc(s.handleClientValidated)))
 	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
 	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
 	mux.Handle("POST /api/v1/network/dhcp-probe", s.auth(http.HandlerFunc(s.handleDHCPProbe)))
@@ -615,6 +617,77 @@ func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, current)
 }
 
+func (s *Server) handleClientValidated(w http.ResponseWriter, r *http.Request) {
+	state, _ := s.store.Recovery()
+	if state.Stage != RecoveryGatewayActive {
+		writeError(w, http.StatusConflict, "recovery_precondition", "gateway must be active before client acceptance")
+		return
+	}
+	var request ClientAcceptanceRequest
+	if err := decodeJSON(r, &request, 64<<10); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if !request.GatewayDNSConfirmed || !request.NoExplicitProxyConfirmed {
+		writeError(w, http.StatusUnprocessableEntity, "client_confirmation_required", "confirm client gateway/DNS and no explicit proxy")
+		return
+	}
+	if state.NetworkSnapshot != nil && state.NetworkSnapshot.IPv6Default && !request.IPv6BypassWarningConfirmed {
+		writeError(w, http.StatusUnprocessableEntity, "ipv6_warning_unacknowledged", "acknowledge that IPv6 may bypass cooperative IPv4 policy")
+		return
+	}
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	if err := validateClientAcceptance(cfg, request.ClientIPv4); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "client_acceptance_failed", err.Error())
+		return
+	}
+	state.Stage = RecoveryClientValidated
+	state.RecoveryNotes = fmt.Sprintf("client %s: DHCP ACK, DNS and TUN source observed; gateway/DNS and no explicit proxy confirmed", request.ClientIPv4)
+	state.Required = true
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
+func validateClientAcceptance(cfg config.Config, clientIPv4 string) error {
+	if net.ParseIP(clientIPv4).To4() == nil {
+		return fmt.Errorf("client_ipv4 must be valid IPv4")
+	}
+	paths := runtime.NewPaths(cfg)
+	leases, err := device.LoadLeases(paths.LeaseFile)
+	if err != nil {
+		return fmt.Errorf("load leases: %w", err)
+	}
+	matched := false
+	for _, lease := range leases {
+		if lease.IP == clientIPv4 && lease.Online {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return fmt.Errorf("no active DHCP lease for %s", clientIPv4)
+	}
+	dnsLog, _ := os.ReadFile(paths.DNSMasqLog)
+	if !bytes.Contains(dnsLog, []byte("DHCPACK")) || !bytes.Contains(dnsLog, []byte(clientIPv4)) {
+		return fmt.Errorf("DHCPACK evidence for %s was not found", clientIPv4)
+	}
+	if !bytes.Contains(dnsLog, []byte("from "+clientIPv4)) {
+		return fmt.Errorf("DNS query evidence from %s was not found", clientIPv4)
+	}
+	mihomoLog, _ := os.ReadFile(paths.MihomoLog)
+	if !bytes.Contains(mihomoLog, []byte(clientIPv4)) {
+		return fmt.Errorf("mihomo TUN source evidence for %s was not found", clientIPv4)
+	}
+	return nil
+}
+
 func (s *Server) handleNetworkDiscovery(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
@@ -767,7 +840,8 @@ func allowedRecoveryTransition(from, to string) bool {
 		RecoveryPrepared:                    RecoveryMacStatic,
 		RecoveryMacStatic:                   RecoveryRouterDHCPDisabledConfirmed,
 		RecoveryRouterDHCPDisabledConfirmed: RecoveryGatewayActive,
-		RecoveryGatewayActive:               RecoveryGatewayStopped,
+		RecoveryGatewayActive:               RecoveryClientValidated,
+		RecoveryClientValidated:             RecoveryGatewayStopped,
 		RecoveryGatewayStopped:              RecoveryRouterDHCPRestored,
 		RecoveryRouterDHCPRestored:          RecoveryComplete,
 	}

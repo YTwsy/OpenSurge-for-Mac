@@ -71,7 +71,7 @@ connections 与最多 80 行近期日志；已知 mihomo/upstream 凭据在 API 
 
 ```text
 idle -> prepared -> mac_static -> router_dhcp_disabled_confirmed
-     -> gateway_active -> gateway_stopped_waiting_router_dhcp
+     -> gateway_active -> client_validated -> gateway_stopped_waiting_router_dhcp
      -> router_dhcp_restored -> complete
 ```
 
@@ -81,6 +81,11 @@ DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
 `gateway_stopped_waiting_router_dhcp`，只有重新探测到路由器 OFFER 后才允许把 Mac 恢复
 为自动 DHCP；菜单栏和 Web GUI 会持续显示恢复警报。状态机不会自动修改未知路由器，
 也不能把同一 Wi-Fi 描述为不可绕过隔离。
+
+启动后不能在 GUI 中直接进入正常停止步骤：先输入验收客户端 IPv4，后端要求活跃租约、
+DHCPACK、该源 IP 的 DNS 查询和 mihomo TUN 日志，同时操作者确认客户端网关/DNS 指向
+Mac 且无显式代理；若快照存在 IPv6 default，还必须确认绕过警告。紧急 stop API 始终
+可用，不会因验收失败阻碍恢复。
 
 ## 菜单栏边界
 

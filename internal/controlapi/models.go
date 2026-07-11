@@ -139,6 +139,7 @@ const (
 	RecoveryMacStatic                   = "mac_static"
 	RecoveryRouterDHCPDisabledConfirmed = "router_dhcp_disabled_confirmed"
 	RecoveryGatewayActive               = "gateway_active"
+	RecoveryClientValidated             = "client_validated"
 	RecoveryGatewayStopped              = "gateway_stopped_waiting_router_dhcp"
 	RecoveryRouterDHCPRestored          = "router_dhcp_restored"
 	RecoveryComplete                    = "complete"
@@ -150,6 +151,13 @@ type RecoveryUpdate struct {
 	OriginalIPv4   string `json:"original_ipv4,omitempty"`
 	OriginalRouter string `json:"original_router,omitempty"`
 	RecoveryNotes  string `json:"recovery_notes,omitempty"`
+}
+
+type ClientAcceptanceRequest struct {
+	ClientIPv4                 string `json:"client_ipv4"`
+	GatewayDNSConfirmed        bool   `json:"gateway_dns_confirmed"`
+	NoExplicitProxyConfirmed   bool   `json:"no_explicit_proxy_confirmed"`
+	IPv6BypassWarningConfirmed bool   `json:"ipv6_bypass_warning_confirmed"`
 }
 
 type Operation struct {

@@ -35,6 +35,7 @@ vi.mock('./api', () => ({
     probeDHCP: vi.fn(),
     confirmRouterRestored: vi.fn(),
     restoreMacDHCP: vi.fn(),
+    validateClient: vi.fn(),
     sources: vi.fn(async () => ({ revision: 'config-revision', sources: [] })),
     importURL: vi.fn(),
     importFile: vi.fn(),

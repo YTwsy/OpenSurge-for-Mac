@@ -33,6 +33,7 @@ export const api = {
   probeDHCP: () => request('/api/v1/network/dhcp-probe', { method: 'POST' }),
   confirmRouterRestored: () => request('/api/v1/recovery/router-restored', { method: 'POST' }),
   restoreMacDHCP: () => request('/api/v1/network/restore-dhcp', { method: 'POST' }),
+  validateClient: (clientIPv4: string, ipv6Acknowledged: boolean) => request('/api/v1/recovery/client-validated', { method: 'POST', body: JSON.stringify({ client_ipv4: clientIPv4, gateway_dns_confirmed: true, no_explicit_proxy_confirmed: true, ipv6_bypass_warning_confirmed: ipv6Acknowledged }) }),
   sources: () => request<{ revision: string; sources: Source[] }>('/api/v1/sources'),
   importURL: (name: string, url: string) => request<Source>('/api/v1/sources', { method: 'POST', body: JSON.stringify({ name, kind: 'mihomo_profile', url }) }),
   importFile: (file: File) => {

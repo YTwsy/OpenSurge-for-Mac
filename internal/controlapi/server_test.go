@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/macosnetwork"
+	"open-mihomo-gateway/internal/runtime"
 )
 
 func TestInspectSourceInventory(t *testing.T) {
@@ -379,6 +381,39 @@ func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
 	}
 	if state.Revision == "" || state.Gateway == "" || state.Recovery.Stage != RecoveryIdle {
 		t.Fatalf("state event = %#v", state)
+	}
+}
+
+func TestClientAcceptanceRequiresLeaseDNSAndTUNEvidence(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := os.MkdirAll(paths.LogDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(time.Hour).Unix()
+	if err := os.WriteFile(paths.LeaseFile, []byte(fmt.Sprintf("%d aa:bb:cc:dd:ee:ff 192.168.1.121 phone *\n", expires)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.DNSMasqLog, []byte("DHCPACK(en0) 192.168.1.121 aa:bb:cc:dd:ee:ff phone\nquery[A] example.com from 192.168.1.121\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.MihomoLog, []byte("[TCP] 192.168.1.121:50000 --> example.com:443 using DIRECT\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/client-validated", []byte(`{"client_ipv4":"192.168.1.121","gateway_dns_confirmed":true,"no_explicit_proxy_confirmed":true,"ipv6_bypass_warning_confirmed":false}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ := server.store.Recovery()
+	if state.Stage != RecoveryClientValidated {
+		t.Fatalf("state=%#v", state)
 	}
 }
 
