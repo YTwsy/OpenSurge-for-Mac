@@ -22,26 +22,33 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
 
 type Options struct {
-	ConfigPath string
-	Addr       string
-	StoreDir   string
-	Runner     ActionRunner
-	Static     http.Handler
+	ConfigPath      string
+	Addr            string
+	StoreDir        string
+	Runner          ActionRunner
+	NetworkRunner   NetworkRunner
+	DiscoverNetwork func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	PingRouter      func(context.Context, string) error
+	Static          http.Handler
 }
 
 type Server struct {
-	configPath string
-	addr       string
-	store      *Store
-	runner     ActionRunner
-	static     http.Handler
-	token      string
-	baseURL    string
+	configPath      string
+	addr            string
+	store           *Store
+	runner          ActionRunner
+	networkRunner   NetworkRunner
+	discoverNetwork func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	pingRouter      func(context.Context, string) error
+	static          http.Handler
+	token           string
+	baseURL         string
 
 	mu         sync.Mutex
 	sessions   map[string]time.Time
@@ -86,16 +93,32 @@ func New(options Options) (*Server, error) {
 	if options.Runner == nil {
 		options.Runner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
 	}
+	if options.NetworkRunner == nil {
+		if runner, ok := options.Runner.(NetworkRunner); ok {
+			options.NetworkRunner = runner
+		} else {
+			options.NetworkRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
+		}
+	}
+	if options.DiscoverNetwork == nil {
+		options.DiscoverNetwork = macosnetwork.Discover
+	}
+	if options.PingRouter == nil {
+		options.PingRouter = macosnetwork.PingRouter
+	}
 	return &Server{
-		configPath: configPath,
-		addr:       options.Addr,
-		store:      store,
-		runner:     options.Runner,
-		static:     options.Static,
-		token:      token,
-		baseURL:    "http://" + options.Addr,
-		sessions:   map[string]time.Time{},
-		bootstraps: map[string]bootstrapGrant{},
+		configPath:      configPath,
+		addr:            options.Addr,
+		store:           store,
+		runner:          options.Runner,
+		networkRunner:   options.NetworkRunner,
+		discoverNetwork: options.DiscoverNetwork,
+		pingRouter:      options.PingRouter,
+		static:          options.Static,
+		token:           token,
+		baseURL:         "http://" + options.Addr,
+		sessions:        map[string]time.Time{},
+		bootstraps:      map[string]bootstrapGrant{},
 	}, nil
 }
 
@@ -119,10 +142,17 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/overview", s.auth(http.HandlerFunc(s.handleOverview)))
 	mux.Handle("GET /api/v1/menubar", s.auth(http.HandlerFunc(s.handleMenuBar)))
 	mux.Handle("GET /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
+	mux.Handle("POST /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
 	mux.Handle("POST /api/v1/gateway/start", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("POST /api/v1/gateway/stop", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("GET /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
 	mux.Handle("POST /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
+	mux.Handle("POST /api/v1/recovery/prepare", s.auth(http.HandlerFunc(s.handleRecoveryPrepare)))
+	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
+	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
+	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
+	mux.Handle("POST /api/v1/network/dhcp-probe", s.auth(http.HandlerFunc(s.handleDHCPProbe)))
+	mux.Handle("POST /api/v1/network/restore-dhcp", s.auth(http.HandlerFunc(s.handleRestoreDHCP)))
 	mux.Handle("GET /api/v1/sources", s.auth(http.HandlerFunc(s.handleSources)))
 	mux.Handle("POST /api/v1/sources", s.auth(http.HandlerFunc(s.handleSources)))
 	mux.Handle("POST /api/v1/sources/{id}/refresh", s.auth(http.HandlerFunc(s.handleSourceRefresh)))
@@ -357,12 +387,51 @@ func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
-	overview, err := s.overview(r.Context())
+	cfg, err := config.Load(s.configPath)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "plan_failed", err.Error())
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, overview)
+	request := GatewayPlanRequest{NetworkService: "Wi-Fi"}
+	if r.Method == http.MethodPost && r.ContentLength != 0 {
+		if err := decodeJSON(r, &request, 64<<10); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+	}
+	snapshot, err := s.discoverNetwork(r.Context(), request.NetworkService, cfg.Gateway.Interface)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "network_discovery_failed", err.Error())
+		return
+	}
+	plan := GatewayPlan{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Topology: cfg.Gateway.Mode, Snapshot: snapshot, DHCPServers: []string{}, Warnings: []string{}, Blockers: []string{}}
+	plan.ProtectedIPv4 = uniqueStrings(append([]string{cfg.Gateway.LANIP, snapshot.Router}, cfg.DevicePolicy.ProtectedIPv4...))
+	if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP {
+		if cfg.Gateway.Interface != cfg.Gateway.UpstreamInterface {
+			plan.Blockers = append(plan.Blockers, "same-WiFi DHCP requires one shared interface")
+		}
+		if snapshot.IPv4 != cfg.Gateway.LANIP {
+			plan.Blockers = append(plan.Blockers, fmt.Sprintf("Mac IPv4 %s differs from configured gateway.lan_ip %s", snapshot.IPv4, cfg.Gateway.LANIP))
+		}
+		if snapshot.IPv6Default {
+			plan.Warnings = append(plan.Warnings, "IPv6 default route is active; per-device IPv4 policy can be bypassed")
+		}
+		if err := s.pingRouter(r.Context(), snapshot.Router); err != nil {
+			plan.Blockers = append(plan.Blockers, "upstream router is not reachable: "+err.Error())
+		}
+		if request.RouterDHCPDisabled {
+			servers, err := s.networkRunner.ProbeDHCP(r.Context(), s.configPath, cfg.Gateway.Interface, 3*time.Second)
+			if err != nil {
+				plan.Blockers = append(plan.Blockers, "DHCP probe failed: "+err.Error())
+			} else {
+				plan.DHCPServers = servers
+			}
+			if len(plan.DHCPServers) > 0 {
+				plan.Blockers = append(plan.Blockers, "another DHCP server is still answering: "+strings.Join(plan.DHCPServers, ", "))
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, plan)
 }
 
 func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
@@ -455,23 +524,156 @@ func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	current, _ := s.store.Recovery()
-	if !allowedRecoveryTransition(current.Stage, update.Stage) {
-		writeError(w, http.StatusConflict, "invalid_recovery_transition", fmt.Sprintf("cannot move recovery from %s to %s", current.Stage, update.Stage))
-		return
-	}
-	cfg, _ := config.LoadRuntime(s.configPath)
-	current.Stage = update.Stage
-	current.Topology = cfg.Gateway.Mode
-	current.NetworkService = update.NetworkService
-	current.OriginalIPv4 = update.OriginalIPv4
-	current.OriginalRouter = update.OriginalRouter
 	current.RecoveryNotes = update.RecoveryNotes
-	current.Required = update.Stage != RecoveryIdle && update.Stage != RecoveryComplete
 	if err := s.store.SaveRecovery(current); err != nil {
 		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, current)
+}
+
+func (s *Server) handleNetworkDiscovery(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	snapshot, err := s.discoverNetwork(r.Context(), r.URL.Query().Get("service"), cfg.Gateway.Interface)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "network_discovery_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *Server) handleRecoveryPrepare(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	var request struct {
+		NetworkService string `json:"network_service"`
+	}
+	if r.ContentLength > 0 {
+		if err := decodeJSON(r, &request, 64<<10); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			return
+		}
+	}
+	snapshot, err := s.discoverNetwork(r.Context(), request.NetworkService, cfg.Gateway.Interface)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "network_discovery_failed", err.Error())
+		return
+	}
+	state := RecoveryState{SchemaVersion: SchemaVersion, Stage: RecoveryPrepared, Topology: cfg.Gateway.Mode, NetworkService: snapshot.NetworkService, OriginalIPv4: snapshot.IPv4, OriginalRouter: snapshot.Router, Required: true, NetworkSnapshot: &snapshot}
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	if err := s.store.SaveRecoveryCard(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_card_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
+func (s *Server) handleApplyStatic(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	state, _ := s.store.Recovery()
+	if state.Stage != RecoveryPrepared || state.NetworkSnapshot == nil {
+		writeError(w, http.StatusConflict, "recovery_precondition", "prepare a recovery snapshot before setting static IPv4")
+		return
+	}
+	snapshot := state.NetworkSnapshot
+	manual := macosnetwork.ManualConfig{NetworkService: snapshot.NetworkService, Interface: snapshot.Interface, IPv4: cfg.Gateway.LANIP, SubnetMask: snapshot.SubnetMask, Router: snapshot.Router, DNS: snapshot.DNS}
+	if err := s.networkRunner.SetManual(r.Context(), s.configPath, manual); err != nil {
+		writeError(w, http.StatusBadGateway, "set_static_failed", err.Error())
+		return
+	}
+	if err := s.pingRouter(r.Context(), snapshot.Router); err != nil {
+		writeError(w, http.StatusBadGateway, "upstream_unreachable", err.Error())
+		return
+	}
+	state.Stage, state.Required = RecoveryMacStatic, true
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
+func (s *Server) handleDHCPProbe(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	state, _ := s.store.Recovery()
+	if state.Stage != RecoveryMacStatic {
+		writeError(w, http.StatusConflict, "recovery_precondition", "Mac static IPv4 must be applied before probing for router DHCP")
+		return
+	}
+	servers, err := s.networkRunner.ProbeDHCP(r.Context(), s.configPath, cfg.Gateway.Interface, 3*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "dhcp_probe_failed", err.Error())
+		return
+	}
+	if len(servers) > 0 {
+		writeError(w, http.StatusConflict, "competing_dhcp", "DHCP server is still answering: "+strings.Join(servers, ", "))
+		return
+	}
+	state.Stage, state.Required = RecoveryRouterDHCPDisabledConfirmed, true
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state, DHCPServers: []string{}})
+}
+
+func (s *Server) handleRouterRestored(w http.ResponseWriter, r *http.Request) {
+	state, _ := s.store.Recovery()
+	if state.Stage != RecoveryGatewayStopped || state.NetworkSnapshot == nil {
+		writeError(w, http.StatusConflict, "recovery_precondition", "stop OpenSurge before verifying restored router DHCP")
+		return
+	}
+	servers, err := s.networkRunner.ProbeDHCP(r.Context(), s.configPath, state.NetworkSnapshot.Interface, 3*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "dhcp_probe_failed", err.Error())
+		return
+	}
+	if len(servers) == 0 {
+		writeError(w, http.StatusConflict, "router_dhcp_missing", "no DHCP server answered after the router was marked restored")
+		return
+	}
+	state.Stage, state.Required = RecoveryRouterDHCPRestored, true
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state, DHCPServers: servers})
+}
+
+func (s *Server) handleRestoreDHCP(w http.ResponseWriter, r *http.Request) {
+	state, _ := s.store.Recovery()
+	if state.Stage != RecoveryRouterDHCPRestored || state.NetworkSnapshot == nil {
+		writeError(w, http.StatusConflict, "recovery_precondition", "verify restored router DHCP before restoring the Mac")
+		return
+	}
+	if err := s.networkRunner.SetDHCP(r.Context(), s.configPath, state.NetworkSnapshot.NetworkService); err != nil {
+		writeError(w, http.StatusBadGateway, "restore_dhcp_failed", err.Error())
+		return
+	}
+	state.Stage, state.Required = RecoveryComplete, false
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
 }
 
 func allowedRecoveryTransition(from, to string) bool {
@@ -487,6 +689,19 @@ func allowedRecoveryTransition(from, to string) bool {
 		RecoveryRouterDHCPRestored:          RecoveryComplete,
 	}
 	return allowed[from] == to
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {

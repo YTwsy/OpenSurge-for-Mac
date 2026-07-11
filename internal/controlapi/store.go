@@ -75,6 +75,35 @@ func (s *Store) SaveRecovery(state RecoveryState) error {
 	return writeAtomic(filepath.Join(s.dir, "recovery.json"), append(data, '\n'), 0o600)
 }
 
+func (s *Store) SaveRecoveryCard(state RecoveryState) error {
+	if state.NetworkSnapshot == nil {
+		return fmt.Errorf("recovery card requires a network snapshot")
+	}
+	snapshot := state.NetworkSnapshot
+	card := fmt.Sprintf(`OpenSurge for Mac - same-WiFi DHCP recovery card
+
+Created: %s
+Network service: %s
+Interface: %s
+Original IPv4: %s
+Subnet mask: %s
+Original router: %s
+Original DNS: %v
+
+Recovery order:
+1. Open the router administration page at the original router address.
+2. Re-enable the router DHCP server.
+3. Confirm another device can obtain an automatic address from the router.
+4. Restore the Mac network service to DHCP in OpenSurge, or run:
+   networksetup -setdhcp %q
+   networksetup -setdnsservers %q Empty
+5. Reconnect clients and confirm automatic addressing and Internet access.
+
+Do not restore the Mac to DHCP before the router DHCP server is back.
+`, time.Now().UTC().Format(time.RFC3339), snapshot.NetworkService, snapshot.Interface, snapshot.IPv4, snapshot.SubnetMask, snapshot.Router, snapshot.DNS, snapshot.NetworkService, snapshot.NetworkService)
+	return writeAtomic(filepath.Join(s.dir, "WIFI-DHCP-RECOVERY-CARD.txt"), []byte(card), 0o600)
+}
+
 func (s *Store) SaveOperation(op Operation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

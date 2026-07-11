@@ -6,6 +6,7 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 )
 
@@ -58,15 +59,38 @@ type MenuBarStatus struct {
 }
 
 type RecoveryState struct {
-	SchemaVersion  int       `json:"schema_version"`
-	Stage          string    `json:"stage"`
-	Topology       string    `json:"topology,omitempty"`
-	NetworkService string    `json:"network_service,omitempty"`
-	OriginalIPv4   string    `json:"original_ipv4,omitempty"`
-	OriginalRouter string    `json:"original_router,omitempty"`
-	RecoveryNotes  string    `json:"recovery_notes,omitempty"`
-	Required       bool      `json:"required"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	SchemaVersion   int                    `json:"schema_version"`
+	Stage           string                 `json:"stage"`
+	Topology        string                 `json:"topology,omitempty"`
+	NetworkService  string                 `json:"network_service,omitempty"`
+	OriginalIPv4    string                 `json:"original_ipv4,omitempty"`
+	OriginalRouter  string                 `json:"original_router,omitempty"`
+	RecoveryNotes   string                 `json:"recovery_notes,omitempty"`
+	NetworkSnapshot *macosnetwork.Snapshot `json:"network_snapshot,omitempty"`
+	Required        bool                   `json:"required"`
+	UpdatedAt       time.Time              `json:"updated_at"`
+}
+
+type GatewayPlanRequest struct {
+	NetworkService     string `json:"network_service,omitempty"`
+	RouterDHCPDisabled bool   `json:"router_dhcp_disabled,omitempty"`
+}
+
+type GatewayPlan struct {
+	SchemaVersion int                   `json:"schema_version"`
+	Revision      string                `json:"revision"`
+	Topology      string                `json:"topology"`
+	Snapshot      macosnetwork.Snapshot `json:"snapshot"`
+	ProtectedIPv4 []string              `json:"protected_ipv4"`
+	DHCPServers   []string              `json:"dhcp_servers"`
+	Warnings      []string              `json:"warnings"`
+	Blockers      []string              `json:"blockers"`
+}
+
+type NetworkActionResponse struct {
+	SchemaVersion int           `json:"schema_version"`
+	Recovery      RecoveryState `json:"recovery"`
+	DHCPServers   []string      `json:"dhcp_servers,omitempty"`
 }
 
 const (

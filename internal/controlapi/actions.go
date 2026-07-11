@@ -16,10 +16,17 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/macosnetwork"
 )
 
 type ActionRunner interface {
 	Run(context.Context, string, string) error
+}
+
+type NetworkRunner interface {
+	SetManual(context.Context, string, macosnetwork.ManualConfig) error
+	SetDHCP(context.Context, string, string) error
+	ProbeDHCP(context.Context, string, string, time.Duration) ([]string, error)
 }
 
 type DirectRunner struct{}
@@ -51,39 +58,85 @@ func (DirectRunner) Run(ctx context.Context, action, configPath string) error {
 	}
 }
 
+func (DirectRunner) SetManual(ctx context.Context, _ string, cfg macosnetwork.ManualConfig) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("privileged helper is required")
+	}
+	return macosnetwork.SetManual(ctx, cfg)
+}
+
+func (DirectRunner) SetDHCP(ctx context.Context, _ string, service string) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("privileged helper is required")
+	}
+	return macosnetwork.SetDHCP(ctx, service)
+}
+
+func (DirectRunner) ProbeDHCP(ctx context.Context, _ string, interfaceName string, timeout time.Duration) ([]string, error) {
+	if os.Geteuid() != 0 {
+		return nil, fmt.Errorf("privileged helper is required")
+	}
+	return macosnetwork.ProbeDHCPServers(ctx, interfaceName, timeout)
+}
+
 type HelperClient struct {
 	SocketPath string
 }
 
 type HelperRequest struct {
-	Action     string `json:"action"`
-	ConfigPath string `json:"config_path"`
+	Action         string                     `json:"action"`
+	ConfigPath     string                     `json:"config_path"`
+	Manual         *macosnetwork.ManualConfig `json:"manual,omitempty"`
+	NetworkService string                     `json:"network_service,omitempty"`
+	Interface      string                     `json:"interface,omitempty"`
+	TimeoutMillis  int                        `json:"timeout_millis,omitempty"`
 }
 
 type HelperResponse struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OK          bool     `json:"ok"`
+	Error       string   `json:"error,omitempty"`
+	DHCPServers []string `json:"dhcp_servers,omitempty"`
 }
 
 func (c HelperClient) Run(ctx context.Context, action, configPath string) error {
+	_, err := c.call(ctx, HelperRequest{Action: action, ConfigPath: configPath})
+	return err
+}
+
+func (c HelperClient) SetManual(ctx context.Context, configPath string, cfg macosnetwork.ManualConfig) error {
+	_, err := c.call(ctx, HelperRequest{Action: "network-set-manual", ConfigPath: configPath, Manual: &cfg})
+	return err
+}
+
+func (c HelperClient) SetDHCP(ctx context.Context, configPath, service string) error {
+	_, err := c.call(ctx, HelperRequest{Action: "network-set-dhcp", ConfigPath: configPath, NetworkService: service})
+	return err
+}
+
+func (c HelperClient) ProbeDHCP(ctx context.Context, configPath, interfaceName string, timeout time.Duration) ([]string, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "dhcp-probe", ConfigPath: configPath, Interface: interfaceName, TimeoutMillis: int(timeout / time.Millisecond)})
+	return response.DHCPServers, err
+}
+
+func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperResponse, error) {
 	dialer := net.Dialer{Timeout: 2 * time.Second}
 	conn, err := dialer.DialContext(ctx, "unix", c.SocketPath)
 	if err != nil {
-		return err
+		return HelperResponse{}, err
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Minute))
-	if err := json.NewEncoder(conn).Encode(HelperRequest{Action: action, ConfigPath: configPath}); err != nil {
-		return err
+	if err := json.NewEncoder(conn).Encode(request); err != nil {
+		return HelperResponse{}, err
 	}
 	var response HelperResponse
 	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&response); err != nil {
-		return err
+		return HelperResponse{}, err
 	}
 	if !response.OK {
-		return fmt.Errorf("%s", response.Error)
+		return HelperResponse{}, fmt.Errorf("%s", response.Error)
 	}
-	return nil
+	return response, nil
 }
 
 func ServeHelper(ctx context.Context, socketPath, allowedRoot, socketGroup string) error {
@@ -140,28 +193,85 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: err.Error()})
 		return
 	}
-	if request.Action != "start" && request.Action != "stop" {
+	if request.Action != "start" && request.Action != "stop" && request.Action != "network-set-manual" && request.Action != "network-set-dhcp" && request.Action != "dhcp-probe" {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: "action is not allowed"})
 		return
 	}
-	configPath, err := filepath.Abs(request.ConfigPath)
-	if err == nil {
+	var err error
+	configPath := ""
+	if request.Action == "start" || request.Action == "stop" || request.Action == "network-set-manual" || request.Action == "network-set-dhcp" || request.Action == "dhcp-probe" {
+		configPath, err = filepath.Abs(request.ConfigPath)
+	}
+	if err == nil && configPath != "" {
 		root, rootErr := filepath.Abs(allowedRoot)
 		if rootErr != nil || (configPath != root && !strings.HasPrefix(configPath, root+string(os.PathSeparator))) {
 			err = fmt.Errorf("config path is outside allowed root")
 		}
 	}
-	if err == nil {
+	if err == nil && configPath != "" {
 		err = requireRootOwnedConfig(configPath)
 	}
+	var cfg config.Config
 	if err == nil {
-		err = (DirectRunner{}).Run(ctx, request.Action, configPath)
+		cfg, err = config.Load(configPath)
 	}
-	response := HelperResponse{OK: err == nil}
+	response := HelperResponse{}
+	if err == nil {
+		runner := DirectRunner{}
+		switch request.Action {
+		case "start", "stop":
+			err = runner.Run(ctx, request.Action, configPath)
+		case "network-set-manual":
+			if request.Manual == nil {
+				err = fmt.Errorf("manual network configuration is required")
+			} else if err = validateHelperManualNetwork(ctx, cfg, *request.Manual); err == nil {
+				err = runner.SetManual(ctx, configPath, *request.Manual)
+			}
+		case "network-set-dhcp":
+			if err = validateHelperNetworkTarget(ctx, cfg, request.NetworkService, cfg.Gateway.Interface); err == nil {
+				err = runner.SetDHCP(ctx, configPath, request.NetworkService)
+			}
+		case "dhcp-probe":
+			if request.Interface != cfg.Gateway.Interface {
+				err = fmt.Errorf("DHCP probe interface does not match configured gateway interface")
+			} else {
+				timeout := time.Duration(request.TimeoutMillis) * time.Millisecond
+				if timeout < time.Second || timeout > 10*time.Second {
+					timeout = 3 * time.Second
+				}
+				response.DHCPServers, err = runner.ProbeDHCP(ctx, configPath, request.Interface, timeout)
+			}
+		}
+	}
+	response.OK = err == nil
 	if err != nil {
 		response.Error = err.Error()
 	}
 	_ = json.NewEncoder(conn).Encode(response)
+}
+
+func validateHelperNetworkTarget(ctx context.Context, cfg config.Config, service, interfaceName string) error {
+	if interfaceName != cfg.Gateway.Interface {
+		return fmt.Errorf("network interface does not match configured gateway interface")
+	}
+	actual, err := macosnetwork.ServiceInterface(ctx, service)
+	if err != nil {
+		return err
+	}
+	if actual != interfaceName {
+		return fmt.Errorf("network service %q uses %s, not configured interface %s", service, actual, interfaceName)
+	}
+	return nil
+}
+
+func validateHelperManualNetwork(ctx context.Context, cfg config.Config, manual macosnetwork.ManualConfig) error {
+	if err := validateHelperNetworkTarget(ctx, cfg, manual.NetworkService, manual.Interface); err != nil {
+		return err
+	}
+	if manual.IPv4 != cfg.Gateway.LANIP {
+		return fmt.Errorf("manual IPv4 does not match configured gateway LAN IP")
+	}
+	return macosnetwork.ValidateManual(manual)
 }
 
 func requireRootOwnedConfig(path string) error {

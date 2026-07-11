@@ -1,4 +1,4 @@
-import type { APIError, DevicePolicyDocument, DevicesResponse, Overview, PolicySet, ProxyGroup, Source } from './types'
+import type { APIError, DevicePolicyDocument, DevicesResponse, GatewayPlan, Operation, Overview, PolicySet, ProxyGroup, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -22,8 +22,15 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   overview: () => request<Overview>('/api/v1/overview'),
-  gateway: (action: 'start' | 'stop') => request<{ id: string; state: string }>(`/api/v1/gateway/${action}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
+  gateway: (action: 'start' | 'stop') => request<Operation>(`/api/v1/gateway/${action}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
+  operation: (id: string) => request<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`),
+  gatewayPlan: (routerDHCPDisabled = false) => request<GatewayPlan>('/api/v1/gateway/plan', { method: 'POST', body: JSON.stringify({ network_service: 'Wi-Fi', router_dhcp_disabled: routerDHCPDisabled }) }),
   recovery: (stage: string) => request('/api/v1/recovery', { method: 'POST', body: JSON.stringify({ stage }) }),
+  prepareRecovery: () => request('/api/v1/recovery/prepare', { method: 'POST', body: JSON.stringify({ network_service: 'Wi-Fi' }) }),
+  applyStatic: () => request('/api/v1/network/apply-static', { method: 'POST' }),
+  probeDHCP: () => request('/api/v1/network/dhcp-probe', { method: 'POST' }),
+  confirmRouterRestored: () => request('/api/v1/recovery/router-restored', { method: 'POST' }),
+  restoreMacDHCP: () => request('/api/v1/network/restore-dhcp', { method: 'POST' }),
   sources: () => request<{ sources: Source[] }>('/api/v1/sources'),
   importURL: (name: string, url: string) => request<Source>('/api/v1/sources', { method: 'POST', body: JSON.stringify({ name, kind: 'mihomo_profile', url }) }),
   importFile: (file: File) => {
@@ -42,4 +49,15 @@ export const api = {
   selectPolicy: (group: string, policy: string) => request(`/api/v1/policies/${encodeURIComponent(group)}/selection`, { method: 'POST', body: JSON.stringify({ policy }) }),
   selectDevicePolicy: (device: string, slot: string, policy: string) => request(`/api/v1/devices/${encodeURIComponent(device)}/selectors/${encodeURIComponent(slot)}`, { method: 'POST', body: JSON.stringify({ policy }) }),
   refreshProvider: (name: string) => request(`/api/v1/providers/${encodeURIComponent(name)}/refresh`, { method: 'POST' }),
+}
+
+export async function waitForOperation(id: string, timeoutMs = 180_000): Promise<Operation> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const operation = await api.operation(id)
+    if (operation.state === 'succeeded') return operation
+    if (operation.state === 'failed') throw new Error(operation.error || `${operation.kind} failed`)
+    await new Promise(resolve => window.setTimeout(resolve, 500))
+  }
+  throw new Error('Gateway operation timed out')
 }

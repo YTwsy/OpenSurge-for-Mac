@@ -16,7 +16,10 @@ export type ProxyGroup = { name: string; type: string; selected: string; options
 export type ProviderProxy = { name: string; type: string; alive: boolean }
 export type ProxyProvider = { name: string; type: string; vehicle_type: string; updated_at?: string; proxy_count: number; proxies: ProviderProxy[] }
 export type RuleProvider = { name: string; type: string; vehicle_type: string; behavior?: string; updated_at?: string; rule_count: number }
-export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string }
+export type NetworkSnapshot = { network_service: string; interface: string; hardware_address?: string; ipv4?: string; subnet_mask?: string; router?: string; dns: string[]; ipv6_default: boolean }
+export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string; network_snapshot?: NetworkSnapshot }
+export type GatewayPlan = { schema_version: number; revision: string; topology: string; snapshot: NetworkSnapshot; protected_ipv4: string[]; dhcp_servers: string[]; warnings: string[]; blockers: string[] }
+export type Operation = { id: string; kind: string; state: string; error?: string }
 
 export type Overview = {
   schema_version: number
