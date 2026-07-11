@@ -4,3 +4,8 @@
 /.codex/
 /.session-wiki/
 /docs/agent-wiki/.llmwiki/
+/web/node_modules/
+/apps/menubar/.build/
+/output/playwright/
+/.playwright-cli/
+*.tsbuildinfo

@@ -1,0 +1,81 @@
+export type GatewayStatus = {
+  gateway: string
+  interface: string
+  lan_ip: string
+  dhcp: string
+  dhcp_enabled: boolean
+  mihomo: string
+  pf_anchor: string
+  forwarding: string
+  client_count: number
+}
+
+export type DoctorCheck = { name: string; ok: boolean; message?: string }
+export type Lease = { ip: string; mac: string; hostname?: string; expires_at: string; online: boolean }
+export type ProxyGroup = { name: string; type: string; selected: string; options: string[] }
+export type ProviderProxy = { name: string; type: string; alive: boolean }
+export type ProxyProvider = { name: string; type: string; vehicle_type: string; updated_at?: string; proxy_count: number; proxies: ProviderProxy[] }
+export type RuleProvider = { name: string; type: string; vehicle_type: string; behavior?: string; updated_at?: string; rule_count: number }
+export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string }
+
+export type Overview = {
+  schema_version: number
+  revision: string
+  desired_digest?: string
+  applied_digest?: string
+  warnings: string[]
+  status: GatewayStatus
+  status_error?: string
+  doctor: DoctorCheck[]
+  doctor_healthy: boolean
+  leases: Lease[]
+  policies: ProxyGroup[]
+  providers: { proxy_providers: ProxyProvider[]; rule_providers: RuleProvider[] }
+  recovery: Recovery
+}
+
+export type Source = {
+  id: string
+  name: string
+  kind: string
+  origin: string
+  digest: string
+  size: number
+  valid: boolean
+  validation?: string
+  applied: boolean
+  imported_at: string
+  inventory: {
+    proxies: string[]
+    proxy_providers: string[]
+    proxy_groups: string[]
+    rule_providers: string[]
+    rule_count: number
+    terminal_match: boolean
+    warnings: string[]
+  }
+}
+
+export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; groups: Record<string, string> }
+export type DevicesResponse = {
+  desired_digest?: string
+  applied_digest?: string
+  drift: boolean
+  applied: boolean
+  devices: CompiledDevice[]
+  leases: Lease[]
+}
+
+export type PolicyRule = {
+  id: string
+  match: { domains?: string[]; ip_cidrs?: string[]; protocols?: string[]; ports?: string[]; rule_sets?: string[] }
+  action?: string
+  policies?: string[]
+  on_unsupported?: string
+}
+export type PolicyProfile = { id: string; template?: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
+export type PolicyDevice = { id: string; mac: string; ipv4: string; profile: string }
+export type PolicySet = { devices: PolicyDevice[]; profiles: PolicyProfile[]; templates: unknown[]; rule_sets: unknown[] }
+export type DevicePolicyDocument = { schema_version: number; revision: string; policy: PolicySet }
+
+export type APIError = { error?: { code?: string; message?: string } }
