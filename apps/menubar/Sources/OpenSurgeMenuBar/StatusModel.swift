@@ -10,6 +10,8 @@ final class StatusModel: ObservableObject {
 
     private let client: ControlAPIClient
     private var timer: Timer?
+    private var rapidPolling = false
+    private var failureCount = 0
 
     init(client: ControlAPIClient = ControlAPIClient()) {
         self.client = client
@@ -19,9 +21,7 @@ final class StatusModel: ObservableObject {
 
     func startPolling(rapid: Bool = false) {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: rapid ? 2 : 15, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refresh() }
-        }
+        rapidPolling = rapid
         Task { await refresh() }
     }
 
@@ -29,24 +29,38 @@ final class StatusModel: ObservableObject {
 
     func refresh() async {
         guard !isRefreshing else { return }
+        timer?.invalidate()
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer { isRefreshing = false; scheduleNextRefresh() }
         do {
             status = try await client.status()
             error = nil
+            failureCount = 0
         } catch ControlAPIError.descriptorUnavailable {
             await ControlServiceLauncher.wake()
             try? await Task.sleep(for: .milliseconds(350))
             do {
                 status = try await client.status()
                 error = nil
+                failureCount = 0
             } catch {
                 status = nil
                 self.error = error.localizedDescription
+                failureCount += 1
             }
         } catch {
             status = nil
             self.error = error.localizedDescription
+            failureCount += 1
+        }
+    }
+
+    private func scheduleNextRefresh() {
+        let base = rapidPolling ? 2.0 : 15.0
+        let multiplier = pow(2.0, Double(min(failureCount, 4)))
+        let interval = min(base * multiplier, 60.0)
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            Task { @MainActor in await self?.refresh() }
         }
     }
 

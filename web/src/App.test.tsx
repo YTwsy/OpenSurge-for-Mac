@@ -8,6 +8,14 @@ vi.mock('./api', () => ({
   RequestError: class RequestError extends Error { status = 500 },
   api: {
     overview: vi.fn(),
+    config: vi.fn(async () => ({
+      schema_version: 1, revision: 'config-revision',
+      gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      device_policy: { enabled: false, protected_ipv4: [] },
+    })),
+    saveConfig: vi.fn(),
     gateway: vi.fn(),
     operation: vi.fn(),
     gatewayPlan: vi.fn(async () => ({
@@ -27,11 +35,16 @@ vi.mock('./api', () => ({
     probeDHCP: vi.fn(),
     confirmRouterRestored: vi.fn(),
     restoreMacDHCP: vi.fn(),
-    sources: vi.fn(async () => ({ sources: [] })),
+    sources: vi.fn(async () => ({ revision: 'config-revision', sources: [] })),
+    importURL: vi.fn(),
+    importFile: vi.fn(),
+    refreshSource: vi.fn(),
+    applySource: vi.fn(),
     devices: vi.fn(async () => ({ devices: [], leases: [], drift: false, applied: false })),
     policies: vi.fn(async () => ({ groups: [] })),
     devicePolicy: vi.fn(async () => null),
     refreshProvider: vi.fn(),
+    diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {} })),
   },
 }))
 
@@ -72,5 +85,35 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(screen.getByText('合作式 IPv4 模式')).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
+  })
+
+  it('selects an isolated topology in the revisioned network editor', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
+    const isolated = await screen.findByRole('button', { name: /独立下游 LAN/ })
+    await userEvent.click(isolated)
+    expect(isolated.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: '保存网络配置' })).toBeTruthy()
+  })
+
+  it('imports an HTTPS source as a draft', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+    await userEvent.type(screen.getByLabelText('来源名称'), 'Home')
+    await userEvent.type(screen.getByLabelText('HTTPS 订阅 URL'), 'https://example.com/profile')
+    await userEvent.click(screen.getByRole('button', { name: '导入为草稿' }))
+    expect(api.importURL).toHaveBeenCalledWith('Home', 'https://example.com/profile')
+  })
+
+  it('edits templates in the structured device policy editor', async () => {
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '设备' }))
+    await userEvent.type(await screen.findByLabelText('Template ID'), 'home')
+    await userEvent.click(screen.getByRole('button', { name: '添加模板' }))
+    expect(screen.getByText('template: home')).toBeTruthy()
   })
 })

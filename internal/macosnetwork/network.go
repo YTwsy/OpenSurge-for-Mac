@@ -34,7 +34,11 @@ var runCommand = run
 
 func Discover(ctx context.Context, networkService, interfaceName string) (Snapshot, error) {
 	if strings.TrimSpace(networkService) == "" {
-		networkService = "Wi-Fi"
+		var err error
+		networkService, err = NetworkServiceForInterface(ctx, interfaceName)
+		if err != nil {
+			return Snapshot{}, err
+		}
 	}
 	if strings.TrimSpace(interfaceName) == "" {
 		return Snapshot{}, fmt.Errorf("interface is required")
@@ -123,7 +127,32 @@ func ServiceInterface(ctx context.Context, networkService string) (string, error
 	return parseServiceInterface(output, networkService)
 }
 
+func NetworkServiceForInterface(ctx context.Context, interfaceName string) (string, error) {
+	if strings.TrimSpace(interfaceName) == "" {
+		return "", fmt.Errorf("interface is required")
+	}
+	output, err := runCommand(ctx, "/usr/sbin/networksetup", "-listnetworkserviceorder")
+	if err != nil {
+		return "", err
+	}
+	services := parseServiceOrder(output)
+	for service, device := range services {
+		if device == interfaceName {
+			return service, nil
+		}
+	}
+	return "", fmt.Errorf("no network service uses interface %q", interfaceName)
+}
+
 func parseServiceInterface(output, networkService string) (string, error) {
+	if device := parseServiceOrder(output)[networkService]; device != "" {
+		return device, nil
+	}
+	return "", fmt.Errorf("network service %q was not found", networkService)
+}
+
+func parseServiceOrder(output string) map[string]string {
+	result := map[string]string{}
 	lines := strings.Split(output, "\n")
 	for index, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -131,7 +160,7 @@ func parseServiceInterface(output, networkService string) (string, error) {
 			continue
 		}
 		_, service, _ := strings.Cut(trimmed, ") ")
-		if service != networkService || index+1 >= len(lines) {
+		if index+1 >= len(lines) {
 			continue
 		}
 		detail := strings.TrimSpace(lines[index+1])
@@ -142,10 +171,10 @@ func parseServiceInterface(output, networkService string) (string, error) {
 		}
 		device := strings.TrimSuffix(strings.TrimSpace(detail[position+len(marker):]), ")")
 		if device != "" {
-			return device, nil
+			result[service] = device
 		}
 	}
-	return "", fmt.Errorf("network service %q was not found", networkService)
+	return result
 }
 
 func SetDHCP(ctx context.Context, networkService string) error {

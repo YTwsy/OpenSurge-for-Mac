@@ -1,4 +1,4 @@
-import type { APIError, DevicePolicyDocument, DevicesResponse, GatewayPlan, Operation, Overview, PolicySet, ProxyGroup, Source } from './types'
+import type { APIError, ControlConfig, DevicePolicyDocument, DevicesResponse, Diagnostics, GatewayPlan, Operation, Overview, PolicySet, ProxyGroup, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -22,11 +22,13 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   overview: () => request<Overview>('/api/v1/overview'),
+  config: () => request<ControlConfig>('/api/v1/config'),
+  saveConfig: (config: ControlConfig) => request<ControlConfig>('/api/v1/config', { method: 'PUT', headers: { 'If-Match': `"${config.revision}"` }, body: JSON.stringify(config) }),
   gateway: (action: 'start' | 'stop') => request<Operation>(`/api/v1/gateway/${action}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
   operation: (id: string) => request<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`),
-  gatewayPlan: (routerDHCPDisabled = false) => request<GatewayPlan>('/api/v1/gateway/plan', { method: 'POST', body: JSON.stringify({ network_service: 'Wi-Fi', router_dhcp_disabled: routerDHCPDisabled }) }),
+  gatewayPlan: (routerDHCPDisabled = false) => request<GatewayPlan>('/api/v1/gateway/plan', { method: 'POST', body: JSON.stringify({ router_dhcp_disabled: routerDHCPDisabled }) }),
   recovery: (stage: string) => request('/api/v1/recovery', { method: 'POST', body: JSON.stringify({ stage }) }),
-  prepareRecovery: () => request('/api/v1/recovery/prepare', { method: 'POST', body: JSON.stringify({ network_service: 'Wi-Fi' }) }),
+  prepareRecovery: () => request('/api/v1/recovery/prepare', { method: 'POST', body: JSON.stringify({}) }),
   applyStatic: () => request('/api/v1/network/apply-static', { method: 'POST' }),
   probeDHCP: () => request('/api/v1/network/dhcp-probe', { method: 'POST' }),
   confirmRouterRestored: () => request('/api/v1/recovery/router-restored', { method: 'POST' }),
@@ -49,6 +51,7 @@ export const api = {
   selectPolicy: (group: string, policy: string) => request(`/api/v1/policies/${encodeURIComponent(group)}/selection`, { method: 'POST', body: JSON.stringify({ policy }) }),
   selectDevicePolicy: (device: string, slot: string, policy: string) => request(`/api/v1/devices/${encodeURIComponent(device)}/selectors/${encodeURIComponent(slot)}`, { method: 'POST', body: JSON.stringify({ policy }) }),
   refreshProvider: (name: string) => request(`/api/v1/providers/${encodeURIComponent(name)}/refresh`, { method: 'POST' }),
+  diagnostics: () => request<Diagnostics>('/api/v1/diagnostics'),
 }
 
 export async function waitForOperation(id: string, timeoutMs = 180_000): Promise<Operation> {

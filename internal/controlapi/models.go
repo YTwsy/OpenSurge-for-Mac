@@ -93,6 +93,46 @@ type NetworkActionResponse struct {
 	DHCPServers   []string      `json:"dhcp_servers,omitempty"`
 }
 
+type ControlConfig struct {
+	SchemaVersion int                     `json:"schema_version"`
+	Revision      string                  `json:"revision"`
+	Gateway       GatewayConfigInput      `json:"gateway"`
+	DHCP          DHCPConfigInput         `json:"dhcp"`
+	DNS           DNSConfigInput          `json:"dns"`
+	Transparent   TransparentConfigInput  `json:"transparent"`
+	DevicePolicy  DevicePolicyConfigInput `json:"device_policy"`
+}
+
+type GatewayConfigInput struct {
+	Mode              string `json:"mode"`
+	Interface         string `json:"interface"`
+	LANIP             string `json:"lan_ip"`
+	UpstreamInterface string `json:"upstream_interface"`
+}
+
+type DHCPConfigInput struct {
+	Enabled    bool   `json:"enabled"`
+	RangeStart string `json:"range_start"`
+	RangeEnd   string `json:"range_end"`
+	LeaseTime  string `json:"lease_time"`
+	Domain     string `json:"domain"`
+}
+
+type DNSConfigInput struct {
+	Listen   string `json:"listen"`
+	Upstream string `json:"upstream"`
+}
+
+type TransparentConfigInput struct {
+	Mode        string `json:"mode"`
+	StrictRoute bool   `json:"strict_route"`
+}
+
+type DevicePolicyConfigInput struct {
+	Enabled       bool     `json:"enabled"`
+	ProtectedIPv4 []string `json:"protected_ipv4"`
+}
+
 const (
 	RecoveryIdle                        = "idle"
 	RecoveryPrepared                    = "prepared"
@@ -179,4 +219,23 @@ type BootstrapResponse struct {
 	SchemaVersion int       `json:"schema_version"`
 	URL           string    `json:"url"`
 	ExpiresAt     time.Time `json:"expires_at"`
+}
+
+type StateEvent struct {
+	SchemaVersion int           `json:"schema_version"`
+	Revision      string        `json:"revision"`
+	Gateway       string        `json:"gateway"`
+	DesiredDigest string        `json:"desired_digest,omitempty"`
+	AppliedDigest string        `json:"applied_digest,omitempty"`
+	Drift         bool          `json:"drift"`
+	Recovery      RecoveryState `json:"recovery"`
+	At            time.Time     `json:"at"`
+}
+
+type DiagnosticsResponse struct {
+	SchemaVersion   int                        `json:"schema_version"`
+	Revision        string                     `json:"revision"`
+	Connections     mihomo.ConnectionsSnapshot `json:"connections"`
+	ConnectionError string                     `json:"connection_error,omitempty"`
+	Logs            map[string][]string        `json:"logs"`
 }

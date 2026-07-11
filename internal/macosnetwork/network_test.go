@@ -40,6 +40,9 @@ func TestParseServiceInterface(t *testing.T) {
 	if _, err := parseServiceInterface(output, "Missing"); err == nil {
 		t.Fatal("missing service should fail")
 	}
+	if got := parseServiceOrder(output)["Thunderbolt Bridge"]; got != "bridge0" {
+		t.Fatalf("bridge service = %q", got)
+	}
 }
 
 func TestValidateManual(t *testing.T) {

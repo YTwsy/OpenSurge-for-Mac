@@ -46,10 +46,13 @@ export function App() {
   useEffect(() => {
     void refresh()
     const timer = window.setInterval(() => void refresh(), 8000)
+    const events = typeof EventSource === 'undefined' ? null : new EventSource('/api/v1/events')
+    events?.addEventListener('state', () => void refresh())
     const onPop = () => setPage(currentPage())
     window.addEventListener('popstate', onPop)
     return () => {
       window.clearInterval(timer)
+      events?.close()
       window.removeEventListener('popstate', onPop)
     }
   }, [refresh])

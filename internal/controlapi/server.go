@@ -159,6 +159,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /bootstrap", s.exchangeBootstrap)
 	mux.HandleFunc("POST /api/v1/session/bootstrap", s.handleSessionBootstrap)
 	mux.Handle("GET /api/v1/overview", s.auth(http.HandlerFunc(s.handleOverview)))
+	mux.Handle("GET /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
+	mux.Handle("PUT /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
 	mux.Handle("GET /api/v1/menubar", s.auth(http.HandlerFunc(s.handleMenuBar)))
 	mux.Handle("GET /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
 	mux.Handle("POST /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
@@ -183,6 +185,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
 	mux.Handle("GET /api/v1/providers", s.auth(http.HandlerFunc(s.handleProviders)))
+	mux.Handle("GET /api/v1/diagnostics", s.auth(http.HandlerFunc(s.handleDiagnostics)))
 	mux.Handle("POST /api/v1/providers/{name}/refresh", s.auth(http.HandlerFunc(s.handleProviderRefresh)))
 	mux.Handle("GET /api/v1/operations/{id}", s.auth(http.HandlerFunc(s.handleOperation)))
 	mux.Handle("GET /api/v1/events", s.auth(http.HandlerFunc(s.handleEvents)))
@@ -194,6 +197,67 @@ func (s *Server) Handler() http.Handler {
 		})
 	}
 	return s.securityHeaders(mux)
+}
+
+func (s *Server) handleControlConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	revision := fileDigest(s.configPath)
+	if r.Method == http.MethodGet {
+		w.Header().Set("ETag", `"`+revision+`"`)
+		writeJSON(w, http.StatusOK, controlConfigFrom(cfg, revision))
+		return
+	}
+	recovery, _ := s.store.Recovery()
+	if recovery.Required {
+		writeError(w, http.StatusConflict, "recovery_required", "finish network recovery before editing topology")
+		return
+	}
+	match := strings.Trim(r.Header.Get("If-Match"), `"`)
+	if match == "" || match != revision {
+		writeError(w, http.StatusConflict, "revision_conflict", "If-Match must contain the current config revision")
+		return
+	}
+	var input ControlConfig
+	if err := decodeJSON(r, &input, 256<<10); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	payload, _ := json.Marshal(input)
+	newRevision, err := s.configRunner.ApplyControlConfig(r.Context(), s.configPath, match, payload)
+	if err != nil {
+		status, code := http.StatusUnprocessableEntity, "config_validation_failed"
+		if strings.Contains(err.Error(), "revision conflict") {
+			status, code = http.StatusConflict, "revision_conflict"
+		}
+		if strings.Contains(err.Error(), "must be stopped") {
+			status, code = http.StatusConflict, "gateway_running"
+		}
+		writeError(w, status, code, err.Error())
+		return
+	}
+	cfg, err = config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "config_reload_failed", err.Error())
+		return
+	}
+	_ = s.store.SaveRecovery(RecoveryState{SchemaVersion: SchemaVersion, Stage: RecoveryIdle, Topology: cfg.Gateway.Mode})
+	w.Header().Set("ETag", `"`+newRevision+`"`)
+	writeJSON(w, http.StatusOK, controlConfigFrom(cfg, newRevision))
+}
+
+func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
+	return ControlConfig{
+		SchemaVersion: SchemaVersion, Revision: revision,
+		Gateway:      GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
+		DHCP:         DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain},
+		DNS:          DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: cfg.DNS.Upstream},
+		Transparent:  TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute},
+		DevicePolicy: DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
+	}
 }
 
 func (s *Server) Serve(ctx context.Context) error {
@@ -411,7 +475,7 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
-	request := GatewayPlanRequest{NetworkService: "Wi-Fi"}
+	request := GatewayPlanRequest{}
 	if r.Method == http.MethodPost && r.ContentLength != 0 {
 		if err := decodeJSON(r, &request, 64<<10); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
@@ -1019,6 +1083,43 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "providers": providers})
 }
 
+func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	paths := runtime.NewPaths(cfg)
+	connections, connectionErr := mihomo.FetchConnections(r.Context(), cfg)
+	if connections.Connections == nil {
+		connections.Connections = []mihomo.Connection{}
+	}
+	logs := map[string][]string{
+		"mihomo":  tailLines(paths.MihomoLog, 80, cfg),
+		"dnsmasq": tailLines(paths.DNSMasqLog, 80, cfg),
+	}
+	writeJSON(w, http.StatusOK, DiagnosticsResponse{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Connections: connections, ConnectionError: errorString(connectionErr), Logs: logs})
+}
+
+func tailLines(path string, limit int, cfg config.Config) []string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []string{}
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	for index := range lines {
+		for _, secret := range []string{cfg.Mihomo.Secret, cfg.UpstreamProxy.Password, cfg.UpstreamProxy.Username} {
+			if secret != "" {
+				lines[index] = strings.ReplaceAll(lines[index], secret, "[REDACTED]")
+			}
+		}
+	}
+	return lines
+}
+
 func (s *Server) handleProviderRefresh(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
@@ -1041,19 +1142,59 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
-	fmt.Fprint(w, "event: ready\ndata: {}\n\n")
-	flusher.Flush()
+	stateTicker := time.NewTicker(2 * time.Second)
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer stateTicker.Stop()
+	defer heartbeat.Stop()
+	last := ""
+	sendState := func() {
+		state, err := s.stateEvent(r.Context())
+		if err != nil {
+			return
+		}
+		signature, _ := json.Marshal(state)
+		if string(signature) == last {
+			return
+		}
+		last = string(signature)
+		state.At = time.Now().UTC()
+		data, _ := json.Marshal(state)
+		fmt.Fprintf(w, "event: state\ndata: %s\n\n", data)
+		flusher.Flush()
+	}
+	sendState()
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case now := <-ticker.C:
+		case <-stateTicker.C:
+			sendState()
+		case now := <-heartbeat.C:
 			fmt.Fprintf(w, "event: heartbeat\ndata: {\"at\":%q}\n\n", now.UTC().Format(time.RFC3339))
 			flusher.Flush()
 		}
 	}
+}
+
+func (s *Server) stateEvent(ctx context.Context) (StateEvent, error) {
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		return StateEvent{}, err
+	}
+	status, _ := gateway.New(cfg).Status(ctx)
+	paths := runtime.NewPaths(cfg)
+	desired := ""
+	if cfg.DevicePolicy.File != "" {
+		if bundle, err := device.LoadPolicyBundle(cfg.DevicePolicy.File); err == nil {
+			desired = bundle.Digest
+		}
+	}
+	applied := ""
+	if state, exists, _ := runtime.LoadState(paths.StateFile); exists {
+		applied = state.DevicePolicyDigest
+	}
+	recovery, _ := s.store.Recovery()
+	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, Drift: applied != "" && desired != applied, Recovery: recovery}, nil
 }
 
 func (s *Server) sourceByID(id string) (Source, error) {

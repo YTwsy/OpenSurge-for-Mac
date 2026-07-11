@@ -21,8 +21,8 @@ export function Service({ name, state, detail }: { name: string; state?: string;
   return <article className="service"><StatusDot status={state ?? 'stopped'} /><div><strong>{name}</strong><small>{detail}</small></div><span>{state ?? '—'}</span></article>
 }
 
-export function Mode({ title, description, badge, active }: { title: string; description: string; badge?: string; active?: boolean }) {
-  return <article className={`mode ${active ? 'active' : ''}`}><div>{badge && <span className="pill ok">{badge}</span>}<h3>{title}</h3><p>{description}</p></div><span className="radio" aria-hidden="true">{active ? '●' : '○'}</span></article>
+export function Mode({ title, description, badge, active, onSelect }: { title: string; description: string; badge?: string; active?: boolean; onSelect?: () => void }) {
+  return <button type="button" className={`mode ${active ? 'active' : ''}`} aria-pressed={active} onClick={onSelect}><span>{badge && <span className="pill ok">{badge}</span>}<h3>{title}</h3><p>{description}</p></span><span className="radio" aria-hidden="true">{active ? '●' : '○'}</span></button>
 }
 
 export function Empty({ text }: { text: string }) { return <div className="empty">{text}</div> }

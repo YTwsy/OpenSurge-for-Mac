@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/macosnetwork"
 )
@@ -308,6 +309,94 @@ func TestDevicePolicyUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) 
 	}
 }
 
+func TestControlConfigUsesRevisionAndAppliesTopology(t *testing.T) {
+	server := newTestServer(t)
+	get := performAuthorized(server, http.MethodGet, "/api/v1/config", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET status=%d body=%s", get.Code, get.Body.String())
+	}
+	var current ControlConfig
+	if err := json.Unmarshal(get.Body.Bytes(), &current); err != nil {
+		t.Fatal(err)
+	}
+	current.Gateway.Mode = config.GatewayModeSameLAN
+	current.DHCP.Enabled = false
+	requestBody, _ := json.Marshal(current)
+	conflict := performAuthorized(server, http.MethodPut, "/api/v1/config", requestBody)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("conflict status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/config", bytes.NewReader(requestBody))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+current.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", response.Code, response.Body.String())
+	}
+	updated, err := config.Load(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Gateway.Mode != config.GatewayModeSameLAN || updated.DHCP.Enabled {
+		t.Fatalf("updated config=%#v", updated)
+	}
+}
+
+func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
+	server := newTestServer(t)
+	state, err := server.stateEvent(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Revision == "" || state.Gateway == "" || state.Recovery.Stage != RecoveryIdle {
+		t.Fatalf("state event = %#v", state)
+	}
+}
+
+func TestControlConfigCanInitializeDevicePolicyFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(dir, "runtime", "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	input.DevicePolicy.Enabled = true
+	payload, _ := json.Marshal(input)
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DevicePolicy.File == "" {
+		t.Fatal("device policy file was not initialized")
+	}
+	if _, err := os.Stat(updated.DevicePolicy.File); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDiagnosticLogTailRedactsKnownCredentials(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mihomo.log")
+	if err := os.WriteFile(path, []byte("secret-token proxy-user proxy-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Mihomo.Secret = "secret-token"
+	cfg.UpstreamProxy.Username = "proxy-user"
+	cfg.UpstreamProxy.Password = "proxy-password"
+	lines := tailLines(path, 10, cfg)
+	if len(lines) != 1 || strings.Contains(lines[0], "secret") || strings.Contains(lines[0], "proxy-user") || strings.Contains(lines[0], "proxy-password") {
+		t.Fatalf("redacted lines = %#v", lines)
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	server, _ := newTestServerWithNetwork(t)
 	return server
@@ -368,6 +457,10 @@ func (fakeConfigurationRunner) ApplyDevicePolicy(_ context.Context, _, _ string,
 	}
 	bundle, err := device.CompilePolicyBundle(policy)
 	return bundle.Digest, err
+}
+
+func (fakeConfigurationRunner) ApplyControlConfig(_ context.Context, path, revision string, payload []byte) (string, error) {
+	return applyControlConfig(path, revision, payload)
 }
 
 type fakeNetworkRunner struct {

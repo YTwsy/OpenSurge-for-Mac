@@ -32,6 +32,7 @@ type NetworkRunner interface {
 type ConfigurationRunner interface {
 	ApplyProfile(context.Context, string, string, []byte) (string, error)
 	ApplyDevicePolicy(context.Context, string, string, []byte) (string, error)
+	ApplyControlConfig(context.Context, string, string, []byte) (string, error)
 }
 
 type DirectRunner struct{}
@@ -136,6 +137,11 @@ func (c HelperClient) ApplyDevicePolicy(ctx context.Context, configPath, revisio
 	return response.Revision, err
 }
 
+func (c HelperClient) ApplyControlConfig(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-apply-control", ConfigPath: configPath, Revision: revision, Payload: payload})
+	return response.Revision, err
+}
+
 func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperResponse, error) {
 	dialer := net.Dialer{Timeout: 2 * time.Second}
 	conn, err := dialer.DialContext(ctx, "unix", c.SocketPath)
@@ -211,13 +217,13 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: err.Error()})
 		return
 	}
-	if request.Action != "start" && request.Action != "stop" && request.Action != "network-set-manual" && request.Action != "network-set-dhcp" && request.Action != "dhcp-probe" && request.Action != "config-apply-profile" && request.Action != "config-apply-device-policy" {
+	if request.Action != "start" && request.Action != "stop" && request.Action != "network-set-manual" && request.Action != "network-set-dhcp" && request.Action != "dhcp-probe" && request.Action != "config-apply-profile" && request.Action != "config-apply-device-policy" && request.Action != "config-apply-control" {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: "action is not allowed"})
 		return
 	}
 	var err error
 	configPath := ""
-	if request.Action == "start" || request.Action == "stop" || request.Action == "network-set-manual" || request.Action == "network-set-dhcp" || request.Action == "dhcp-probe" || request.Action == "config-apply-profile" || request.Action == "config-apply-device-policy" {
+	if request.Action == "start" || request.Action == "stop" || request.Action == "network-set-manual" || request.Action == "network-set-dhcp" || request.Action == "dhcp-probe" || request.Action == "config-apply-profile" || request.Action == "config-apply-device-policy" || request.Action == "config-apply-control" {
 		configPath, err = filepath.Abs(request.ConfigPath)
 	}
 	if err == nil && configPath != "" {
@@ -239,7 +245,7 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	if err == nil && (request.Action == "start" || request.Action == "config-apply-profile") {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
-	if err == nil && request.Action == "config-apply-profile" {
+	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control") {
 		err = requireTrustedDirectory(filepath.Join(filepath.Dir(configPath), "data"), allowedRoot)
 	}
 	if err == nil && request.Action == "config-apply-device-policy" {
@@ -248,6 +254,9 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 		} else {
 			err = requireTrustedFile(cfg.DevicePolicy.File, allowedRoot, false)
 		}
+	}
+	if err == nil && request.Action == "config-apply-device-policy" {
+		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
 	response := HelperResponse{}
 	if err == nil {
@@ -279,6 +288,8 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 			response.Revision, err = runner.ApplyProfile(ctx, configPath, request.Revision, request.Payload)
 		case "config-apply-device-policy":
 			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)
+		case "config-apply-control":
+			response.Revision, err = runner.ApplyControlConfig(ctx, configPath, request.Revision, request.Payload)
 		}
 	}
 	response.OK = err == nil
