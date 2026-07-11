@@ -56,6 +56,13 @@ lab 的 root-required 步骤依赖当前终端会话里的 sudo 缓存。`sudo -
 `make lab-test` / `make lab-test-tun` 应在同一个 TTY 里连续运行；如果 agent 在
 不同 exec 会话里刷新 sudo，脚本的 `sudo -n` 预检查仍可能失败。
 
+无 controlling tty 的环境（agent exec 会话、CI）可改用 askpass：写一个 700 权限、
+向 stdout 输出当前用户密码的 helper 脚本，export `SUDO_ASKPASS` 和
+`OMG_LAB_SUDO_ASKPASS` 指向它，再顺序运行 `make lab-up && make lab-test-* &&
+make lab-down`。`require_cached_sudo` 会在 `sudo -n true` 失败时内部执行一次
+`sudo -A -v`，使认证发生在 lab.sh 同一上下文；`SUDO_ASKPASS` 也让 lab-up/lab-down
+里无重定向的 `sudo -n` 自动回退到 helper。helper 含密码，用完立即删除。
+
 虚拟 LAN lab 和真实设备 smoke 默认都使用 `192.168.50.1/24`。运行 lab 前，
 这个地址只能存在于 lab 的 vmnet bridge 上。如果 `en7` 等 real-device 下游接口
 仍保留 `192.168.50.1`，macOS 可能把 `192.168.50.0/24` 的回程路由选到错误接口，

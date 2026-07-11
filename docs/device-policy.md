@@ -199,5 +199,8 @@ make lab-down
 
 It uses two Lima clients, verifies the fixed `.101` and `.102` leases, distinct
 TUN policy groups and egress paths, independent selector changes, and a
-device-specific domain `REJECT`. Rule/template/provider compilation is covered
+device-specific domain `REJECT`. It also asserts the applied bundle/state
+digest, exact DHCP identity, desired/applied drift after editing the policy
+file, and that UDP/443 over an HTTP-only egress is logged as `REJECT` rather
+than falling through to `DIRECT`. Rule/template/provider compilation is covered
 by unit tests and does not require a Lab run for each operator-defined rule.
