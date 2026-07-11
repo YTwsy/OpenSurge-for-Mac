@@ -32,7 +32,7 @@ func (m Manager) WriteAnchor() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.paths.PFAnchor, []byte(rendered), 0o644)
+	return os.WriteFile(m.paths.PFAnchor, []byte(rendered), 0o640)
 }
 
 func (m Manager) Enabled() (bool, error) {

@@ -29,7 +29,7 @@ func (m Manager) WriteConfig() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.paths.MihomoConfig, []byte(rendered), 0o644)
+	return os.WriteFile(m.paths.MihomoConfig, []byte(rendered), 0o640)
 }
 
 func (m Manager) ValidateConfig() error {
@@ -62,7 +62,7 @@ func (m Manager) Start() (int, error) {
 	if _, err := os.Stat(m.paths.MihomoConfig); err != nil {
 		return 0, fmt.Errorf("prepared mihomo config: %w", err)
 	}
-	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o644); err != nil {
+	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o640); err != nil {
 		return 0, err
 	}
 	pid, err := process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-d", configDir, "-f", m.paths.MihomoConfig)

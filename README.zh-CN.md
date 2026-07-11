@@ -120,6 +120,24 @@ provider，并返回刷新后的 provider 状态。`logs --tail N --format json`
 使用 `--format json` 时，命令失败会在 stderr 输出
 `{"command":"...","ok":false,"error":"..."}`，同时保留非零退出码。
 
+## Web GUI 与菜单栏 App
+
+本地 Control API、React Web GUI 和只读 SwiftUI 菜单栏 launcher 已进入仓库。开发构建：
+
+```sh
+make web-install
+make control-build
+./bin/opensurge-control --config examples/config.example.yaml
+make menubar-build
+```
+
+控制服务只监听 `127.0.0.1`，启动时会输出一次性 Web GUI 链接。菜单栏 App 只显示
+状态、恢复警报和打开 Web GUI，不提供 start/stop 或策略切换。架构、安全边界与构建
+说明见 [Web GUI 与菜单栏 App](docs/gui-architecture.zh-CN.md)。
+
+`make gui-installer` 会在取得真实 mihomo、dnsmasq 二进制后构建 macOS 安装包。
+Developer ID 签名和 notarization 必须显式提供发布凭据；本地未签名 pkg 不视为发布产物。
+
 ## 安全
 
 `start` 和 `stop` 需要用 `sudo` 运行，因为它们会管理 DHCP、pf 和 IPv4

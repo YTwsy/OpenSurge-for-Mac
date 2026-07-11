@@ -131,6 +131,29 @@ When `--format json` is used, command failures are emitted to stderr as
 `{"command":"...","ok":false,"error":"..."}` while preserving the non-zero exit
 code.
 
+## Web GUI and menu bar app
+
+The repository now includes the loopback Go Control API, an embedded React Web
+GUI, and a read-only native SwiftUI menu bar launcher. For a development build:
+
+```sh
+make web-install
+make control-build
+./bin/opensurge-control --config examples/config.example.yaml
+make menubar-build
+```
+
+The control service listens only on `127.0.0.1` and prints a one-time Web GUI
+bootstrap link. The menu bar app shows status and recovery warnings and opens
+the Web GUI; it deliberately has no start/stop or policy-selection actions.
+See the [GUI architecture notes](docs/gui-architecture.zh-CN.md) for the current
+security and packaging boundary.
+
+`make gui-installer` builds a macOS package after requiring real mihomo and
+dnsmasq binaries. Developer ID signing and notarization are opt-in through the
+environment variables documented in the architecture notes; an unsigned local
+package is never described as a release artifact.
+
 ## Safety
 
 `start` and `stop` are intended to run with `sudo` because they manage DHCP,

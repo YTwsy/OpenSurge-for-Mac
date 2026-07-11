@@ -52,7 +52,23 @@ func (s *Server) importURL(ctx context.Context, req SourceImportRequest) (Source
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return Source{}, fmt.Errorf("source returned %s", resp.Status)
 	}
-	return s.importReader(req.Name, req.Kind, redactURL(req.URL), io.LimitReader(resp.Body, maxSourceSize+1))
+	source, err := s.importReader(req.Name, req.Kind, redactURL(req.URL), io.LimitReader(resp.Body, maxSourceSize+1))
+	if err != nil {
+		return Source{}, err
+	}
+	if err := s.credentials.Put(ctx, source.ID, req.URL); err != nil {
+		sources, _ := s.store.Sources()
+		kept := sources[:0]
+		for _, candidate := range sources {
+			if candidate.ID != source.ID {
+				kept = append(kept, candidate)
+			}
+		}
+		_ = s.store.SaveSources(kept)
+		_ = os.Remove(source.SnapshotPath)
+		return Source{}, err
+	}
+	return source, nil
 }
 
 func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
@@ -137,7 +153,6 @@ func (s *Server) importReader(name, kind, origin string, reader io.Reader) (Sour
 		ImportedAt:    time.Now().UTC(),
 	}
 	if strings.HasPrefix(origin, "https://") {
-		source.FetchURL = origin
 		source.Origin = redactURL(origin)
 	}
 	sources, loadErr := s.store.Sources()

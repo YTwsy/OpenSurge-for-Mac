@@ -29,6 +29,11 @@ type NetworkRunner interface {
 	ProbeDHCP(context.Context, string, string, time.Duration) ([]string, error)
 }
 
+type ConfigurationRunner interface {
+	ApplyProfile(context.Context, string, string, []byte) (string, error)
+	ApplyDevicePolicy(context.Context, string, string, []byte) (string, error)
+}
+
 type DirectRunner struct{}
 
 func (DirectRunner) Run(ctx context.Context, action, configPath string) error {
@@ -90,12 +95,15 @@ type HelperRequest struct {
 	NetworkService string                     `json:"network_service,omitempty"`
 	Interface      string                     `json:"interface,omitempty"`
 	TimeoutMillis  int                        `json:"timeout_millis,omitempty"`
+	Revision       string                     `json:"revision,omitempty"`
+	Payload        []byte                     `json:"payload,omitempty"`
 }
 
 type HelperResponse struct {
 	OK          bool     `json:"ok"`
 	Error       string   `json:"error,omitempty"`
 	DHCPServers []string `json:"dhcp_servers,omitempty"`
+	Revision    string   `json:"revision,omitempty"`
 }
 
 func (c HelperClient) Run(ctx context.Context, action, configPath string) error {
@@ -116,6 +124,16 @@ func (c HelperClient) SetDHCP(ctx context.Context, configPath, service string) e
 func (c HelperClient) ProbeDHCP(ctx context.Context, configPath, interfaceName string, timeout time.Duration) ([]string, error) {
 	response, err := c.call(ctx, HelperRequest{Action: "dhcp-probe", ConfigPath: configPath, Interface: interfaceName, TimeoutMillis: int(timeout / time.Millisecond)})
 	return response.DHCPServers, err
+}
+
+func (c HelperClient) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-apply-profile", ConfigPath: configPath, Revision: revision, Payload: payload})
+	return response.Revision, err
+}
+
+func (c HelperClient) ApplyDevicePolicy(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-apply-device-policy", ConfigPath: configPath, Revision: revision, Payload: payload})
+	return response.Revision, err
 }
 
 func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperResponse, error) {
@@ -189,17 +207,17 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Minute))
 	var request HelperRequest
-	if err := json.NewDecoder(ioLimitReader(conn, 64<<10)).Decode(&request); err != nil {
+	if err := json.NewDecoder(ioLimitReader(conn, 15<<20)).Decode(&request); err != nil {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: err.Error()})
 		return
 	}
-	if request.Action != "start" && request.Action != "stop" && request.Action != "network-set-manual" && request.Action != "network-set-dhcp" && request.Action != "dhcp-probe" {
+	if request.Action != "start" && request.Action != "stop" && request.Action != "network-set-manual" && request.Action != "network-set-dhcp" && request.Action != "dhcp-probe" && request.Action != "config-apply-profile" && request.Action != "config-apply-device-policy" {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: "action is not allowed"})
 		return
 	}
 	var err error
 	configPath := ""
-	if request.Action == "start" || request.Action == "stop" || request.Action == "network-set-manual" || request.Action == "network-set-dhcp" || request.Action == "dhcp-probe" {
+	if request.Action == "start" || request.Action == "stop" || request.Action == "network-set-manual" || request.Action == "network-set-dhcp" || request.Action == "dhcp-probe" || request.Action == "config-apply-profile" || request.Action == "config-apply-device-policy" {
 		configPath, err = filepath.Abs(request.ConfigPath)
 	}
 	if err == nil && configPath != "" {
@@ -214,6 +232,22 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	var cfg config.Config
 	if err == nil {
 		cfg, err = config.Load(configPath)
+	}
+	if err == nil {
+		err = requireTrustedRuntime(cfg, allowedRoot)
+	}
+	if err == nil && (request.Action == "start" || request.Action == "config-apply-profile") {
+		err = requireTrustedStartInputs(cfg, allowedRoot)
+	}
+	if err == nil && request.Action == "config-apply-profile" {
+		err = requireTrustedDirectory(filepath.Join(filepath.Dir(configPath), "data"), allowedRoot)
+	}
+	if err == nil && request.Action == "config-apply-device-policy" {
+		if cfg.DevicePolicy.File == "" {
+			err = fmt.Errorf("device_policy.file is not configured")
+		} else {
+			err = requireTrustedFile(cfg.DevicePolicy.File, allowedRoot, false)
+		}
 	}
 	response := HelperResponse{}
 	if err == nil {
@@ -241,6 +275,10 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 				}
 				response.DHCPServers, err = runner.ProbeDHCP(ctx, configPath, request.Interface, timeout)
 			}
+		case "config-apply-profile":
+			response.Revision, err = runner.ApplyProfile(ctx, configPath, request.Revision, request.Payload)
+		case "config-apply-device-policy":
+			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)
 		}
 	}
 	response.OK = err == nil
@@ -288,6 +326,124 @@ func requireRootOwnedConfig(path string) error {
 	}
 	if info.Mode().Perm()&0o022 != 0 {
 		return fmt.Errorf("helper config must not be writable by group or other")
+	}
+	return nil
+}
+
+func requireTrustedRuntime(cfg config.Config, allowedRoot string) error {
+	if err := requireTrustedDirectory(cfg.Runtime.Dir, allowedRoot); err != nil {
+		return fmt.Errorf("runtime.dir: %w", err)
+	}
+	if err := requireTrustedOutputPath(cfg.Mihomo.Config, allowedRoot); err != nil {
+		return fmt.Errorf("mihomo.config: %w", err)
+	}
+	return nil
+}
+
+func requireTrustedStartInputs(cfg config.Config, allowedRoot string) error {
+	for name, path := range map[string]string{"mihomo.binary": cfg.Mihomo.Binary} {
+		if err := requireTrustedFile(path, allowedRoot, true); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	if cfg.DHCP.Enabled {
+		if err := requireTrustedFile(cfg.DHCP.Binary, allowedRoot, true); err != nil {
+			return fmt.Errorf("dhcp.binary: %w", err)
+		}
+	}
+	if cfg.Mihomo.Profile != "" {
+		if err := requireTrustedFile(cfg.Mihomo.Profile, allowedRoot, false); err != nil {
+			return fmt.Errorf("mihomo.profile: %w", err)
+		}
+	}
+	if cfg.DevicePolicy.File != "" {
+		if err := requireTrustedFile(cfg.DevicePolicy.File, allowedRoot, false); err != nil {
+			return fmt.Errorf("device_policy.file: %w", err)
+		}
+	}
+	return nil
+}
+
+func requireTrustedDirectory(path, allowedRoot string) error {
+	resolved, err := trustedResolvedPath(path, allowedRoot)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("must be a directory")
+	}
+	return requireRootOwnedMode(info)
+}
+
+func requireTrustedFile(path, allowedRoot string, executable bool) error {
+	resolved, err := trustedResolvedPath(path, allowedRoot)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("must be a regular file")
+	}
+	if err := requireRootOwnedMode(info); err != nil {
+		return err
+	}
+	if executable && info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("must be executable")
+	}
+	return nil
+}
+
+func requireTrustedOutputPath(path, allowedRoot string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("must be absolute")
+	}
+	if _, err := trustedPathWithinRoot(path, allowedRoot); err != nil {
+		return err
+	}
+	return requireTrustedDirectory(filepath.Dir(path), allowedRoot)
+}
+
+func trustedResolvedPath(path, allowedRoot string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("must be absolute")
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	return trustedPathWithinRoot(resolved, allowedRoot)
+}
+
+func trustedPathWithinRoot(path, allowedRoot string) (string, error) {
+	root, err := filepath.EvalSymlinks(allowedRoot)
+	if err != nil {
+		return "", err
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(root, absolute)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path is outside allowed root")
+	}
+	return absolute, nil
+}
+
+func requireRootOwnedMode(info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 {
+		return fmt.Errorf("must be owned by root")
+	}
+	if info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("must not be writable by group or other")
 	}
 	return nil
 }

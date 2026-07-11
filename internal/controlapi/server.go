@@ -33,9 +33,11 @@ type Options struct {
 	StoreDir        string
 	Runner          ActionRunner
 	NetworkRunner   NetworkRunner
+	ConfigRunner    ConfigurationRunner
 	DiscoverNetwork func(context.Context, string, string) (macosnetwork.Snapshot, error)
 	PingRouter      func(context.Context, string) error
 	Static          http.Handler
+	Credentials     SourceCredentialStore
 }
 
 type Server struct {
@@ -44,9 +46,11 @@ type Server struct {
 	store           *Store
 	runner          ActionRunner
 	networkRunner   NetworkRunner
+	configRunner    ConfigurationRunner
 	discoverNetwork func(context.Context, string, string) (macosnetwork.Snapshot, error)
 	pingRouter      func(context.Context, string) error
 	static          http.Handler
+	credentials     SourceCredentialStore
 	token           string
 	baseURL         string
 
@@ -100,11 +104,24 @@ func New(options Options) (*Server, error) {
 			options.NetworkRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
 		}
 	}
+	if options.ConfigRunner == nil {
+		if runner, ok := options.Runner.(ConfigurationRunner); ok {
+			options.ConfigRunner = runner
+		} else {
+			options.ConfigRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
+		}
+	}
 	if options.DiscoverNetwork == nil {
 		options.DiscoverNetwork = macosnetwork.Discover
 	}
 	if options.PingRouter == nil {
 		options.PingRouter = macosnetwork.PingRouter
+	}
+	if options.Credentials == nil {
+		options.Credentials = KeychainCredentialStore{}
+	}
+	if err := migrateSourceCredentials(context.Background(), store, options.Credentials); err != nil {
+		return nil, err
 	}
 	return &Server{
 		configPath:      configPath,
@@ -112,9 +129,11 @@ func New(options Options) (*Server, error) {
 		store:           store,
 		runner:          options.Runner,
 		networkRunner:   options.NetworkRunner,
+		configRunner:    options.ConfigRunner,
 		discoverNetwork: options.DiscoverNetwork,
 		pingRouter:      options.PingRouter,
 		static:          options.Static,
+		credentials:     options.Credentials,
 		token:           token,
 		baseURL:         "http://" + options.Addr,
 		sessions:        map[string]time.Time{},
@@ -711,7 +730,9 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "sources_failed", err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "sources": publicSources(sources)})
+		revision := fileDigest(s.configPath)
+		w.Header().Set("ETag", `"`+revision+`"`)
+		writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "revision": revision, "sources": publicSources(sources)})
 		return
 	}
 	var source Source
@@ -751,11 +772,12 @@ func (s *Server) handleSourceRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "source_not_found", err.Error())
 		return
 	}
-	if !strings.HasPrefix(source.FetchURL, "https://") {
+	fetchURL, credentialErr := s.credentials.Get(r.Context(), source.ID)
+	if credentialErr != nil || !strings.HasPrefix(fetchURL, "https://") {
 		writeError(w, http.StatusConflict, "source_not_refreshable", "only HTTPS sources can be refreshed")
 		return
 	}
-	refreshed, err := s.importURL(r.Context(), SourceImportRequest{Name: source.Name, Kind: source.Kind, URL: source.FetchURL})
+	refreshed, err := s.importURL(r.Context(), SourceImportRequest{Name: source.Name, Kind: source.Kind, URL: fetchURL})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "source_refresh_failed", err.Error())
 		return
@@ -776,6 +798,16 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
+	match := strings.Trim(r.Header.Get("If-Match"), `"`)
+	if match == "" || match != fileDigest(s.configPath) {
+		writeError(w, http.StatusConflict, "revision_conflict", "If-Match must contain the current config revision")
+		return
+	}
+	payload, err := os.ReadFile(source.SnapshotPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "source_snapshot_unavailable", err.Error())
+		return
+	}
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
 	cfg.Mihomo.Profile = source.SnapshotPath
 	temp, err := os.MkdirTemp("", "opensurge-source-validate-*")
@@ -791,8 +823,14 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "mihomo_validation_failed", err.Error())
 		return
 	}
-	if err := writeAtomic(s.configPath, []byte(config.Render(cfg)), 0o600); err != nil {
-		writeError(w, http.StatusInternalServerError, "config_write_failed", err.Error())
+	newRevision, err := s.configRunner.ApplyProfile(r.Context(), s.configPath, match, payload)
+	if err != nil {
+		status := http.StatusInternalServerError
+		code := "config_apply_failed"
+		if strings.Contains(err.Error(), "revision conflict") {
+			status, code = http.StatusConflict, "revision_conflict"
+		}
+		writeError(w, status, code, err.Error())
 		return
 	}
 	sources, _ := s.store.Sources()
@@ -803,6 +841,7 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 	source.Applied = true
 	source.SnapshotPath = ""
 	source.FetchURL = ""
+	w.Header().Set("ETag", `"`+newRevision+`"`)
 	writeJSON(w, http.StatusOK, source)
 }
 
@@ -841,18 +880,23 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_validation_failed", err.Error())
 		return
 	}
-	bundle, err := device.CompilePolicyBundle(policy)
-	if err != nil {
+	if _, err := device.CompilePolicyBundle(policy); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_compile_failed", err.Error())
 		return
 	}
-	data, _ := json.MarshalIndent(policy, "", "  ")
-	if err := writeAtomic(cfg.DevicePolicy.File, append(data, '\n'), 0o600); err != nil {
-		writeError(w, http.StatusInternalServerError, "device_policy_write_failed", err.Error())
+	data, _ := json.Marshal(policy)
+	newRevision, err := s.configRunner.ApplyDevicePolicy(r.Context(), s.configPath, match, data)
+	if err != nil {
+		status := http.StatusInternalServerError
+		code := "device_policy_write_failed"
+		if strings.Contains(err.Error(), "revision conflict") {
+			status, code = http.StatusConflict, "revision_conflict"
+		}
+		writeError(w, status, code, err.Error())
 		return
 	}
-	w.Header().Set("ETag", `"`+bundle.Digest+`"`)
-	writeJSON(w, http.StatusOK, DevicePolicyResponse{SchemaVersion: SchemaVersion, Revision: bundle.Digest, Policy: policy})
+	w.Header().Set("ETag", `"`+newRevision+`"`)
+	writeJSON(w, http.StatusOK, DevicePolicyResponse{SchemaVersion: SchemaVersion, Revision: newRevision, Policy: policy})
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {

@@ -29,7 +29,7 @@ func (m Manager) WriteConfig() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.paths.DNSMasqConf, []byte(rendered), 0o644)
+	return os.WriteFile(m.paths.DNSMasqConf, []byte(rendered), 0o640)
 }
 
 func (m Manager) Start() (int, error) {
@@ -43,7 +43,7 @@ func (m Manager) Start() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := os.WriteFile(m.paths.DNSMasqLog, nil, 0o644); err != nil {
+	if err := os.WriteFile(m.paths.DNSMasqLog, nil, 0o640); err != nil {
 		return 0, err
 	}
 	pid, err := process.StartDetachedWithLog(m.paths.DNSMasqLog, binary, "--no-daemon", "--log-facility=-", "--conf-file="+m.paths.DNSMasqConf)

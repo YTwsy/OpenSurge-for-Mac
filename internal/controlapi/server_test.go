@@ -9,9 +9,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/macosnetwork"
 )
 
@@ -208,6 +210,26 @@ func TestHelperRejectsActionOutsideWhitelist(t *testing.T) {
 	}
 }
 
+func TestTrustedPathRejectsEscapesAndUserOwnedFiles(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "mihomo")
+	if err := os.WriteFile(outside, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trustedPathWithinRoot(outside, root); err == nil {
+		t.Fatal("outside path was accepted")
+	}
+	inside := filepath.Join(root, "mihomo")
+	if err := os.WriteFile(inside, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if os.Geteuid() != 0 {
+		if err := requireTrustedFile(inside, root, true); err == nil {
+			t.Fatal("user-owned executable was accepted")
+		}
+	}
+}
+
 func TestPublicSourcesKeepsEmptyArray(t *testing.T) {
 	if sources := publicSources([]Source{}); sources == nil {
 		t.Fatal("publicSources returned nil for an empty collection")
@@ -221,6 +243,71 @@ func TestPublicSourcesRedactsFetchURLAndPath(t *testing.T) {
 	}
 }
 
+func TestHTTPSSourceMetadataNeverPersistsFetchURL(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("subscription", "mihomo_profile", "https://example.com/profile", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.FetchURL != "" {
+		t.Fatal("import result retained a fetch URL")
+	}
+	stored, err := server.store.Sources()
+	if err != nil || len(stored) != 1 || stored[0].FetchURL != "" {
+		t.Fatalf("stored sources = %#v err=%v", stored, err)
+	}
+}
+
+func TestLegacySourceCredentialMigratesOutOfJSON(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSources([]Source{{ID: "source-1", FetchURL: "https://token@example.com/profile?secret=1"}}); err != nil {
+		t.Fatal(err)
+	}
+	credentials := &memoryCredentialStore{}
+	if err := migrateSourceCredentials(t.Context(), store, credentials); err != nil {
+		t.Fatal(err)
+	}
+	if value, err := credentials.Get(t.Context(), "source-1"); err != nil || value != "https://token@example.com/profile?secret=1" {
+		t.Fatalf("credential=%q err=%v", value, err)
+	}
+	sources, err := store.Sources()
+	if err != nil || sources[0].FetchURL != "" {
+		t.Fatalf("sources=%#v err=%v", sources, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(store.Dir(), "sources.json"))
+	if err != nil || strings.Contains(string(raw), "secret=1") {
+		t.Fatalf("legacy secret remains: %s err=%v", raw, err)
+	}
+}
+
+func TestDevicePolicyUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) {
+	server := newTestServer(t)
+	get := performAuthorized(server, http.MethodGet, "/api/v1/device-policy", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET status=%d body=%s", get.Code, get.Body.String())
+	}
+	var document DevicePolicyResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	conflict := performAuthorized(server, http.MethodPut, "/api/v1/device-policy", []byte(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`))
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("conflict status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/device-policy", strings.NewReader(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+document.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	server, _ := newTestServerWithNetwork(t)
 	return server
@@ -230,6 +317,10 @@ func newTestServerWithNetwork(t *testing.T) (*Server, *fakeNetworkRunner) {
 	t.Helper()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
+	policyPath := filepath.Join(dir, "device-policy.json")
+	if err := os.WriteFile(policyPath, []byte(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(configPath, []byte(`gateway:
   mode: "same_wifi_dhcp"
   interface: "en0"
@@ -239,6 +330,8 @@ dhcp:
   enabled: true
   range_start: "192.168.1.120"
   range_end: "192.168.1.199"
+device_policy:
+  file: "`+policyPath+`"
 transparent:
   mode: "tun"
 runtime:
@@ -250,7 +343,7 @@ runtime:
 	discover := func(context.Context, string, string) (macosnetwork.Snapshot, error) {
 		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"192.168.1.1"}}, nil
 	}
-	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, DiscoverNetwork: discover, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler()})
+	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,6 +354,21 @@ runtime:
 type fakeRunner struct{}
 
 func (fakeRunner) Run(_ context.Context, _, _ string) error { return nil }
+
+type fakeConfigurationRunner struct{}
+
+func (fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte) (string, error) {
+	return revision + "-applied", nil
+}
+
+func (fakeConfigurationRunner) ApplyDevicePolicy(_ context.Context, _, _ string, payload []byte) (string, error) {
+	var policy device.PolicySet
+	if err := json.Unmarshal(payload, &policy); err != nil {
+		return "", err
+	}
+	bundle, err := device.CompilePolicyBundle(policy)
+	return bundle.Digest, err
+}
 
 type fakeNetworkRunner struct {
 	manual       macosnetwork.ManualConfig

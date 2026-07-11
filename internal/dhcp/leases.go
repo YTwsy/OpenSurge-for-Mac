@@ -74,7 +74,7 @@ func writeLeaseFileAtomically(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
+	if err := os.Chmod(tmpPath, 0o640); err != nil {
 		return fmt.Errorf("chmod lease file: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {

@@ -15,6 +15,8 @@
   mihomo 代理/规则 section，同时保持 OpenSurge 接管网关字段。
 - [每设备策略覆盖](concepts/device-policy-overlays.md)：如何以 DHCP reservation 和
   `SRC-IP-CIDR` 在一个 mihomo 进程中实现独立的设备策略。
+- [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、SwiftUI 菜单栏
+  launcher、本地 API 与恢复状态的职责边界。
 - [验证门槛](concepts/validation-gates.md)：哪些检查能证明哪些结论。
 
 ## 项目形态

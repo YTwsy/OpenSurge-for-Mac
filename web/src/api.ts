@@ -31,7 +31,7 @@ export const api = {
   probeDHCP: () => request('/api/v1/network/dhcp-probe', { method: 'POST' }),
   confirmRouterRestored: () => request('/api/v1/recovery/router-restored', { method: 'POST' }),
   restoreMacDHCP: () => request('/api/v1/network/restore-dhcp', { method: 'POST' }),
-  sources: () => request<{ sources: Source[] }>('/api/v1/sources'),
+  sources: () => request<{ revision: string; sources: Source[] }>('/api/v1/sources'),
   importURL: (name: string, url: string) => request<Source>('/api/v1/sources', { method: 'POST', body: JSON.stringify({ name, kind: 'mihomo_profile', url }) }),
   importFile: (file: File) => {
     const data = new FormData()
@@ -41,7 +41,7 @@ export const api = {
     return request<Source>('/api/v1/sources', { method: 'POST', body: data })
   },
   refreshSource: (id: string) => request<Source>(`/api/v1/sources/${id}/refresh`, { method: 'POST' }),
-  applySource: (id: string) => request<Source>(`/api/v1/sources/${id}/apply`, { method: 'POST' }),
+  applySource: (id: string, revision: string) => request<Source>(`/api/v1/sources/${id}/apply`, { method: 'POST', headers: { 'If-Match': `"${revision}"` } }),
   devices: () => request<DevicesResponse>('/api/v1/devices'),
   devicePolicy: () => request<DevicePolicyDocument>('/api/v1/device-policy'),
   saveDevicePolicy: (policy: PolicySet, revision: string) => request<DevicePolicyDocument>('/api/v1/device-policy', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(policy) }),

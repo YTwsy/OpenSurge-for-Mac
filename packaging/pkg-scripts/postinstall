@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/Library/Application Support/OpenSurge"
+GROUP="admin"
+CONSOLE_USER="$(stat -f '%Su' /dev/console)"
+[[ "$CONSOLE_USER" != "root" && "$CONSOLE_USER" != "loginwindow" ]] || { echo "OpenSurge installation requires a logged-in GUI user" >&2; exit 1; }
+id -Gn "$CONSOLE_USER" | tr ' ' '\n' | grep -qx admin || { echo "OpenSurge currently requires an administrator account" >&2; exit 1; }
+
+install -d -o root -g "$GROUP" -m 0750 "$ROOT" "$ROOT/bin" "$ROOT/data" "$ROOT/runtime" /Library/Logs/OpenSurge /var/run/opensurge
+"$ROOT/bin/opensurge-install-config" --source "$ROOT/share/config.yaml" --root "$ROOT" --output "$ROOT/config.yaml"
+chown -R root:"$GROUP" "$ROOT" /Library/Logs/OpenSurge /var/run/opensurge
+chmod 0750 "$ROOT/bin" /Library/Logs/OpenSurge /var/run/opensurge
+chmod 2750 "$ROOT" "$ROOT/data" "$ROOT/share" "$ROOT/runtime"
+find "$ROOT/data" -type f -exec chmod 0640 {} +
+chmod 0640 "$ROOT/config.yaml"
+chmod 0640 "$ROOT/share/config.yaml"
+install -o root -g wheel -m 0644 "$ROOT/share/com.opensurge.helper.plist" /Library/LaunchDaemons/com.opensurge.helper.plist
+
+launchctl bootout system/com.opensurge.helper 2>/dev/null || true
+launchctl bootstrap system /Library/LaunchDaemons/com.opensurge.helper.plist
+
+UID_VALUE="$(id -u "$CONSOLE_USER")"
+USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')"
+USER_ROOT="$USER_HOME/Library/Application Support/OpenSurge"
+AGENT="$USER_HOME/Library/LaunchAgents/com.opensurge.control.plist"
+install -d -o "$CONSOLE_USER" -g staff -m 0700 "$USER_ROOT" "$USER_ROOT/bin" "$USER_ROOT/logs" "$USER_HOME/Library/LaunchAgents"
+install -o "$CONSOLE_USER" -g staff -m 0755 "$ROOT/share/opensurge-control" "$USER_ROOT/bin/opensurge-control"
+install -o "$CONSOLE_USER" -g staff -m 0644 "$ROOT/share/com.opensurge.control.plist" "$AGENT"
+/usr/libexec/PlistBuddy -c "Set :ProgramArguments:0 $USER_ROOT/bin/opensurge-control" "$AGENT"
+/usr/libexec/PlistBuddy -c "Set :ProgramArguments:2 $ROOT/config.yaml" "$AGENT"
+/usr/libexec/PlistBuddy -c "Set :StandardOutPath $USER_ROOT/logs/control.log" "$AGENT"
+/usr/libexec/PlistBuddy -c "Set :StandardErrorPath $USER_ROOT/logs/control-error.log" "$AGENT"
+launchctl bootout "gui/$UID_VALUE/com.opensurge.control" 2>/dev/null || true
+launchctl bootstrap "gui/$UID_VALUE" "$AGENT"
+exit 0

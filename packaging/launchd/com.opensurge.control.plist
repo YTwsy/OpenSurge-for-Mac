@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.opensurge.control</string>
+  <key>ProgramArguments</key><array>
+    <string>__OPENSURGE_CONTROL_BINARY__</string>
+    <string>--config</string><string>__OPENSURGE_CONFIG__</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>__OPENSURGE_LOG_DIR__/control.log</string>
+  <key>StandardErrorPath</key><string>__OPENSURGE_LOG_DIR__/control-error.log</string>
+</dict></plist>
