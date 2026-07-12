@@ -24,6 +24,15 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(fixture(gateway: "running", recovery: false, drift: true).indicator, .degraded)
     }
 
+    func testStoppedGatewayIsNotReportedAsRuntimeFailure() {
+        let status = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp",
+                                   lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded",
+                                   forwarding: "disabled", clientCount: 0, drift: true, doctorHealthy: false,
+                                   recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
+        XCTAssertEqual(status.indicator, .stopped)
+        XCTAssertEqual(status.indicator.accessibilityLabel, "OpenSurge 网关已停止")
+    }
+
     func testActiveTakeoverUsesRunningIndicatorInsteadOfRecovery() {
         let status = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "running", topology: "same_wifi_dhcp",
                                    lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded",

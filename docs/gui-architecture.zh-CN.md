@@ -107,6 +107,8 @@ Mac 且无显式代理；若快照存在 IPv6 default，还必须确认绕过警
 菜单栏 App 不提供 start/stop、provider refresh 或策略切换。它每 15 秒获取一次
 `/api/v1/menubar`，窗口打开时每 2 秒刷新，失败时指数退避到最多 60 秒，并根据 stopped、running、degraded、
 recovery、unreachable 使用不同的 SF Symbol。恢复警报优先于其他状态。
+网关明确处于 `stopped` 时显示“OpenSurge 网关已停止”；此时 runtime-oriented doctor
+未通过或存在待应用配置都不能把“未启动”误报成“运行异常”。
 退出按钮只终止菜单栏 App；点击后会先提示后台 Control Service 仍会继续，若网关正在
 运行，还会明确 DHCP/DNS、mihomo、PF/转发不会随菜单栏退出。停止网关仍须进入 Web GUI。
 

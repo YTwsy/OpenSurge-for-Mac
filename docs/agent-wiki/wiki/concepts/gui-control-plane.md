@@ -9,6 +9,10 @@ mihomo 和 runtime 包中。
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
 演变成第二控制面。
 
+菜单栏 indicator 先判断需要用户处理的 recovery，再判断 gateway 是否明确 `stopped`；
+只有正在运行或 degraded 的 gateway 才把 drift/doctor failure 表示为“运行异常”。停止状态
+下的 runtime doctor failure 或待应用配置不能覆盖“OpenSurge 网关已停止”。
+
 “退出菜单栏 App”只终止菜单栏图标，不会停止用户级 Control Service，也不会停止正在
 运行的 DHCP/DNS、mihomo、PF 或 forwarding。该按钮必须先显示状态感知的二次确认；
 网关运行时应明确列出仍会继续的服务，状态不可达时应提示先检查，而不是暗示后台已退出。

@@ -112,6 +112,10 @@ extension MenuBarStatus {
 
     var indicator: IndicatorState {
         if recoveryNeedsAttention { return .recovery }
+        // A stopped gateway can legitimately fail runtime-oriented doctor
+        // checks and can have unapplied desired config. Neither means a
+        // gateway that is not running has suffered a runtime failure.
+        if gateway == "stopped" { return .stopped }
         if gateway == "degraded" || drift || !doctorHealthy { return .degraded }
         if gateway == "running" { return .running }
         return .stopped
