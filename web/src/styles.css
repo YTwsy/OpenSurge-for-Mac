@@ -124,6 +124,9 @@ button{cursor:pointer}
 .empty{padding:30px;text-align:center;color:#6f827b;border:1px dashed #2a4038;border-radius:12px}
 .source-grid+.empty{margin-top:12px}
 .editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.lease-picker{margin-bottom:24px;padding:16px;border:1px solid #20382f;border-radius:12px;background:#0a1713}
+.lease-picker>.section-title p{margin-bottom:8px}
+.lease-picker>small{display:block;margin-top:10px;color:#84978f}
 .editor-grid h3{margin:0 0 12px}
 .editor-grid .wide{grid-column:1/-1}
 .form-row{display:grid;grid-template-columns:1fr 1.5fr auto;gap:8px}
@@ -195,7 +198,7 @@ html[data-theme="light"] .timeline div:after{background:#c7d9d1}
 html[data-theme="light"] .timeline .done,html[data-theme="light"] .timeline .current{color:#214c3b}
 html[data-theme="light"] .network-config-guide{background:#e3f2eb}
 html[data-theme="light"] .network-config-guide p{color:#45675a}
-html[data-theme="light"] .config-field,html[data-theme="light"] .recovery-card-grid>div{background:#f8fbfa;border-color:#cbded6}
+html[data-theme="light"] .config-field,html[data-theme="light"] .recovery-card-grid>div,html[data-theme="light"] .lease-picker{background:#f8fbfa;border-color:#cbded6}
 html[data-theme="light"] .config-field input,html[data-theme="light"] .config-field select,html[data-theme="light"] .policy-editor input,html[data-theme="light"] .policy-editor select,html[data-theme="light"] .import-panel input,html[data-theme="light"] .slots select,html[data-theme="light"] .policy-list select{background:#fff;border-color:#bad1c7;color:#183028}
 html[data-theme="light"] .config-field-title code,html[data-theme="light"] .router-link{color:#246d50}
 html[data-theme="light"] .recovery-card-grid dd{color:#183028}

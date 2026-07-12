@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
-import type { CompiledDevice, DevicePolicyDocument, DevicesResponse, Overview, PolicyRule, PolicySet, ProxyGroup } from '../types'
+import type { CompiledDevice, DevicePolicyDocument, DevicesResponse, Lease, Overview, PolicyRule, PolicySet, ProxyGroup } from '../types'
 
 const normalizePolicy = (value: PolicySet): PolicySet => ({ devices: value.devices ?? [], profiles: value.profiles ?? [], templates: value.templates ?? [], rule_sets: value.rule_sets ?? [] })
 
@@ -25,12 +25,12 @@ export function DevicesPage({ overview }: { overview: Overview | null }) {
     <PageHeader eyebrow="DEVICES" title="每设备策略" description="设备身份来自稳定 Wi‑Fi MAC、固定 IPv4 DHCP reservation 和 applied policy。" />
     {data?.drift && <div className="notice warn">设备策略 desired/applied 不一致；编辑已保存，但需要重启网关才会生效。</div>}{error && <div className="notice warn" role="alert">{error}</div>}
     <section className="device-layout"><article className="this-mac"><small>THIS MAC</small><h3>OpenSurge 网关</h3><p>{overview?.status.interface} · {overview?.status.lan_ip}</p><span className="pill">本机不属于下游 DHCP 设备</span></article>{data?.devices.map(device => <DeviceCard key={device.id} device={device} leases={data.leases} groups={groups} onChanged={refresh} />)}</section>
-    {!data?.devices.length && <Empty text="尚未登记下游设备；先在下方创建 profile，再登记设备。" />}
-    {policyDocument ? <PolicyEditor document={policyDocument} candidates={candidates} onSaved={refresh} /> : <section className="section"><Empty text="当前 gateway config 尚未启用设备策略；请先在网络设置中启用。" /></section>}
+    {!data?.devices.length && <Empty text="尚未登记下游设备；可从下方当前 DHCP 租约直接填入。" />}
+    {policyDocument ? <PolicyEditor document={policyDocument} candidates={candidates} leases={overview?.leases?.length ? overview.leases : data?.leases ?? []} onSaved={refresh} /> : <section className="section"><Empty text="当前 gateway config 尚未启用设备策略；请先在网络设置中启用。" /></section>}
   </>
 }
 
-function PolicyEditor({ document, candidates, onSaved }: { document: DevicePolicyDocument; candidates: string[]; onSaved: () => Promise<void> }) {
+function PolicyEditor({ document, candidates, leases, onSaved }: { document: DevicePolicyDocument; candidates: string[]; leases: Lease[]; onSaved: () => Promise<void> }) {
   const [policy, setPolicy] = useState<PolicySet>(() => normalizePolicy(structuredClone(document.policy)))
   const [profileID, setProfileID] = useState('')
   const [profilePolicies, setProfilePolicies] = useState('DIRECT')
@@ -49,8 +49,18 @@ function PolicyEditor({ document, candidates, onSaved }: { document: DevicePolic
   }
   const addDevice = () => {
     if (!device.id || !device.mac || !device.ipv4 || !device.profile) return
-    setPolicy({ ...policy, devices: [...policy.devices, device] })
+    const normalizedMAC = device.mac.toLowerCase()
+    setPolicy({ ...policy, devices: [...policy.devices.filter(item => item.id !== device.id && item.mac.toLowerCase() !== normalizedMAC), device] })
     setDevice({ id: '', mac: '', ipv4: '', profile: '' })
+  }
+  const chooseLease = (lease: Lease) => {
+    const registered = policy.devices.find(item => item.mac.toLowerCase() === lease.mac.toLowerCase())
+    setDevice({
+      id: registered?.id ?? availableDeviceID(lease, policy.devices),
+      mac: lease.mac,
+      ipv4: lease.ip,
+      profile: registered?.profile ?? policy.profiles[0]?.id ?? '',
+    })
   }
   const addRule = () => {
     if (!rule.profile || !rule.id) return
@@ -67,6 +77,7 @@ function PolicyEditor({ document, candidates, onSaved }: { document: DevicePolic
   }
   return <section className="section policy-editor"><SectionTitle title="设备策略编辑器" subtitle="结构化编辑 desired policy；保存不会热改正在运行的 DHCP/mihomo bundle" />
     {message && <div className="notice" role="status">{message}</div>}
+    <ManagedLeasePicker leases={leases} policy={policy} onChoose={chooseLease} />
     <div className="editor-grid"><div><h3>1. Profiles</h3><div className="form-stack"><input aria-label="Profile ID" placeholder="profile id" value={profileID} onChange={event => setProfileID(event.target.value)} /><input aria-label="Profile 默认策略" placeholder="DIRECT, Proxy" value={profilePolicies} onChange={event => setProfilePolicies(event.target.value)} /><select aria-label="Profile template" value={profileTemplate} onChange={event => setProfileTemplate(event.target.value)}><option value="">无模板</option>{policy.templates.map(item => <option key={item.id}>{item.id}</option>)}</select><button onClick={addProfile}>添加</button></div>{policy.profiles.map(profile => <div className="editor-item" key={profile.id}><strong>{profile.id}</strong><span>{profile.template ? `template ${profile.template}` : profile.default_policies.join(' / ')}</span><button onClick={() => setPolicy({ ...policy, profiles: policy.profiles.filter(item => item.id !== profile.id) })}>移除</button></div>)}</div>
       <DeviceRegistration policy={policy} device={device} setDevice={setDevice} addDevice={addDevice} setPolicy={setPolicy} />
       <RuleEditor policy={policy} candidates={candidates} rule={rule} setRule={setRule} addRule={addRule} />
@@ -77,8 +88,32 @@ function PolicyEditor({ document, candidates, onSaved }: { document: DevicePolic
 }
 
 type DeviceDraft = { id: string; mac: string; ipv4: string; profile: string }
+
+function availableDeviceID(lease: Lease, devices: PolicySet['devices']) {
+  const suffix = lease.mac.replace(/[^A-Fa-f0-9]/g, '').slice(-6).toLowerCase() || 'device'
+  const hostname = (lease.hostname ?? '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+  const base = hostname || `device-${suffix}`
+  const used = new Set(devices.map(item => item.id))
+  if (!used.has(base)) return base
+  let candidate = `${base}-${suffix}`
+  let counter = 2
+  while (used.has(candidate)) candidate = `${base}-${suffix}-${counter++}`
+  return candidate
+}
+
+function ManagedLeasePicker({ leases, policy, onChoose }: { leases: Lease[]; policy: PolicySet; onChoose: (lease: Lease) => void }) {
+  const sorted = [...leases].sort((left, right) => Number(right.online) - Number(left.online) || left.ip.localeCompare(right.ip, undefined, { numeric: true }))
+  return <div className="lease-picker"><SectionTitle title="当前已接管设备" subtitle="来自与总览相同的 OpenSurge DHCP 租约；选择后自动填入 MAC 与当前 IPv4" />
+    {sorted.length ? sorted.map(lease => {
+      const registered = policy.devices.find(item => item.mac.toLowerCase() === lease.mac.toLowerCase())
+      return <div className="row" key={`${lease.mac}-${lease.ip}`}><span className={lease.online ? 'pill ok' : 'pill'}>{lease.online ? '在线' : '历史租约'}</span><div className="grow"><strong>{lease.hostname || '未命名设备'}</strong><small>{lease.mac}{registered ? ` · 已登记为 ${registered.id}` : ''}</small></div><code>{lease.ip}</code><button type="button" onClick={() => onChoose(lease)}>{registered ? '编辑此设备' : '配置此设备'}</button></div>
+    }) : <Empty text="当前没有 OpenSurge DHCP 租约；设备重新连接后会自动出现在这里。" />}
+    {!policy.profiles.length && sorted.length > 0 && <small>先创建至少一个 Profile；选择租约仍会预填设备身份，之后再选择 Profile。</small>}
+  </div>
+}
+
 function DeviceRegistration({ policy, device, setDevice, addDevice, setPolicy }: { policy: PolicySet; device: DeviceDraft; setDevice: (value: DeviceDraft) => void; addDevice: () => void; setPolicy: (value: PolicySet) => void }) {
-  return <div><h3>2. Devices</h3><div className="form-stack"><input aria-label="Device ID" placeholder="device id" value={device.id} onChange={event => setDevice({ ...device, id: event.target.value })} /><input aria-label="Wi-Fi MAC" placeholder="Wi-Fi MAC" value={device.mac} onChange={event => setDevice({ ...device, mac: event.target.value })} /><input aria-label="固定 IPv4" placeholder="固定 IPv4" value={device.ipv4} onChange={event => setDevice({ ...device, ipv4: event.target.value })} /><select aria-label="设备 Profile" value={device.profile} onChange={event => setDevice({ ...device, profile: event.target.value })}><option value="">选择 profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select><button onClick={addDevice}>登记设备</button></div>{policy.devices.map(item => <div className="editor-item" key={item.id}><strong>{item.id}</strong><span>{item.ipv4} · {item.profile}</span><button onClick={() => setPolicy({ ...policy, devices: policy.devices.filter(candidate => candidate.id !== item.id) })}>移除</button></div>)}</div>
+  return <div><h3>2. Devices</h3><div className="form-stack"><input aria-label="Device ID" placeholder="device id" value={device.id} onChange={event => setDevice({ ...device, id: event.target.value })} /><input aria-label="设备 MAC" placeholder="MAC" value={device.mac} onChange={event => setDevice({ ...device, mac: event.target.value })} /><input aria-label="固定 IPv4" placeholder="固定 IPv4" value={device.ipv4} onChange={event => setDevice({ ...device, ipv4: event.target.value })} /><select aria-label="设备 Profile" value={device.profile} onChange={event => setDevice({ ...device, profile: event.target.value })}><option value="">选择 profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select><button onClick={addDevice}>登记或更新设备</button></div>{policy.devices.map(item => <div className="editor-item" key={item.id}><strong>{item.id}</strong><span>{item.ipv4} · {item.profile}</span><button onClick={() => setPolicy({ ...policy, devices: policy.devices.filter(candidate => candidate.id !== item.id) })}>移除</button></div>)}</div>
 }
 
 type RuleDraft = { profile: string; id: string; domains: string; ipCidrs: string; protocols: string; ports: string; ruleSets: string; action: string; policies: string }

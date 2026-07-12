@@ -45,6 +45,8 @@ vi.mock('./api', () => ({
     devices: vi.fn(async () => ({ devices: [], leases: [], drift: false, applied: false })),
     policies: vi.fn(async () => ({ groups: [] })),
     devicePolicy: vi.fn(async () => null),
+    saveDevicePolicy: vi.fn(),
+    selectDevicePolicy: vi.fn(),
     refreshProvider: vi.fn(),
     diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {}, operations: [], recovery: { stage: 'idle', required: false } })),
   },
@@ -204,5 +206,30 @@ describe('OpenSurge app shell', () => {
     await userEvent.type(await screen.findByLabelText('Template ID'), 'home')
     await userEvent.click(screen.getByRole('button', { name: '添加模板' }))
     expect(screen.getByText('template: home')).toBeTruthy()
+  })
+
+  it('prefills a device policy registration from a current DHCP lease', async () => {
+    const lease = { ip: '192.168.1.123', mac: 'AA:BB:CC:DD:EE:12', hostname: 'Pixel-10', expires_at: '2026-07-13T12:00:00Z', online: true }
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, leases: [lease] })
+    vi.mocked(api.config).mockResolvedValue({
+      schema_version: 1, revision: 'config-revision',
+      gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      device_policy: { enabled: true, protected_ipv4: [] },
+    })
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [] } })
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '设备' }))
+    expect(await screen.findByText('当前已接管设备')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '配置此设备' }))
+    expect((screen.getByLabelText('Device ID') as HTMLInputElement).value).toBe('pixel-10')
+    expect((screen.getByLabelText('设备 MAC') as HTMLInputElement).value).toBe(lease.mac)
+    expect((screen.getByLabelText('固定 IPv4') as HTMLInputElement).value).toBe(lease.ip)
+    expect((screen.getByLabelText('设备 Profile') as HTMLSelectElement).value).toBe('home')
+    await userEvent.click(screen.getByRole('button', { name: '登记或更新设备' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存 Desired Policy' }))
+    expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({ devices: [{ id: 'pixel-10', mac: lease.mac, ipv4: lease.ip, profile: 'home' }] }), 'policy-r')
   })
 })

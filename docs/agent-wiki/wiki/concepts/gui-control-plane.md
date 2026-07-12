@@ -50,6 +50,11 @@ TUN 和 device-policy 初始化字段，运行中或 `prepared` 之后的 recove
 production 写入经 helper 落到 root-owned config。`/events` 发送真实
 config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的短日志尾部。
 
+设备页复用总览的 OpenSurge DHCP 租约作为“当前已接管设备”候选，可直接把 hostname、
+MAC 与当前 IPv4 填入 desired device policy，避免重复手抄。租约候选本身不会自动成为
+固定 reservation；用户仍需选择 Profile、登记并保存，运行中的 gateway 仍需重启后才
+应用新的 DHCP/mihomo bundle。
+
 生产 pkg 使用固定 `/` install location 和不可 relocatable 的菜单栏 bundle，把 App 安装
 到 `/Applications/OpenSurge Menu Bar.app`；否则 macOS Installer 可能把它 relocate 回
 构建工作区的 `payload/Applications`。生产 pkg 把 applied config、mihomo/dnsmasq、runtime 和 helper 放在 root-owned 的
