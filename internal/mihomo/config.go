@@ -24,6 +24,15 @@ secret: {{ .Secret }}
 profile:
   store-selected: true
 
+# Use MetaCubeX's documented CDN endpoints instead of the GitHub release URLs
+# baked into mihomo. Imported profiles can contain GEOIP/GEOSITE/GEOASN rules,
+# and engine validation must not depend on a slow GitHub asset download.
+geox-url:
+  geoip: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat
+  geosite: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
+  mmdb: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb
+  asn: https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb
+
 dns:
   enable: true
   listen: 0.0.0.0:1053

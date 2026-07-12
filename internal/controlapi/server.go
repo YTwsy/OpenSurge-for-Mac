@@ -1012,8 +1012,7 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "source_not_applicable", "source must be a structurally valid mihomo profile")
 		return
 	}
-	cfg, err := config.Load(s.configPath)
-	if err != nil {
+	if _, err := config.Load(s.configPath); err != nil {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
@@ -1027,27 +1026,19 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "source_snapshot_unavailable", err.Error())
 		return
 	}
-	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
-	cfg.Mihomo.Profile = source.SnapshotPath
-	temp, err := os.MkdirTemp("", "opensurge-source-validate-*")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "validation_failed", err.Error())
-		return
-	}
-	defer os.RemoveAll(temp)
-	validation := cfg
-	validation.Runtime.Dir = temp
-	validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
-	if err := mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig(); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "mihomo_validation_failed", err.Error())
-		return
-	}
+	// The privileged configuration runner performs the authoritative mihomo
+	// engine validation after writing the candidate beside the persistent
+	// geodata cache. Validating here as the UI user would download the same
+	// assets into every source snapshot directory, then validate a second time
+	// in the helper before applying.
 	newRevision, err := s.configRunner.ApplyProfile(r.Context(), s.configPath, match, payload)
 	if err != nil {
 		status := http.StatusInternalServerError
 		code := "config_apply_failed"
 		if strings.Contains(err.Error(), "revision conflict") {
 			status, code = http.StatusConflict, "revision_conflict"
+		} else if strings.Contains(err.Error(), "mihomo config validation failed") {
+			status, code = http.StatusUnprocessableEntity, "mihomo_validation_failed"
 		}
 		writeError(w, status, code, err.Error())
 		return

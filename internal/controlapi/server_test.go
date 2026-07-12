@@ -58,6 +58,16 @@ rules: ["MATCH,DIRECT"]
 	}
 }
 
+func TestSourceRequestUsesMihomoCompatibleUserAgent(t *testing.T) {
+	request, err := newSourceRequest(t.Context(), "https://example.com/subscription")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := request.Header.Get("User-Agent"); got != "clash.meta" {
+		t.Fatalf("User-Agent = %q, want clash.meta", got)
+	}
+}
+
 func TestBootstrapIsOneTimeAndCreatesSession(t *testing.T) {
 	server := newTestServer(t)
 	bootstrap := server.BootstrapURL()
@@ -491,6 +501,32 @@ func TestSourceRefreshPreservesAppliedVersionAndBuildsInventoryDiff(t *testing.T
 	}
 }
 
+func TestSourceApplyDelegatesAuthoritativeEngineValidationToRunner(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := fileDigest(server.configPath)
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/sources/"+source.ID+"/apply", nil)
+	request.Host = "127.0.0.1:61767"
+	request.SetPathValue("id", source.ID)
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("apply status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	server.configRunner = fakeConfigurationRunner{profileErr: errors.New("mihomo config validation failed: geodata unavailable")}
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "mihomo_validation_failed") {
+		t.Fatalf("engine failure status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestDevicePolicyUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) {
 	server := newTestServer(t)
 	get := performAuthorized(server, http.MethodGet, "/api/v1/device-policy", nil)
@@ -684,9 +720,12 @@ type fakeRunner struct{}
 
 func (fakeRunner) Run(_ context.Context, _, _ string) error { return nil }
 
-type fakeConfigurationRunner struct{}
+type fakeConfigurationRunner struct{ profileErr error }
 
-func (fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte) (string, error) {
+func (f fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte) (string, error) {
+	if f.profileErr != nil {
+		return "", f.profileErr
+	}
 	return revision + "-applied", nil
 }
 

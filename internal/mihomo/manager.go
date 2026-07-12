@@ -20,6 +20,8 @@ type Manager struct {
 	paths runtime.Paths
 }
 
+const configValidationTimeout = 90 * time.Second
+
 func New(cfg config.Config, paths runtime.Paths) Manager {
 	return Manager{cfg: cfg, paths: paths}
 }
@@ -93,8 +95,12 @@ func (m Manager) configDir() string {
 }
 
 func validateConfig(binary string, configDir string, configPath string) error {
+	return validateConfigWithTimeout(configValidationTimeout, binary, configDir, configPath)
+}
+
+func validateConfigWithTimeout(timeout time.Duration, binary string, configDir string, configPath string) error {
 	var output bytes.Buffer
-	if err := process.RunBuffered(&output, binary, "-d", configDir, "-t", "-f", configPath); err != nil {
+	if err := process.RunBufferedTimeout(timeout, &output, binary, "-d", configDir, "-t", "-f", configPath); err != nil {
 		return fmt.Errorf("mihomo config validation failed: %w: %s", err, strings.TrimSpace(output.String()))
 	}
 	return nil

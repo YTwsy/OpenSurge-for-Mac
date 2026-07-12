@@ -21,6 +21,8 @@ func TestRenderConfig(t *testing.T) {
 		"external-controller: 127.0.0.1:9090",
 		"profile:",
 		"  store-selected: true",
+		"geox-url:",
+		"https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb",
 		"enhanced-mode: fake-ip",
 		"- MATCH,DIRECT",
 	} {

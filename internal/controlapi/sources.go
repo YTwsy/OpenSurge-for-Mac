@@ -19,7 +19,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const maxSourceSize = 10 << 20
+const (
+	maxSourceSize   = 10 << 20
+	sourceUserAgent = "clash.meta"
+)
 
 func (s *Server) importURL(ctx context.Context, req SourceImportRequest) (Source, error) {
 	parsed, err := url.Parse(req.URL)
@@ -39,11 +42,10 @@ func (s *Server) importURL(ctx context.Context, req SourceImportRequest) (Source
 		},
 		Transport: &http.Transport{DialContext: safeDialContext},
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL, nil)
+	httpReq, err := newSourceRequest(ctx, req.URL)
 	if err != nil {
 		return Source{}, err
 	}
-	httpReq.Header.Set("User-Agent", "OpenSurge-for-Mac/1")
 	resp, err := client.Do(httpReq)
 	if err != nil {
 		return Source{}, err
@@ -63,6 +65,18 @@ func (s *Server) importURL(ctx context.Context, req SourceImportRequest) (Source
 		return Source{}, err
 	}
 	return source, nil
+}
+
+func newSourceRequest(ctx context.Context, sourceURL string) (*http.Request, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Subscription services commonly use the client User-Agent to choose the
+	// response format. Identify the requested format as mihomo/Clash Meta while
+	// keeping OpenSurge as the product identity everywhere else.
+	request.Header.Set("User-Agent", sourceUserAgent)
+	return request, nil
 }
 
 func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
