@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ServiceManagement
 
 @MainActor
 final class StatusModel: ObservableObject {
@@ -15,6 +16,7 @@ final class StatusModel: ObservableObject {
 
     init(client: ControlAPIClient = ControlAPIClient()) {
         self.client = client
+        self.openAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     var indicator: IndicatorState { status?.indicator ?? .unreachable }

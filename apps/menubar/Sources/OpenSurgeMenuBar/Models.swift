@@ -64,8 +64,8 @@ enum IndicatorState: Equatable {
         switch self {
         case .stopped: "network"
         case .running: "network.badge.shield.half.filled"
-        case .degraded: "exclamationmark.triangle"
-        case .recovery: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90"
+        case .degraded: "exclamationmark.circle"
+        case .recovery: "exclamationmark.triangle.fill"
         case .unreachable: "network.slash"
         }
     }
