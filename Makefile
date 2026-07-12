@@ -39,11 +39,7 @@ menubar-build:
 	./scripts/build-menubar-app.sh
 
 menubar-test:
-	SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX14.5.sdk \
-	CLANG_MODULE_CACHE_PATH=/private/tmp/opensurge-swift-module-cache \
-	SWIFTPM_MODULECACHE_OVERRIDE=/private/tmp/opensurge-swift-module-cache \
-	swift test --disable-sandbox --package-path apps/menubar \
-		--scratch-path /private/tmp/opensurge-menubar-build
+	./scripts/check-menubar.sh
 
 gui-build: control-build menubar-build
 
