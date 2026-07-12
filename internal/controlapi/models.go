@@ -243,6 +243,38 @@ type DevicesResponse struct {
 	Leases        []device.Client         `json:"leases"`
 }
 
+// DeviceTrafficResponse is a point-in-time aggregation of the currently
+// active mihomo sessions that can be attributed to an OpenSurge DHCP lease.
+// Counters are session-lifetime counters from mihomo, not persisted history.
+type DeviceTrafficResponse struct {
+	SchemaVersion        int                 `json:"schema_version"`
+	Revision             string              `json:"revision"`
+	SampledAt            time.Time           `json:"sampled_at"`
+	Scope                string              `json:"scope"`
+	Devices              []DeviceTraffic     `json:"devices"`
+	Totals               DeviceTrafficTotals `json:"totals"`
+	UnmatchedConnections int                 `json:"unmatched_connections"`
+	ConnectionError      string              `json:"connection_error,omitempty"`
+}
+
+type DeviceTraffic struct {
+	Hostname          string `json:"hostname,omitempty"`
+	IP                string `json:"ip"`
+	MAC               string `json:"mac"`
+	Online            bool   `json:"online"`
+	ActiveConnections int    `json:"active_connections"`
+	Upload            int64  `json:"upload"`
+	Download          int64  `json:"download"`
+	PrimaryEgress     string `json:"primary_egress,omitempty"`
+}
+
+type DeviceTrafficTotals struct {
+	Devices           int   `json:"devices"`
+	ActiveConnections int   `json:"active_connections"`
+	Upload            int64 `json:"upload"`
+	Download          int64 `json:"download"`
+}
+
 type DevicePolicyResponse struct {
 	SchemaVersion int              `json:"schema_version"`
 	Revision      string           `json:"revision"`

@@ -46,6 +46,18 @@ button{cursor:pointer}
 .service>span:last-child{grid-column:2;color:#739087;font-size:11px}
 .service strong,.service small{display:block}
 .service small{color:#667c74;font-size:11px;margin-top:3px}
+.traffic-table-wrap{overflow-x:auto;border:1px solid #1d302a;border-radius:12px}
+.traffic-table{width:100%;border-collapse:collapse;font-size:13px}
+.traffic-table th{padding:11px 14px;text-align:left;color:#71847d;background:#0a1713;font-size:11px;font-weight:700;white-space:nowrap}
+.traffic-table td{padding:13px 14px;border-top:1px solid #182923;white-space:nowrap}
+.traffic-table code{color:#9af0c7;background:#122720;padding:4px 7px;border-radius:6px}
+.traffic-device{display:flex;align-items:center;gap:11px;min-width:180px}
+.traffic-device strong,.traffic-device small{display:block}
+.traffic-device small{margin-top:3px;color:#71847d;font-size:10px}
+.traffic-egress{max-width:260px;overflow:hidden;text-overflow:ellipsis;color:#b8cac3}
+.traffic-summary{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:14px;color:#9eb2aa;font-size:12px}
+.traffic-summary small,.traffic-refresh-error{color:#71847d}
+.traffic-refresh-error{display:block;margin-top:9px;font-size:11px}
 .status-dot{width:8px;height:8px;border-radius:50%;background:#6d7773;box-shadow:0 0 0 4px #6d77731a}
 .status-dot.running{background:#76e4b0;box-shadow:0 0 0 4px #76e4b018}
 .status-dot.degraded{background:#ffbd70;box-shadow:0 0 0 4px #ffbd7018}
@@ -191,6 +203,10 @@ html[data-theme="light"] .theme-toggle:hover{background:#dcece5;border-color:#69
 html[data-theme="light"] .gateway-card,html[data-theme="light"] .metric,html[data-theme="light"] .section,html[data-theme="light"] .mode,html[data-theme="light"] .this-mac,html[data-theme="light"] .device-card,html[data-theme="light"] .policy-list article{background:#fff;border-color:#cbded6}
 html[data-theme="light"] .mode.active{border-color:#54a983;background:linear-gradient(145deg,#e2f3eb,#fff)}
 html[data-theme="light"] .service,html[data-theme="light"] .check,html[data-theme="light"] .row{border-color:#d9e7e1}
+html[data-theme="light"] .traffic-table-wrap,html[data-theme="light"] .traffic-table td{border-color:#d9e7e1}
+html[data-theme="light"] .traffic-table th{background:#f4f9f7;color:#60776e}
+html[data-theme="light"] .traffic-table code{background:#e6f2ed;color:#2d6752}
+html[data-theme="light"] .traffic-egress{color:#36564a}
 html[data-theme="light"] .notice{background:#e5f1ec;color:#36564a}
 html[data-theme="light"] .notice.warn{border-color:#d8b969;background:#fff4d9;color:#654d19}
 html[data-theme="light"] .cooperative{background:#fff5dc;color:#5e4818}

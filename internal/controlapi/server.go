@@ -42,18 +42,19 @@ type Options struct {
 }
 
 type Server struct {
-	configPath      string
-	addr            string
-	store           *Store
-	runner          ActionRunner
-	networkRunner   NetworkRunner
-	configRunner    ConfigurationRunner
-	discoverNetwork func(context.Context, string, string) (macosnetwork.Snapshot, error)
-	pingRouter      func(context.Context, string) error
-	static          http.Handler
-	credentials     SourceCredentialStore
-	token           string
-	baseURL         string
+	configPath       string
+	addr             string
+	store            *Store
+	runner           ActionRunner
+	networkRunner    NetworkRunner
+	configRunner     ConfigurationRunner
+	discoverNetwork  func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	pingRouter       func(context.Context, string) error
+	static           http.Handler
+	credentials      SourceCredentialStore
+	fetchConnections func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
+	token            string
+	baseURL          string
 
 	mu         sync.Mutex
 	sessions   map[string]time.Time
@@ -125,20 +126,21 @@ func New(options Options) (*Server, error) {
 		return nil, err
 	}
 	return &Server{
-		configPath:      configPath,
-		addr:            options.Addr,
-		store:           store,
-		runner:          options.Runner,
-		networkRunner:   options.NetworkRunner,
-		configRunner:    options.ConfigRunner,
-		discoverNetwork: options.DiscoverNetwork,
-		pingRouter:      options.PingRouter,
-		static:          options.Static,
-		credentials:     options.Credentials,
-		token:           token,
-		baseURL:         "http://" + options.Addr,
-		sessions:        map[string]time.Time{},
-		bootstraps:      map[string]bootstrapGrant{},
+		configPath:       configPath,
+		addr:             options.Addr,
+		store:            store,
+		runner:           options.Runner,
+		networkRunner:    options.NetworkRunner,
+		configRunner:     options.ConfigRunner,
+		discoverNetwork:  options.DiscoverNetwork,
+		pingRouter:       options.PingRouter,
+		static:           options.Static,
+		credentials:      options.Credentials,
+		fetchConnections: mihomo.FetchConnections,
+		token:            token,
+		baseURL:          "http://" + options.Addr,
+		sessions:         map[string]time.Time{},
+		bootstraps:       map[string]bootstrapGrant{},
 	}, nil
 }
 
@@ -185,6 +187,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
+	mux.Handle("GET /api/v1/device-traffic", s.auth(http.HandlerFunc(s.handleDeviceTraffic)))
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
@@ -1243,7 +1246,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	paths := runtime.NewPaths(cfg)
-	connections, connectionErr := mihomo.FetchConnections(r.Context(), cfg)
+	connections, connectionErr := s.fetchConnections(r.Context(), cfg)
 	if connections.Connections == nil {
 		connections.Connections = []mihomo.Connection{}
 	}

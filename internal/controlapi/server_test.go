@@ -18,6 +18,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/macosnetwork"
+	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -678,6 +679,77 @@ func TestDiagnosticLogTailRedactsKnownCredentials(t *testing.T) {
 	lines := tailLines(path, 10, cfg)
 	if len(lines) != 1 || strings.Contains(lines[0], "secret") || strings.Contains(lines[0], "proxy-user") || strings.Contains(lines[0], "proxy-password") {
 		t.Fatalf("redacted lines = %#v", lines)
+	}
+}
+
+func TestDeviceTrafficKeepsLeaseInventoryWhenMihomoIsUnavailable(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.fetchConnections = func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error) {
+		return mihomo.ConnectionsSnapshot{}, errors.New("mihomo unavailable")
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := os.MkdirAll(filepath.Dir(paths.LeaseFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lease := fmt.Sprintf("%d aa:bb:cc:dd:ee:ff 192.168.1.151 iPhone-15 *\n", time.Now().Add(time.Hour).Unix())
+	if err := os.WriteFile(paths.LeaseFile, []byte(lease), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/device-traffic", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("device traffic status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload DeviceTrafficResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Scope != deviceTrafficScope || len(payload.Devices) != 1 || payload.Devices[0].Hostname != "iPhone-15" {
+		t.Fatalf("device traffic = %#v", payload)
+	}
+	if payload.ConnectionError == "" || payload.Totals.Devices != 1 || payload.Totals.ActiveConnections != 0 {
+		t.Fatalf("unavailable mihomo response = %#v", payload)
+	}
+}
+
+func TestDeviceTrafficEndpointAttributesLiveMihomoConnections(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.fetchConnections = func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error) {
+		return mihomo.ConnectionsSnapshot{UploadTotal: 100, DownloadTotal: 900, Connections: []mihomo.Connection{
+			{ID: "one", Upload: 100, Download: 900, Chains: []string{"流媒体组", "美国-02"}, Metadata: map[string]any{"sourceIP": "192.168.1.188"}},
+		}}, nil
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := os.MkdirAll(filepath.Dir(paths.LeaseFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lease := fmt.Sprintf("%d aa:bb:cc:dd:ee:88 192.168.1.188 Apple-TV *\n", time.Now().Add(time.Hour).Unix())
+	if err := os.WriteFile(paths.LeaseFile, []byte(lease), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/device-traffic", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("device traffic status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload DeviceTrafficResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ConnectionError != "" || len(payload.Devices) != 1 {
+		t.Fatalf("device traffic = %#v", payload)
+	}
+	device := payload.Devices[0]
+	if device.ActiveConnections != 1 || device.Upload != 100 || device.Download != 900 || device.PrimaryEgress != "流媒体组 → 美国-02" {
+		t.Fatalf("attributed device = %#v", device)
 	}
 }
 

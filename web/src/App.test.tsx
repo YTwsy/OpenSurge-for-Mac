@@ -43,6 +43,7 @@ vi.mock('./api', () => ({
     refreshSource: vi.fn(),
     applySource: vi.fn(),
     devices: vi.fn(async () => ({ devices: [], leases: [], drift: false, applied: false })),
+    deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0 }, unmatched_connections: 0 })),
     policies: vi.fn(async () => ({ groups: [] })),
     devicePolicy: vi.fn(async () => null),
     saveDevicePolicy: vi.fn(),
@@ -80,6 +81,7 @@ describe('OpenSurge app shell', () => {
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
     vi.mocked(api.overview).mockResolvedValue(overview)
+    vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0 }, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
@@ -88,6 +90,26 @@ describe('OpenSurge app shell', () => {
     expect(await screen.findByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('button', { name: '启动网关' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('joins managed DHCP devices with active mihomo session traffic', async () => {
+    vi.mocked(api.deviceTraffic).mockResolvedValue({
+      schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', unmatched_connections: 1,
+      devices: [
+        { hostname: 'Apple-TV', ip: '192.168.1.88', mac: 'aa:bb:cc:dd:ee:88', online: true, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024, primary_egress: '流媒体组 → 美国-02' },
+        { ip: '192.168.1.110', mac: 'a4:5e:60:00:00:01', online: false, active_connections: 0, upload: 0, download: 0 },
+      ],
+      totals: { devices: 2, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024 },
+    })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '设备流量' })).toBeTruthy()
+    expect(await screen.findByText('Apple-TV')).toBeTruthy()
+    expect(screen.getByText('流媒体组 → 美国-02')).toBeTruthy()
+    expect(screen.getByText('未知设备 a4:5e:60:…')).toBeTruthy()
+    expect(screen.getByText('96 KB')).toBeTruthy()
+    expect(screen.getByText('412 MB')).toBeTruthy()
+    expect(screen.getByText(/合计 2 台 · 3 个活跃连接/)).toBeTruthy()
+    expect(screen.getByText(/1 个连接无法匹配 DHCP 租约/)).toBeTruthy()
   })
 
   it('warns on every page only after the recovery flow changes network state', async () => {

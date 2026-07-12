@@ -79,6 +79,28 @@ export type DevicesResponse = {
   leases: Lease[]
 }
 
+export type DeviceTrafficRow = {
+  hostname?: string
+  ip: string
+  mac: string
+  online: boolean
+  active_connections: number
+  upload: number
+  download: number
+  primary_egress?: string
+}
+
+export type DeviceTraffic = {
+  schema_version: number
+  revision: string
+  sampled_at: string
+  scope: 'active_sessions'
+  devices: DeviceTrafficRow[]
+  totals: { devices: number; active_connections: number; upload: number; download: number }
+  unmatched_connections: number
+  connection_error?: string
+}
+
 export type PolicyRule = {
   id: string
   match: { domains?: string[]; ip_cidrs?: string[]; protocols?: string[]; ports?: string[]; rule_sets?: string[] }

@@ -1,4 +1,5 @@
 import { Empty, Metric, PageHeader, SectionTitle, Service, StatusDot } from '../components/Common'
+import { DeviceTrafficPanel } from '../components/DeviceTrafficPanel'
 import { statusLabel } from '../status'
 import type { Overview } from '../types'
 
@@ -17,6 +18,7 @@ export function DashboardPage({ overview, busy, onAction }: { overview: Overview
       <Service name="PF Anchor" state={overview?.status.pf_anchor} detail="NAT 与转发边界" />
       <Service name="IPv4 Forwarding" state={overview?.status.forwarding} detail="macOS 内核转发" />
     </div></section>
+    <DeviceTrafficPanel gateway={overview?.status.gateway} />
     <section className="section split"><div><SectionTitle title="最近设备" subtitle="来自当前 DHCP 租约" />{overview?.leases?.length ? overview.leases.slice(0, 5).map(lease => <div className="row" key={`${lease.mac}-${lease.ip}`}><StatusDot status={lease.online ? 'running' : 'stopped'} /><div className="grow"><strong>{lease.hostname || '未命名设备'}</strong><small>{lease.mac}</small></div><code>{lease.ip}</code></div>) : <Empty text="暂无租约" />}</div><div><SectionTitle title="注意事项" subtitle="不会被静默忽略" />{overview?.warnings?.length ? overview.warnings.map(item => <div className="notice" key={item}>{item}</div>) : <Empty text="当前没有警告" />}</div></section>
   </>
 }

@@ -1,4 +1,4 @@
-import type { APIError, ControlConfig, DevicePolicyDocument, DevicesResponse, Diagnostics, GatewayPlan, Operation, Overview, PolicySet, ProxyGroup, Source } from './types'
+import type { APIError, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, Operation, Overview, PolicySet, ProxyGroup, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -47,6 +47,7 @@ export const api = {
   refreshSource: (id: string) => request<Source>(`/api/v1/sources/${id}/refresh`, { method: 'POST' }),
   applySource: (id: string, revision: string) => request<Source>(`/api/v1/sources/${id}/apply`, { method: 'POST', headers: { 'If-Match': `"${revision}"` } }),
   devices: () => request<DevicesResponse>('/api/v1/devices'),
+  deviceTraffic: () => request<DeviceTraffic>('/api/v1/device-traffic'),
   devicePolicy: () => request<DevicePolicyDocument>('/api/v1/device-policy'),
   saveDevicePolicy: (policy: PolicySet, revision: string) => request<DevicePolicyDocument>('/api/v1/device-policy', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(policy) }),
   policies: () => request<{ groups: ProxyGroup[] }>('/api/v1/policies'),

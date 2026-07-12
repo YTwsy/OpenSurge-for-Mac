@@ -67,6 +67,14 @@ connections 与最多 80 行近期日志；已知 mihomo/upstream 凭据在 API 
 诊断 DTO 同时带最近 20 条持久化 start/stop operation 与当前 recovery 状态，另有
 `GET /api/v1/operations` 返回最近 50 条，便于审计幂等 operation ID、失败和完成时间。
 
+总览的设备流量面板每 5 秒读取受认证的 `GET /api/v1/device-traffic`。Control Service
+用 DHCP lease 的 IPv4/MAC/hostname 与 mihomo connection 的 `metadata.sourceIP` join，
+只累计能归属到租约设备的当前活跃会话 `upload`/`download`。主出口选择当前会话累计
+字节最多的完整 `chains`，相同字节时再按连接数和名称稳定决胜。无法归属的连接单列计数，
+不混入设备合计；该 DTO 明确标记 `scope=active_sessions`，不表示重启后仍保留的历史流量。
+若 mihomo 不可用，接口仍返回 DHCP 设备清单和 `connection_error`，GUI 不把零流量误报
+为持久化统计。
+
 ## 同一 LAN DHCP 接管恢复状态
 
 `/api/v1/recovery` 持久化以下受验证状态机：

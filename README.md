@@ -32,6 +32,9 @@ Today OpenSurge for Mac can:
 - list and switch mihomo policy groups from the CLI when mihomo is running;
 - inspect imported mihomo proxy/rule provider status from the CLI;
 - inspect current mihomo connections from the CLI;
+- attribute current active-session traffic to OpenSurge DHCP devices in the
+  Web GUI, including per-device connection counts, upload/download, and the
+  dominant mihomo egress chain;
 - inspect runtime log paths and recent dnsmasq/mihomo log lines from the CLI;
 - collect a partial-failure JSON snapshot for UI and diagnostics surfaces;
 - validate risky network behavior in an isolated virtual LAN before touching a
