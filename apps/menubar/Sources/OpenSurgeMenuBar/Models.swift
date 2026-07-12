@@ -91,8 +91,15 @@ extension MenuBarStatus {
         }
     }
 
-    var recoveryHasChangedNetwork: Bool {
-        recoveryRequired && recoveryStage != "prepared"
+    var recoveryNeedsAttention: Bool {
+        guard recoveryRequired else { return false }
+        guard let stage = recoveryStage else { return true }
+        return !["prepared", "gateway_active", "client_validated"].contains(stage)
+    }
+
+    var takeoverActive: Bool {
+        guard recoveryRequired, let stage = recoveryStage else { return false }
+        return ["gateway_active", "client_validated"].contains(stage)
     }
 
     var recoverySnapshotPrepared: Bool {
@@ -100,7 +107,7 @@ extension MenuBarStatus {
     }
 
     var indicator: IndicatorState {
-        if recoveryHasChangedNetwork { return .recovery }
+        if recoveryNeedsAttention { return .recovery }
         if gateway == "degraded" || drift || !doctorHealthy { return .degraded }
         if gateway == "running" { return .running }
         return .stopped

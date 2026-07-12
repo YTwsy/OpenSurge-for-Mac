@@ -81,7 +81,9 @@ idle -> prepared -> mac_static -> router_dhcp_disabled_confirmed
 `router_dhcp_disabled_confirmed` 收据时拒绝 start。确认收据来自 root helper 的主动
 DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
 `gateway_stopped_waiting_router_dhcp`，只有重新探测到路由器 OFFER 后才允许把 Mac 恢复
-为自动 DHCP；菜单栏和 Web GUI 会持续显示恢复警报。状态机不会自动修改未知路由器，
+为自动 DHCP。`gateway_active` / `client_validated` 是预期的接管运行态，显示正常运行或
+验收状态；恢复警报仅用于启动前的中断状态和 stop 后等待路由器/Mac DHCP 恢复的阶段。
+状态机不会自动修改未知路由器，
 也不能把同一二层 LAN 描述为不可绕过隔离。现有配置枚举仍保留
 `same_wifi_dhcp` 以兼容已安装配置，但产品 UI 使用“同一 LAN DHCP 接管”，因为承载
 介质既可以是 Wi-Fi，也可以是以太网。

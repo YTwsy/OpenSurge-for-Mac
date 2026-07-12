@@ -33,12 +33,18 @@ DNS 与 mihomo TUN 日志，并保存用户对网关/DNS、无显式代理和 IP
 紧急 stop 仍允许直接执行，以免验收失败阻塞网络恢复。
 
 `prepared` 只表示恢复网络快照和离线恢复卡已经落盘：此时 Mac、路由器和 DHCP 尚未
-改变。它不是跨页面高风险告警；只有进入 `mac_static` 及之后的阶段才表示网络已经开始
-变更，需要持续显示恢复告警。预备阶段允许修正并保存 desired 网络配置；保存会清除预备
+改变。它不是跨页面高风险告警；`gateway_active` / `client_validated` 是预期的稳定接管
+状态，显示运行/验收信息而不是“恢复尚未完成”。跨页面恢复告警只用于接管启动前已经
+改变网络但尚未运行的阶段，以及 `gateway_stopped_waiting_router_dhcp` /
+`router_dhcp_restored` 等停止后的恢复阶段。预备阶段允许修正并保存 desired 网络配置；保存会清除预备
 恢复卡并回到第 1 步，避免用户用未保存的 topology 或 LAN IPv4 执行第 2 步。准备恢复卡
 之前必须拿 configured `gateway.lan_ip` 与实时路由器/掩码做同网段校验，失败不得写入
 `prepared`。菜单栏从恢复入口应打开 Web GUI 的 `network` 页面，而不是不存在的
 `recovery` 路径。
+
+Mac 执行 `networksetup -setdhcp` 后，DHCP 租约与 router 字段可能短暂为空。恢复动作成功
+后不要立即重新运行 takeover plan 的完整 IPv4 discovery，否则会把正常续租窗口误报成
+`does not expose a complete IPv4 configuration`；后续页面刷新再做常规发现。
 
 网络页必须直接显示持久化 `network_snapshot` 中的原始 IPv4、路由器、DNS、网络服务、
 接口与掩码，并通过受认证的 `GET /api/v1/recovery/card` 提供中文恢复卡查看与下载。

@@ -68,10 +68,12 @@ struct MenuBarChecks {
         catch { throw CheckFailure.failed("bootstrap request failed: \(CheckURLProtocol.lastFailure ?? String(describing: error))") }
         try require(bootstrap.query == "code=one-time" && !bootstrap.absoluteString.contains("test-token"), "bootstrap URL leaked long-lived token")
 
-        let recovery = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "running", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded", forwarding: "enabled", clientCount: 2, drift: true, doctorHealthy: false, recoveryRequired: true, recoveryStage: "gateway_active", warnings: [], errorCode: nil)
-        try require(recovery.indicator == .recovery && recovery.indicator.systemImage == "exclamationmark.triangle.fill", "recovery indicator must have highest priority")
+        let active = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "running", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded", forwarding: "enabled", clientCount: 2, drift: false, doctorHealthy: true, recoveryRequired: true, recoveryStage: "gateway_active", warnings: [], errorCode: nil)
+        try require(active.takeoverActive && !active.recoveryNeedsAttention && active.indicator == .running, "active takeover must use the running indicator")
+        let recovery = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "disabled", clientCount: 2, drift: true, doctorHealthy: false, recoveryRequired: true, recoveryStage: "gateway_stopped_waiting_router_dhcp", warnings: [], errorCode: nil)
+        try require(recovery.recoveryNeedsAttention && recovery.indicator == .recovery && recovery.indicator.systemImage == "exclamationmark.triangle.fill", "post-stop recovery must have highest priority")
         let prepared = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "disabled", clientCount: 0, drift: false, doctorHealthy: true, recoveryRequired: true, recoveryStage: "prepared", warnings: [], errorCode: nil)
-        try require(prepared.recoverySnapshotPrepared && !prepared.recoveryHasChangedNetwork && prepared.indicator == .stopped, "prepared recovery must not present as a network recovery")
+        try require(prepared.recoverySnapshotPrepared && !prepared.recoveryNeedsAttention && prepared.indicator == .stopped, "prepared recovery must not present as a network recovery")
 
         var fallbackOpened = false
         let launcher = WebGUIURLLauncher(

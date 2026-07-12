@@ -15,4 +15,11 @@ describe('status labels', () => {
     expect(needsNetworkRecoveryWarning('prepared')).toBe(false)
     expect(needsNetworkRecoveryWarning('mac_static')).toBe(true)
   })
+
+  it('treats active takeover as steady state and post-stop as recovery', () => {
+    expect(needsNetworkRecoveryWarning('gateway_active')).toBe(false)
+    expect(needsNetworkRecoveryWarning('client_validated')).toBe(false)
+    expect(needsNetworkRecoveryWarning('gateway_stopped_waiting_router_dhcp')).toBe(true)
+    expect(needsNetworkRecoveryWarning('router_dhcp_restored')).toBe(true)
+  })
 })

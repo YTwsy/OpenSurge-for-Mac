@@ -19,9 +19,9 @@ export function recoveryLabel(stage: string) {
   } as Record<string, string>)[stage] ?? stage
 }
 
-// Saving a recovery card deliberately locks the desired configuration, but it
-// does not change the Mac, router, or DHCP service. Keep that safe preflight
-// distinct from the stages that require an operator to restore networking.
+// A running takeover still has a recovery plan, but it is the intended steady
+// state rather than an unfinished restoration. Reserve the cross-page warning
+// for interrupted setup and the post-stop path that needs operator action.
 export function needsNetworkRecoveryWarning(stage: string) {
-  return !['idle', 'prepared', 'complete'].includes(stage)
+  return !['idle', 'prepared', 'gateway_active', 'client_validated', 'complete'].includes(stage)
 }

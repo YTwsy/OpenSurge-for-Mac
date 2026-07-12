@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Overview } from './types'
@@ -97,6 +97,14 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('alert').textContent).toContain('网络恢复尚未完成')
   })
 
+  it('does not label an active takeover as unfinished network recovery', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' }, recovery: { ...overview.recovery, stage: 'gateway_active' } })
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getAllByText('正在运行').length).toBeGreaterThan(0)
+  })
+
   it('navigates to the cooperative same-LAN DHCP recovery flow', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
@@ -145,6 +153,19 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     expect(await screen.findByText('恢复路由器 DHCP')).toBeTruthy()
     expect(screen.getByText(/未能自动获取路由器地址/).textContent).toContain("networksetup -getinfo 'Wi-Fi'")
+  })
+
+  it('does not immediately re-run IPv4 discovery after restoring Mac DHCP', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'router_dhcp_restored' } })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await screen.findByRole('button', { name: '将 Mac 恢复为自动 DHCP' })
+    await waitFor(() => expect(api.gatewayPlan).toHaveBeenCalled())
+    vi.mocked(api.gatewayPlan).mockClear()
+    await userEvent.click(screen.getByRole('button', { name: '将 Mac 恢复为自动 DHCP' }))
+    await waitFor(() => expect(api.restoreMacDHCP).toHaveBeenCalled())
+    expect(api.gatewayPlan).not.toHaveBeenCalled()
+    expect(screen.queryByText(/does not expose a complete IPv4 configuration/)).toBeNull()
   })
 
   it('switches between dark and light backgrounds and remembers the choice', async () => {

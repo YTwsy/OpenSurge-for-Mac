@@ -67,7 +67,12 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
       case 'gateway_stopped_waiting_router_dhcp': await api.confirmRouterRestored(); break
       case 'router_dhcp_restored': await api.restoreMacDHCP(); break
       }
-      await onChanged(); if (config) await loadPlan(config)
+      await onChanged()
+      // `networksetup -setdhcp` returns before macOS necessarily exposes the
+      // renewed IPv4/router tuple. Reloading the takeover preflight here turns
+      // that normal transition into a false "incomplete IPv4" error after the
+      // recovery action itself has succeeded.
+      if (config && current !== 'router_dhcp_restored') await loadPlan(config)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }

@@ -19,10 +19,14 @@ struct MenuContentView: View {
             }
 
             if let status = model.status {
-                if status.recoveryHasChangedNetwork {
+                if status.recoveryNeedsAttention {
                     recoveryCard(stage: status.recoveryStage ?? "required")
                 } else {
                     statusGrid(status)
+                }
+                if status.takeoverActive {
+                    Label(status.recoveryStage == "client_validated" ? "同一 LAN DHCP 接管已验收" : "同一 LAN DHCP 接管运行中，等待客户端验收", systemImage: "checkmark.shield")
+                        .font(.caption).foregroundStyle(.green)
                 }
                 if status.recoverySnapshotPrepared {
                     Label("恢复资料已准备；尚未改动网络", systemImage: "doc.text")
@@ -53,7 +57,7 @@ struct MenuContentView: View {
 
             if let status = model.status, status.recoveryRequired {
                 Button { Task { await model.openWebGUI(path: "network") } } label: {
-                    Label(status.recoveryHasChangedNetwork ? "继续恢复" : "在网络设置中继续", systemImage: "wrench.and.screwdriver")
+                    Label(status.recoveryNeedsAttention ? "继续恢复" : status.takeoverActive ? "查看接管状态" : "在网络设置中继续", systemImage: "wrench.and.screwdriver")
                         .frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
             }
