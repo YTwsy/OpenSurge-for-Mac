@@ -44,6 +44,7 @@ menubar-test:
 gui-build: control-build menubar-build
 
 gui-test: test web-test menubar-test
+	./scripts/check-gui-packaging.sh
 
 gui-installer:
 	./scripts/build-gui-installer.sh

@@ -138,6 +138,11 @@ make menubar-build
 `make gui-installer` 会在取得真实 mihomo、dnsmasq 二进制后构建 macOS 安装包。
 Developer ID 签名和 notarization 必须显式提供发布凭据；本地未签名 pkg 不视为发布产物。
 
+pkg 升级会在同一 LAN DHCP 恢复未完成时拒绝执行。替换 payload 前，preinstall 先停止
+用户级 Control Service 与菜单栏 App，再使用当前已安装的 `omg stop` 清理网关，最后
+卸载 root helper。升级会保留现有配置、导入源、策略数据和 runtime 历史；只有首次安装
+才会用包内示例生成 `config.yaml`。
+
 ## 安全
 
 `start` 和 `stop` 需要用 `sudo` 运行，因为它们会管理 DHCP、pf 和 IPv4

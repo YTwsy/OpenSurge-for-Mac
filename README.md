@@ -154,6 +154,12 @@ dnsmasq binaries. Developer ID signing and notarization are opt-in through the
 environment variables documented in the architecture notes; an unsigned local
 package is never described as a release artifact.
 
+Package upgrades refuse to run while same-LAN DHCP recovery is incomplete.
+Before replacing payload files, preinstall stops the user control service and
+menu bar app, runs the installed `omg stop`, and unloads the root helper. The
+existing config, imported sources, policy data, and runtime history are kept;
+only a first installation seeds `config.yaml` from the packaged example.
+
 ## Safety
 
 `start` and `stop` are intended to run with `sudo` because they manage DHCP,

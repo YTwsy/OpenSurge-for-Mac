@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/Library/Application Support/OpenSurge"
+CONSOLE_USER="$(stat -f '%Su' /dev/console)"
+[[ "$CONSOLE_USER" != "root" && "$CONSOLE_USER" != "loginwindow" ]] || { echo "OpenSurge upgrade requires a logged-in GUI user" >&2; exit 1; }
+
+USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')"
+UID_VALUE="$(id -u "$CONSOLE_USER")"
+RECOVERY="$USER_HOME/Library/Application Support/OpenSurge/recovery.json"
+
+if [[ -f "$RECOVERY" ]]; then
+  RECOVERY_STAGE="$(/usr/bin/plutil -extract stage raw -o - "$RECOVERY" 2>/dev/null || true)"
+  case "$RECOVERY_STAGE" in
+    idle|complete)
+      ;;
+    "")
+      echo "OpenSurge recovery state is unreadable; refusing to upgrade: $RECOVERY" >&2
+      exit 2
+      ;;
+    *)
+      echo "OpenSurge recovery is incomplete at stage $RECOVERY_STAGE. Finish same-LAN DHCP recovery before upgrading: $RECOVERY" >&2
+      exit 2
+      ;;
+  esac
+fi
+
+# Stop processes that can keep old executables open before Installer replaces
+# the payload. The gateway cleanup must use the currently installed CLI and
+# config, so it deliberately runs before the helper is unloaded.
+launchctl bootout "gui/$UID_VALUE/com.opensurge.control" 2>/dev/null || true
+/usr/bin/pkill -TERM -u "$UID_VALUE" -x opensurge-control 2>/dev/null || true
+/usr/bin/pkill -TERM -u "$UID_VALUE" -x OpenSurgeMenuBar 2>/dev/null || true
+
+for _ in {1..50}; do
+  if ! /usr/bin/pgrep -u "$UID_VALUE" -x opensurge-control >/dev/null 2>&1 && \
+     ! /usr/bin/pgrep -u "$UID_VALUE" -x OpenSurgeMenuBar >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+if /usr/bin/pgrep -u "$UID_VALUE" -x opensurge-control >/dev/null 2>&1 || \
+   /usr/bin/pgrep -u "$UID_VALUE" -x OpenSurgeMenuBar >/dev/null 2>&1; then
+  echo "OpenSurge GUI processes did not stop; refusing to replace running executables" >&2
+  exit 3
+fi
+
+if [[ -x "$ROOT/bin/omg" && -f "$ROOT/config.yaml" ]]; then
+  "$ROOT/bin/omg" stop --config "$ROOT/config.yaml"
+fi
+
+launchctl bootout system/com.opensurge.helper 2>/dev/null || true
+exit 0

@@ -79,5 +79,10 @@ Desired 网络配置默认把 `dns.upstream` 显示为 `127.0.0.1#1053`，形成
 `/Library/Application Support/OpenSurge` / `PrivilegedHelperTools` 下；用户级 Control
 Service 只通过 admin 组只读访问 applied 状态，通过 helper 执行固定 privileged 动作。
 
+pkg 升级必须在覆盖 payload 前执行 recovery 门禁，并按 Control Service/菜单栏退出、
+旧版 `omg stop`、root helper bootout 的顺序清理运行进程。recovery 非 `idle`/`complete`
+或旧版网关停止失败时直接拒绝升级。postinstall 不得覆盖已有 `config.yaml`，导入源、
+设备策略和 runtime 记录也必须跨升级保留。
+
 开发期用 `make web-build`、`make menubar-build` 和 `make test`。这些检查不证明真实
 DHCP、TUN 或 per-device 数据面；网络声明仍服从 validation-gates 页面。

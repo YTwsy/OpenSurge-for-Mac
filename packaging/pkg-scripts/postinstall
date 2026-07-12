@@ -8,7 +8,11 @@ CONSOLE_USER="$(stat -f '%Su' /dev/console)"
 id -Gn "$CONSOLE_USER" | tr ' ' '\n' | grep -qx admin || { echo "OpenSurge currently requires an administrator account" >&2; exit 1; }
 
 install -d -o root -g "$GROUP" -m 0750 "$ROOT" "$ROOT/bin" "$ROOT/data" "$ROOT/runtime" /Library/Logs/OpenSurge /var/run/opensurge
-"$ROOT/bin/opensurge-install-config" --source "$ROOT/share/config.yaml" --root "$ROOT" --output "$ROOT/config.yaml"
+if [[ ! -f "$ROOT/config.yaml" ]]; then
+  "$ROOT/bin/opensurge-install-config" --source "$ROOT/share/config.yaml" --root "$ROOT" --output "$ROOT/config.yaml"
+else
+  echo "Preserving existing OpenSurge config and data during upgrade: $ROOT/config.yaml"
+fi
 chown -R root:"$GROUP" "$ROOT" /Library/Logs/OpenSurge /var/run/opensurge
 chmod 0750 "$ROOT/bin" /Library/Logs/OpenSurge /var/run/opensurge
 chmod 2750 "$ROOT" "$ROOT/data" "$ROOT/share" "$ROOT/runtime"

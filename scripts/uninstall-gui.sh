@@ -7,7 +7,7 @@ CONSOLE_USER="$(stat -f '%Su' /dev/console)"
 USER_HOME="$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | awk '{print $2}')"
 RECOVERY="$USER_HOME/Library/Application Support/OpenSurge/recovery.json"
 if [[ -f "$RECOVERY" ]] && ! grep -Eq '"stage"[[:space:]]*:[[:space:]]*"(idle|complete)"' "$RECOVERY"; then
-  echo "OpenSurge recovery is incomplete. Finish same-WiFi DHCP recovery before uninstalling: $RECOVERY" >&2
+  echo "OpenSurge recovery is incomplete. Finish same-LAN DHCP recovery before uninstalling: $RECOVERY" >&2
   exit 2
 fi
 UID_VALUE="$(id -u "$CONSOLE_USER")"
