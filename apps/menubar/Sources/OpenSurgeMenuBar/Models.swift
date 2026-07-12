@@ -82,6 +82,15 @@ enum IndicatorState: Equatable {
 }
 
 extension MenuBarStatus {
+    var topologyLabel: String {
+        switch topology {
+        case "same_wifi_dhcp": "同一 LAN DHCP 接管"
+        case "same_lan": "同 LAN 手工网关"
+        case "isolated_lan": "独立下游 LAN"
+        default: topology
+        }
+    }
+
     var recoveryHasChangedNetwork: Bool {
         recoveryRequired && recoveryStage != "prepared"
     }
@@ -101,7 +110,7 @@ extension MenuBarStatus {
         [
             "OpenSurge for Mac",
             "Gateway: \(gateway)",
-            "Topology: \(topology)",
+            "Topology: \(topologyLabel) [\(topology)]",
             "LAN IP: \(lanIp)",
             "DHCP/DNS: \(dhcp)",
             "mihomo: \(mihomo)",

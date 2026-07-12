@@ -126,7 +126,7 @@ func TestRecoveryTransitionsPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"同一 Wi-Fi DHCP 恢复卡", "原始 IPv4：192.168.1.20", "原始路由器：192.168.1.1", "原始 DNS：192.168.1.1", "在确认路由器 DHCP 已恢复并通过 OFFER 探测前"} {
+	for _, want := range []string{"同一 LAN DHCP 恢复卡", "原始 IPv4：192.168.1.20", "原始路由器：192.168.1.1", "原始 DNS：192.168.1.1", "在确认路由器 DHCP 已恢复并通过 OFFER 探测前"} {
 		if !strings.Contains(string(card), want) {
 			t.Fatalf("recovery card missing %q:\n%s", want, card)
 		}

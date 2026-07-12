@@ -97,7 +97,7 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('alert').textContent).toContain('网络恢复尚未完成')
   })
 
-  it('navigates to the cooperative same-WiFi recovery flow', async () => {
+  it('navigates to the cooperative same-LAN DHCP recovery flow', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
@@ -172,6 +172,7 @@ describe('OpenSurge app shell', () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
+    expect(screen.getByRole('button', { name: /同一 LAN DHCP 接管/ })).toBeTruthy()
     const isolated = await screen.findByRole('button', { name: /独立下游 LAN/ })
     await userEvent.click(isolated)
     expect(isolated.getAttribute('aria-pressed')).toBe('true')

@@ -84,11 +84,11 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   }
 
   return <>
-    <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择 topology 并保存 desired 配置；same-WiFi 还必须完成不可跳过的恢复状态机。" />
+    <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择 topology 并保存 desired 配置；同一 LAN DHCP 接管还必须完成不可跳过的恢复状态机。" />
     {error && <div className="notice warn" role="alert">{error}</div>}
     {config && <>
       <div className="mode-grid">
-        <Mode title="同一 Wi‑Fi DHCP 接管" badge="重点场景" active={config.gateway.mode === 'same_wifi_dhcp'} disabled={!configurationEditable} onSelect={() => selectMode('same_wifi_dhcp')} description="Mac 与其他设备连接同一 Wi‑Fi；路由器 DHCP 由用户手动关闭。" />
+        <Mode title="同一 LAN DHCP 接管" badge="重点场景" active={config.gateway.mode === 'same_wifi_dhcp'} disabled={!configurationEditable} onSelect={() => selectMode('same_wifi_dhcp')} description="Mac 与其他设备位于同一二层 LAN（Wi‑Fi 或以太网）；路由器 DHCP 由用户手动关闭。" />
         <Mode title="同 LAN 手工网关" active={config.gateway.mode === 'same_lan'} disabled={!configurationEditable} onSelect={() => selectMode('same_lan')} description="路由器继续 DHCP；测试设备手工把网关与 DNS 指向 Mac。" />
         <Mode title="独立下游 LAN" active={config.gateway.mode === 'isolated_lan'} disabled={!configurationEditable} onSelect={() => selectMode('isolated_lan')} description="独立 AP、SSID 或 VLAN；适合要求更强制策略的部署。" />
       </div>
@@ -97,16 +97,16 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         <fieldset disabled={!configurationEditable} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
           <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方拓扑，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址；保存后的配置会在启动网关时应用。恢复资料已准备但尚未改动网络时仍可修正配置；保存会重新从第 1 步开始。</p></div>
           <div className="config-form">
-          <ConfigField label="下游 LAN 接口" setting="gateway.interface" hint="承载客户端流量的 Mac 接口。在同一 Wi‑Fi DHCP 接管中，它必须和上游接口相同；独立 LAN 通常是 AP、SSID 或 VLAN 的下游接口。">
+          <ConfigField label="下游 LAN 接口" setting="gateway.interface" hint="承载客户端流量的 Mac 接口。在同一 LAN DHCP 接管中，它必须和上游接口相同；独立 LAN 通常是 AP、SSID 或 VLAN 的下游接口。">
             <input aria-label="下游 LAN 接口" value={config.gateway.interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, interface: event.target.value } })} />
           </ConfigField>
-          <ConfigField label="上游网络接口" setting="gateway.upstream_interface" hint="Mac 访问互联网的出口接口。pf 会从这里做 NAT；同一 Wi‑Fi 场景通常与下游 LAN 接口相同。">
+          <ConfigField label="上游网络接口" setting="gateway.upstream_interface" hint="Mac 访问互联网的出口接口。pf 会从这里做 NAT；同一 LAN DHCP 接管通常与下游 LAN 接口相同。">
             <input aria-label="上游网络接口" value={config.gateway.upstream_interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, upstream_interface: event.target.value } })} />
           </ConfigField>
-          <ConfigField label="Mac 网关 IPv4" setting="gateway.lan_ip / dns.listen" hint="分配给 Mac 的下游网关地址，也是 dnsmasq 的 DNS 监听地址。不能放进 DHCP 地址池；同一 Wi‑Fi 时应使用当前网段的固定且未占用地址。">
+          <ConfigField label="Mac 网关 IPv4" setting="gateway.lan_ip / dns.listen" hint="分配给 Mac 的下游网关地址，也是 dnsmasq 的 DNS 监听地址。不能放进 DHCP 地址池；同一 LAN 接管时应使用当前网段的固定且未占用地址。">
             <input aria-label="Mac 网关 IPv4" value={config.gateway.lan_ip} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_ip: event.target.value }, dns: { ...config.dns, listen: event.target.value } })} />
           </ConfigField>
-          <ConfigField label="DHCP 地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4。same-LAN 手工网关不使用 DHCP；同一 Wi‑Fi 时地址池必须在 Mac 网关的同一个 /24。">
+          <ConfigField label="DHCP 地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4。同 LAN 手工网关不使用 DHCP；同一 LAN DHCP 接管时地址池必须在 Mac 网关的同一个 /24。">
             <input aria-label="DHCP 地址池起点" value={config.dhcp.range_start} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_start: event.target.value } })} />
           </ConfigField>
           <ConfigField label="DHCP 地址池终点" setting="dhcp.range_end" hint="dnsmasq 可以动态租给客户端的最后一个 IPv4。请避开 Mac、路由器和需要长期保留的静态地址。">
@@ -123,7 +123,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
             <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
           </ConfigField>
-          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。same-LAN 与同一 Wi‑Fi DHCP 接管必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
+          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。同 LAN 手工网关与同一 LAN DHCP 接管必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
             <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, mode: event.target.value as 'off' | 'tun' } })}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
           </ConfigField>
           <ConfigField label="每设备策略" setting="device_policy.file" hint="启用后可在“设备”页为 MAC 固定租约及独立 mihomo 策略；若尚无策略文件，保存时会创建一个空文件。关闭后不再使用此策略文件。">
@@ -158,7 +158,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
       <section className="section">
         <SectionTitle title="恢复状态机" subtitle="每一步都有真实系统动作或网络证据，不能通过普通 POST 跳过" />
         <div className="timeline">{stages.map((stage, index) => <div className={index < currentIndex ? 'done' : index === currentIndex ? 'current' : ''} key={stage}><span>{index < currentIndex ? '✓' : index + 1}</span><p>{recoveryLabel(stage)}</p></div>)}</div>
-        <div className="cooperative"><strong>合作式 IPv4 模式</strong><p>同一二层 Wi‑Fi 中，客户端仍可能通过手工路由器网关或 IPv6 绕过 Mac。要求不可绕过时请选择独立 AP/SSID/VLAN。</p></div>
+        <div className="cooperative"><strong>合作式 IPv4 模式</strong><p>同一二层 LAN 中，客户端仍可能通过手工路由器网关或 IPv6 绕过 Mac。要求不可绕过时请选择独立 AP/SSID/VLAN。</p></div>
         {current === 'prepared' && <div className="notice">恢复资料已经保存，但 Mac、路由器与 DHCP 都尚未改动。此时仍可修正并保存目标配置；保存会清除这张预备恢复卡，并从第 1 步重新开始。</div>}
         {configDirty && <div className="notice warn">网络配置有未保存的修改。先保存配置，再保存恢复资料或继续第 2 步。</div>}
         {current === 'mac_static' && <RouterDHCPGuide action="关闭" router={router} networkService={networkService} />}

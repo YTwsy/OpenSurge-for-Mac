@@ -88,7 +88,7 @@ func (s *Store) SaveRecoveryCard(state RecoveryState) error {
 		return fmt.Errorf("recovery card requires a network snapshot")
 	}
 	snapshot := state.NetworkSnapshot
-	card := fmt.Sprintf(`OpenSurge for Mac - 同一 Wi-Fi DHCP 恢复卡
+	card := fmt.Sprintf(`OpenSurge for Mac - 同一 LAN DHCP 恢复卡
 
 创建时间：%s
 网络服务：%s
@@ -105,7 +105,7 @@ func (s *Store) SaveRecoveryCard(state RecoveryState) error {
 4. 回到 OpenSurge 执行 OFFER 探测，再将 Mac 网络服务恢复为自动 DHCP；也可在终端运行：
    networksetup -setdhcp %q
    networksetup -setdnsservers %q Empty
-5. 让客户端重新连接 Wi-Fi，确认自动获取地址并能访问互联网。
+5. 让客户端重新连接该 LAN（Wi-Fi 设备重连 Wi-Fi；有线设备重新获取地址），确认自动获取地址并能访问互联网。
 
 重要：在确认路由器 DHCP 已恢复并通过 OFFER 探测前，不要把 Mac 切回自动 DHCP。
 `, time.Now().UTC().Format(time.RFC3339), snapshot.NetworkService, snapshot.Interface, snapshot.IPv4, snapshot.SubnetMask, snapshot.Router, strings.Join(snapshot.DNS, ", "), snapshot.NetworkService, snapshot.NetworkService)

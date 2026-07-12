@@ -85,7 +85,7 @@ struct MenuContentView: View {
     private func statusGrid(_ status: MenuBarStatus) -> some View {
         Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 7) {
             row("Gateway", status.gateway.capitalized)
-            row("Topology", status.topology)
+            row("Topology", status.topologyLabel)
             row("LAN IP", status.lanIp)
             row("Clients", String(status.clientCount))
             row("DHCP / DNS", status.dhcp)

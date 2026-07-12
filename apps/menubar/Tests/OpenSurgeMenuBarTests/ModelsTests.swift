@@ -26,6 +26,10 @@ final class ModelsTests: XCTestCase {
         XCTAssertFalse(status.diagnosticSummary.contains("secret-value"))
     }
 
+    func testSameWiFiTechnicalModeUsesSameLANProductLabel() {
+        XCTAssertEqual(fixture(gateway: "stopped", recovery: false, drift: false).topologyLabel, "同一 LAN DHCP 接管")
+    }
+
     private func fixture(gateway: String, recovery: Bool, drift: Bool) -> MenuBarStatus {
         MenuBarStatus(schemaVersion: 1, revision: "r", gateway: gateway, topology: "same_wifi_dhcp",
                       lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded",

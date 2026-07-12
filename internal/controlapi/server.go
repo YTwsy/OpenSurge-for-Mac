@@ -508,7 +508,7 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 	plan.ProtectedIPv4 = uniqueStrings(append([]string{cfg.Gateway.LANIP, snapshot.Router}, cfg.DevicePolicy.ProtectedIPv4...))
 	if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP {
 		if cfg.Gateway.Interface != cfg.Gateway.UpstreamInterface {
-			plan.Blockers = append(plan.Blockers, "same-WiFi DHCP requires one shared interface")
+			plan.Blockers = append(plan.Blockers, "same-LAN DHCP takeover requires one shared interface")
 		}
 		if snapshot.IPv4 != cfg.Gateway.LANIP {
 			plan.Blockers = append(plan.Blockers, fmt.Sprintf("Mac IPv4 %s differs from configured gateway.lan_ip %s", snapshot.IPv4, cfg.Gateway.LANIP))
@@ -548,7 +548,7 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 	if action == "start" && cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP {
 		recovery, _ := s.store.Recovery()
 		if recovery.Stage != RecoveryRouterDHCPDisabledConfirmed {
-			writeError(w, http.StatusConflict, "recovery_precondition", "same-WiFi start requires persisted confirmation that router DHCP is disabled")
+			writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover requires persisted confirmation that router DHCP is disabled")
 			return
 		}
 	}
@@ -781,7 +781,7 @@ func (s *Server) handleRecoveryPrepare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if cfg.Gateway.Mode != config.GatewayModeSameWiFiDHCP {
-		writeError(w, http.StatusConflict, "same_wifi_config_required", "save the same-Wi-Fi DHCP topology before preparing recovery")
+		writeError(w, http.StatusConflict, "same_wifi_config_required", "save the same-LAN DHCP takeover topology before preparing recovery")
 		return
 	}
 	var request struct {
