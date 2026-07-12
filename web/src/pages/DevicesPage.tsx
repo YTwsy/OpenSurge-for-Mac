@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import type { CompiledDevice, DevicePolicyDocument, DevicesResponse, Overview, PolicyRule, PolicySet, ProxyGroup } from '../types'
@@ -8,14 +8,16 @@ const normalizePolicy = (value: PolicySet): PolicySet => ({ devices: value.devic
 export function DevicesPage({ overview }: { overview: Overview | null }) {
   const [data, setData] = useState<DevicesResponse | null>(null)
   const [policyDocument, setPolicyDocument] = useState<DevicePolicyDocument | null>(null)
-  const [groups, setGroups] = useState<ProxyGroup[]>(overview?.policies ?? [])
-  const [candidates, setCandidates] = useState<string[]>(['DIRECT', 'REJECT'])
+  const [importedCandidates, setImportedCandidates] = useState<string[]>([])
   const [error, setError] = useState('')
+  const groups = overview?.policies ?? []
+  const candidates = useMemo(() => [...new Set(['DIRECT', 'REJECT', ...importedCandidates, ...groups.flatMap(group => [group.name, ...group.options])])], [groups, importedCandidates])
   const refresh = useCallback(async () => {
     try {
-      const [devices, policies, policy, sources] = await Promise.all([api.devices(), api.policies().catch(() => ({ groups: [] })), api.devicePolicy().catch(() => null), api.sources().catch(() => ({ revision: '', sources: [] }))])
+      const [devices, config, sources] = await Promise.all([api.devices(), api.config(), api.sources().catch(() => ({ revision: '', sources: [] }))])
+      const policy = config.device_policy.enabled ? await api.devicePolicy() : null
       const imported = sources.sources.filter(source => source.applied && source.valid).flatMap(source => [...source.inventory.proxies, ...source.inventory.proxy_groups])
-      setData(devices); setGroups(policies.groups); setPolicyDocument(policy); setCandidates([...new Set(['DIRECT', 'REJECT', ...imported, ...policies.groups.flatMap(group => [group.name, ...group.options])])]); setError('')
+      setData(devices); setPolicyDocument(policy); setImportedCandidates(imported); setError('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
   }, [])
   useEffect(() => { void refresh() }, [refresh])

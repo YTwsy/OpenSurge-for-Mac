@@ -109,6 +109,13 @@ describe('OpenSurge app shell', () => {
   })
 
   it('edits templates in the structured device policy editor', async () => {
+    vi.mocked(api.config).mockResolvedValue({
+      schema_version: 1, revision: 'config-revision',
+      gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      device_policy: { enabled: true, protected_ipv4: [] },
+    })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
