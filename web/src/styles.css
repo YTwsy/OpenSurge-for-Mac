@@ -147,6 +147,9 @@ button{cursor:pointer}
 .config-field-title code{color:#78d9a9;font-size:10px;white-space:nowrap}
 .config-field small{color:#83988f;font-size:11px;line-height:1.5}
 .config-field input,.config-field select{width:100%}
+.dns-presets{display:flex;gap:7px}
+.dns-presets button{flex:1;border:1px solid #2b433b;background:#172b25;color:#aebfb8;border-radius:8px;padding:8px}
+.dns-presets button[aria-pressed="true"]{border-color:#6fcfa6;background:#17372c;color:#a8f1d0}
 .config-field input:disabled{opacity:.48;cursor:not-allowed}
 .checkbox-field{display:flex;gap:8px;align-items:center;color:#d5e4dd;font-size:13px}
 .checkbox-field input{width:auto}
@@ -200,6 +203,8 @@ html[data-theme="light"] .network-config-guide{background:#e3f2eb}
 html[data-theme="light"] .network-config-guide p{color:#45675a}
 html[data-theme="light"] .config-field,html[data-theme="light"] .recovery-card-grid>div,html[data-theme="light"] .lease-picker{background:#f8fbfa;border-color:#cbded6}
 html[data-theme="light"] .config-field input,html[data-theme="light"] .config-field select,html[data-theme="light"] .policy-editor input,html[data-theme="light"] .policy-editor select,html[data-theme="light"] .import-panel input,html[data-theme="light"] .slots select,html[data-theme="light"] .policy-list select{background:#fff;border-color:#bad1c7;color:#183028}
+html[data-theme="light"] .dns-presets button{background:#edf5f1;border-color:#bed3ca;color:#395b4e}
+html[data-theme="light"] .dns-presets button[aria-pressed="true"]{background:#dcefe6;border-color:#54a983;color:#1f5a43}
 html[data-theme="light"] .config-field-title code,html[data-theme="light"] .router-link{color:#246d50}
 html[data-theme="light"] .recovery-card-grid dd{color:#183028}
 html[data-theme="light"] .recovery-card-actions a,html[data-theme="light"] .actions button,html[data-theme="light"] .row button,html[data-theme="light"] .check button,html[data-theme="light"] .policy-list button,html[data-theme="light"] .policy-editor button{background:#edf5f1;border-color:#bed3ca;color:#254c3e}

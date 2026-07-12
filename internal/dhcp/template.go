@@ -2,6 +2,7 @@ package dhcp
 
 import (
 	"bytes"
+	"strings"
 	"text/template"
 
 	"open-mihomo-gateway/internal/config"
@@ -64,6 +65,10 @@ func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 	if bundle != nil {
 		reservations = bundle.Compiled.Reservations
 	}
+	dnsUpstream := strings.TrimSpace(cfg.DNS.Upstream)
+	if dnsUpstream == "" {
+		dnsUpstream = config.MihomoDNSUpstream
+	}
 	data := templateData{
 		DHCPEnabled:  cfg.DHCP.Enabled,
 		Interface:    cfg.Gateway.Interface,
@@ -76,7 +81,7 @@ func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 		PIDFile:      paths.DNSMasqPIDFile,
 		DNSPort:      cfg.DNS.Port,
 		DNSListen:    cfg.DNS.Listen,
-		DNSUpstream:  cfg.DNS.Upstream,
+		DNSUpstream:  dnsUpstream,
 		Reservations: reservations,
 	}
 

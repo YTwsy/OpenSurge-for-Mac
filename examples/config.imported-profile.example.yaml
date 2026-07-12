@@ -19,7 +19,8 @@ device_policy:
 dns:
   listen: "192.168.50.1"
   port: 53
-  upstream: ""
+  # OpenSurge owns DNS even in imported mode so fake-IP and TUN stay aligned.
+  upstream: "127.0.0.1#1053"
 
 mihomo:
   binary: "./bin/mihomo"

@@ -53,6 +53,23 @@ func TestValidateAcceptsSameLANGatewayMode(t *testing.T) {
 	}
 }
 
+func TestValidateDNSUpstream(t *testing.T) {
+	for _, value := range []string{"", MihomoDNSUpstream, "1.1.1.1", "8.8.8.8#5353"} {
+		cfg := Default()
+		cfg.DNS.Upstream = value
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("Validate() rejected dns.upstream %q: %v", value, err)
+		}
+	}
+	for _, value := range []string{"dns.example", "1.1.1.1#0", "1.1.1.1#70000", "1.1.1.1#53#54", "1.1.1.1\nserver=8.8.8.8"} {
+		cfg := Default()
+		cfg.DNS.Upstream = value
+		if err := Validate(cfg); err == nil {
+			t.Fatalf("Validate() accepted dns.upstream %q", value)
+		}
+	}
+}
+
 func TestValidateRejectsInvalidSameLANConfig(t *testing.T) {
 	tests := []struct {
 		name string

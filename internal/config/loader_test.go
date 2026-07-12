@@ -34,7 +34,7 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.DHCP.Binary != "dnsmasq" {
 		t.Fatalf("DHCP.Binary = %q", cfg.DHCP.Binary)
 	}
-	if cfg.DNS.Upstream != "" {
+	if cfg.DNS.Upstream != MihomoDNSUpstream {
 		t.Fatalf("DNS.Upstream = %q", cfg.DNS.Upstream)
 	}
 	if cfg.Transparent.Mode != TransparentModeOff {

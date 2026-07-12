@@ -587,6 +587,14 @@ func TestControlConfigUsesRevisionAndAppliesTopology(t *testing.T) {
 	}
 }
 
+func TestControlConfigShowsMihomoDNSForLegacyEmptyUpstream(t *testing.T) {
+	cfg := config.Default()
+	cfg.DNS.Upstream = ""
+	if got := controlConfigFrom(cfg, "revision").DNS.Upstream; got != config.MihomoDNSUpstream {
+		t.Fatalf("DNS upstream = %q, want %q", got, config.MihomoDNSUpstream)
+	}
+}
+
 func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
 	server := newTestServer(t)
 	state, err := server.stateEvent(t.Context())

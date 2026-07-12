@@ -23,10 +23,24 @@ func TestRenderConfig(t *testing.T) {
 		"dhcp-range=192.168.50.100,192.168.50.200,12h",
 		"dhcp-option=option:router,192.168.50.1",
 		"port=53",
+		"no-resolv",
+		"server=127.0.0.1#1053",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestRenderConfigMigratesEmptyDNSUpstreamToMihomo(t *testing.T) {
+	cfg := config.Default()
+	cfg.DNS.Upstream = ""
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "server="+config.MihomoDNSUpstream) {
+		t.Fatalf("rendered config does not use mihomo DNS fallback:\n%s", rendered)
 	}
 }
 
@@ -61,7 +75,7 @@ func TestRenderConfigWithDevicePolicyReservations(t *testing.T) {
 
 func TestRenderConfigWithDNSUpstream(t *testing.T) {
 	cfg := config.Default()
-	cfg.DNS.Upstream = "127.0.0.1#1053"
+	cfg.DNS.Upstream = "1.1.1.1"
 	paths := runtime.NewPaths(cfg)
 	rendered, err := RenderConfig(cfg, paths)
 	if err != nil {
@@ -70,7 +84,7 @@ func TestRenderConfigWithDNSUpstream(t *testing.T) {
 
 	for _, want := range []string{
 		"no-resolv",
-		"server=127.0.0.1#1053",
+		"server=1.1.1.1",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)

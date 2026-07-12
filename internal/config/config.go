@@ -77,6 +77,11 @@ const (
 	TransparentModeTUN = "tun"
 )
 
+// MihomoDNSUpstream is the dnsmasq upstream that preserves mihomo fake-IP and
+// TUN DNS semantics. An explicit public resolver remains supported for
+// diagnostics, but TUN dns-hijack means it is not a guaranteed bypass path.
+const MihomoDNSUpstream = "127.0.0.1#1053"
+
 const (
 	MihomoProfileModeManaged  = "managed"
 	MihomoProfileModeImported = "imported"
@@ -132,8 +137,9 @@ func Default() Config {
 		},
 		DevicePolicy: DevicePolicyConfig{},
 		DNS: DNSConfig{
-			Listen: "192.168.50.1",
-			Port:   53,
+			Listen:   "192.168.50.1",
+			Port:     53,
+			Upstream: MihomoDNSUpstream,
 		},
 		Mihomo: MihomoConfig{
 			Binary:      "./bin/mihomo",

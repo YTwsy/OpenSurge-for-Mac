@@ -55,6 +55,11 @@ MAC 与当前 IPv4 填入 desired device policy，避免重复手抄。租约候
 固定 reservation；用户仍需选择 Profile、登记并保存，运行中的 gateway 仍需重启后才
 应用新的 DHCP/mihomo bundle。
 
+Desired 网络配置默认把 `dns.upstream` 显示为 `127.0.0.1#1053`，形成
+`dnsmasq -> mihomo fake-IP DNS`。旧配置中的空 upstream 在 dnsmasq 渲染时也迁移到这条
+路径。`1.1.1.1` 只作为显式调试预设；TUN 的 `dns-hijack any:53` 仍可能捕获该查询，
+因此 UI 不把它描述为可靠的直连或 TUN bypass。
+
 生产 pkg 使用固定 `/` install location 和不可 relocatable 的菜单栏 bundle，把 App 安装
 到 `/Applications/OpenSurge Menu Bar.app`；否则 macOS Installer 可能把它 relocate 回
 构建工作区的 `payload/Applications`。生产 pkg 把 applied config、mihomo/dnsmasq、runtime 和 helper 放在 root-owned 的

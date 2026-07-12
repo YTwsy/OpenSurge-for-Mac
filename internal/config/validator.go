@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"open-mihomo-gateway/internal/device"
@@ -59,6 +60,9 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	}
 	if !validPort(cfg.DNS.Port) {
 		return fmt.Errorf("dns.port must be between 1 and 65535")
+	}
+	if err := validateDNSUpstream(cfg.DNS.Upstream); err != nil {
+		return err
 	}
 	if strings.TrimSpace(cfg.Mihomo.Binary) == "" {
 		return fmt.Errorf("mihomo.binary is required")
@@ -116,6 +120,31 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	}
 	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
 		return fmt.Errorf("runtime.dir is required")
+	}
+	return nil
+}
+
+func validateDNSUpstream(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		// Older installed configs used an empty value. dnsmasq rendering maps it
+		// to MihomoDNSUpstream so upgrades do not silently keep system-resolver
+		// behavior.
+		return nil
+	}
+	host, portText, hasPort := strings.Cut(value, "#")
+	if net.ParseIP(host).To4() == nil {
+		return fmt.Errorf("dns.upstream must be an IPv4 address or IPv4#port")
+	}
+	if !hasPort {
+		return nil
+	}
+	if strings.Contains(portText, "#") {
+		return fmt.Errorf("dns.upstream must be an IPv4 address or IPv4#port")
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || !validPort(port) {
+		return fmt.Errorf("dns.upstream port must be between 1 and 65535")
 	}
 	return nil
 }

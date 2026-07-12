@@ -19,7 +19,9 @@ device_policy:
 dns:
   listen: "192.168.50.1"
   port: 53
-  upstream: ""
+  # Recommended: dnsmasq -> mihomo fake-IP DNS. Use 1.1.1.1 only as an
+  # explicit diagnostic resolver; TUN dns-hijack may still capture it.
+  upstream: "127.0.0.1#1053"
 
 mihomo:
   binary: "./bin/mihomo"
