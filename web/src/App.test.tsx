@@ -45,7 +45,7 @@ vi.mock('./api', () => ({
     policies: vi.fn(async () => ({ groups: [] })),
     devicePolicy: vi.fn(async () => null),
     refreshProvider: vi.fn(),
-    diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {} })),
+    diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {}, operations: [], recovery: { stage: 'idle', required: false } })),
   },
 }))
 

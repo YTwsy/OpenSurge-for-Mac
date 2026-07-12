@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -121,6 +122,28 @@ func (s *Store) Operation(id string) (Operation, error) {
 	}
 	err := readJSON(filepath.Join(s.dir, "operations", id+".json"), &op)
 	return op, err
+}
+
+func (s *Store) Operations(limit int) ([]Operation, error) {
+	entries, err := os.ReadDir(filepath.Join(s.dir, "operations"))
+	if err != nil {
+		return nil, err
+	}
+	operations := make([]Operation, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		var operation Operation
+		if err := readJSON(filepath.Join(s.dir, "operations", entry.Name()), &operation); err == nil {
+			operations = append(operations, operation)
+		}
+	}
+	sort.Slice(operations, func(i, j int) bool { return operations[i].UpdatedAt.After(operations[j].UpdatedAt) })
+	if limit > 0 && len(operations) > limit {
+		operations = operations[:limit]
+	}
+	return operations, nil
 }
 
 func (s *Store) Sources() ([]Source, error) {

@@ -190,6 +190,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/diagnostics", s.auth(http.HandlerFunc(s.handleDiagnostics)))
 	mux.Handle("POST /api/v1/providers/{name}/refresh", s.auth(http.HandlerFunc(s.handleProviderRefresh)))
 	mux.Handle("GET /api/v1/operations/{id}", s.auth(http.HandlerFunc(s.handleOperation)))
+	mux.Handle("GET /api/v1/operations", s.auth(http.HandlerFunc(s.handleOperations)))
 	mux.Handle("GET /api/v1/events", s.auth(http.HandlerFunc(s.handleEvents)))
 	if s.static != nil {
 		mux.Handle("/", s.static)
@@ -591,6 +592,15 @@ func (s *Server) handleOperation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, op)
+}
+
+func (s *Server) handleOperations(w http.ResponseWriter, _ *http.Request) {
+	operations, err := s.store.Operations(50)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "operations_read_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "operations": operations})
 }
 
 func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request) {
@@ -1175,7 +1185,9 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		"mihomo":  tailLines(paths.MihomoLog, 80, cfg),
 		"dnsmasq": tailLines(paths.DNSMasqLog, 80, cfg),
 	}
-	writeJSON(w, http.StatusOK, DiagnosticsResponse{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Connections: connections, ConnectionError: errorString(connectionErr), Logs: logs})
+	operations, _ := s.store.Operations(20)
+	recovery, _ := s.store.Recovery()
+	writeJSON(w, http.StatusOK, DiagnosticsResponse{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Connections: connections, ConnectionError: errorString(connectionErr), Logs: logs, Operations: operations, Recovery: recovery})
 }
 
 func tailLines(path string, limit int, cfg config.Config) []string {

@@ -184,6 +184,28 @@ func TestStoreTokenPermissions(t *testing.T) {
 	}
 }
 
+func TestOperationHistoryIsNewestFirstAndLimited(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	older := Operation{ID: "older", Kind: "start", State: "succeeded", UpdatedAt: time.Now().Add(-time.Minute)}
+	newer := Operation{ID: "newer", Kind: "stop", State: "failed", UpdatedAt: time.Now()}
+	if err := store.SaveOperation(older); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveOperation(newer); err != nil {
+		t.Fatal(err)
+	}
+	operations, err := store.Operations(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) != 1 || operations[0].ID != "newer" {
+		t.Fatalf("operations=%#v", operations)
+	}
+}
+
 func TestHelperRejectsUserOwnedConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("gateway: {}\n"), 0o600); err != nil {

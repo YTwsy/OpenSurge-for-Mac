@@ -272,4 +272,6 @@ type DiagnosticsResponse struct {
 	Connections     mihomo.ConnectionsSnapshot `json:"connections"`
 	ConnectionError string                     `json:"connection_error,omitempty"`
 	Logs            map[string][]string        `json:"logs"`
+	Operations      []Operation                `json:"operations"`
+	Recovery        RecoveryState              `json:"recovery"`
 }

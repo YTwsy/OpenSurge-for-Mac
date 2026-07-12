@@ -64,6 +64,8 @@ JSON 结构检查。
 `/api/v1/events` 每两秒观察 config、gateway、desired/applied digest 与 recovery，只有
 状态变化时发送 `state` SSE，另有 15 秒 heartbeat。诊断页通过受认证接口显示 live
 connections 与最多 80 行近期日志；已知 mihomo/upstream 凭据在 API 返回前脱敏。
+诊断 DTO 同时带最近 20 条持久化 start/stop operation 与当前 recovery 状态，另有
+`GET /api/v1/operations` 返回最近 50 条，便于审计幂等 operation ID、失败和完成时间。
 
 ## same-WiFi 恢复状态
 
