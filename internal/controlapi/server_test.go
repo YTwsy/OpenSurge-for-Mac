@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -107,8 +108,83 @@ func TestRecoveryTransitionsPersist(t *testing.T) {
 	if state.NetworkSnapshot == nil || state.NetworkSnapshot.Router != "192.168.1.1" {
 		t.Fatalf("snapshot=%#v", state.NetworkSnapshot)
 	}
-	if _, err := os.Stat(filepath.Join(server.store.Dir(), "WIFI-DHCP-RECOVERY-CARD.txt")); err != nil {
+	cardPath := filepath.Join(server.store.Dir(), "WIFI-DHCP-RECOVERY-CARD.txt")
+	if _, err := os.Stat(cardPath); err != nil {
 		t.Fatalf("recovery card: %v", err)
+	}
+	card, err := os.ReadFile(cardPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"同一 Wi-Fi DHCP 恢复卡", "原始 IPv4：192.168.1.20", "原始路由器：192.168.1.1", "原始 DNS：192.168.1.1", "在确认路由器 DHCP 已恢复并通过 OFFER 探测前"} {
+		if !strings.Contains(string(card), want) {
+			t.Fatalf("recovery card missing %q:\n%s", want, card)
+		}
+	}
+
+	response = performAuthorized(server, http.MethodGet, "/api/v1/recovery/card", nil)
+	if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Disposition"), "inline;") || !strings.Contains(response.Body.String(), "恢复顺序") {
+		t.Fatalf("inline recovery card: status=%d disposition=%q body=%s", response.Code, response.Header().Get("Content-Disposition"), response.Body.String())
+	}
+	response = performAuthorized(server, http.MethodGet, "/api/v1/recovery/card?download=1", nil)
+	if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Disposition"), "attachment;") {
+		t.Fatalf("download recovery card: status=%d disposition=%q", response.Code, response.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestPreparedRecoveryCanBeDiscardedBeforeNetworkChanges(t *testing.T) {
+	server := newTestServer(t)
+	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
+		t.Fatalf("prepare: %d %s", response.Code, response.Body.String())
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/discard", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("discard: %d %s", response.Code, response.Body.String())
+	}
+	state, err := server.store.Recovery()
+	if err != nil || state.Stage != RecoveryIdle || state.Required || state.NetworkSnapshot != nil {
+		t.Fatalf("recovery=%#v err=%v", state, err)
+	}
+	if _, err := os.Stat(filepath.Join(server.store.Dir(), "WIFI-DHCP-RECOVERY-CARD.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("recovery card still exists: %v", err)
+	}
+	missing := performAuthorized(server, http.MethodGet, "/api/v1/recovery/card", nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing card status=%d body=%s", missing.Code, missing.Body.String())
+	}
+}
+
+func TestRecoveryPrepareRollsBackWhenOfflineCardCannotBeWritten(t *testing.T) {
+	server := newTestServer(t)
+	cardPath := filepath.Join(server.store.Dir(), "WIFI-DHCP-RECOVERY-CARD.txt")
+	if err := os.Mkdir(cardPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`))
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "recovery_card_failed") {
+		t.Fatalf("prepare status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, err := server.store.Recovery()
+	if err != nil || state.Stage != RecoveryIdle || state.Required || state.NetworkSnapshot != nil {
+		t.Fatalf("recovery=%#v err=%v", state, err)
+	}
+}
+
+func TestPreparedRecoveryDiscardIsRejectedAfterNetworkChangesBegin(t *testing.T) {
+	server, _ := newTestServerWithNetwork(t)
+	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
+		t.Fatalf("prepare: %d %s", response.Code, response.Body.String())
+	}
+	if response := performAuthorized(server, http.MethodPost, "/api/v1/network/apply-static", nil); response.Code != http.StatusOK {
+		t.Fatalf("apply static: %d %s", response.Code, response.Body.String())
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/discard", nil)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("discard status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ := server.store.Recovery()
+	if state.Stage != RecoveryMacStatic || !state.Required {
+		t.Fatalf("recovery=%#v", state)
 	}
 }
 
@@ -156,6 +232,86 @@ func TestSameWiFiNetworkRecoveryFlow(t *testing.T) {
 	state, _ = server.store.Recovery()
 	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
 		t.Fatalf("final state=%#v network=%#v", state, network)
+	}
+}
+
+func TestRecoveryPrepareRejectsGatewayIPv4OutsideRouterSubnet(t *testing.T) {
+	server, _ := newTestServerWithNetwork(t)
+	cfg, err := config.Load(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.DNS.Listen = cfg.Gateway.LANIP
+	cfg.DHCP.RangeStart, cfg.DHCP.RangeEnd = "192.168.50.100", "192.168.50.199"
+	if err := os.WriteFile(server.configPath, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "configured Mac LAN IPv4 192.168.50.1") {
+		t.Fatalf("prepare status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ := server.store.Recovery()
+	if state.Stage != RecoveryIdle || state.Required {
+		t.Fatalf("recovery state=%#v", state)
+	}
+	if _, err := os.Stat(filepath.Join(server.store.Dir(), "WIFI-DHCP-RECOVERY-CARD.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("prepared recovery card was not cleared: %v", err)
+	}
+}
+
+func TestRecoveryPrepareRequiresSavedSameWiFiTopology(t *testing.T) {
+	server, _ := newTestServerWithNetwork(t)
+	cfg, err := config.Load(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gateway.Mode = config.GatewayModeIsolatedLAN
+	if err := os.WriteFile(server.configPath, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`))
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "same_wifi_config_required") {
+		t.Fatalf("prepare status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ := server.store.Recovery()
+	if state.Stage != RecoveryIdle || state.Required {
+		t.Fatalf("recovery state=%#v", state)
+	}
+}
+
+func TestControlConfigCanCorrectPreparedRecoveryBeforeNetworkChanges(t *testing.T) {
+	server, _ := newTestServerWithNetwork(t)
+	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
+		t.Fatalf("prepare: %d %s", response.Code, response.Body.String())
+	}
+	get := performAuthorized(server, http.MethodGet, "/api/v1/config", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("config: %d %s", get.Code, get.Body.String())
+	}
+	var current ControlConfig
+	if err := json.Unmarshal(get.Body.Bytes(), &current); err != nil {
+		t.Fatal(err)
+	}
+	current.Gateway.LANIP, current.DNS.Listen = "192.168.1.21", "192.168.1.21"
+	payload, _ := json.Marshal(current)
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/config", bytes.NewReader(payload))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+current.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("config update: %d %s", response.Code, response.Body.String())
+	}
+	state, _ := server.store.Recovery()
+	if state.Stage != RecoveryIdle || state.Required {
+		t.Fatalf("recovery state=%#v", state)
+	}
+	if _, err := os.Stat(filepath.Join(server.store.Dir(), "WIFI-DHCP-RECOVERY-CARD.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("prepared recovery card was not cleared after config save: %v", err)
 	}
 }
 

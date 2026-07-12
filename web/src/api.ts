@@ -29,6 +29,7 @@ export const api = {
   gatewayPlan: (routerDHCPDisabled = false) => request<GatewayPlan>('/api/v1/gateway/plan', { method: 'POST', body: JSON.stringify({ router_dhcp_disabled: routerDHCPDisabled }) }),
   recovery: (stage: string) => request('/api/v1/recovery', { method: 'POST', body: JSON.stringify({ stage }) }),
   prepareRecovery: () => request('/api/v1/recovery/prepare', { method: 'POST', body: JSON.stringify({}) }),
+  discardRecovery: () => request('/api/v1/recovery/discard', { method: 'POST' }),
   applyStatic: () => request('/api/v1/network/apply-static', { method: 'POST' }),
   probeDHCP: () => request('/api/v1/network/dhcp-probe', { method: 'POST' }),
   confirmRouterRestored: () => request('/api/v1/recovery/router-restored', { method: 'POST' }),

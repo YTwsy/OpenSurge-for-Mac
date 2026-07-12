@@ -7,6 +7,16 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(status.indicator, .recovery)
     }
 
+    func testPreparedRecoveryCardDoesNotImplyNetworkHasChanged() {
+        let status = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp",
+                                   lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded",
+                                   forwarding: "disabled", clientCount: 0, drift: false, doctorHealthy: true,
+                                   recoveryRequired: true, recoveryStage: "prepared", warnings: [], errorCode: nil)
+        XCTAssertTrue(status.recoverySnapshotPrepared)
+        XCTAssertFalse(status.recoveryHasChangedNetwork)
+        XCTAssertEqual(status.indicator, .stopped)
+    }
+
     func testDriftIsDegraded() {
         XCTAssertEqual(fixture(gateway: "running", recovery: false, drift: true).indicator, .degraded)
     }

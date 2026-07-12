@@ -7,10 +7,11 @@ import { DiagnosticsPage } from './pages/DiagnosticsPage'
 import { NetworkPage } from './pages/NetworkPage'
 import { PoliciesPage } from './pages/PoliciesPage'
 import { SourcesPage } from './pages/SourcesPage'
-import { statusLabel } from './status'
+import { needsNetworkRecoveryWarning, statusLabel } from './status'
 import type { Overview } from './types'
 
 type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'diagnostics'
+type Theme = 'dark' | 'light'
 
 const nav = [
   { id: 'dashboard', label: '总览', icon: '◈' },
@@ -26,11 +27,23 @@ function currentPage(): Page {
   return nav.some(item => item.id === candidate) ? candidate! : 'dashboard'
 }
 
+function initialTheme(): Theme {
+  const stored = window.localStorage.getItem('opensurge-theme')
+  if (stored === 'dark' || stored === 'light') return stored
+  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
 export function App() {
   const [page, setPage] = useState<Page>(currentPage)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [theme, setTheme] = useState<Theme>(initialTheme)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    window.localStorage.setItem('opensurge-theme', theme)
+  }, [theme])
 
   const refresh = useCallback(async () => {
     try {
@@ -80,10 +93,11 @@ export function App() {
       <nav aria-label="OpenSurge sections">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}
       </nav>
+      <button type="button" className="theme-toggle" aria-pressed={theme === 'light'} aria-label={theme === 'dark' ? '切换为浅色模式' : '切换为深色模式'} onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}><span aria-hidden="true">{theme === 'dark' ? '☀' : '◐'}</span>{theme === 'dark' ? '浅色模式' : '深色模式'}</button>
       <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway)}</strong><small>{overview?.status.lan_ip || 'Control API'}</small></div></div>
     </aside>
     <main className="workspace">
-      {overview?.recovery.required && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network')} />}
+      {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network')} />}
       {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
       {page === 'dashboard' && <DashboardPage overview={overview} busy={busy} onAction={gatewayAction} />}
       {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}

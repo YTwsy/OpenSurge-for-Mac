@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Overview } from './types'
@@ -31,6 +31,7 @@ vi.mock('./api', () => ({
     })),
     recovery: vi.fn(),
     prepareRecovery: vi.fn(),
+    discardRecovery: vi.fn(),
     applyStatic: vi.fn(),
     probeDHCP: vi.fn(),
     confirmRouterRestored: vi.fn(),
@@ -62,21 +63,36 @@ const overview: Overview = {
   },
   doctor: [], doctor_healthy: true, leases: [], policies: [],
   providers: { proxy_providers: [], rule_providers: [] },
-  recovery: { stage: 'prepared', topology: 'same_wifi_dhcp', required: true },
+  recovery: {
+    stage: 'prepared', topology: 'same_wifi_dhcp', required: true,
+    network_snapshot: {
+      network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.10', subnet_mask: '255.255.255.0',
+      router: '192.168.1.1', dns: ['192.168.1.1', '1.1.1.1'], ipv6_default: false,
+    },
+  },
 }
 
 describe('OpenSurge app shell', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/dashboard')
+    window.localStorage.clear()
+    delete document.documentElement.dataset.theme
     vi.mocked(api.overview).mockResolvedValue(overview)
   })
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
-  it('shows a persisted recovery warning on the dashboard', async () => {
+  it('does not present a saved recovery card as an unfinished network recovery', async () => {
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('button', { name: '启动网关' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('warns on every page only after the recovery flow changes network state', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'mac_static' } })
     render(<App />)
     expect(await screen.findByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('网络恢复尚未完成')
-    expect(screen.getByRole('button', { name: '启动网关' }).hasAttribute('disabled')).toBe(false)
   })
 
   it('navigates to the cooperative same-WiFi recovery flow', async () => {
@@ -88,6 +104,68 @@ describe('OpenSurge app shell', () => {
     expect(window.location.pathname).toBe('/network')
   })
 
+  it('shows, links, downloads, and can discard the prepared recovery card', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
+    const card = (await screen.findByText('已保存的恢复资料')).closest('section')!
+    expect(within(card).getByText('192.168.1.10')).toBeTruthy()
+    expect(within(card).getByText('192.168.1.1, 1.1.1.1')).toBeTruthy()
+    expect(within(card).getByText('Wi-Fi')).toBeTruthy()
+    expect(within(card).getByText('en0')).toBeTruthy()
+    const routerLinks = screen.getAllByRole('link', { name: '192.168.1.1' })
+    expect(routerLinks.some(link => link.getAttribute('href') === 'http://192.168.1.1')).toBe(true)
+    expect(screen.getAllByText('打不开?试试 https 或路由器专属域名').length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: '查看恢复卡' }).getAttribute('href')).toBe('/api/v1/recovery/card')
+    expect(screen.getByRole('link', { name: '下载恢复卡' }).getAttribute('href')).toBe('/api/v1/recovery/card?download=1')
+    await userEvent.click(screen.getByRole('button', { name: '放弃恢复并销毁资料' }))
+    expect(api.discardRecovery).toHaveBeenCalledOnce()
+  })
+
+  it('shows router shutdown guidance with the detected administration link', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'mac_static' } })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    expect(await screen.findByText('关闭路由器 DHCP')).toBeTruthy()
+    expect(screen.getByText('关闭 DHCP → 保存；保留路由器 LAN IP 不变')).toBeTruthy()
+    expect(screen.getAllByRole('link', { name: '192.168.1.1' }).some(link => link.getAttribute('href') === 'http://192.168.1.1')).toBe(true)
+  })
+
+  it('shows fallback router discovery guidance when no IPv4 router was found', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'gateway_stopped_waiting_router_dhcp', network_snapshot: { ...overview.recovery.network_snapshot!, router: '' } } })
+    vi.mocked(api.gatewayPlan).mockResolvedValue({
+      schema_version: 1, revision: 'config-revision', topology: 'same_wifi_dhcp',
+      snapshot: { network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.20', subnet_mask: '255.255.255.0', router: '', dns: [], ipv6_default: false },
+      protected_ipv4: [], dhcp_servers: [], warnings: [], blockers: [],
+    })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    expect(await screen.findByText('恢复路由器 DHCP')).toBeTruthy()
+    expect(screen.getByText(/未能自动获取路由器地址/).textContent).toContain("networksetup -getinfo 'Wi-Fi'")
+  })
+
+  it('switches between dark and light backgrounds and remembers the choice', async () => {
+    render(<App />)
+    const toggle = await screen.findByRole('button', { name: '切换为浅色模式' })
+    await userEvent.click(toggle)
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(window.localStorage.getItem('opensurge-theme')).toBe('light')
+    expect(screen.getByRole('button', { name: '切换为深色模式' })).toBeTruthy()
+  })
+
+  it('requires saving corrected configuration before the prepared recovery can advance', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
+    const save = await screen.findByRole('button', { name: '保存网络配置' })
+    expect(save.hasAttribute('disabled')).toBe(false)
+    await userEvent.clear(screen.getByLabelText('Mac 网关 IPv4'))
+    await userEvent.type(screen.getByLabelText('Mac 网关 IPv4'), '192.168.1.21')
+    expect(screen.getByText('网络配置有未保存的修改。先保存配置，再保存恢复资料或继续第 2 步。')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '将 Mac 切换为固定 IPv4' }).hasAttribute('disabled')).toBe(true)
+  })
+
   it('selects an isolated topology in the revisioned network editor', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
@@ -95,6 +173,9 @@ describe('OpenSurge app shell', () => {
     const isolated = await screen.findByRole('button', { name: /独立下游 LAN/ })
     await userEvent.click(isolated)
     expect(isolated.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByLabelText('下游 LAN 接口')).toBeTruthy()
+    expect(screen.getByLabelText('上游 DNS')).toBeTruthy()
+    expect(screen.getByText('填写顺序')).toBeTruthy()
     expect(screen.getByRole('button', { name: '保存网络配置' })).toBeTruthy()
   })
 

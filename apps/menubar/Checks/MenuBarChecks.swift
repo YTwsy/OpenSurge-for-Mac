@@ -58,17 +58,19 @@ struct MenuBarChecks {
         CheckURLProtocol.handler = { request in
             try require(request.url?.query == nil, "long-lived token leaked into request URL")
             try require(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token", "bootstrap bearer token missing")
-            try require(String(decoding: requestBody(request), as: UTF8.self) == #"{"path":"recovery"}"#, "bootstrap deep-link body mismatch")
+            try require(String(decoding: requestBody(request), as: UTF8.self) == #"{"path":"network"}"#, "bootstrap deep-link body mismatch")
             let body = #"{"schema_version":1,"url":"http://127.0.0.1:61767/bootstrap?code=one-time","expires_at":"2026-07-12T00:00:00.123456789Z"}"#
             return (HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
         }
         let bootstrap: URL
-        do { bootstrap = try await client.bootstrapURL(path: "recovery") }
+        do { bootstrap = try await client.bootstrapURL(path: "network") }
         catch { throw CheckFailure.failed("bootstrap request failed: \(CheckURLProtocol.lastFailure ?? String(describing: error))") }
         try require(bootstrap.query == "code=one-time" && !bootstrap.absoluteString.contains("test-token"), "bootstrap URL leaked long-lived token")
 
         let recovery = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "running", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded", forwarding: "enabled", clientCount: 2, drift: true, doctorHealthy: false, recoveryRequired: true, recoveryStage: "gateway_active", warnings: [], errorCode: nil)
         try require(recovery.indicator == .recovery && recovery.indicator.systemImage == "exclamationmark.triangle.fill", "recovery indicator must have highest priority")
+        let prepared = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "disabled", clientCount: 0, drift: false, doctorHealthy: true, recoveryRequired: true, recoveryStage: "prepared", warnings: [], errorCode: nil)
+        try require(prepared.recoverySnapshotPrepared && !prepared.recoveryHasChangedNetwork && prepared.indicator == .stopped, "prepared recovery must not present as a network recovery")
 
         var fallbackOpened = false
         let launcher = WebGUIURLLauncher(

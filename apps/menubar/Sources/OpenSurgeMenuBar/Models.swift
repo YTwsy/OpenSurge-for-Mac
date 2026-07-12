@@ -82,8 +82,16 @@ enum IndicatorState: Equatable {
 }
 
 extension MenuBarStatus {
+    var recoveryHasChangedNetwork: Bool {
+        recoveryRequired && recoveryStage != "prepared"
+    }
+
+    var recoverySnapshotPrepared: Bool {
+        recoveryRequired && recoveryStage == "prepared"
+    }
+
     var indicator: IndicatorState {
-        if recoveryRequired { return .recovery }
+        if recoveryHasChangedNetwork { return .recovery }
         if gateway == "degraded" || drift || !doctorHealthy { return .degraded }
         if gateway == "running" { return .running }
         return .stopped

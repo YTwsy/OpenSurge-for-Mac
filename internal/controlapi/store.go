@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -67,6 +68,10 @@ func (s *Store) Recovery() (RecoveryState, error) {
 func (s *Store) SaveRecovery(state RecoveryState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveRecoveryLocked(state)
+}
+
+func (s *Store) saveRecoveryLocked(state RecoveryState) error {
 	state.SchemaVersion = SchemaVersion
 	state.UpdatedAt = time.Now().UTC()
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -77,32 +82,61 @@ func (s *Store) SaveRecovery(state RecoveryState) error {
 }
 
 func (s *Store) SaveRecoveryCard(state RecoveryState) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if state.NetworkSnapshot == nil {
 		return fmt.Errorf("recovery card requires a network snapshot")
 	}
 	snapshot := state.NetworkSnapshot
-	card := fmt.Sprintf(`OpenSurge for Mac - same-WiFi DHCP recovery card
+	card := fmt.Sprintf(`OpenSurge for Mac - 同一 Wi-Fi DHCP 恢复卡
 
-Created: %s
-Network service: %s
-Interface: %s
-Original IPv4: %s
-Subnet mask: %s
-Original router: %s
-Original DNS: %v
+创建时间：%s
+网络服务：%s
+接口：%s
+原始 IPv4：%s
+子网掩码：%s
+原始路由器：%s
+原始 DNS：%s
 
-Recovery order:
-1. Open the router administration page at the original router address.
-2. Re-enable the router DHCP server.
-3. Confirm another device can obtain an automatic address from the router.
-4. Restore the Mac network service to DHCP in OpenSurge, or run:
+恢复顺序：
+1. 在浏览器打开原始路由器地址，登录路由器管理后台。
+2. 进入 LAN / 网络设置 / DHCP 服务器，重新开启路由器 DHCP 并保存；保留路由器 LAN IP 不变。
+3. 确认另一台设备能够从路由器自动获得 IPv4、网关和 DNS。
+4. 回到 OpenSurge 执行 OFFER 探测，再将 Mac 网络服务恢复为自动 DHCP；也可在终端运行：
    networksetup -setdhcp %q
    networksetup -setdnsservers %q Empty
-5. Reconnect clients and confirm automatic addressing and Internet access.
+5. 让客户端重新连接 Wi-Fi，确认自动获取地址并能访问互联网。
 
-Do not restore the Mac to DHCP before the router DHCP server is back.
-`, time.Now().UTC().Format(time.RFC3339), snapshot.NetworkService, snapshot.Interface, snapshot.IPv4, snapshot.SubnetMask, snapshot.Router, snapshot.DNS, snapshot.NetworkService, snapshot.NetworkService)
+重要：在确认路由器 DHCP 已恢复并通过 OFFER 探测前，不要把 Mac 切回自动 DHCP。
+`, time.Now().UTC().Format(time.RFC3339), snapshot.NetworkService, snapshot.Interface, snapshot.IPv4, snapshot.SubnetMask, snapshot.Router, strings.Join(snapshot.DNS, ", "), snapshot.NetworkService, snapshot.NetworkService)
 	return writeAtomic(filepath.Join(s.dir, "WIFI-DHCP-RECOVERY-CARD.txt"), []byte(card), 0o600)
+}
+
+func (s *Store) RecoveryCard() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return os.ReadFile(filepath.Join(s.dir, "WIFI-DHCP-RECOVERY-CARD.txt"))
+}
+
+func (s *Store) DiscardPreparedRecovery(topology string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var current RecoveryState
+	if err := readJSON(filepath.Join(s.dir, "recovery.json"), &current); err != nil {
+		return err
+	}
+	if current.Stage != RecoveryPrepared {
+		return fmt.Errorf("only prepared recovery data can be discarded")
+	}
+	if err := s.saveRecoveryLocked(RecoveryState{SchemaVersion: SchemaVersion, Stage: RecoveryIdle, Topology: topology}); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(s.dir, "WIFI-DHCP-RECOVERY-CARD.txt")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		_ = s.saveRecoveryLocked(current)
+		return err
+	}
+	return nil
 }
 
 func (s *Store) SaveOperation(op Operation) error {

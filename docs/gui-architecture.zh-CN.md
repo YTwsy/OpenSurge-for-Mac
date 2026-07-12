@@ -84,6 +84,15 @@ DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
 为自动 DHCP；菜单栏和 Web GUI 会持续显示恢复警报。状态机不会自动修改未知路由器，
 也不能把同一 Wi-Fi 描述为不可绕过隔离。
 
+`prepared` 后网络页会直接展示原始 IPv4、路由器、DNS、网络服务、接口与掩码，并通过
+`GET /api/v1/recovery/card` 查看或下载中文离线恢复卡。此阶段尚未改变网络，用户可以用
+`POST /api/v1/recovery/discard` 销毁恢复资料并回到 `idle`；进入 `mac_static` 后该动作会被
+拒绝。路由器地址是有效 IPv4 时，界面提供 HTTP 管理页链接；关闭与恢复 DHCP 两个阶段
+都显示通用 LAN / 网络设置 / DHCP 服务器操作路径及无法自动发现路由器时的 fallback。
+
+Web GUI 的侧边栏提供浅色 / 深色主题切换，选择保存在浏览器本地存储中，不进入 Control
+API 配置或 root-owned gateway 配置。
+
 启动后不能在 GUI 中直接进入正常停止步骤：先输入验收客户端 IPv4，后端要求活跃租约、
 DHCPACK、该源 IP 的 DNS 查询和 mihomo TUN 日志，同时操作者确认客户端网关/DNS 指向
 Mac 且无显式代理；若快照存在 IPv6 default，还必须确认绕过警告。紧急 stop API 始终

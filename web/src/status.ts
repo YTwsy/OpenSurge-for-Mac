@@ -18,3 +18,10 @@ export function recoveryLabel(stage: string) {
     idle: '尚未开始',
   } as Record<string, string>)[stage] ?? stage
 }
+
+// Saving a recovery card deliberately locks the desired configuration, but it
+// does not change the Mac, router, or DHCP service. Keep that safe preflight
+// distinct from the stages that require an operator to restore networking.
+export function needsNetworkRecoveryWarning(stage: string) {
+  return !['idle', 'prepared', 'complete'].includes(stage)
+}

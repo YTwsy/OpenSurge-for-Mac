@@ -169,6 +169,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/gateway/stop", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("GET /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
 	mux.Handle("POST /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
+	mux.Handle("GET /api/v1/recovery/card", s.auth(http.HandlerFunc(s.handleRecoveryCard)))
+	mux.Handle("POST /api/v1/recovery/discard", s.auth(http.HandlerFunc(s.handleRecoveryDiscard)))
 	mux.Handle("POST /api/v1/recovery/prepare", s.auth(http.HandlerFunc(s.handleRecoveryPrepare)))
 	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
 	mux.Handle("POST /api/v1/recovery/client-validated", s.auth(http.HandlerFunc(s.handleClientValidated)))
@@ -215,7 +217,7 @@ func (s *Server) handleControlConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recovery, _ := s.store.Recovery()
-	if recovery.Required {
+	if recovery.Required && recovery.Stage != RecoveryPrepared {
 		writeError(w, http.StatusConflict, "recovery_required", "finish network recovery before editing topology")
 		return
 	}
@@ -247,7 +249,15 @@ func (s *Server) handleControlConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "config_reload_failed", err.Error())
 		return
 	}
-	_ = s.store.SaveRecovery(RecoveryState{SchemaVersion: SchemaVersion, Stage: RecoveryIdle, Topology: cfg.Gateway.Mode})
+	if recovery.Stage == RecoveryPrepared {
+		if err := s.store.DiscardPreparedRecovery(cfg.Gateway.Mode); err != nil {
+			writeError(w, http.StatusInternalServerError, "recovery_discard_failed", "configuration was saved but the prepared recovery card could not be discarded: "+err.Error())
+			return
+		}
+	} else if err := s.store.SaveRecovery(RecoveryState{SchemaVersion: SchemaVersion, Stage: RecoveryIdle, Topology: cfg.Gateway.Mode}); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
 	w.Header().Set("ETag", `"`+newRevision+`"`)
 	writeJSON(w, http.StatusOK, controlConfigFrom(cfg, newRevision))
 }
@@ -627,6 +637,54 @@ func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, current)
 }
 
+func (s *Server) handleRecoveryCard(w http.ResponseWriter, r *http.Request) {
+	state, err := s.store.Recovery()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_read_failed", err.Error())
+		return
+	}
+	if state.NetworkSnapshot == nil || state.Stage == RecoveryIdle {
+		writeError(w, http.StatusNotFound, "recovery_card_missing", "no recovery card is available")
+		return
+	}
+	card, err := s.store.RecoveryCard()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeError(w, http.StatusNotFound, "recovery_card_missing", "no recovery card is available")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "recovery_card_read_failed", err.Error())
+		return
+	}
+	disposition := "inline"
+	if r.URL.Query().Get("download") == "1" {
+		disposition = "attachment"
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", disposition+`; filename="OpenSurge-WiFi-DHCP-Recovery-Card.txt"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(card)
+}
+
+func (s *Server) handleRecoveryDiscard(w http.ResponseWriter, _ *http.Request) {
+	state, err := s.store.Recovery()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_read_failed", err.Error())
+		return
+	}
+	if state.Stage != RecoveryPrepared {
+		writeError(w, http.StatusConflict, "recovery_precondition", "only prepared recovery data can be discarded before network changes begin")
+		return
+	}
+	if err := s.store.DiscardPreparedRecovery(state.Topology); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_discard_failed", err.Error())
+		return
+	}
+	idle, _ := s.store.Recovery()
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: idle})
+}
+
 func (s *Server) handleClientValidated(w http.ResponseWriter, r *http.Request) {
 	state, _ := s.store.Recovery()
 	if state.Stage != RecoveryGatewayActive {
@@ -718,6 +776,10 @@ func (s *Server) handleRecoveryPrepare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
+	if cfg.Gateway.Mode != config.GatewayModeSameWiFiDHCP {
+		writeError(w, http.StatusConflict, "same_wifi_config_required", "save the same-Wi-Fi DHCP topology before preparing recovery")
+		return
+	}
 	var request struct {
 		NetworkService string `json:"network_service"`
 	}
@@ -732,12 +794,17 @@ func (s *Server) handleRecoveryPrepare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "network_discovery_failed", err.Error())
 		return
 	}
+	if err := macosnetwork.ValidateManual(manualConfigForSnapshot(cfg, snapshot)); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "static_config_invalid", fmt.Sprintf("configured Mac LAN IPv4 %s is incompatible with router %s and subnet mask %s: %v", cfg.Gateway.LANIP, snapshot.Router, snapshot.SubnetMask, err))
+		return
+	}
 	state := RecoveryState{SchemaVersion: SchemaVersion, Stage: RecoveryPrepared, Topology: cfg.Gateway.Mode, NetworkService: snapshot.NetworkService, OriginalIPv4: snapshot.IPv4, OriginalRouter: snapshot.Router, Required: true, NetworkSnapshot: &snapshot}
 	if err := s.store.SaveRecovery(state); err != nil {
 		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
 		return
 	}
 	if err := s.store.SaveRecoveryCard(state); err != nil {
+		_ = s.store.SaveRecovery(RecoveryState{SchemaVersion: SchemaVersion, Stage: RecoveryIdle, Topology: cfg.Gateway.Mode})
 		writeError(w, http.StatusInternalServerError, "recovery_card_failed", err.Error())
 		return
 	}
@@ -756,7 +823,7 @@ func (s *Server) handleApplyStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snapshot := state.NetworkSnapshot
-	manual := macosnetwork.ManualConfig{NetworkService: snapshot.NetworkService, Interface: snapshot.Interface, IPv4: cfg.Gateway.LANIP, SubnetMask: snapshot.SubnetMask, Router: snapshot.Router, DNS: snapshot.DNS}
+	manual := manualConfigForSnapshot(cfg, *snapshot)
 	if err := s.networkRunner.SetManual(r.Context(), s.configPath, manual); err != nil {
 		writeError(w, http.StatusBadGateway, "set_static_failed", err.Error())
 		return
@@ -771,6 +838,10 @@ func (s *Server) handleApplyStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
+func manualConfigForSnapshot(cfg config.Config, snapshot macosnetwork.Snapshot) macosnetwork.ManualConfig {
+	return macosnetwork.ManualConfig{NetworkService: snapshot.NetworkService, Interface: snapshot.Interface, IPv4: cfg.Gateway.LANIP, SubnetMask: snapshot.SubnetMask, Router: snapshot.Router, DNS: snapshot.DNS}
 }
 
 func (s *Server) handleDHCPProbe(w http.ResponseWriter, r *http.Request) {

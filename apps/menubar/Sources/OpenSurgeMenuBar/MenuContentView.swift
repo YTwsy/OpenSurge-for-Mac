@@ -19,10 +19,14 @@ struct MenuContentView: View {
             }
 
             if let status = model.status {
-                if status.recoveryRequired {
+                if status.recoveryHasChangedNetwork {
                     recoveryCard(stage: status.recoveryStage ?? "required")
                 } else {
                     statusGrid(status)
+                }
+                if status.recoverySnapshotPrepared {
+                    Label("恢复资料已准备；尚未改动网络", systemImage: "doc.text")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if status.drift {
                     Label("配置已修改，需要重启网关", systemImage: "arrow.triangle.2.circlepath")
@@ -47,9 +51,9 @@ struct MenuContentView: View {
                     .frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent)
 
-            if model.status?.recoveryRequired == true {
-                Button { Task { await model.openWebGUI(path: "recovery") } } label: {
-                    Label("继续恢复", systemImage: "wrench.and.screwdriver")
+            if let status = model.status, status.recoveryRequired {
+                Button { Task { await model.openWebGUI(path: "network") } } label: {
+                    Label(status.recoveryHasChangedNetwork ? "继续恢复" : "在网络设置中继续", systemImage: "wrench.and.screwdriver")
                         .frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered)
             }
@@ -98,10 +102,22 @@ struct MenuContentView: View {
     private func recoveryCard(stage: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Label("网络恢复尚未完成", systemImage: "exclamationmark.triangle.fill").font(.subheadline).bold()
-            Text(stage).font(.caption).foregroundStyle(.secondary)
-            Text("恢复路由器 DHCP 后，再让 Mac 和客户端回到自动获取。")
+            Text(recoveryStageLabel(stage)).font(.caption).foregroundStyle(.secondary)
+            Text("网络已开始变更。完成状态机并验证路由器 DHCP 恢复前，不要把 Mac 切回自动获取。")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(11).background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+private func recoveryStageLabel(_ stage: String) -> String {
+    switch stage {
+    case "mac_static": "Mac 已使用固定 IPv4"
+    case "router_dhcp_disabled_confirmed": "路由器 DHCP 已关闭"
+    case "gateway_active": "OpenSurge 已接管"
+    case "client_validated": "客户端 DHCP、DNS 与 TUN 已验收"
+    case "gateway_stopped_waiting_router_dhcp": "已停止，等待恢复路由器 DHCP"
+    case "router_dhcp_restored": "路由器 DHCP 已恢复"
+    default: stage
     }
 }
