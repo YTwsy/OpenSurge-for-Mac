@@ -82,6 +82,10 @@ enum IndicatorState: Equatable {
 }
 
 extension MenuBarStatus {
+    var gatewayServicesActive: Bool {
+        gateway == "running" || gateway == "degraded" || dhcp == "running" || mihomo == "running" || pfAnchor == "loaded" || forwarding == "enabled"
+    }
+
     var topologyLabel: String {
         switch topology {
         case "same_wifi_dhcp": "同一 LAN DHCP 接管"
@@ -129,4 +133,15 @@ extension MenuBarStatus {
             "Error code: \(errorCode ?? "none")",
         ].joined(separator: "\n")
     }
+}
+
+func menuBarQuitWarning(for status: MenuBarStatus?) -> String {
+    guard let status else {
+        return "退出只会关闭菜单栏图标；OpenSurge 后台控制服务仍会继续运行。当前无法确认网关服务状态，请先在 Web GUI 或活动监视器中检查。"
+    }
+    if status.gatewayServicesActive {
+        let recovery = status.recoveryRequired ? " 当前网络状态机尚未结束，退出也不会完成网络恢复。" : ""
+        return "退出只会关闭菜单栏图标；正在运行的 DHCP/DNS、mihomo、PF/转发和后台控制服务都不会停止。请先在 Web GUI 中停止网关（如需要）。" + recovery
+    }
+    return "退出只会关闭菜单栏图标；网关当前未运行，但 OpenSurge 后台控制服务仍会继续运行。"
 }

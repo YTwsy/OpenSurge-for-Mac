@@ -34,6 +34,19 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(status.indicator, .running)
     }
 
+    func testQuitWarningDistinguishesGatewayFromMenuBarProcess() {
+        let active = fixture(gateway: "running", recovery: false, drift: false)
+        XCTAssertTrue(active.gatewayServicesActive)
+        XCTAssertTrue(menuBarQuitWarning(for: active).contains("都不会停止"))
+        let stopped = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp",
+                                    lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded",
+                                    forwarding: "disabled", clientCount: 0, drift: false, doctorHealthy: true,
+                                    recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
+        XCTAssertFalse(stopped.gatewayServicesActive)
+        XCTAssertTrue(menuBarQuitWarning(for: stopped).contains("后台控制服务仍会继续运行"))
+        XCTAssertTrue(menuBarQuitWarning(for: nil).contains("无法确认网关服务状态"))
+    }
+
     func testDiagnosticSummaryDoesNotContainWarnings() {
         let status = fixture(gateway: "running", recovery: false, drift: false)
         XCTAssertFalse(status.diagnosticSummary.contains("secret-value"))

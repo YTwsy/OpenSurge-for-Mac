@@ -54,6 +54,7 @@ struct MenuBarChecks {
         catch { throw CheckFailure.failed("status request failed: \(CheckURLProtocol.lastFailure ?? String(describing: error))") }
         try require(status.indicator == .running, "running indicator mismatch")
         try require(status.topologyLabel == "同一 LAN DHCP 接管", "same-LAN topology label mismatch")
+        try require(status.gatewayServicesActive && menuBarQuitWarning(for: status).contains("都不会停止"), "active gateway quit warning mismatch")
         try require(status.diagnosticSummary.contains("PF: loaded"), "diagnostic summary omitted PF")
 
         CheckURLProtocol.handler = { request in

@@ -9,6 +9,10 @@ mihomo 和 runtime 包中。
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
 演变成第二控制面。
 
+“退出菜单栏 App”只终止菜单栏图标，不会停止用户级 Control Service，也不会停止正在
+运行的 DHCP/DNS、mihomo、PF 或 forwarding。该按钮必须先显示状态感知的二次确认；
+网关运行时应明确列出仍会继续的服务，状态不可达时应提示先检查，而不是暗示后台已退出。
+
 菜单栏打开 Web GUI 时先调用 `NSWorkspace.shared.open`，检查其返回值；失败后回退到
 `/usr/bin/open`，并在窗口内显示错误。不要把一次性 bootstrap URL 写入错误信息或长期
 日志。

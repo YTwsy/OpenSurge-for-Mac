@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MenuContentView: View {
     @ObservedObject var model: StatusModel
+    @State private var showQuitConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -77,13 +78,19 @@ struct MenuContentView: View {
                 }
             )).font(.caption)
 
-            Button("退出菜单栏 App") { NSApplication.shared.terminate(nil) }
+            Button("退出菜单栏 App…") { showQuitConfirmation = true }
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(16)
         .frame(width: 330)
         .onAppear { model.startPolling(rapid: true) }
         .onDisappear { model.stopRapidPolling() }
+        .alert("只退出菜单栏 App？", isPresented: $showQuitConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("仍然退出", role: .destructive) { NSApplication.shared.terminate(nil) }
+        } message: {
+            Text(menuBarQuitWarning(for: model.status))
+        }
     }
 
     private func statusGrid(_ status: MenuBarStatus) -> some View {
