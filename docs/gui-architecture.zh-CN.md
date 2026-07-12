@@ -110,6 +110,11 @@ OPENSURGE_DNSMASQ_BINARY=/path/to/dnsmasq \
 make gui-installer
 ```
 
+安装器显式以 `/` 为 payload 根目录，并将 `OpenSurge Menu Bar.app` 声明为不可
+relocatable bundle，确保它固定安装到 `/Applications/OpenSurge Menu Bar.app`。
+不要移除 `packaging/gui-components.plist` 或改回让 `pkgbuild` 自动推断安装位置；
+否则 Installer 可能把 App relocate 回构建工作区的 `payload/Applications`。
+
 安装包包含 Web 静态资源（嵌入 control binary）、用户级 Control Service、菜单栏 App、
 CLI 和 root helper。postinstall 会创建 root:admin、用户只读的 applied 配置/runtime，
 安装固定 launchd 服务；卸载脚本在 recovery 未完成时拒绝删除，并先停止网关。
@@ -135,7 +140,8 @@ make menubar-test
 ```
 
 `menubar-test` 使用独立 Swift 检查程序与 mock `URLProtocol`，因此只安装 Command Line
-Tools 也可验证 icon 优先级、Bearer、最小 DTO、bootstrap 深链接和 token 泄漏边界。
+Tools 也可验证 icon 优先级、Bearer、最小 DTO、bootstrap 深链接、URL 打开失败回退和
+token 泄漏边界。
 `apps/menubar/Tests` 仍保留 XCTest 版本，供具有完整 Xcode/XCTest 的 CI 执行。
 
 修改真实网关、TUN、DHCP 或设备策略数据面后，仍须运行对应的 lab/same-WiFi gate；

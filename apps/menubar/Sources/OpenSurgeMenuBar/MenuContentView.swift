@@ -34,6 +34,13 @@ struct MenuContentView: View {
                     .padding(.vertical, 8)
             }
 
+            if let error = model.error, model.status != nil {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Divider()
             Button { Task { await model.openWebGUI() } } label: {
                 Label("打开 OpenSurge", systemImage: "arrow.up.forward.app")

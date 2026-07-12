@@ -27,7 +27,7 @@ final class APIClientTests: XCTestCase {
             XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-token")
             let body = try XCTUnwrap(request.httpBody)
             XCTAssertEqual(String(decoding: body, as: UTF8.self), #"{"path":"recovery"}"#)
-            let response = #"{"schema_version":1,"url":"http://127.0.0.1:61767/bootstrap?code=one-time","expires_at":"2026-07-12T00:00:00Z"}"#
+            let response = #"{"schema_version":1,"url":"http://127.0.0.1:61767/bootstrap?code=one-time","expires_at":"2026-07-12T00:00:00.123456789Z"}"#
             return (HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!, Data(response.utf8))
         }
         let url = try await client.bootstrapURL(path: "recovery")

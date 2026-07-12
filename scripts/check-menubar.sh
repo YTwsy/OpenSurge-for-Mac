@@ -11,6 +11,7 @@ swiftc -parse-as-library -sdk "$SDKROOT" -module-cache-path "$MODULE_CACHE" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/APIClient.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/KeychainStore.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/Models.swift" \
+  "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/WebGUIURLLauncher.swift" \
   "$ROOT/apps/menubar/Checks/MenuBarChecks.swift" \
   -o "$OUTPUT"
 "$OUTPUT"

@@ -9,6 +9,14 @@ mihomo 和 runtime 包中。
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
 演变成第二控制面。
 
+菜单栏打开 Web GUI 时先调用 `NSWorkspace.shared.open`，检查其返回值；失败后回退到
+`/usr/bin/open`，并在窗口内显示错误。不要把一次性 bootstrap URL 写入错误信息或长期
+日志。
+
+Control API 的 bootstrap `expires_at` 来自 Go `time.Time`，可能包含 RFC3339 小数秒；
+菜单栏客户端必须同时接受带小数秒和不带小数秒的时间格式，不能把该解码失败误判为浏览器
+打开失败。
+
 same-WiFi 恢复状态、source snapshots 和 operation records 保存在用户的
 `~/Library/Application Support/OpenSurge/`。`same_wifi_dhcp` start 需要持久化的路由器
 DHCP 已关闭确认；确认与恢复均由 root helper 的 DHCP OFFER 探测提供证据。stop 后仍
@@ -24,7 +32,9 @@ TUN 和 device-policy 初始化字段，运行中或 recovery required 时拒绝
 写入经 helper 落到 root-owned config。`/events` 发送真实 config/gateway/drift/recovery
 变化，诊断接口返回连接与脱敏后的短日志尾部。
 
-生产 pkg 把 applied config、mihomo/dnsmasq、runtime 和 helper 放在 root-owned 的
+生产 pkg 使用固定 `/` install location 和不可 relocatable 的菜单栏 bundle，把 App 安装
+到 `/Applications/OpenSurge Menu Bar.app`；否则 macOS Installer 可能把它 relocate 回
+构建工作区的 `payload/Applications`。生产 pkg 把 applied config、mihomo/dnsmasq、runtime 和 helper 放在 root-owned 的
 `/Library/Application Support/OpenSurge` / `PrivilegedHelperTools` 下；用户级 Control
 Service 只通过 admin 组只读访问 applied 状态，通过 helper 执行固定 privileged 动作。
 

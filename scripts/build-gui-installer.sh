@@ -58,7 +58,14 @@ if [[ -n "${OPENSURGE_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --deep --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Applications/OpenSurge Menu Bar.app"
 fi
 
-PKG_ARGS=(--root "$PAYLOAD" --scripts "$ROOT/packaging/pkg-scripts" --identifier com.opensurge.installer --version "$VERSION")
+PKG_ARGS=(
+  --root "$PAYLOAD"
+  --component-plist "$ROOT/packaging/gui-components.plist"
+  --scripts "$ROOT/packaging/pkg-scripts"
+  --identifier com.opensurge.installer
+  --version "$VERSION"
+  --install-location /
+)
 if [[ -n "${OPENSURGE_INSTALLER_IDENTITY:-}" ]]; then PKG_ARGS+=(--sign "$OPENSURGE_INSTALLER_IDENTITY"); fi
 pkgbuild "${PKG_ARGS[@]}" "$ARTIFACTS/OpenSurge-for-Mac-$VERSION.pkg"
 echo "$ARTIFACTS/OpenSurge-for-Mac-$VERSION.pkg"

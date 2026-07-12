@@ -10,12 +10,17 @@ final class StatusModel: ObservableObject {
     @Published var openAtLogin = false
 
     private let client: ControlAPIClient
+    private let urlLauncher: WebGUIURLLauncher
     private var timer: Timer?
     private var rapidPolling = false
     private var failureCount = 0
 
-    init(client: ControlAPIClient = ControlAPIClient()) {
+    init(
+        client: ControlAPIClient = ControlAPIClient(),
+        urlLauncher: WebGUIURLLauncher = WebGUIURLLauncher()
+    ) {
         self.client = client
+        self.urlLauncher = urlLauncher
         self.openAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -68,7 +73,8 @@ final class StatusModel: ObservableObject {
 
     func openWebGUI(path: String = "dashboard") async {
         do {
-			NSWorkspace.shared.open(try await client.bootstrapURL(path: path))
+            let url = try await client.bootstrapURL(path: path)
+            try urlLauncher.open(url)
         } catch {
             self.error = error.localizedDescription
         }

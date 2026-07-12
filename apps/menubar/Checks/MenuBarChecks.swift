@@ -59,7 +59,7 @@ struct MenuBarChecks {
             try require(request.url?.query == nil, "long-lived token leaked into request URL")
             try require(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token", "bootstrap bearer token missing")
             try require(String(decoding: requestBody(request), as: UTF8.self) == #"{"path":"recovery"}"#, "bootstrap deep-link body mismatch")
-            let body = #"{"schema_version":1,"url":"http://127.0.0.1:61767/bootstrap?code=one-time","expires_at":"2026-07-12T00:00:00Z"}"#
+            let body = #"{"schema_version":1,"url":"http://127.0.0.1:61767/bootstrap?code=one-time","expires_at":"2026-07-12T00:00:00.123456789Z"}"#
             return (HTTPURLResponse(url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
         }
         let bootstrap: URL
@@ -69,6 +69,26 @@ struct MenuBarChecks {
 
         let recovery = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "running", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded", forwarding: "enabled", clientCount: 2, drift: true, doctorHealthy: false, recoveryRequired: true, recoveryStage: "gateway_active", warnings: [], errorCode: nil)
         try require(recovery.indicator == .recovery && recovery.indicator.systemImage == "exclamationmark.triangle.fill", "recovery indicator must have highest priority")
+
+        var fallbackOpened = false
+        let launcher = WebGUIURLLauncher(
+            workspaceOpen: { _ in false },
+            commandOpen: { _ in fallbackOpened = true }
+        )
+        try launcher.open(URL(string: "http://127.0.0.1:61767/bootstrap?code=test")!)
+        try require(fallbackOpened, "workspace URL failure did not use the open command fallback")
+
+        let failingLauncher = WebGUIURLLauncher(
+            workspaceOpen: { _ in false },
+            commandOpen: { _ in throw CheckFailure.failed("simulated browser failure") }
+        )
+        do {
+            try failingLauncher.open(URL(string: "http://127.0.0.1:61767/bootstrap?code=test")!)
+            throw CheckFailure.failed("browser failure was silently ignored")
+        } catch WebGUIURLLaunchError.browserUnavailable {
+            // Expected: the caller can surface this without leaking the bootstrap URL.
+        }
+
         print("OpenSurge menu bar checks passed")
     }
 }
