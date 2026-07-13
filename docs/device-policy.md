@@ -162,6 +162,19 @@ without cloning a full mihomo profile.
 The second command changes only the named device selector. It does not switch
 another device's selector or the global policy group.
 
+To apply a saved desired policy while the gateway is already running:
+
+```sh
+sudo ./bin/omg reload --config ./config.yaml
+sudo ./bin/omg reload --config ./config.yaml --format json
+```
+
+`reload` first renders all generated artifacts into an isolated temporary
+runtime, checks interfaces, protected/reserved IPv4 conflicts, and runs the
+real `mihomo -t`. A validation failure leaves the current gateway running. Only
+after validation succeeds does OpenSurge perform the normal full stop/start
+lifecycle; this is interrupting reload, not a zero-downtime service hot swap.
+
 ## Desired and applied policy
 
 `start` compiles the policy once, renders DHCP and mihomo from that same
@@ -172,10 +185,18 @@ gateway is running. `devices` compares the current desired digest and reports
 `drift`; an invalid desired file is returned as `desired_error` without hiding
 the running applied policy.
 
-Editing `devices.json` does not reload the gateway. For this MVP, use `stop`,
-update the file, then `start`. Stale lease rows for a managed MAC with the old
-reserved IPv4 are removed at startup; wait for a fresh DHCP ACK before testing
-policy traffic.
+Editing `devices.json` does not reload the gateway automatically. Use `reload`
+when a healthy gateway is running, or let the desired policy apply on the next
+normal `start`. Stale lease rows for a managed MAC with the old reserved IPv4
+are removed at startup; wait for a fresh DHCP ACK before testing policy traffic.
+
+The Web GUI separates these semantics: applied selector choices are green and
+immediate; device identity, selector membership, and rule edits are yellow and
+require save plus reload. The device path creates a private `<device-id>-policy`
+profile by default. On the first edit of a shared or template-derived profile,
+the GUI copies its resolved effective content into a template-free private
+profile and changes only that device reference. The JSON `PolicySet` schema is
+unchanged.
 
 `lease_active` means only that dnsmasq has an unexpired lease. It is not a
 reachability claim. `policy_identity_ready` is true only when the gateway is
@@ -199,8 +220,10 @@ make lab-down
 
 It uses two Lima clients, verifies the fixed `.101` and `.102` leases, distinct
 TUN policy groups and egress paths, independent selector changes, and a
-device-specific domain `REJECT`. It also asserts the applied bundle/state
-digest, exact DHCP identity, desired/applied drift after editing the policy
-file, and that UDP/443 over an HTTP-only egress is logged as `REJECT` rather
-than falling through to `DIRECT`. Rule/template/provider compilation is covered
-by unit tests and does not require a Lab run for each operator-defined rule.
+device-specific domain `REJECT`. It creates desired drift, calls the real
+`omg reload`, requires the gateway to remain running and desired/applied digests
+to converge, then rechecks independent selectors and the new rule. It also
+asserts exact DHCP identity and that UDP/443 over an HTTP-only egress is logged
+as `REJECT` rather than falling through to `DIRECT`. Rule/template/provider
+compilation is covered by unit tests and does not require a Lab run for each
+operator-defined rule.

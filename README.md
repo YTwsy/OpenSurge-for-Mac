@@ -116,6 +116,7 @@ go run ./cmd/omg providers --config examples/config.imported-profile.example.yam
 go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg reload --config examples/config.example.yaml --format json
 sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 ```
 
@@ -195,7 +196,10 @@ controlled proxy.
 Use `make lab-test-tun-device-policy` when changing the MAC reservation,
 per-device selector, or device override data path. It proves two clients get
 their distinct fixed leases, independently select different TUN egress paths,
-and that a device-specific domain `REJECT` takes effect. Domain/protocol rule
+creates desired drift, applies it through the real interrupting `omg reload`,
+requires desired/applied digests to converge while the gateway returns to
+running, and proves that a device-specific domain `REJECT` takes effect.
+Domain/protocol rule
 compilation, templates, and HTTP/MRS rule-provider configuration are covered by
 unit tests; they do not require one Lab run per operator-defined rule.
 

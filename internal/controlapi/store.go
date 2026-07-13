@@ -107,7 +107,9 @@ func (s *Store) SaveRecoveryCard(state RecoveryState) error {
    networksetup -setdnsservers %q Empty
 5. 让客户端重新连接该 LAN（Wi-Fi 设备重连 Wi-Fi；有线设备重新获取地址），确认自动获取地址并能访问互联网。
 
-重要：在确认路由器 DHCP 已恢复并通过 OFFER 探测前，不要把 Mac 切回自动 DHCP。
+重要：正常路径必须先确认路由器 DHCP 已恢复并通过 OFFER 探测，再把 Mac 切回自动 DHCP。
+如果主动 OFFER 探测不可用，只能在人工确认路由器 DHCP 已恢复后，使用 Web GUI 中明确标注的
+“跳过 OFFER 探测并恢复 Mac 自动 DHCP”兜底；该动作仍会真实恢复 Mac DHCP，不会只改状态标记。
 `, time.Now().UTC().Format(time.RFC3339), snapshot.NetworkService, snapshot.Interface, snapshot.IPv4, snapshot.SubnetMask, snapshot.Router, strings.Join(snapshot.DNS, ", "), snapshot.NetworkService, snapshot.NetworkService)
 	return writeAtomic(filepath.Join(s.dir, "WIFI-DHCP-RECOVERY-CARD.txt"), []byte(card), 0o600)
 }

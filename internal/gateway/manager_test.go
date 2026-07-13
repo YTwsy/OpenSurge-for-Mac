@@ -311,6 +311,137 @@ func TestStartValidatesMihomoBeforeEnablingForwarding(t *testing.T) {
 	}
 }
 
+func TestReloadValidationFailureLeavesRunningGatewayUntouched(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "lan0"
+	cfg.Gateway.UpstreamInterface = "wan0"
+	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.Runtime.Dir = filepath.Join(t.TempDir(), "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	mihomoManager := &fakeMihomo{validateErr: errors.New("candidate rejected"), running: true}
+	dhcpManager := &fakeDHCP{running: true}
+	manager := Manager{
+		cfg: cfg, paths: paths,
+		deps: gatewayDeps{
+			geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+			removeState: runtime.RemoveState, ensure: runtime.Ensure,
+			newDHCP:         func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
+			newMihomo:       func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+			newPF:           func(config.Config, runtime.Paths) pfService { return &fakePF{} },
+			newSysctl:       func() sysctlService { return &fakeSysctl{} },
+			interfaces:      func() ([]net.Interface, error) { return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil },
+			interfaceByName: func(name string) (*net.Interface, error) { return &net.Interface{Name: name}, nil },
+			interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
+				if iface.Name == "lan0" {
+					return []net.Addr{&net.IPNet{IP: net.ParseIP(cfg.Gateway.LANIP), Mask: net.CIDRMask(24, 32)}}, nil
+				}
+				return nil, nil
+			},
+		},
+	}
+	err := manager.Reload(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "candidate rejected") {
+		t.Fatalf("Reload() error=%v", err)
+	}
+	if dhcpManager.stopCalled || mihomoManager.stopCalled {
+		t.Fatal("reload stopped live services after candidate validation failed")
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || !exists {
+		t.Fatalf("runtime state exists=%v err=%v", exists, err)
+	}
+}
+
+func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "lan0"
+	cfg.Gateway.UpstreamInterface = "wan0"
+	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.Runtime.Dir = filepath.Join(t.TempDir(), "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, IPForwardingBefore: "0", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	events := []string{}
+	dhcpManager := &fakeDHCP{running: true, startPID: 21, events: &events}
+	mihomoManager := &fakeMihomo{running: true, startPID: 22, events: &events}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		removeState: runtime.RemoveState, ensure: runtime.Ensure,
+		newDHCP:   func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+		newPF:     func(config.Config, runtime.Paths) pfService { return &fakePF{loaded: true} },
+		newSysctl: func() sysctlService { return &fakeSysctl{current: "0"} },
+		interfaces: func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil
+		},
+		interfaceByName: func(name string) (*net.Interface, error) { return &net.Interface{Name: name}, nil },
+		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
+			if iface.Name == "lan0" {
+				return []net.Addr{&net.IPNet{IP: net.ParseIP(cfg.Gateway.LANIP), Mask: net.CIDRMask(24, 32)}}, nil
+			}
+			return nil, nil
+		},
+		now: time.Now,
+	}}
+	if err := manager.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	stopIndex, startIndex := -1, -1
+	for index, event := range events {
+		if event == "dhcp-stop" && stopIndex == -1 {
+			stopIndex = index
+		}
+		if event == "mihomo-start" && startIndex == -1 {
+			startIndex = index
+		}
+	}
+	if stopIndex == -1 || startIndex == -1 || stopIndex >= startIndex {
+		t.Fatalf("reload events=%v", events)
+	}
+	state, exists, err := runtime.LoadState(paths.StateFile)
+	if err != nil || !exists || state.PIDDNSMasq != 21 || state.PIDMihomo != 22 {
+		t.Fatalf("fresh runtime state=%#v exists=%v err=%v", state, exists, err)
+	}
+}
+
+func TestStopFailureRetainsRuntimeStateForRetryAndRecovery(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, removeState: runtime.RemoveState,
+		newDHCP: func(config.Config, runtime.Paths) dhcpService {
+			return &fakeDHCP{stopErr: errors.New("dnsmasq did not stop")}
+		},
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return &fakeMihomo{} },
+		newPF:     func(config.Config, runtime.Paths) pfService { return &fakePF{} },
+		newSysctl: func() sysctlService { return &fakeSysctl{} },
+	}}
+	if err := manager.Stop(context.Background()); err == nil || !strings.Contains(err.Error(), "dnsmasq did not stop") {
+		t.Fatalf("Stop() error=%v", err)
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || !exists {
+		t.Fatalf("runtime state exists=%v err=%v", exists, err)
+	}
+}
+
 type fakeDHCP struct {
 	checkErr    error
 	writeErr    error
@@ -319,6 +450,8 @@ type fakeDHCP struct {
 	stopErr     error
 	startCalled bool
 	stopCalled  bool
+	running     bool
+	events      *[]string
 }
 
 func (f *fakeDHCP) Check() error {
@@ -326,18 +459,29 @@ func (f *fakeDHCP) Check() error {
 }
 
 func (f *fakeDHCP) WriteConfig() error {
+	if f.events != nil {
+		*f.events = append(*f.events, "dhcp-write")
+	}
 	return f.writeErr
 }
 
 func (f *fakeDHCP) Start() (int, error) {
 	f.startCalled = true
+	if f.events != nil {
+		*f.events = append(*f.events, "dhcp-start")
+	}
 	return f.startPID, f.startErr
 }
 
 func (f *fakeDHCP) Stop(int) error {
 	f.stopCalled = true
+	if f.events != nil {
+		*f.events = append(*f.events, "dhcp-stop")
+	}
 	return f.stopErr
 }
+
+func (f *fakeDHCP) Running(int) bool { return f.running }
 
 type fakeMihomo struct {
 	checkErr    error
@@ -347,6 +491,8 @@ type fakeMihomo struct {
 	startErr    error
 	stopErr     error
 	stopCalled  bool
+	running     bool
+	events      *[]string
 }
 
 func (f *fakeMihomo) Check() error {
@@ -354,21 +500,35 @@ func (f *fakeMihomo) Check() error {
 }
 
 func (f *fakeMihomo) WriteConfig() error {
+	if f.events != nil {
+		*f.events = append(*f.events, "mihomo-write")
+	}
 	return f.writeErr
 }
 
 func (f *fakeMihomo) ValidateWrittenConfig() error {
+	if f.events != nil {
+		*f.events = append(*f.events, "mihomo-validate")
+	}
 	return f.validateErr
 }
 
 func (f *fakeMihomo) Start() (int, error) {
+	if f.events != nil {
+		*f.events = append(*f.events, "mihomo-start")
+	}
 	return f.startPID, f.startErr
 }
 
 func (f *fakeMihomo) Stop(int) error {
 	f.stopCalled = true
+	if f.events != nil {
+		*f.events = append(*f.events, "mihomo-stop")
+	}
 	return f.stopErr
 }
+
+func (f *fakeMihomo) Running(int) bool { return f.running }
 
 type fakePF struct {
 	checkErr     error

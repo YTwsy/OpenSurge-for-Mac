@@ -147,18 +147,34 @@ __PROXY_EXPORTS__
       }
 
       test_path() {
-        local iface proxy_url route test_url
+        local host iface port proxy_url real_ip route scheme test_url
         iface="$(lab_interface)"
         test_url="${3:-https://example.com/}"
         proxy_url="http://$gateway:17890"
+        scheme="${test_url%%:*}"
+        host="${test_url#*://}"
+        host="${host%%/*}"
+        if [[ "$host" == *:* ]]; then
+          port="${host##*:}"
+          host="${host%%:*}"
+        elif [[ "$scheme" == "https" ]]; then
+          port=443
+        else
+          port=80
+        fi
         route="$(ip -4 route get 1.1.1.1)"
         grep -q "via $gateway" <<<"$route"
         grep -q "dev $iface" <<<"$route"
-        dig +time=5 +tries=1 "@$gateway" example.com A
+        dig +time=5 +tries=1 "@$gateway" "$host" A
         ping -c 1 -W 5 1.1.1.1
-        curl --noproxy '*' --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+        # Managed mihomo DNS intentionally returns fake IPs even when TUN is
+        # disabled. Resolve a real A record only for the direct NAT proof so
+        # that this check does not incorrectly depend on transparent routing.
+        real_ip="$(dig +time=5 +tries=1 +short @1.1.1.1 "$host" A | awk '/^[0-9]+([.][0-9]+){3}$/ { print; exit }')"
+        [[ -n "$real_ip" ]]
+        curl --noproxy '*' --resolve "$host:$port:$real_ip" --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
         curl --noproxy '' --proxy "$proxy_url" --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
-        printf 'CLIENT_PATH_OK interface=%s gateway=%s proxy=%s url=%s\n' "$iface" "$gateway" "$proxy_url" "$test_url"
+        printf 'CLIENT_PATH_OK interface=%s gateway=%s direct=%s proxy=%s url=%s\n' "$iface" "$gateway" "$real_ip" "$proxy_url" "$test_url"
       }
 
       transparent_test() {

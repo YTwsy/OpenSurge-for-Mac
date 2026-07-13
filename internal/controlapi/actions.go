@@ -59,6 +59,8 @@ func (DirectRunner) Run(ctx context.Context, action, configPath string) error {
 		return manager.Start(ctx)
 	case "stop":
 		return manager.Stop(ctx)
+	case "reload":
+		return manager.Reload(ctx)
 	default:
 		return fmt.Errorf("unsupported privileged action %q", action)
 	}
@@ -217,15 +219,11 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: err.Error()})
 		return
 	}
-	if request.Action != "start" && request.Action != "stop" && request.Action != "network-set-manual" && request.Action != "network-set-dhcp" && request.Action != "dhcp-probe" && request.Action != "config-apply-profile" && request.Action != "config-apply-device-policy" && request.Action != "config-apply-control" {
+	if !helperActionAllowed(request.Action) {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: "action is not allowed"})
 		return
 	}
-	var err error
-	configPath := ""
-	if request.Action == "start" || request.Action == "stop" || request.Action == "network-set-manual" || request.Action == "network-set-dhcp" || request.Action == "dhcp-probe" || request.Action == "config-apply-profile" || request.Action == "config-apply-device-policy" || request.Action == "config-apply-control" {
-		configPath, err = filepath.Abs(request.ConfigPath)
-	}
+	configPath, err := filepath.Abs(request.ConfigPath)
 	if err == nil && configPath != "" {
 		root, rootErr := filepath.Abs(allowedRoot)
 		if rootErr != nil || (configPath != root && !strings.HasPrefix(configPath, root+string(os.PathSeparator))) {
@@ -242,7 +240,7 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	if err == nil {
 		err = requireTrustedRuntime(cfg, allowedRoot)
 	}
-	if err == nil && (request.Action == "start" || request.Action == "config-apply-profile") {
+	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "config-apply-profile") {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
 	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control") {
@@ -262,7 +260,7 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	if err == nil {
 		runner := DirectRunner{}
 		switch request.Action {
-		case "start", "stop":
+		case "start", "stop", "reload":
 			err = runner.Run(ctx, request.Action, configPath)
 		case "network-set-manual":
 			if request.Manual == nil {
@@ -297,6 +295,15 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 		response.Error = err.Error()
 	}
 	_ = json.NewEncoder(conn).Encode(response)
+}
+
+func helperActionAllowed(action string) bool {
+	switch action {
+	case "start", "stop", "reload", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateHelperNetworkTarget(ctx context.Context, cfg config.Config, service, interfaceName string) error {

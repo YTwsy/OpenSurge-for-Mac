@@ -93,6 +93,10 @@ type NetworkActionResponse struct {
 	DHCPServers   []string      `json:"dhcp_servers,omitempty"`
 }
 
+type ManualRecoveryFinishRequest struct {
+	RouterDHCPRestoredConfirmed bool `json:"router_dhcp_restored_confirmed"`
+}
+
 type ControlConfig struct {
 	SchemaVersion int                     `json:"schema_version"`
 	Revision      string                  `json:"revision"`
@@ -234,13 +238,16 @@ type SelectionRequest struct {
 }
 
 type DevicesResponse struct {
-	SchemaVersion int                     `json:"schema_version"`
-	DesiredDigest string                  `json:"desired_digest,omitempty"`
-	AppliedDigest string                  `json:"applied_digest,omitempty"`
-	Drift         bool                    `json:"drift"`
-	Applied       bool                    `json:"applied"`
-	Devices       []device.CompiledDevice `json:"devices"`
-	Leases        []device.Client         `json:"leases"`
+	SchemaVersion  int                     `json:"schema_version"`
+	DesiredDigest  string                  `json:"desired_digest,omitempty"`
+	AppliedDigest  string                  `json:"applied_digest,omitempty"`
+	Drift          bool                    `json:"drift"`
+	Applied        bool                    `json:"applied"`
+	Devices        []device.CompiledDevice `json:"devices"` // legacy running view
+	DesiredDevices []device.CompiledDevice `json:"desired_devices"`
+	AppliedDevices []device.CompiledDevice `json:"applied_devices"`
+	ChangedDevices []string                `json:"changed_devices"`
+	Leases         []device.Client         `json:"leases"`
 }
 
 // DeviceTrafficResponse is a point-in-time aggregation of the currently

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ type dhcpService interface {
 	WriteConfig() error
 	Start() (int, error)
 	Stop(int) error
+	Running(int) bool
 }
 
 type mihomoService interface {
@@ -41,6 +43,7 @@ type mihomoService interface {
 	ValidateWrittenConfig() error
 	Start() (int, error)
 	Stop(int) error
+	Running(int) bool
 }
 
 type pfService interface {
@@ -233,6 +236,87 @@ func (m Manager) Start(_ context.Context) error {
 	return nil
 }
 
+// Reload validates a complete desired candidate before touching the running
+// gateway, then performs the same audited stop/start lifecycle as the normal
+// commands. The Manager owns an immutable Config value, so the configuration
+// that passed validation is also the configuration applied after stop.
+func (m Manager) Reload(ctx context.Context) error {
+	deps := m.gatewayDeps()
+	if deps.geteuid() != 0 {
+		return fmt.Errorf("reload requires sudo/root privileges")
+	}
+	state, exists, err := deps.loadState(m.paths.StateFile)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("gateway is not running; run start instead")
+	}
+	if !deps.newDHCP(m.cfg, m.paths).Running(state.PIDDNSMasq) || !deps.newMihomo(m.cfg, m.paths).Running(state.PIDMihomo) {
+		return fmt.Errorf("gateway is degraded; reload requires both DHCP/DNS and mihomo to be running")
+	}
+	if err := m.validateReloadCandidate(); err != nil {
+		return fmt.Errorf("reload candidate validation failed: %w", err)
+	}
+	if err := m.Stop(ctx); err != nil {
+		return fmt.Errorf("reload stop failed: %w", err)
+	}
+	if err := m.Start(ctx); err != nil {
+		return fmt.Errorf("reload start failed after gateway stop: %w", err)
+	}
+	return nil
+}
+
+// validateReloadCandidate renders every generated artifact into an isolated
+// temporary runtime and runs the real mihomo validator. It deliberately does
+// not write applied policy state or alter host networking.
+func (m Manager) validateReloadCandidate() error {
+	parent := filepath.Dir(m.paths.Dir)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return err
+	}
+	temp, err := os.MkdirTemp(parent, ".opensurge-reload-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(temp)
+
+	candidateConfig := m.cfg
+	candidateConfig.Runtime.Dir = temp
+	candidateConfig.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
+	if err := config.PrepareDevicePolicy(&candidateConfig); err != nil {
+		return err
+	}
+	if err := config.Validate(candidateConfig); err != nil {
+		return err
+	}
+	candidate := Manager{cfg: candidateConfig, paths: runtime.NewPaths(candidateConfig), deps: m.gatewayDeps()}
+	deps := candidate.gatewayDeps()
+	if err := deps.ensure(candidate.paths); err != nil {
+		return err
+	}
+	dhcpManager := deps.newDHCP(candidate.cfg, candidate.paths)
+	mihomoManager := deps.newMihomo(candidate.cfg, candidate.paths)
+	pfManager := deps.newPF(candidate.cfg, candidate.paths)
+	sysctlManager := deps.newSysctl()
+	if err := candidate.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
+		return err
+	}
+	if err := candidate.checkReservationConflicts(deps); err != nil {
+		return err
+	}
+	if err := mihomoManager.WriteConfig(); err != nil {
+		return err
+	}
+	if err := dhcpManager.WriteConfig(); err != nil {
+		return err
+	}
+	if err := pfManager.WriteAnchor(); err != nil {
+		return err
+	}
+	return mihomoManager.ValidateWrittenConfig()
+}
+
 func (m Manager) Stop(_ context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
@@ -254,6 +338,9 @@ func (m Manager) Stop(_ context.Context) error {
 			cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
 		}
 		cleanupErr = errors.Join(cleanupErr, sysctlManager.Restore(state.IPForwardingBefore))
+	}
+	if cleanupErr != nil {
+		return cleanupErr
 	}
 	cleanupErr = errors.Join(cleanupErr, deps.removeState(m.paths.StateFile))
 	cleanupErr = errors.Join(cleanupErr, device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied))

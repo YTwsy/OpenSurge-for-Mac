@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -127,7 +128,7 @@ func TestRecoveryTransitionsPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"同一 LAN DHCP 恢复卡", "原始 IPv4：192.168.1.20", "原始路由器：192.168.1.1", "原始 DNS：192.168.1.1", "在确认路由器 DHCP 已恢复并通过 OFFER 探测前"} {
+	for _, want := range []string{"同一 LAN DHCP 恢复卡", "原始 IPv4：192.168.1.20", "原始路由器：192.168.1.1", "原始 DNS：192.168.1.1", "正常路径必须先确认路由器 DHCP 已恢复并通过 OFFER 探测", "跳过 OFFER 探测并恢复 Mac 自动 DHCP"} {
 		if !strings.Contains(string(card), want) {
 			t.Fatalf("recovery card missing %q:\n%s", want, card)
 		}
@@ -243,6 +244,49 @@ func TestSameWiFiNetworkRecoveryFlow(t *testing.T) {
 	state, _ = server.store.Recovery()
 	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
 		t.Fatalf("final state=%#v network=%#v", state, network)
+	}
+}
+
+func TestManualRecoveryFinishRequiresExplicitConfirmation(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		Stage: RecoveryGatewayStopped, Required: true,
+		NetworkSnapshot: &macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0"},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/manual-finish", []byte(`{"router_dhcp_restored_confirmed":false}`))
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("manual finish status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryGatewayStopped || !state.Required || network.dhcpRestored {
+		t.Fatalf("manual fallback advanced without confirmation: state=%#v network=%#v", state, network)
+	}
+}
+
+func TestManualRecoveryFinishRestoresMacDHCPAndRecordsOverride(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		Stage: RecoveryGatewayStopped, Required: true, RecoveryNotes: "client evidence saved",
+		NetworkSnapshot: &macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0"},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/manual-finish", []byte(`{"router_dhcp_restored_confirmed":true}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("manual finish status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
+		t.Fatalf("manual finish state=%#v network=%#v", state, network)
+	}
+	if !strings.Contains(state.RecoveryNotes, "OFFER evidence skipped") || !strings.Contains(state.RecoveryNotes, "client evidence saved") {
+		t.Fatalf("manual finish notes=%q", state.RecoveryNotes)
 	}
 }
 
@@ -402,6 +446,17 @@ func TestHelperRejectsActionOutsideWhitelist(t *testing.T) {
 	}
 }
 
+func TestHelperAllowlistIncludesOnlyNamedReloadAction(t *testing.T) {
+	if !helperActionAllowed("reload") {
+		t.Fatal("reload is not available to the privileged helper")
+	}
+	for _, action := range []string{"hot-reload", "restart", "shell"} {
+		if helperActionAllowed(action) {
+			t.Fatalf("unexpected helper action %q", action)
+		}
+	}
+}
+
 func TestTrustedPathRejectsEscapesAndUserOwnedFiles(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "mihomo")
@@ -553,6 +608,26 @@ func TestDevicePolicyUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) 
 	}
 }
 
+func TestChangedDeviceIDsTracksResolvedPrivateProfileChanges(t *testing.T) {
+	applied := device.PolicySet{
+		Devices: []device.ManagedDevice{
+			{ID: "alice", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.1.121", Profile: "alice-policy"},
+			{ID: "bob", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.1.122", Profile: "bob-policy"},
+		},
+		Profiles: []device.Profile{
+			{ID: "alice-policy", DefaultPolicies: []string{"DIRECT"}},
+			{ID: "bob-policy", DefaultPolicies: []string{"DIRECT"}},
+		},
+	}
+	desired := applied
+	desired.Profiles = append([]device.Profile(nil), applied.Profiles...)
+	desired.Profiles[0].Rules = []device.Rule{{ID: "youtube", Match: device.RuleMatch{Domains: []string{"youtube.example"}}, Action: "REJECT"}}
+	changed := changedDeviceIDs(desired, applied)
+	if !reflect.DeepEqual(changed, []string{"alice"}) {
+		t.Fatalf("changed devices=%v", changed)
+	}
+}
+
 func TestControlConfigUsesRevisionAndAppliesTopology(t *testing.T) {
 	server := newTestServer(t)
 	get := performAuthorized(server, http.MethodGet, "/api/v1/config", nil)
@@ -585,6 +660,143 @@ func TestControlConfigUsesRevisionAndAppliesTopology(t *testing.T) {
 	}
 	if updated.Gateway.Mode != config.GatewayModeSameLAN || updated.DHCP.Enabled {
 		t.Fatalf("updated config=%#v", updated)
+	}
+}
+
+func TestGatewayReloadPreservesActiveTakeoverStage(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: os.Getpid(), PIDMihomo: os.Getpid(), StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryClientValidated, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingActionRunner{}
+	server.runner = runner
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/reload", nil)
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("Idempotency-Key", "reload-success")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("reload status=%d body=%s", response.Code, response.Body.String())
+	}
+	waitForStoredOperation(t, server, "reload-success", "succeeded")
+	if runner.action != "reload" {
+		t.Fatalf("runner action=%q", runner.action)
+	}
+	if err := runtime.RemoveState(paths.StateFile); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted || runner.count != 1 {
+		t.Fatalf("idempotent reload status=%d runner count=%d body=%s", response.Code, runner.count, response.Body.String())
+	}
+	recovery, _ := server.store.Recovery()
+	if recovery.Stage != RecoveryClientValidated {
+		t.Fatalf("recovery stage=%q", recovery.Stage)
+	}
+}
+
+func TestGatewayReloadStopFailurePreservesActiveTakeoverStage(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: os.Getpid(), PIDMihomo: os.Getpid(), StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryClientValidated, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	server.runner = actionRunnerFunc(func(_ context.Context, _, _ string) error {
+		_ = runtime.RemoveState(paths.StateFile)
+		return errors.New("reload stop failed: pf unload failed")
+	})
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/reload", nil)
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("Idempotency-Key", "reload-stop-failed")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("reload status=%d body=%s", response.Code, response.Body.String())
+	}
+	waitForStoredOperation(t, server, "reload-stop-failed", "failed")
+	recovery, _ := server.store.Recovery()
+	if recovery.Stage != RecoveryClientValidated {
+		t.Fatalf("recovery stage=%q", recovery.Stage)
+	}
+}
+
+func TestGatewayReloadFailureAfterStopReturnsToRestartableTakeoverStage(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: os.Getpid(), PIDMihomo: os.Getpid(), StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	server.runner = actionRunnerFunc(func(_ context.Context, action, _ string) error {
+		if action != "reload" {
+			t.Fatalf("action=%q", action)
+		}
+		if err := runtime.RemoveState(paths.StateFile); err != nil {
+			t.Fatal(err)
+		}
+		return errors.New("restart failed")
+	})
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/reload", nil)
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("Idempotency-Key", "reload-failed")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("reload status=%d body=%s", response.Code, response.Body.String())
+	}
+	waitForStoredOperation(t, server, "reload-failed", "failed")
+	recovery, _ := server.store.Recovery()
+	if recovery.Stage != RecoveryRouterDHCPDisabledConfirmed || !strings.Contains(recovery.RecoveryNotes, "reload failed") {
+		t.Fatalf("recovery=%#v", recovery)
+	}
+}
+
+func TestGatewayReloadRejectsStoppedGateway(t *testing.T) {
+	server := newTestServer(t)
+	unauthorized := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/reload", nil)
+	unauthorized.Host = "127.0.0.1:61767"
+	unauthorizedResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(unauthorizedResponse, unauthorized)
+	if unauthorizedResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized reload status=%d", unauthorizedResponse.Code)
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/reload", nil)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "gateway_not_running") {
+		t.Fatalf("reload status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -799,6 +1011,38 @@ runtime:
 type fakeRunner struct{}
 
 func (fakeRunner) Run(_ context.Context, _, _ string) error { return nil }
+
+type recordingActionRunner struct {
+	action string
+	count  int
+}
+
+func (r *recordingActionRunner) Run(_ context.Context, action, _ string) error {
+	r.action = action
+	r.count++
+	return nil
+}
+
+type actionRunnerFunc func(context.Context, string, string) error
+
+func (f actionRunnerFunc) Run(ctx context.Context, action, configPath string) error {
+	return f(ctx, action, configPath)
+}
+
+func waitForStoredOperation(t *testing.T, server *Server, id, state string) Operation {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		op, err := server.store.Operation(id)
+		if err == nil && op.State == state {
+			return op
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	op, err := server.store.Operation(id)
+	t.Fatalf("operation %q did not reach %q: op=%#v err=%v", id, state, op, err)
+	return Operation{}
+}
 
 type fakeConfigurationRunner struct{ profileErr error }
 

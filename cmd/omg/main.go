@@ -36,6 +36,7 @@ var (
 type gatewayManager interface {
 	Start(context.Context) error
 	Stop(context.Context) error
+	Reload(context.Context) error
 	Status(context.Context) (gateway.Status, error)
 }
 
@@ -95,6 +96,13 @@ func run(args []string) int {
 		}
 		if jsonOutput {
 			return writeJSONExit(commandResultJSON{Command: "stop", OK: true, ConfigPath: *configPath})
+		}
+	case "reload":
+		if err := manager.Reload(ctx); err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "reload", err)
+		}
+		if jsonOutput {
+			return writeJSONExit(commandResultJSON{Command: "reload", OK: true, ConfigPath: *configPath})
 		}
 	case "status":
 		status, err := manager.Status(ctx)
@@ -270,7 +278,7 @@ func run(args []string) int {
 
 func commandRequiresDesiredPolicy(command string) bool {
 	switch command {
-	case "start", "doctor", "render-mihomo", "validate-mihomo":
+	case "start", "reload", "doctor", "render-mihomo", "validate-mihomo":
 		return true
 	default:
 		return false
@@ -983,6 +991,7 @@ Usage:
 Commands:
   start    prepare runtime state and start gateway services
   stop     stop gateway services and clean runtime state
+  reload   validate desired configuration, then stop and restart gateway services
   status   print gateway status
   doctor   run environment checks
   leases   print DHCP leases

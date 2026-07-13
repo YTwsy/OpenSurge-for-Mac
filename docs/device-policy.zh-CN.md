@@ -116,6 +116,17 @@ provider 可用 `yaml`、`text`、`mrs`；MRS 只适用于 `domain` 和 `ipcidr`
 
 `device-policy-select` 只改变指定设备的 selector，不会改变其他设备或全局策略组。
 
+网关已经健康运行时，可用安全重载应用保存后的 desired 配置：
+
+```sh
+sudo ./bin/omg reload --config ./config.yaml
+sudo ./bin/omg reload --config ./config.yaml --format json
+```
+
+`reload` 先在隔离的临时 runtime 中渲染完整候选，检查接口、protected/reservation IPv4
+冲突，并执行真实 `mihomo -t`。预校验失败不会停止现有网关；全部通过后才执行正常的完整
+stop/start。这是会短暂中断连接的重载，不是服务级热替换或零中断承诺。
+
 ## desired 与 applied
 
 `start` 只编译一次 policy bundle，以同一不可变 bundle 渲染 DHCP 与 mihomo，并在启用
@@ -125,10 +136,17 @@ forwarding 前执行 mihomo 校验。成功启动会写入
 desired digest 并返回 `drift`。desired 文件即使暂时无效，也会以 `desired_error` 返回，而
 不会遮住仍在运行的 applied policy。
 
-编辑 `devices.json` 不会 reload gateway；MVP 约定是 `stop` 后编辑、再 `start`。启动时会
-清除受管 MAC 仍指向旧 reservation IPv4 的 stale lease row，随后应等待新的 DHCP ACK 再
-测试流量。`lease_active` 只表示租约未过期，不表示设备可达；只有 applied reservation 与
+编辑 `devices.json` 不会自动 reload gateway。网关健康运行时使用 `reload`；网关停止时，
+desired 配置会在下次正常 `start` 应用。启动时会清除受管 MAC 仍指向旧 reservation IPv4
+的 stale lease row，随后应等待新的 DHCP ACK 再测试流量。`lease_active` 只表示租约未
+过期，不表示设备可达；只有 applied reservation 与
 lease 的 MAC、IPv4、expiry 全部匹配时，`policy_identity_ready` 才为 true。
+
+Web GUI 将两类操作持续分开：绿色表示 applied selector 的“即时生效”，黄色表示设备
+身份、selector 成员和规则的“保存后重载”。普通登记默认创建 `<device-id>-policy` 私有
+Profile；设备首次修改共享 Profile 或继承 Template 的 Profile 时，GUI 会把解析后的有效
+配置复制为不再继承 Template 的私有 Profile，只更新这台设备的引用。`PolicySet` JSON
+schema 没有变化。
 
 当前设备身份仅覆盖 MAC 绑定的 IPv4 DHCP 租约和 IPv4 `SRC-IP-CIDR`；尚未提供 IPv6
 设备身份、mihomo 内 MAC 匹配或预置第三方规则内容。
@@ -143,7 +161,8 @@ make lab-down
 ```
 
 它会验证两个 Lima 客户端的 `.101`/`.102` 固定租约、独立 TUN policy/egress、互不影响
-的 selector 切换，以及设备级域名 `REJECT`。同时验证 applied bundle/state digest、精确
-DHCP identity、policy 文件编辑后的 desired/applied drift，以及 HTTP-only 出口上的 UDP/443
-必须记录为 `REJECT` 而不能 fall through 到 `DIRECT`。规则、模板与 provider 的编译由单元
-测试覆盖，不需要为每条操作者规则运行 Lab。
+的 selector 切换，以及设备级域名 `REJECT`。脚本会制造 desired drift，调用真实
+`omg reload`，要求网关继续运行且 desired/applied digest 收敛，再复查 selector 隔离与新
+规则。同时验证精确 DHCP identity，以及 HTTP-only 出口上的 UDP/443 必须记录为 `REJECT`
+而不能 fall through 到 `DIRECT`。规则、模板与 provider 的编译由单元测试覆盖，不需要为
+每条操作者规则运行 Lab。

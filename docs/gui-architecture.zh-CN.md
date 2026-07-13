@@ -54,17 +54,34 @@ API 响应或界面；公开 `origin` 会移除 userinfo、query 和 fragment。
 网关运行或恢复未完成时拒绝 topology 修改。网络页可切换 `same_lan`、
 `same_wifi_dhcp`、`isolated_lan`，并可初始化空 device-policy 文件。
 
-设备 selector 使用已应用的 device-policy bundle；API 会根据设备 ID 和 slot 重建
-`device/<id>/<slot>`，不会接受调用方直接伪造任意 group 名。设备、模板或规则编辑是
-desired 配置变更；已有 selector 成员切换是 live operation。
-编辑器覆盖 profile、template、本地或 HTTPS rule-set、domain/CIDR/protocol/port、action
-和 selector。helper 保存前会用当前 imported inventory 与真实 mihomo 校验候选，不只做
-JSON 结构检查。
+设备页把 applied 与 desired 持续分为两层：顶部绿色“即时生效”只切换已经应用的全局或
+`device/<id>/<slot>` selector；下方黄色“保存后重载”才编辑设备身份、selector 成员和
+规则。`THIS MAC` 只列出非 `device/` 的既有全局组，并明确它只影响当前规则引用该组的
+流量，不代表全部 Mac 流量、未匹配流量或 macOS 系统代理。
+
+普通登记默认创建 `<device-id>-policy` 私有 Profile。设备首次从主路径修改共享 Profile
+或继承 Template 的 Profile 时，前端把解析后的有效候选与规则复制到无 Template 的私有
+Profile，并只更新该设备引用；不修改 `PolicySet` schema。高级区仍保留 Profiles、
+Templates 和 Rule Sets，被引用对象禁止删除并显示引用来源。主规则表单使用 chips 和
+候选选择，不要求逗号分隔字符串；revision 冲突保留本地草稿。
+
+selector API 根据设备 ID 和 slot 重建 `device/<id>/<slot>`，不会接受调用方直接伪造任意
+group 名。保存由 helper 使用当前 imported inventory 与真实 mihomo 校验候选，不只做
+JSON 结构检查。`GET /api/v1/devices` 同时返回 desired/applied 设备与解析后内容变化的
+设备 ID，供界面精确显示“已应用、待应用、待更新、待移除”；身份就绪还要求在线且未
+过期的 lease MAC、IPv4 与 applied reservation 完全一致。
+
+`POST /api/v1/gateway/reload` 与 `omg reload` 共用 operation/audit 和 privileged helper
+allowlist。Reload 只允许健康运行的网关；先在临时 runtime 做完整静态校验、接口/LAN、
+protected/reservation 冲突和真实 `mihomo -t`，失败不触发 stop。通过后执行完整 stop/start，
+成功写入新 applied snapshot/digest。same-LAN 成功保留 `gateway_active` 或
+`client_validated`；stop 失败保留原 recovery，stop 成功但 restart 失败降回
+`router_dhcp_disabled_confirmed`，让用户直接重试启动或进入恢复。它不承诺零中断。
 
 `/api/v1/events` 每两秒观察 config、gateway、desired/applied digest 与 recovery，只有
 状态变化时发送 `state` SSE，另有 15 秒 heartbeat。诊断页通过受认证接口显示 live
 connections 与最多 80 行近期日志；已知 mihomo/upstream 凭据在 API 返回前脱敏。
-诊断 DTO 同时带最近 20 条持久化 start/stop operation 与当前 recovery 状态，另有
+诊断 DTO 同时带最近 20 条持久化 start/stop/reload operation 与当前 recovery 状态，另有
 `GET /api/v1/operations` 返回最近 50 条，便于审计幂等 operation ID、失败和完成时间。
 
 总览的设备流量面板每 5 秒读取受认证的 `GET /api/v1/device-traffic`。Control Service
@@ -88,8 +105,11 @@ idle -> prepared -> mac_static -> router_dhcp_disabled_confirmed
 当配置为 `same_wifi_dhcp` 时，Control API 在没有
 `router_dhcp_disabled_confirmed` 收据时拒绝 start。确认收据来自 root helper 的主动
 DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
-`gateway_stopped_waiting_router_dhcp`，只有重新探测到路由器 OFFER 后才允许把 Mac 恢复
-为自动 DHCP。`gateway_active` / `client_validated` 是预期的接管运行态，显示正常运行或
+`gateway_stopped_waiting_router_dhcp`。正常路径重新探测到路由器 OFFER 后再把 Mac 恢复
+为自动 DHCP；启动期 plan blockers 不得禁用停止后的恢复动作。若主动 OFFER 探测不可用，
+用户可在明确确认路由器 DHCP 已恢复并接受断网风险后，使用人工兜底跳过 OFFER 证据；
+该动作仍经 root helper 真实恢复 Mac 自动 DHCP，成功后才写入 `complete`，不能只跳状态。
+`gateway_active` / `client_validated` 是预期的接管运行态，显示正常运行或
 验收状态；恢复警报仅用于启动前的中断状态和 stop 后等待路由器/Mac DHCP 恢复的阶段。
 状态机不会自动修改未知路由器，
 也不能把同一二层 LAN 描述为不可绕过隔离。现有配置枚举仍保留
@@ -132,8 +152,14 @@ make menubar-build
 ```sh
 OPENSURGE_MIHOMO_BINARY=/path/to/mihomo \
 OPENSURGE_DNSMASQ_BINARY=/path/to/dnsmasq \
+OPENSURGE_VERSION=0.1.1 \
+OPENSURGE_BUILD_NUMBER=2 \
 make gui-installer
 ```
+
+`OPENSURGE_VERSION` 同时写入 pkg receipt 和菜单栏 App 的
+`CFBundleShortVersionString`，`OPENSURGE_BUILD_NUMBER` 写入 `CFBundleVersion`；不要让新
+pkg 携带仍标成旧版本的 App，否则现场无法可靠区分已安装二进制是否包含最新修复。
 
 安装器显式以 `/` 为 payload 根目录，并将 `OpenSurge Menu Bar.app` 声明为不可
 relocatable bundle，确保它固定安装到 `/Applications/OpenSurge Menu Bar.app`。

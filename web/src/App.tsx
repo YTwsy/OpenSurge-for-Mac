@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, RequestError } from './api'
 import { RecoveryBanner, StatusDot } from './components/Common'
 import { DashboardPage } from './pages/DashboardPage'
@@ -39,6 +39,11 @@ export function App() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [theme, setTheme] = useState<Theme>(initialTheme)
+  const [devicesDirty, setDevicesDirty] = useState(false)
+  const pageRef = useRef(page)
+  const devicesDirtyRef = useRef(devicesDirty)
+  pageRef.current = page
+  devicesDirtyRef.current = devicesDirty
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -61,7 +66,15 @@ export function App() {
     const timer = window.setInterval(() => void refresh(), 8000)
     const events = typeof EventSource === 'undefined' ? null : new EventSource('/api/v1/events')
     events?.addEventListener('state', () => void refresh())
-    const onPop = () => setPage(currentPage())
+    const onPop = () => {
+      const next = currentPage()
+      if (pageRef.current === 'devices' && next !== 'devices' && devicesDirtyRef.current && !window.confirm('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？')) {
+        history.pushState({}, '', '/devices')
+        return
+      }
+      if (pageRef.current === 'devices' && next !== 'devices') setDevicesDirty(false)
+      setPage(next)
+    }
     window.addEventListener('popstate', onPop)
     return () => {
       window.clearInterval(timer)
@@ -71,6 +84,9 @@ export function App() {
   }, [refresh])
 
   const go = (next: Page) => {
+    if (next === page) return
+    if (page === 'devices' && next !== 'devices' && devicesDirty && !window.confirm('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？')) return
+    if (page === 'devices' && next !== 'devices') setDevicesDirty(false)
     history.pushState({}, '', `/${next}`)
     setPage(next)
   }
@@ -102,7 +118,7 @@ export function App() {
       {page === 'dashboard' && <DashboardPage overview={overview} busy={busy} onAction={gatewayAction} />}
       {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
       {page === 'sources' && <SourcesPage />}
-      {page === 'devices' && <DevicesPage overview={overview} />}
+      {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
       {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
       {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
     </main>

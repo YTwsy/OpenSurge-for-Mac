@@ -72,7 +72,10 @@ make lab-down
 builds the current gateway, starts it with the generated lab config, renews both
 client leases, checks routing, DNS, ICMP/NAT, direct HTTPS, and explicit HTTPS
 through mihomo `mixed-port`, and then verifies cleanup. Artifacts are written
-under `artifacts/lab`.
+under `artifacts/lab`. Managed mihomo DNS returns fake IPs even while TUN is
+disabled, so the direct HTTPS NAT proof resolves a real public A record and
+pins it with `curl --resolve`; the separate gateway-DNS assertion still checks
+the fake-IP answer intentionally.
 
 `lab-test-tun` is the TUN transparent proxy gate. It rewrites the lab config
 with `transparent.mode: "tun"`, forwards dnsmasq to mihomo DNS, leaves the
@@ -89,7 +92,9 @@ does not prove a real subscription node or remote exit IP.
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
 devices. It assigns them fixed `.101` and `.102` DHCP leases, proves their
 per-device selector groups can choose different egress paths without affecting
-each other, then proves a device-specific domain `REJECT`. It is the required
+each other, creates desired drift, applies it with a real `omg reload`, verifies
+the applied digest is synchronized while selectors remain isolated, and then
+proves a device-specific domain `REJECT`. It is the required
 data-plane gate for device identity, device defaults, and device overrides. It
 also verifies the applied bundle/state digest, both exact DHCP identities,
 desired-vs-applied drift after a policy-file edit, and a UDP/443 request through

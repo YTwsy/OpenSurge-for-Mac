@@ -1,127 +1,371 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { api, RequestError, waitForOperation } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
-import type { CompiledDevice, DevicePolicyDocument, DevicesResponse, Lease, Overview, PolicyRule, PolicySet, ProxyGroup } from '../types'
+import type { CompiledDevice, DevicePolicyDocument, DevicesResponse, Lease, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, ProxyGroup } from '../types'
 
+const emptyPolicy = (): PolicySet => ({ devices: [], profiles: [], templates: [], rule_sets: [] })
 const normalizePolicy = (value: PolicySet): PolicySet => ({ devices: value.devices ?? [], profiles: value.profiles ?? [], templates: value.templates ?? [], rule_sets: value.rule_sets ?? [] })
+const copyPolicy = (value: PolicySet) => normalizePolicy(structuredClone(value))
 
-export function DevicesPage({ overview }: { overview: Overview | null }) {
+type DevicesPageProps = {
+  overview: Overview | null
+  onChanged: () => Promise<void>
+  onNavigate: (page: 'dashboard' | 'policies') => void
+  onDirtyChange: (dirty: boolean) => void
+}
+
+export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: DevicesPageProps) {
   const [data, setData] = useState<DevicesResponse | null>(null)
-  const [policyDocument, setPolicyDocument] = useState<DevicePolicyDocument | null>(null)
+  const [document, setDocument] = useState<DevicePolicyDocument | null>(null)
+  const [policy, setPolicy] = useState<PolicySet>(emptyPolicy)
   const [importedCandidates, setImportedCandidates] = useState<string[]>([])
+  const [selectedDeviceID, setSelectedDeviceID] = useState('')
+  const [registrationOpen, setRegistrationOpen] = useState(false)
+  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [reloadOpen, setReloadOpen] = useState(false)
+  const [reloading, setReloading] = useState(false)
+  const [revisionConflict, setRevisionConflict] = useState(false)
+  const dirty = Boolean(document && JSON.stringify(policy) !== JSON.stringify(normalizePolicy(document.policy)))
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+
   const groups = overview?.policies ?? []
-  const candidates = useMemo(() => [...new Set(['DIRECT', 'REJECT', ...importedCandidates, ...groups.flatMap(group => [group.name, ...group.options])])], [groups, importedCandidates])
-  const refresh = useCallback(async () => {
+  const globalGroups = useMemo(() => groups.filter(group => !group.name.startsWith('device/')), [groups])
+  const candidates = useMemo(() => [...new Set(['DIRECT', 'REJECT', ...globalGroups.map(group => group.name), ...importedCandidates])], [globalGroups, importedCandidates])
+
+  const refresh = useCallback(async (discardDraft = false) => {
     try {
       const [devices, config, sources] = await Promise.all([api.devices(), api.config(), api.sources().catch(() => ({ revision: '', sources: [] }))])
-      const policy = config.device_policy.enabled ? await api.devicePolicy() : null
+      const nextDocument = config.device_policy.enabled ? await api.devicePolicy() : null
       const imported = sources.sources.filter(source => source.applied && source.valid).flatMap(source => [...source.inventory.proxies, ...source.inventory.proxy_groups])
-      setData(devices); setPolicyDocument(policy); setImportedCandidates(imported); setError('')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      setData(devices)
+      setImportedCandidates(imported)
+      setDocument(nextDocument)
+      if (nextDocument && (!dirtyRef.current || discardDraft)) {
+        const nextPolicy = copyPolicy(nextDocument.policy)
+        setPolicy(nextPolicy)
+        setSelectedDeviceID(current => nextPolicy.devices.some(device => device.id === current) ? current : nextPolicy.devices[0]?.id ?? '')
+        setRegistrationOpen(current => current || nextPolicy.devices.length === 0)
+        setRevisionConflict(false)
+      }
+      if (!nextDocument && (!dirtyRef.current || discardDraft)) setPolicy(emptyPolicy())
+      setError('')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
   }, [])
+
   useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { onDirtyChange(dirty) }, [dirty, onDirtyChange])
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!dirty) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+
+  const save = async () => {
+    if (!document || !dirty) return
+    setSaving(true); setMessage(''); setError(''); setRevisionConflict(false)
+    try {
+      const updated = await api.saveDevicePolicy(policy, document.revision)
+      setDocument(updated)
+      setPolicy(copyPolicy(updated.policy))
+      setMessage('设备配置已保存。运行中的网关仍使用 applied 配置；请使用上方按钮应用并重载。')
+      await refresh()
+      await onChanged()
+    } catch (cause) {
+      if (cause instanceof RequestError && cause.code === 'revision_conflict') {
+        setRevisionConflict(true)
+        setError('配置已被其他操作更新。你的本地修改仍保留；如需继续，请先放弃本地修改并加载最新版本。')
+      } else {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
+    } finally { setSaving(false) }
+  }
+
+  const reload = async () => {
+    setReloading(true); setError(''); setMessage('')
+    try {
+      const operation = await api.gateway('reload')
+      await waitForOperation(operation.id)
+      setReloadOpen(false)
+      await refresh(true)
+      await onChanged()
+      setMessage('网关已使用最新设备配置重新启动。改变固定 IPv4 的设备可能需要重新连接以获取新租约。')
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setReloadOpen(false)
+      await refresh()
+      await onChanged()
+      setError(failure)
+    } finally { setReloading(false) }
+  }
+
+  const discardDraft = async () => {
+    if (!window.confirm('放弃当前尚未保存的设备修改并加载最新版本吗？')) return
+    dirtyRef.current = false
+    await refresh(true)
+  }
+
   return <>
-    <PageHeader eyebrow="DEVICES" title="每设备策略" description="设备身份来自稳定 Wi‑Fi MAC、固定 IPv4 DHCP reservation 和 applied policy。" />
-    {data?.drift && <div className="notice warn">设备策略 desired/applied 不一致；编辑已保存，但需要重启网关才会生效。</div>}{error && <div className="notice warn" role="alert">{error}</div>}
-    <section className="device-layout"><article className="this-mac"><small>THIS MAC</small><h3>OpenSurge 网关</h3><p>{overview?.status.interface} · {overview?.status.lan_ip}</p><span className="pill">本机不属于下游 DHCP 设备</span></article>{data?.devices.map(device => <DeviceCard key={device.id} device={device} leases={data.leases} groups={groups} onChanged={refresh} />)}</section>
-    {!data?.devices.length && <Empty text="尚未登记下游设备；可从下方当前 DHCP 租约直接填入。" />}
-    {policyDocument ? <PolicyEditor document={policyDocument} candidates={candidates} leases={overview?.leases?.length ? overview.leases : data?.leases ?? []} onSaved={refresh} /> : <section className="section"><Empty text="当前 gateway config 尚未启用设备策略；请先在网络设置中启用。" /></section>}
+    <PageHeader eyebrow="DEVICES" title="设备与规则" description="上方出口选择即时生效；设备身份、候选出口和规则保存后需要重载网关。" />
+    {data?.drift && <DriftBanner data={data} running={overview?.status.gateway === 'running'} onReload={() => setReloadOpen(true)} onDashboard={() => onNavigate('dashboard')} />}
+    {message && <div className="notice ok-notice" role="status">{message}</div>}
+    {error && <div className="notice warn" role="alert">{error}{revisionConflict && <button className="inline-action" type="button" onClick={() => void discardDraft()}>放弃本地修改并加载最新版本</button>}</div>}
+
+    {document ? <>
+      <RegistrationPanel open={registrationOpen} onToggle={() => setRegistrationOpen(value => !value)} leases={overview?.leases?.length ? overview.leases : data?.leases ?? []} policy={policy} candidates={candidates} onPolicyChange={setPolicy} onRegistered={id => { setSelectedDeviceID(id); setRegistrationOpen(false); setMessage('设备已加入本地草稿；保存后才会写入 desired 配置。') }} />
+
+      <section className="section live-section">
+        <SectionTitle title="设备出口" subtitle="即时生效 · 只切换已经应用的 mihomo selector，不改变规则结构" />
+        <div className="device-layout">
+          <ThisMacCard overview={overview} groups={globalGroups} onChanged={async () => { await onChanged(); await refresh() }} onPolicies={() => onNavigate('policies')} />
+          {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? [])).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} leases={data?.leases ?? []} groups={groups} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onChanged={async () => { await onChanged(); await refresh() }} />)}
+        </div>
+        {!policy.devices.length && !data?.devices.length && <Empty text="尚未登记设备。使用上方“登记新设备”可直接从当前 DHCP 租约开始。" />}
+      </section>
+
+      {selectedDeviceID && policy.devices.some(device => device.id === selectedDeviceID)
+        ? <DeviceRulesPanel key={selectedDeviceID} deviceID={selectedDeviceID} policy={policy} candidates={candidates} onPolicyChange={setPolicy} />
+        : <section className="section"><Empty text="选择一台 desired 设备后，可在这里编辑它的规则。" /></section>}
+
+      <AdvancedPolicyTools policy={policy} candidates={candidates} onPolicyChange={setPolicy} />
+      <div className="sticky-save"><div><strong>{dirty ? '有未保存的设备修改' : '设备配置已保存'}</strong><small>{dirty ? '保存只更新 desired；运行中还需重载' : `revision ${document.revision.slice(0, 10)}`}</small></div><button className="primary" type="button" disabled={!dirty || saving} onClick={() => void save()}>{saving ? '正在验证并保存…' : '保存设备配置'}</button></div>
+    </> : <section className="section"><Empty text="当前 gateway config 尚未启用设备策略；请先在网络设置中启用。" /></section>}
+
+    {reloadOpen && <ReloadDialog busy={reloading} onCancel={() => setReloadOpen(false)} onConfirm={() => void reload()} />}
   </>
 }
 
-function PolicyEditor({ document, candidates, leases, onSaved }: { document: DevicePolicyDocument; candidates: string[]; leases: Lease[]; onSaved: () => Promise<void> }) {
-  const [policy, setPolicy] = useState<PolicySet>(() => normalizePolicy(structuredClone(document.policy)))
-  const [profileID, setProfileID] = useState('')
-  const [profilePolicies, setProfilePolicies] = useState('DIRECT')
-  const [profileTemplate, setProfileTemplate] = useState('')
-  const [device, setDevice] = useState({ id: '', mac: '', ipv4: '', profile: '' })
-  const [rule, setRule] = useState({ profile: '', id: '', domains: '', ipCidrs: '', protocols: '', ports: '', ruleSets: '', action: 'REJECT', policies: '' })
-  const [template, setTemplate] = useState({ id: '', policies: 'DIRECT' })
-  const [ruleSet, setRuleSet] = useState<{ id: string; type: 'inline' | 'http'; behavior: 'domain' | 'ipcidr' | 'classical'; format: string; url: string; payload: string }>({ id: '', type: 'inline', behavior: 'domain', format: 'yaml', url: '', payload: '' })
-  const [message, setMessage] = useState('')
-  useEffect(() => { setPolicy(normalizePolicy(structuredClone(document.policy))) }, [document])
-  const list = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean)
-  const addProfile = () => {
-    if (!profileID || policy.profiles.some(item => item.id === profileID)) return
-    setPolicy({ ...policy, profiles: [...policy.profiles, { id: profileID, template: profileTemplate || undefined, default_policies: list(profilePolicies), on_unsupported: 'reject', rules: [] }] })
-    setProfileID('')
-  }
-  const addDevice = () => {
-    if (!device.id || !device.mac || !device.ipv4 || !device.profile) return
-    const normalizedMAC = device.mac.toLowerCase()
-    setPolicy({ ...policy, devices: [...policy.devices.filter(item => item.id !== device.id && item.mac.toLowerCase() !== normalizedMAC), device] })
-    setDevice({ id: '', mac: '', ipv4: '', profile: '' })
-  }
-  const chooseLease = (lease: Lease) => {
-    const registered = policy.devices.find(item => item.mac.toLowerCase() === lease.mac.toLowerCase())
-    setDevice({
-      id: registered?.id ?? availableDeviceID(lease, policy.devices),
-      mac: lease.mac,
-      ipv4: lease.ip,
-      profile: registered?.profile ?? policy.profiles[0]?.id ?? '',
-    })
-  }
-  const addRule = () => {
-    if (!rule.profile || !rule.id) return
-    const next: PolicyRule = { id: rule.id, match: { domains: list(rule.domains), ip_cidrs: list(rule.ipCidrs), protocols: list(rule.protocols), ports: list(rule.ports), rule_sets: list(rule.ruleSets) } }
-    if (rule.policies.trim()) next.policies = list(rule.policies); else next.action = rule.action
-    setPolicy({ ...policy, profiles: policy.profiles.map(profile => profile.id === rule.profile ? { ...profile, rules: [...(profile.rules ?? []), next] } : profile) })
-    setRule({ profile: rule.profile, id: '', domains: '', ipCidrs: '', protocols: '', ports: '', ruleSets: '', action: 'REJECT', policies: '' })
-  }
-  const addTemplate = () => { if (template.id) { setPolicy({ ...policy, templates: [...policy.templates, { id: template.id, default_policies: list(template.policies), on_unsupported: 'reject', rules: [] }] }); setTemplate({ id: '', policies: 'DIRECT' }) } }
-  const addRuleSet = () => { if (ruleSet.id) { setPolicy({ ...policy, rule_sets: [...policy.rule_sets, ruleSet.type === 'http' ? { id: ruleSet.id, type: 'http', behavior: ruleSet.behavior, format: ruleSet.format, url: ruleSet.url, interval: 3600 } : { id: ruleSet.id, type: 'inline', behavior: ruleSet.behavior, payload: list(ruleSet.payload) }] }); setRuleSet({ id: '', type: 'inline', behavior: 'domain', format: 'yaml', url: '', payload: '' }) } }
-  const save = async () => {
-    try { await api.saveDevicePolicy(policy, document.revision); setMessage('Desired policy 已保存；运行中的 gateway 需要重启后应用。'); await onSaved() }
-    catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)) }
-  }
-  return <section className="section policy-editor"><SectionTitle title="设备策略编辑器" subtitle="结构化编辑 desired policy；保存不会热改正在运行的 DHCP/mihomo bundle" />
-    {message && <div className="notice" role="status">{message}</div>}
-    <ManagedLeasePicker leases={leases} policy={policy} onChoose={chooseLease} />
-    <div className="editor-grid"><div><h3>1. Profiles</h3><div className="form-stack"><input aria-label="Profile ID" placeholder="profile id" value={profileID} onChange={event => setProfileID(event.target.value)} /><input aria-label="Profile 默认策略" placeholder="DIRECT, Proxy" value={profilePolicies} onChange={event => setProfilePolicies(event.target.value)} /><select aria-label="Profile template" value={profileTemplate} onChange={event => setProfileTemplate(event.target.value)}><option value="">无模板</option>{policy.templates.map(item => <option key={item.id}>{item.id}</option>)}</select><button onClick={addProfile}>添加</button></div>{policy.profiles.map(profile => <div className="editor-item" key={profile.id}><strong>{profile.id}</strong><span>{profile.template ? `template ${profile.template}` : profile.default_policies.join(' / ')}</span><button onClick={() => setPolicy({ ...policy, profiles: policy.profiles.filter(item => item.id !== profile.id) })}>移除</button></div>)}</div>
-      <DeviceRegistration policy={policy} device={device} setDevice={setDevice} addDevice={addDevice} setPolicy={setPolicy} />
-      <RuleEditor policy={policy} candidates={candidates} rule={rule} setRule={setRule} addRule={addRule} />
-      <div className="wide"><h3>4. Templates 与 Rule Sets</h3><div className="form-row"><input aria-label="Template ID" placeholder="template id" value={template.id} onChange={event => setTemplate({ ...template, id: event.target.value })} /><input aria-label="Template policies" list="policy-candidates" value={template.policies} onChange={event => setTemplate({ ...template, policies: event.target.value })} /><button onClick={addTemplate}>添加模板</button></div><div className="rule-form"><input aria-label="Rule set ID" placeholder="rule set id" value={ruleSet.id} onChange={event => setRuleSet({ ...ruleSet, id: event.target.value })} /><select aria-label="Rule set type" value={ruleSet.type} onChange={event => setRuleSet({ ...ruleSet, type: event.target.value as 'inline' | 'http' })}><option>inline</option><option>http</option></select><select aria-label="Rule set behavior" value={ruleSet.behavior} onChange={event => setRuleSet({ ...ruleSet, behavior: event.target.value as 'domain' | 'ipcidr' | 'classical' })}><option>domain</option><option>ipcidr</option><option>classical</option></select>{ruleSet.type === 'http' ? <><input aria-label="Rule set URL" placeholder="https://…" value={ruleSet.url} onChange={event => setRuleSet({ ...ruleSet, url: event.target.value })} /><select aria-label="Rule set format" value={ruleSet.format} onChange={event => setRuleSet({ ...ruleSet, format: event.target.value })}><option>yaml</option><option>text</option><option>mrs</option></select></> : <input aria-label="Rule set payload" placeholder="comma-separated payload" value={ruleSet.payload} onChange={event => setRuleSet({ ...ruleSet, payload: event.target.value })} />}<button onClick={addRuleSet}>添加 Rule Set</button></div><div className="inventory">{policy.templates.map(item => <span key={item.id}>template: {item.id}</span>)}{policy.rule_sets.map(item => <span key={item.id}>rule-set: {item.id}</span>)}</div><datalist id="policy-candidates">{candidates.map(item => <option key={item} value={item} />)}</datalist></div>
-    </div>
-    <div className="editor-footer"><span>revision {document.revision.slice(0, 10)}</span><button className="primary" onClick={() => void save()}>保存 Desired Policy</button></div>
-  </section>
+function DriftBanner({ data, running, onReload, onDashboard }: { data: DevicesResponse; running: boolean; onReload: () => void; onDashboard: () => void }) {
+  return <div className="drift-banner" role="status"><div><span className="effect-badge restart">需重载</span><strong>{running ? '设备配置已保存，但尚未应用' : '设备配置将在下次启动时应用'}</strong><p>desired {data.desired_digest?.slice(0, 8)} · applied {data.applied_digest?.slice(0, 8) || '尚无'}</p></div>{running ? <button className="primary" type="button" onClick={onReload}>应用并重载网关</button> : <button type="button" onClick={onDashboard}>前往总览启动</button>}</div>
 }
 
-type DeviceDraft = { id: string; mac: string; ipv4: string; profile: string }
+function ReloadDialog({ busy, onCancel, onConfirm }: { busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onCancel() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [busy, onCancel])
+  return <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="reload-title"><h2 id="reload-title">应用设备配置并重载网关？</h2><p>OpenSurge 会先验证完整候选配置。验证通过后，DHCP/DNS、mihomo、PF 与 IPv4 forwarding 会短暂重启。</p><ul><li>当前连接会中断并重新建立。</li><li>改变固定 IPv4 的设备可能需要重新连接网络。</li><li>若候选配置验证失败，现有网关不会被停止。</li></ul><div className="dialog-actions"><button type="button" disabled={busy} onClick={onCancel}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={onConfirm}>{busy ? '正在验证并重载…' : '确认应用并重载'}</button></div></dialog>
+}
 
-function availableDeviceID(lease: Lease, devices: PolicySet['devices']) {
+function ThisMacCard({ overview, groups, onChanged, onPolicies }: { overview: Overview | null; groups: ProxyGroup[]; onChanged: () => Promise<void>; onPolicies: () => void }) {
+  return <article className="this-mac"><div className="source-head"><div><small>THIS MAC</small><h3>本机 / 全局策略组</h3></div><span className="effect-badge live">即时生效</span></div><p>{overview?.status.interface} · {overview?.status.lan_ip}</p><small className="card-help">仅影响当前 mihomo 规则引用相应策略组的流量；不等同于全部 Mac 流量或 macOS 系统代理开关。</small><div className="global-groups">{groups.map(group => <LiveGroupSelect key={group.name} group={group} onChanged={onChanged} />)}{!groups.length && <Empty text="mihomo 未运行或没有全局可选策略组" />}</div><button className="text-link" type="button" onClick={onPolicies}>完整策略组见策略页 →</button></article>
+}
+
+function LiveGroupSelect({ group, onChanged }: { group: ProxyGroup; onChanged: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const select = async (policy: string) => {
+    setBusy(true); setError('')
+    try { await api.selectPolicy(group.name, policy); await onChanged() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+  return <label className="live-group"><span><strong>{group.name}</strong><small>{group.type}</small></span><select aria-label={`${group.name} selected policy`} value={group.selected} disabled={busy} onChange={event => void select(event.target.value)}>{group.options.map(option => <option key={option}>{option}</option>)}</select>{busy && <small className="switch-status" role="status">正在切换…</small>}{error && <small className="field-error" role="alert">{error}</small>}</label>
+}
+
+type DeviceView = { desired?: PolicyDevice; applied?: CompiledDevice; state: 'applied' | 'pending' | 'updated' | 'removing' }
+function deviceViews(desired: PolicyDevice[], applied: CompiledDevice[], changed: Set<string>): DeviceView[] {
+  const appliedByID = new Map(applied.map(device => [device.id, device]))
+  const views: DeviceView[] = desired.map(device => {
+    const running = appliedByID.get(device.id)
+    appliedByID.delete(device.id)
+    if (!running) return { desired: device, state: 'pending' }
+    const same = running.mac.toLowerCase() === device.mac.toLowerCase() && running.ipv4 === device.ipv4 && running.profile === device.profile
+    return { desired: device, applied: running, state: same && !changed.has(device.id) ? 'applied' : 'updated' }
+  })
+  for (const device of appliedByID.values()) views.push({ applied: device, state: 'removing' })
+  return views
+}
+
+function DeviceCard({ view, leases, groups, selected, onSelect, onChanged }: { view: DeviceView; leases: Lease[]; groups: ProxyGroup[]; selected: boolean; onSelect: () => void; onChanged: () => Promise<void> }) {
+  const [rulesOpen, setRulesOpen] = useState(false)
+  const device = view.desired ?? view.applied!
+  const applied = view.applied
+  const lease = applied ? leases.find(item => item.mac.toLowerCase() === applied.mac.toLowerCase() && item.ip === applied.ipv4 && item.online && (!item.expires_at || Date.parse(item.expires_at) > Date.now())) : undefined
+  const entries = Object.entries(applied?.groups ?? {})
+  const defaultEntry = entries.find(([slot]) => slot === 'default')
+  const ruleEntries = entries.filter(([slot]) => slot !== 'default')
+  return <article className={`device-card ${selected ? 'selected' : ''}`}><div className="source-head"><button className="device-title" type="button" disabled={!view.desired} aria-pressed={selected} onClick={onSelect}><small>{device.profile}</small><strong>{device.id}</strong></button><span className={`pill ${view.state === 'applied' ? 'ok' : ''}`}>{deviceStateLabel(view.state)}</span></div><code>{device.ipv4}</code><small>{device.mac}</small>{applied && <span className={`identity-state ${lease ? 'ready' : ''}`}>{lease ? '身份就绪' : '身份待确认：需要在线且未过期的精确 MAC / IPv4 租约'}</span>}<div className="default-slot"><span><strong>默认出口</strong><small>即时切换</small></span>{defaultEntry ? <DeviceGroupSelect device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} onChanged={onChanged} /> : <select aria-label={`${device.id} 默认出口`} disabled><option>重载后可用</option></select>}</div>{ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <label key={slot}><span>{slot}</span><DeviceGroupSelect device={applied!.id} slot={slot} groupName={groupName} groups={groups} onChanged={onChanged} /></label>)}</div>}{view.desired && <button className="edit-device" type="button" onClick={onSelect}>编辑此设备规则</button>}</article>
+}
+
+function DeviceGroupSelect({ device, slot, groupName, groups, onChanged }: { device: string; slot: string; groupName: string; groups: ProxyGroup[]; onChanged: () => Promise<void> }) {
+  const group = groups.find(item => item.name === groupName)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const select = async (policy: string) => {
+    setBusy(true); setError('')
+    try { await api.selectDevicePolicy(device, slot, policy); await onChanged() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+  return <span className="select-with-error"><select aria-label={`${device} ${slot} 出口`} value={group?.selected ?? ''} disabled={!group || busy} onChange={event => void select(event.target.value)}><option value="">不可用</option>{group?.options.map(option => <option key={option}>{option}</option>)}</select>{busy && <small className="switch-status" role="status">正在切换…</small>}{error && <small className="field-error" role="alert">{error}</small>}</span>
+}
+
+function deviceStateLabel(state: DeviceView['state']) {
+  if (state === 'pending') return '待应用'
+  if (state === 'updated') return '待更新'
+  if (state === 'removing') return '待移除'
+  return '已应用'
+}
+
+type RegistrationDraft = { id: string; mac: string; ipv4: string; profile: string }
+function RegistrationPanel({ open, onToggle, leases, policy, candidates, onPolicyChange, onRegistered }: { open: boolean; onToggle: () => void; leases: Lease[]; policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void; onRegistered: (id: string) => void }) {
+  const [draft, setDraft] = useState<RegistrationDraft>({ id: '', mac: '', ipv4: '', profile: '' })
+  const [defaults, setDefaults] = useState(['DIRECT'])
+  const [useExisting, setUseExisting] = useState(false)
+  const [error, setError] = useState('')
+  const chooseLease = (lease: Lease) => {
+    const registered = policy.devices.find(item => item.mac.toLowerCase() === lease.mac.toLowerCase())
+    setDraft({ id: registered?.id ?? availableDeviceID(lease, policy.devices), mac: lease.mac, ipv4: lease.ip, profile: registered?.profile ?? policy.profiles[0]?.id ?? '' })
+    setUseExisting(Boolean(registered))
+  }
+  const register = () => {
+    if (!draft.id || !draft.mac || !draft.ipv4) { setError('请填写设备名称、MAC 和固定 IPv4。'); return }
+    if (useExisting && !draft.profile) { setError('请选择一个现有 Profile。'); return }
+    let next = copyPolicy(policy)
+    let profile = draft.profile
+    if (!useExisting) {
+      profile = uniqueProfileID(`${draft.id}-policy`, next.profiles)
+      next.profiles.push({ id: profile, default_policies: defaults.length ? defaults : ['DIRECT'], on_unsupported: 'reject', rules: [] })
+    }
+    const normalizedMAC = draft.mac.toLowerCase()
+    next.devices = [...next.devices.filter(item => item.id !== draft.id && item.mac.toLowerCase() !== normalizedMAC), { ...draft, mac: normalizedMAC, profile }]
+    onPolicyChange(next); onRegistered(draft.id)
+    setDraft({ id: '', mac: '', ipv4: '', profile: '' }); setDefaults(['DIRECT']); setUseExisting(false); setError('')
+  }
+  const sorted = [...leases].sort((left, right) => Number(right.online) - Number(left.online) || left.ip.localeCompare(right.ip, undefined, { numeric: true }))
+  return <section className="section registration"><button className="section-toggle" type="button" aria-expanded={open} onClick={onToggle}><span><strong>登记新设备</strong><small>从当前 DHCP 租约开始，只需确认身份与默认出口</small></span><span>{open ? '收起' : '展开'}</span></button>{open && <div className="registration-body"><div className="lease-picker"><SectionTitle title="当前已接管设备" subtitle="点击租约会自动填写 MAC 与当前 IPv4" />{sorted.length ? sorted.map(lease => <button className="lease-choice" type="button" aria-label="配置此设备" key={`${lease.mac}-${lease.ip}`} onClick={() => chooseLease(lease)}><span className={lease.online ? 'pill ok' : 'pill'}>{lease.online ? '在线' : '历史租约'}</span><span><strong>{lease.hostname || '未命名设备'}</strong><small>{lease.mac}</small></span><code>{lease.ip}</code><span>配置此设备</span></button>) : <Empty text="当前没有 DHCP 租约；也可以手工填写设备。" />}</div><div className="registration-form"><label>设备名称<input aria-label="Device ID" value={draft.id} onChange={event => setDraft({ ...draft, id: event.target.value })} /></label><label>MAC 地址<input aria-label="设备 MAC" value={draft.mac} onChange={event => setDraft({ ...draft, mac: event.target.value })} /></label><label>固定 IPv4<input aria-label="固定 IPv4" value={draft.ipv4} onChange={event => setDraft({ ...draft, ipv4: event.target.value })} /></label>{!useExisting && <CandidatePicker label="默认出口候选" values={defaults} candidates={candidates} onChange={setDefaults} />}
+    <details className="inline-advanced"><summary>高级：使用已有 Profile</summary><label className="checkbox-field"><input type="checkbox" checked={useExisting} onChange={event => setUseExisting(event.target.checked)} /> 使用已有 Profile</label>{useExisting && <select aria-label="设备 Profile" value={draft.profile} onChange={event => setDraft({ ...draft, profile: event.target.value })}><option value="">选择 Profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select>}</details>{error && <small className="field-error" role="alert">{error}</small>}<button className="primary" type="button" onClick={register}>登记或更新设备</button></div></div>}</section>
+}
+
+function DeviceRulesPanel({ deviceID, policy, candidates, onPolicyChange }: { deviceID: string; policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void }) {
+  const device = policy.devices.find(item => item.id === deviceID)!
+  const effective = resolveProfile(policy, device.profile)
+  const [editing, setEditing] = useState<number | 'new' | null>(null)
+  const changeProfile = (change: (profile: PolicyProfile) => PolicyProfile) => {
+    const { policy: privatePolicy, profileID } = ensurePrivateProfile(policy, deviceID)
+    const next = copyPolicy(privatePolicy)
+    next.profiles = next.profiles.map(profile => profile.id === profileID ? change(profile) : profile)
+    onPolicyChange(next)
+  }
+  const move = (index: number, delta: number) => changeProfile(profile => {
+    const rules = [...(profile.rules ?? [])]
+    const target = index + delta
+    if (target < 0 || target >= rules.length) return profile
+    const [item] = rules.splice(index, 1); rules.splice(target, 0, item)
+    return { ...profile, rules }
+  })
+  const remove = (index: number) => {
+    if (!window.confirm('删除这条设备规则吗？保存并重载后它将不再生效。')) return
+    changeProfile(profile => ({ ...profile, rules: (profile.rules ?? []).filter((_, current) => current !== index) }))
+  }
+  return <section className="section device-rules"><div className="section-heading-row"><SectionTitle title={`${device.id} 的规则`} subtitle="保存后重载 · 这些规则只属于当前设备" /><span className="effect-badge restart">需重载</span></div><div className="device-defaults"><CandidatePicker label="可切换的默认出口" values={effective.default_policies} candidates={candidates} onChange={values => changeProfile(profile => ({ ...profile, default_policies: values }))} /><small>候选成员变化需要重载；重载后在上方设备卡即时选择。</small></div><div className="flat-rules">{effective.rules?.map((rule, index) => <div className="flat-rule" key={rule.id}><div className="rule-summary"><div>{matchChips(rule).map(chip => <span className="rule-chip" key={chip}>{chip}</span>)}</div><span className="rule-arrow">→</span><strong>{rule.policies?.length ? rule.policies.join(' / ') : rule.action}</strong></div><div className="rule-actions"><button type="button" disabled={index === 0} aria-label={`上移规则 ${rule.id}`} onClick={() => move(index, -1)}>↑</button><button type="button" disabled={index === (effective.rules?.length ?? 0) - 1} aria-label={`下移规则 ${rule.id}`} onClick={() => move(index, 1)}>↓</button><button type="button" onClick={() => setEditing(index)}>编辑</button><button className="danger-link" type="button" onClick={() => remove(index)}>删除</button></div>{editing === index && <RuleForm initial={rule} candidates={candidates} existing={effective.rules ?? []} onCancel={() => setEditing(null)} onSave={updated => { changeProfile(profile => ({ ...profile, rules: (profile.rules ?? []).map((item, current) => current === index ? updated : item) })); setEditing(null) }} />}</div>)}{!effective.rules?.length && <Empty text="这台设备还没有覆盖规则；所有流量使用默认出口。" />}</div>{editing === 'new' ? <RuleForm candidates={candidates} existing={effective.rules ?? []} onCancel={() => setEditing(null)} onSave={rule => { changeProfile(profile => ({ ...profile, rules: [...(profile.rules ?? []), rule] })); setEditing(null) }} /> : <button className="add-rule" type="button" onClick={() => setEditing('new')}>＋ 添加设备规则</button>}</section>
+}
+
+function RuleForm({ initial, candidates, existing, onCancel, onSave }: { initial?: PolicyRule; candidates: string[]; existing: PolicyRule[]; onCancel: () => void; onSave: (rule: PolicyRule) => void }) {
+  const [match, setMatch] = useState(() => structuredClone(initial?.match ?? {}))
+  const [mode, setMode] = useState<'action' | 'selector'>(initial?.policies?.length ? 'selector' : 'action')
+  const [action, setAction] = useState(initial?.action ?? 'REJECT')
+  const [policies, setPolicies] = useState(initial?.policies ?? ['DIRECT'])
+  const [error, setError] = useState('')
+  const save = () => {
+    if (![match.domains, match.ip_cidrs, match.protocols, match.ports, match.rule_sets].some(values => values?.length)) { setError('至少添加一个匹配条件。'); return }
+    if (mode === 'selector' && !policies.length) { setError('Selector 至少需要一个出口候选。'); return }
+    const id = initial?.id ?? nextRuleID(existing)
+    onSave(mode === 'selector' ? { id, match, policies, on_unsupported: initial?.on_unsupported } : { id, match, action, on_unsupported: initial?.on_unsupported })
+  }
+  return <div className="rule-editor-form"><div className="match-grid"><TokenInput label="域名后缀" values={match.domains ?? []} placeholder="youtube.example" onChange={values => setMatch({ ...match, domains: values })} /><TokenInput label="目标 CIDR" values={match.ip_cidrs ?? []} placeholder="203.0.113.0/24" onChange={values => setMatch({ ...match, ip_cidrs: values })} /><TokenInput label="协议" values={match.protocols ?? []} placeholder="tcp 或 udp" suggestions={['tcp', 'udp']} onChange={values => setMatch({ ...match, protocols: values })} /><TokenInput label="目标端口" values={match.ports ?? []} placeholder="443" onChange={values => setMatch({ ...match, ports: values })} /><TokenInput label="规则集" values={match.rule_sets ?? []} placeholder="rule-set id" onChange={values => setMatch({ ...match, rule_sets: values })} /></div><fieldset className="egress-mode"><legend>匹配后的出口</legend><label><input type="radio" checked={mode === 'action'} onChange={() => setMode('action')} /> 固定动作</label><label><input type="radio" checked={mode === 'selector'} onChange={() => setMode('selector')} /> 可即时切换的 Selector</label>{mode === 'action' ? <select aria-label="Rule action" value={action} onChange={event => setAction(event.target.value)}>{candidates.map(candidate => <option key={candidate}>{candidate}</option>)}</select> : <CandidatePicker label="Selector 候选" values={policies} candidates={candidates} onChange={setPolicies} />}</fieldset>{error && <small className="field-error" role="alert">{error}</small>}<details className="rule-technical"><summary>技术信息</summary><code>{initial?.id ?? '保存时自动生成 rule-*'}</code></details><div className="editor-actions"><button type="button" onClick={onCancel}>取消</button><button className="primary" type="button" onClick={save}>保存到草稿</button></div></div>
+}
+
+function CandidatePicker({ label, values, candidates, onChange }: { label: string; values: string[]; candidates: string[]; onChange: (values: string[]) => void }) {
+  const [candidate, setCandidate] = useState('')
+  const listID = useId()
+  const available = candidates.filter(item => !values.includes(item))
+  const validCandidate = available.includes(candidate)
+  const add = () => { if (validCandidate) onChange([...values, candidate]); setCandidate('') }
+  return <div className="candidate-picker"><label>{label}<span className="candidate-add"><input type="search" aria-label={label} list={listID} autoComplete="off" placeholder="搜索出口…" value={candidate} onChange={event => setCandidate(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }} /><datalist id={listID}>{available.map(item => <option key={item} value={item} />)}</datalist><button type="button" disabled={!validCandidate} onClick={add}>添加</button></span></label><div className="token-list">{values.map(value => <span className="token" key={value}>{value}<button type="button" disabled={values.length === 1} aria-label={`移除 ${value}`} title={values.length === 1 ? '至少保留一个出口' : undefined} onClick={() => onChange(values.filter(item => item !== value))}>×</button></span>)}</div></div>
+}
+
+function TokenInput({ label, values, placeholder, suggestions = [], onChange }: { label: string; values: string[]; placeholder: string; suggestions?: string[]; onChange: (values: string[]) => void }) {
+  const [value, setValue] = useState('')
+  const add = () => { const next = value.trim(); if (next && !values.includes(next)) onChange([...values, next]); setValue('') }
+  return <label className="token-input"><span>{label}</span><span className="token-entry"><input aria-label={label} list={suggestions.length ? `${label}-suggestions` : undefined} placeholder={placeholder} value={value} onChange={event => setValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }} /><button type="button" onClick={add}>添加</button></span>{suggestions.length > 0 && <datalist id={`${label}-suggestions`}>{suggestions.map(item => <option key={item}>{item}</option>)}</datalist>}<span className="token-list">{values.map(item => <span className="token" key={item}>{item}<button type="button" aria-label={`移除 ${item}`} onClick={() => onChange(values.filter(valueItem => valueItem !== item))}>×</button></span>)}</span></label>
+}
+
+function AdvancedPolicyTools({ policy, candidates, onPolicyChange }: { policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void }) {
+  const [open, setOpen] = useState(false)
+  const [profileID, setProfileID] = useState('')
+  const [profilePolicies, setProfilePolicies] = useState(['DIRECT'])
+  const [templateID, setTemplateID] = useState('')
+  const [templatePolicies, setTemplatePolicies] = useState(['DIRECT'])
+  const [ruleSet, setRuleSet] = useState<PolicyRuleSet>({ id: '', type: 'inline', behavior: 'domain', format: 'yaml', url: '', payload: [] })
+  const profileRefs = (id: string) => policy.devices.filter(device => device.profile === id).map(device => device.id)
+  const templateRefs = (id: string) => policy.profiles.filter(profile => profile.template === id).map(profile => profile.id)
+  const ruleSetRefs = (id: string) => [...policy.profiles, ...policy.templates].filter(owner => owner.rules?.some(rule => rule.match.rule_sets?.includes(id))).map(owner => owner.id)
+  return <section className="section advanced-policy"><button className="section-toggle" type="button" aria-expanded={open} onClick={() => setOpen(value => !value)}><span><strong>高级 / 复用机制</strong><small>Profiles、Templates 与 Rule Sets；普通设备配置无需进入这里</small></span><span>{open ? '收起' : '展开'}</span></button>{open && <div className="advanced-grid"><div><h3>Profiles</h3><input aria-label="Profile ID" placeholder="profile id" value={profileID} onChange={event => setProfileID(event.target.value)} /><CandidatePicker label="Profile 默认策略" values={profilePolicies} candidates={candidates} onChange={setProfilePolicies} /><button type="button" onClick={() => { if (!profileID || policy.profiles.some(item => item.id === profileID)) return; onPolicyChange({ ...policy, profiles: [...policy.profiles, { id: profileID, default_policies: profilePolicies, on_unsupported: 'reject', rules: [] }] }); setProfileID('') }}>添加 Profile</button>{policy.profiles.map(profile => { const refs = profileRefs(profile.id); return <div className="editor-item" key={profile.id}><strong>{profile.id}</strong><span>{refs.length ? `设备：${refs.join(', ')}` : profile.default_policies.join(' / ')}</span><button type="button" disabled={refs.length > 0} title={refs.length ? `被设备 ${refs.join(', ')} 引用` : undefined} onClick={() => onPolicyChange({ ...policy, profiles: policy.profiles.filter(item => item.id !== profile.id) })}>移除</button></div> })}</div><div><h3>Templates</h3><input aria-label="Template ID" placeholder="template id" value={templateID} onChange={event => setTemplateID(event.target.value)} /><CandidatePicker label="Template policies" values={templatePolicies} candidates={candidates} onChange={setTemplatePolicies} /><button type="button" onClick={() => { if (!templateID || policy.templates.some(item => item.id === templateID)) return; onPolicyChange({ ...policy, templates: [...policy.templates, { id: templateID, default_policies: templatePolicies, on_unsupported: 'reject', rules: [] }] }); setTemplateID('') }}>添加模板</button>{policy.templates.map(template => { const refs = templateRefs(template.id); return <div className="editor-item" key={template.id}><strong>template: {template.id}</strong><span>{refs.length ? `Profiles：${refs.join(', ')}` : template.default_policies.join(' / ')}</span><button type="button" disabled={refs.length > 0} title={refs.length ? `被 Profile ${refs.join(', ')} 引用` : undefined} onClick={() => onPolicyChange({ ...policy, templates: policy.templates.filter(item => item.id !== template.id) })}>移除</button></div> })}</div><div className="wide"><h3>Rule Sets</h3><div className="ruleset-form"><input aria-label="Rule set ID" placeholder="rule set id" value={ruleSet.id} onChange={event => setRuleSet({ ...ruleSet, id: event.target.value })} /><select aria-label="Rule set type" value={ruleSet.type} onChange={event => setRuleSet({ ...ruleSet, type: event.target.value as 'inline' | 'http' })}><option value="inline">内联列表</option><option value="http">HTTPS 来源</option></select><select aria-label="Rule set behavior" value={ruleSet.behavior} onChange={event => setRuleSet({ ...ruleSet, behavior: event.target.value as PolicyRuleSet['behavior'] })}><option value="domain">域名</option><option value="ipcidr">IP CIDR</option><option value="classical">经典规则</option></select>{ruleSet.type === 'http' ? <><input aria-label="Rule set URL" placeholder="https://…" value={ruleSet.url} onChange={event => setRuleSet({ ...ruleSet, url: event.target.value })} /><select aria-label="Rule set format" value={ruleSet.format} onChange={event => setRuleSet({ ...ruleSet, format: event.target.value })}><option>yaml</option><option>text</option><option>mrs</option></select></> : <TokenInput label="Rule set payload" values={ruleSet.payload ?? []} placeholder="一项内容" onChange={payload => setRuleSet({ ...ruleSet, payload })} />}<button type="button" onClick={() => { if (!ruleSet.id || policy.rule_sets.some(item => item.id === ruleSet.id)) return; onPolicyChange({ ...policy, rule_sets: [...policy.rule_sets, ruleSet.type === 'http' ? { ...ruleSet, interval: 3600, payload: undefined } : { ...ruleSet, url: undefined, format: undefined }] }); setRuleSet({ id: '', type: 'inline', behavior: 'domain', format: 'yaml', url: '', payload: [] }) }}>添加 Rule Set</button></div>{policy.rule_sets.map(item => { const refs = ruleSetRefs(item.id); return <div className="editor-item" key={item.id}><strong>rule-set: {item.id}</strong><span>{refs.length ? `规则引用：${refs.join(', ')}` : `${item.type ?? 'inline'} · ${item.behavior}`}</span><button type="button" disabled={refs.length > 0} title={refs.length ? `被规则 ${refs.join(', ')} 引用` : undefined} onClick={() => onPolicyChange({ ...policy, rule_sets: policy.rule_sets.filter(candidate => candidate.id !== item.id) })}>移除</button></div> })}</div></div>}</section>
+}
+
+function resolveProfile(policy: PolicySet, profileID: string): PolicyProfile {
+  const profile = policy.profiles.find(item => item.id === profileID)
+  if (!profile) return { id: profileID, default_policies: ['DIRECT'], rules: [] }
+  const template = profile.template ? policy.templates.find(item => item.id === profile.template) : undefined
+  return { id: profile.id, default_policies: profile.default_policies.length ? [...profile.default_policies] : [...(template?.default_policies ?? [])], on_unsupported: profile.on_unsupported || template?.on_unsupported, rules: [...(template?.rules ?? []).map(rule => structuredClone(rule)), ...(profile.rules ?? []).map(rule => structuredClone(rule))] }
+}
+
+function ensurePrivateProfile(policy: PolicySet, deviceID: string): { policy: PolicySet; profileID: string } {
+  const device = policy.devices.find(item => item.id === deviceID)!
+  const profile = policy.profiles.find(item => item.id === device.profile)
+  const shared = policy.devices.filter(item => item.profile === device.profile).length > 1
+  if (profile && !shared && !profile.template) return { policy, profileID: profile.id }
+  const next = copyPolicy(policy)
+  const effective = resolveProfile(policy, device.profile)
+  const profileID = uniqueProfileID(`${device.id}-policy`, next.profiles)
+  next.profiles.push({ ...effective, id: profileID, template: undefined })
+  next.devices = next.devices.map(item => item.id === deviceID ? { ...item, profile: profileID } : item)
+  return { policy: next, profileID }
+}
+
+function uniqueProfileID(base: string, profiles: PolicyProfile[]) {
+  const used = new Set(profiles.map(profile => profile.id))
+  if (!used.has(base)) return base
+  let counter = 2
+  while (used.has(`${base}-${counter}`)) counter++
+  return `${base}-${counter}`
+}
+
+function availableDeviceID(lease: Lease, devices: PolicyDevice[]) {
   const suffix = lease.mac.replace(/[^A-Fa-f0-9]/g, '').slice(-6).toLowerCase() || 'device'
   const hostname = (lease.hostname ?? '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
   const base = hostname || `device-${suffix}`
   const used = new Set(devices.map(item => item.id))
   if (!used.has(base)) return base
-  let candidate = `${base}-${suffix}`
   let counter = 2
-  while (used.has(candidate)) candidate = `${base}-${suffix}-${counter++}`
-  return candidate
+  while (used.has(`${base}-${counter}`)) counter++
+  return `${base}-${counter}`
 }
 
-function ManagedLeasePicker({ leases, policy, onChoose }: { leases: Lease[]; policy: PolicySet; onChoose: (lease: Lease) => void }) {
-  const sorted = [...leases].sort((left, right) => Number(right.online) - Number(left.online) || left.ip.localeCompare(right.ip, undefined, { numeric: true }))
-  return <div className="lease-picker"><SectionTitle title="当前已接管设备" subtitle="来自与总览相同的 OpenSurge DHCP 租约；选择后自动填入 MAC 与当前 IPv4" />
-    {sorted.length ? sorted.map(lease => {
-      const registered = policy.devices.find(item => item.mac.toLowerCase() === lease.mac.toLowerCase())
-      return <div className="row" key={`${lease.mac}-${lease.ip}`}><span className={lease.online ? 'pill ok' : 'pill'}>{lease.online ? '在线' : '历史租约'}</span><div className="grow"><strong>{lease.hostname || '未命名设备'}</strong><small>{lease.mac}{registered ? ` · 已登记为 ${registered.id}` : ''}</small></div><code>{lease.ip}</code><button type="button" onClick={() => onChoose(lease)}>{registered ? '编辑此设备' : '配置此设备'}</button></div>
-    }) : <Empty text="当前没有 OpenSurge DHCP 租约；设备重新连接后会自动出现在这里。" />}
-    {!policy.profiles.length && sorted.length > 0 && <small>先创建至少一个 Profile；选择租约仍会预填设备身份，之后再选择 Profile。</small>}
-  </div>
+function nextRuleID(rules: PolicyRule[]) {
+  const used = new Set(rules.map(rule => rule.id))
+  let counter = 1
+  while (used.has(`rule-${counter}`)) counter++
+  return `rule-${counter}`
 }
 
-function DeviceRegistration({ policy, device, setDevice, addDevice, setPolicy }: { policy: PolicySet; device: DeviceDraft; setDevice: (value: DeviceDraft) => void; addDevice: () => void; setPolicy: (value: PolicySet) => void }) {
-  return <div><h3>2. Devices</h3><div className="form-stack"><input aria-label="Device ID" placeholder="device id" value={device.id} onChange={event => setDevice({ ...device, id: event.target.value })} /><input aria-label="设备 MAC" placeholder="MAC" value={device.mac} onChange={event => setDevice({ ...device, mac: event.target.value })} /><input aria-label="固定 IPv4" placeholder="固定 IPv4" value={device.ipv4} onChange={event => setDevice({ ...device, ipv4: event.target.value })} /><select aria-label="设备 Profile" value={device.profile} onChange={event => setDevice({ ...device, profile: event.target.value })}><option value="">选择 profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select><button onClick={addDevice}>登记或更新设备</button></div>{policy.devices.map(item => <div className="editor-item" key={item.id}><strong>{item.id}</strong><span>{item.ipv4} · {item.profile}</span><button onClick={() => setPolicy({ ...policy, devices: policy.devices.filter(candidate => candidate.id !== item.id) })}>移除</button></div>)}</div>
-}
-
-type RuleDraft = { profile: string; id: string; domains: string; ipCidrs: string; protocols: string; ports: string; ruleSets: string; action: string; policies: string }
-function RuleEditor({ policy, candidates, rule, setRule, addRule }: { policy: PolicySet; candidates: string[]; rule: RuleDraft; setRule: (value: RuleDraft) => void; addRule: () => void }) {
-  return <div className="wide"><h3>3. 设备覆盖规则</h3><div className="rule-form"><select aria-label="规则 Profile" value={rule.profile} onChange={event => setRule({ ...rule, profile: event.target.value })}><option value="">选择 profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select><input aria-label="Rule ID" placeholder="rule id" value={rule.id} onChange={event => setRule({ ...rule, id: event.target.value })} /><input aria-label="Domains" placeholder="domains" value={rule.domains} onChange={event => setRule({ ...rule, domains: event.target.value })} /><input aria-label="Target CIDRs" placeholder="target CIDRs" value={rule.ipCidrs} onChange={event => setRule({ ...rule, ipCidrs: event.target.value })} /><input aria-label="Protocols" placeholder="tcp,udp" value={rule.protocols} onChange={event => setRule({ ...rule, protocols: event.target.value })} /><input aria-label="Ports" placeholder="80,443" value={rule.ports} onChange={event => setRule({ ...rule, ports: event.target.value })} /><input aria-label="Rule set IDs" placeholder="rule set ids" value={rule.ruleSets} onChange={event => setRule({ ...rule, ruleSets: event.target.value })} /><input aria-label="Selector candidates" list="policy-candidates" placeholder="selector candidates" value={rule.policies} onChange={event => setRule({ ...rule, policies: event.target.value })} /><select aria-label="Rule action" value={rule.action} onChange={event => setRule({ ...rule, action: event.target.value })}><option>REJECT</option><option>DIRECT</option></select><button onClick={addRule}>添加规则</button></div><small>候选由已应用且验证通过的 imported inventory、运行中 group 与内置 DIRECT/REJECT 组成：{candidates.join(', ')}</small></div>
-}
-
-function DeviceCard({ device, leases, groups, onChanged }: { device: CompiledDevice; leases: DevicesResponse['leases']; groups: ProxyGroup[]; onChanged: () => Promise<void> }) {
-  const lease = leases.find(item => item.mac.toLowerCase() === device.mac.toLowerCase() && item.ip === device.ipv4)
-  return <article className="device-card"><div className="source-head"><div><small>{device.profile}</small><h3>{device.id}</h3></div><span className={lease?.online ? 'pill ok' : 'pill'}>{lease?.online ? '身份就绪' : '等待精确租约'}</span></div><code>{device.ipv4}</code><small>{device.mac}</small><div className="slots">{Object.entries(device.groups).map(([slot, groupName]) => { const group = groups.find(item => item.name === groupName); return <label key={slot}><span>{slot}</span><select value={group?.selected ?? ''} disabled={!group} onChange={event => void api.selectDevicePolicy(device.id, slot, event.target.value).then(onChanged)}><option value="">不可用</option>{group?.options.map(option => <option key={option}>{option}</option>)}</select></label> })}</div></article>
+function matchChips(rule: PolicyRule) {
+  return [
+    ...(rule.match.domains ?? []).map(value => `域名 ${value}`),
+    ...(rule.match.ip_cidrs ?? []).map(value => `目标 ${value}`),
+    ...(rule.match.protocols ?? []).map(value => value.toUpperCase()),
+    ...(rule.match.ports ?? []).map(value => `端口 ${value}`),
+    ...(rule.match.rule_sets ?? []).map(value => `规则集 ${value}`),
+  ]
 }

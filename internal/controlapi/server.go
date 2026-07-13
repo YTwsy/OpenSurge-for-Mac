@@ -169,12 +169,14 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
 	mux.Handle("POST /api/v1/gateway/start", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("POST /api/v1/gateway/stop", s.auth(http.HandlerFunc(s.handleGatewayAction)))
+	mux.Handle("POST /api/v1/gateway/reload", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("GET /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
 	mux.Handle("POST /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
 	mux.Handle("GET /api/v1/recovery/card", s.auth(http.HandlerFunc(s.handleRecoveryCard)))
 	mux.Handle("POST /api/v1/recovery/discard", s.auth(http.HandlerFunc(s.handleRecoveryDiscard)))
 	mux.Handle("POST /api/v1/recovery/prepare", s.auth(http.HandlerFunc(s.handleRecoveryPrepare)))
 	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
+	mux.Handle("POST /api/v1/recovery/manual-finish", s.auth(http.HandlerFunc(s.handleManualRecoveryFinish)))
 	mux.Handle("POST /api/v1/recovery/client-validated", s.auth(http.HandlerFunc(s.handleClientValidated)))
 	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
 	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
@@ -539,29 +541,42 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/api/v1/gateway/")
-	if action != "start" && action != "stop" {
+	if action != "start" && action != "stop" && action != "reload" {
 		writeError(w, http.StatusNotFound, "not_found", "unknown gateway action")
 		return
+	}
+	id := r.Header.Get("Idempotency-Key")
+	if id != "" {
+		if existing, err := s.store.Operation(id); err == nil {
+			writeJSON(w, http.StatusAccepted, existing)
+			return
+		}
 	}
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
+	recovery, _ := s.store.Recovery()
 	if action == "start" && cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP {
-		recovery, _ := s.store.Recovery()
 		if recovery.Stage != RecoveryRouterDHCPDisabledConfirmed {
 			writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover requires persisted confirmation that router DHCP is disabled")
 			return
 		}
 	}
-	id := r.Header.Get("Idempotency-Key")
+	if action == "reload" {
+		status, statusErr := gateway.New(cfg).Status(r.Context())
+		if statusErr != nil || status.Gateway != "running" {
+			writeError(w, http.StatusConflict, "gateway_not_running", "reload requires a running gateway; use start instead")
+			return
+		}
+		if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated {
+			writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover can reload only while the gateway is active")
+			return
+		}
+	}
 	if id == "" {
 		id = randomToken(12)
-	}
-	if existing, err := s.store.Operation(id); err == nil {
-		writeJSON(w, http.StatusAccepted, existing)
-		return
 	}
 	now := time.Now().UTC()
 	op := Operation{SchemaVersion: SchemaVersion, ID: id, Kind: action, State: "running", CreatedAt: now, UpdatedAt: now}
@@ -569,11 +584,11 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "operation_failed", err.Error())
 		return
 	}
-	go s.runOperation(op, cfg.Gateway.Mode)
+	go s.runOperation(op, cfg.Gateway.Mode, recovery)
 	writeJSON(w, http.StatusAccepted, op)
 }
 
-func (s *Server) runOperation(op Operation, topology string) {
+func (s *Server) runOperation(op Operation, topology string, recoveryBefore RecoveryState) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	err := s.runner.Run(ctx, op.Kind, s.configPath)
@@ -581,9 +596,26 @@ func (s *Server) runOperation(op Operation, topology string) {
 	if err != nil {
 		op.State = "failed"
 		op.Error = err.Error()
+		if topology == config.GatewayModeSameWiFiDHCP && op.Kind == "reload" && !strings.Contains(err.Error(), "reload stop failed") {
+			cfg, cfgErr := config.LoadRuntime(s.configPath)
+			if cfgErr == nil {
+				_, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
+				restartFailed := strings.Contains(err.Error(), "reload start failed after gateway stop")
+				if stateErr == nil && (restartFailed || !exists) {
+					recoveryBefore.Topology = topology
+					recoveryBefore.Stage = RecoveryRouterDHCPDisabledConfirmed
+					recoveryBefore.Required = true
+					if recoveryBefore.RecoveryNotes != "" {
+						recoveryBefore.RecoveryNotes += "; "
+					}
+					recoveryBefore.RecoveryNotes += "gateway reload failed after services stopped; router DHCP remains disabled; retry start or recover the LAN"
+					_ = s.store.SaveRecovery(recoveryBefore)
+				}
+			}
+		}
 	} else {
 		op.State = "succeeded"
-		if topology == config.GatewayModeSameWiFiDHCP {
+		if topology == config.GatewayModeSameWiFiDHCP && op.Kind != "reload" {
 			recovery, _ := s.store.Recovery()
 			recovery.Topology = topology
 			if op.Kind == "start" {
@@ -902,6 +934,37 @@ func (s *Server) handleRouterRestored(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state, DHCPServers: servers})
 }
 
+func (s *Server) handleManualRecoveryFinish(w http.ResponseWriter, r *http.Request) {
+	request := ManualRecoveryFinishRequest{}
+	if err := decodeJSON(r, &request, 64<<10); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if !request.RouterDHCPRestoredConfirmed {
+		writeError(w, http.StatusUnprocessableEntity, "manual_confirmation_required", "confirm that router DHCP has been restored before using the manual recovery fallback")
+		return
+	}
+	state, _ := s.store.Recovery()
+	if state.Stage != RecoveryGatewayStopped || state.NetworkSnapshot == nil {
+		writeError(w, http.StatusConflict, "recovery_precondition", "stop OpenSurge before manually finishing network recovery")
+		return
+	}
+	if err := s.networkRunner.SetDHCP(r.Context(), s.configPath, state.NetworkSnapshot.NetworkService); err != nil {
+		writeError(w, http.StatusBadGateway, "restore_dhcp_failed", err.Error())
+		return
+	}
+	if state.RecoveryNotes != "" {
+		state.RecoveryNotes += "; "
+	}
+	state.RecoveryNotes += "router DHCP manually confirmed; OFFER evidence skipped; Mac restored to automatic DHCP"
+	state.Stage, state.Required = RecoveryComplete, false
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
 func (s *Server) handleRestoreDHCP(w http.ResponseWriter, r *http.Request) {
 	state, _ := s.store.Recovery()
 	if state.Stage != RecoveryRouterDHCPRestored || state.NetworkSnapshot == nil {
@@ -1135,7 +1198,17 @@ func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {
 	if leases == nil {
 		leases = []device.Client{}
 	}
-	response := DevicesResponse{SchemaVersion: SchemaVersion, DesiredDigest: desired.Digest, Devices: desired.Compiled.Devices, Leases: leases}
+	response := DevicesResponse{
+		SchemaVersion: SchemaVersion,
+		DesiredDigest: desired.Digest,
+		Drift:         len(desired.Policy.Devices) > 0,
+		Devices:       desired.Compiled.Devices,
+		DesiredDevices: append([]device.CompiledDevice(nil),
+			desired.Compiled.Devices...),
+		AppliedDevices: []device.CompiledDevice{},
+		ChangedDevices: []string{},
+		Leases:         leases,
+	}
 	if response.Devices == nil {
 		response.Devices = []device.CompiledDevice{}
 	}
@@ -1145,12 +1218,50 @@ func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {
 		response.Drift = state.DevicePolicyDigest != desired.Digest
 		if applied, err := device.LoadPolicyBundleSnapshot(paths.DevicePolicyApplied); err == nil {
 			response.Devices = applied.Compiled.Devices
+			response.AppliedDevices = append([]device.CompiledDevice(nil), applied.Compiled.Devices...)
+			response.ChangedDevices = changedDeviceIDs(desired.Policy, applied.Policy)
 			if response.Devices == nil {
 				response.Devices = []device.CompiledDevice{}
 			}
 		}
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func changedDeviceIDs(desired, applied device.PolicySet) []string {
+	appliedIDs := make(map[string]struct{}, len(applied.Devices))
+	for _, managed := range applied.Devices {
+		appliedIDs[managed.ID] = struct{}{}
+	}
+	changed := []string{}
+	for _, managed := range desired.Devices {
+		if _, exists := appliedIDs[managed.ID]; !exists {
+			continue
+		}
+		desiredProjection, desiredErr := compiledDeviceProjection(desired, managed.ID)
+		appliedProjection, appliedErr := compiledDeviceProjection(applied, managed.ID)
+		if desiredErr != nil || appliedErr != nil || desiredProjection != appliedProjection {
+			changed = append(changed, managed.ID)
+		}
+	}
+	return changed
+}
+
+func compiledDeviceProjection(policy device.PolicySet, id string) (string, error) {
+	managed := make([]device.ManagedDevice, 0, 1)
+	for _, candidate := range policy.Devices {
+		if candidate.ID == id {
+			managed = append(managed, candidate)
+			break
+		}
+	}
+	policy.Devices = managed
+	compiled, err := device.CompilePolicySet(policy)
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(compiled)
+	return string(payload), err
 }
 
 func (s *Server) handlePolicies(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE="$ROOT/apps/menubar"
 OUTPUT="$ROOT/bin/OpenSurge Menu Bar.app"
 SCRATCH="${OPENSURGE_SWIFT_SCRATCH:-/private/tmp/opensurge-menubar-release}"
+VERSION="${OPENSURGE_VERSION:-0.1.0}"
+BUILD_NUMBER="${OPENSURGE_BUILD_NUMBER:-1}"
+
+[[ "$VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]] || { echo "invalid OpenSurge app version: $VERSION" >&2; exit 1; }
+[[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "invalid OpenSurge app build number: $BUILD_NUMBER" >&2; exit 1; }
 
 SDKROOT="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX14.5.sdk}" \
 CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-/private/tmp/opensurge-swift-module-cache}" \
@@ -14,4 +19,6 @@ rm -rf "$OUTPUT"
 mkdir -p "$OUTPUT/Contents/MacOS" "$OUTPUT/Contents/Resources"
 cp "$SCRATCH/release/OpenSurgeMenuBar" "$OUTPUT/Contents/MacOS/OpenSurgeMenuBar"
 cp "$PACKAGE/Resources/Info.plist" "$OUTPUT/Contents/Info.plist"
-printf 'Built %s\n' "$OUTPUT"
+/usr/bin/plutil -replace CFBundleShortVersionString -string "$VERSION" "$OUTPUT/Contents/Info.plist"
+/usr/bin/plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$OUTPUT/Contents/Info.plist"
+printf 'Built %s version %s (%s)\n' "$OUTPUT" "$VERSION" "$BUILD_NUMBER"

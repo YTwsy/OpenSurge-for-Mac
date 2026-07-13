@@ -533,6 +533,19 @@ assert_applied_policy_drift() {
   grep -Fq '"ipv4": "192.168.50.101"' "$output"
 }
 
+assert_applied_policy_synced() {
+  local output=$1 desired applied
+  grep -Fq '"policy_source": "applied"' "$output"
+  grep -Fq '"drift": false' "$output"
+  desired="$(sed -n 's/.*"desired_digest": "\([^"]*\)".*/\1/p' "$output" | head -1)"
+  applied="$(sed -n 's/.*"applied_digest": "\([^"]*\)".*/\1/p' "$output" | head -1)"
+  [[ -n "$desired" && "$desired" == "$applied" ]] || {
+    echo "reload did not synchronize desired/applied device-policy digests" >&2
+    cat "$output" >&2
+    exit 1
+  }
+}
+
 mutate_device_policy_desired() {
   /usr/bin/perl -0pi -e 's/"default_policies": \["lab-controlled", "DIRECT"\]/"default_policies": ["DIRECT", "lab-controlled"]/' "$LAB_DEVICE_POLICY_FILE"
 }
@@ -717,12 +730,23 @@ run_device_policy_test() {
   grep -A 4 -F "\"name\": \"device/$client_one/default\"" "$STATE_DIR/device-policies-live.json" | grep -Fq '"selected": "DIRECT"'
   grep -A 4 -F "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-live.json" | grep -Fq '"selected": "lab-controlled"'
 
-  sudo -n "$BINARY" stop --config "$CONFIG"
-  gateway_started=0
   write_device_block_rule "$client_one" "$client_two" "$host"
-  write_config tun
-  sudo -n "$BINARY" start --config "$CONFIG"
-  gateway_started=1
+  "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-reload-drift.json"
+  assert_applied_policy_drift "$STATE_DIR/device-policies-reload-drift.json"
+  sudo -n "$BINARY" reload --config "$CONFIG" --format json >"$STATE_DIR/device-policy-reload.json"
+  grep -Fq '"command": "reload"' "$STATE_DIR/device-policy-reload.json"
+  grep -Fq '"ok": true' "$STATE_DIR/device-policy-reload.json"
+  "$BINARY" status --config "$CONFIG" --format json >"$STATE_DIR/device-policy-status-after-reload.json"
+  grep -Fq '"gateway": "running"' "$STATE_DIR/device-policy-status-after-reload.json"
+  "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-after-reload.json"
+  assert_applied_policy_synced "$STATE_DIR/device-policies-after-reload.json"
+  assert_device_policy_identity_ready "$STATE_DIR/device-policies-after-reload.json"
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct-after-reload.json"
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-controlled-after-reload.json"
+  "$BINARY" policies --config "$CONFIG" --format json >"$STATE_DIR/device-policies-live-after-reload.json"
+  grep -A 4 -F "\"name\": \"device/$client_one/default\"" "$STATE_DIR/device-policies-live-after-reload.json" | grep -Fq '"selected": "DIRECT"'
+  grep -A 4 -F "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-live-after-reload.json" | grep -Fq '"selected": "lab-controlled"'
 
   : >"$STATE_DIR/egress/proxy.log"
   if limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"; then

@@ -7,6 +7,7 @@ CONFIG="${OPENSURGE_CONFIG:-$ROOT/examples/config.example.yaml}"
 MIHOMO="${OPENSURGE_MIHOMO_BINARY:-$ROOT/bin/mihomo}"
 DNSMASQ="${OPENSURGE_DNSMASQ_BINARY:-$(command -v dnsmasq || true)}"
 VERSION="${OPENSURGE_VERSION:-0.1.0}"
+BUILD_NUMBER="${OPENSURGE_BUILD_NUMBER:-1}"
 ARTIFACTS="$ROOT/artifacts/gui-installer"
 PAYLOAD="$ARTIFACTS/payload"
 APP_ROOT="$PAYLOAD/Library/Application Support/OpenSurge"
@@ -14,6 +15,8 @@ GO_BIN="${GO_BIN:-$(command -v go || true)}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 PNPM_BIN="${PNPM_BIN:-$(command -v pnpm || true)}"
 export GOCACHE="${GOCACHE:-/private/tmp/opensurge-gui-build-cache}"
+export OPENSURGE_VERSION="$VERSION"
+export OPENSURGE_BUILD_NUMBER="$BUILD_NUMBER"
 
 [[ -x "$GO_BIN" ]] || { echo "Go toolchain not found; set GO_BIN" >&2; exit 1; }
 [[ -x "$NODE_BIN" ]] || { echo "Node.js not found; set NODE_BIN" >&2; exit 1; }

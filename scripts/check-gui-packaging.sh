@@ -40,5 +40,13 @@ grep -Fq -- '--scripts "$ROOT/packaging/pkg-scripts"' "$ROOT/scripts/build-gui-i
   echo "pkgbuild must include the packaging scripts directory" >&2
   exit 1
 }
+grep -Fq 'plutil -replace CFBundleShortVersionString' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build must stamp the package version into Info.plist" >&2
+  exit 1
+}
+grep -Fq 'plutil -replace CFBundleVersion' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build must stamp the build number into Info.plist" >&2
+  exit 1
+}
 
 echo "GUI packaging checks passed"

@@ -76,6 +76,9 @@ export type DevicesResponse = {
   drift: boolean
   applied: boolean
   devices: CompiledDevice[]
+  desired_devices?: CompiledDevice[]
+  applied_devices?: CompiledDevice[]
+  changed_devices?: string[]
   leases: Lease[]
 }
 

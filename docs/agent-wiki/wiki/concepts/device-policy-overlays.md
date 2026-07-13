@@ -18,6 +18,11 @@ mihomo YAML”。
   AND，同字段多个值为 OR。
 - `templates` 只复用默认候选与规则片段；项目不预置儿童、影音或第三方规则内容。
 
+Web GUI 的设备主路径不要求用户先理解这些复用对象：登记默认创建
+`<device-id>-policy` 私有 Profile。若设备仍引用共享 Profile 或继承 Template，第一次从
+设备规则区修改候选或规则时，会将解析后的有效内容复制为无 Template 的确定性私有
+Profile，只改变该设备引用；ID 冲突时追加数字后缀。`PolicySet` schema 保持不变。
+
 一个示例配置见 `docs/device-policy.zh-CN.md` 和
 `examples/device-policy.example.json`。设备 IPv4 必须唯一、在 gateway `/24` 内，
 且不能是网段、广播或网关地址。
@@ -50,8 +55,10 @@ imported profile 的排序。
 
 `make lab-test-tun-device-policy` 是数据面门槛：它使用两个 Lima VM，验证 `.101` 与
 `.102` 的固定租约、两台设备不同的 TUN 出口、互不影响的 selector 切换，以及设备级
-域名 `REJECT`。它还验证 applied snapshot/state digest、精确 lease identity、desired drift，
-以及 HTTP-only selector 选中时 UDP/443 的 fail-closed `REJECT`。它不需要、也不会为
+域名 `REJECT`。它还制造 desired drift 并调用真实 `omg reload`，验证网关继续运行、
+applied snapshot/state digest 与 desired 收敛、精确 lease identity 仍成立，随后复查两台
+设备 selector 仍相互隔离；同时验证 HTTP-only selector 选中时 UDP/443 的 fail-closed
+`REJECT`。它不需要、也不会为
 操作者写的每条 domain/protocol/template 规则重复运行 Lab。
 
 当前只支持 MAC 绑定 IPv4 DHCP 租约和 IPv4 `SRC-IP-CIDR` 身份；未提供 IPv6 设备

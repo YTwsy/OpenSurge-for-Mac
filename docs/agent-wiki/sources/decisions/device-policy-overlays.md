@@ -41,7 +41,17 @@ an immutable bundle, validates the final mihomo configuration before forwarding
 is enabled, and saves the bundle plus digest as runtime applied state. Running
 `devices` and `device-policy-select` consume that applied snapshot; a changed
 or invalid desired file is surfaced as drift/error rather than reinterpreting a
-running gateway. Policy updates are stop/start only in this MVP.
+running gateway. A healthy running gateway may apply a saved desired policy
+through `reload`: compile and validate the complete candidate in an isolated
+temporary runtime, including real `mihomo -t`, then perform one full stop/start
+with that same immutable config. Validation failure leaves the current gateway
+untouched. Reload is interrupting and is not a zero-downtime hot swap.
+
+The Web GUI creates a private `<device-id>-policy` profile for ordinary device
+registration. On the first main-path edit of a shared or template-derived
+profile, it copies the resolved effective content to a template-free private
+profile and changes only that device reference. This is a control-plane
+projection; it does not change the PolicySet schema.
 
 Mihomo may continue rule evaluation for UDP when a selected outbound lacks UDP
 support. Generated selector/default rules therefore add a same-condition
@@ -56,4 +66,6 @@ reservations, independent per-device selectors, or device overrides. That Lab
 gate proves two VM clients receive `.101` and `.102`, choose different TUN
 egress paths without affecting each other, enforce a device-specific domain
 `REJECT`, preserve exact applied DHCP identities, expose desired/applied drift,
-and fail close UDP/443 through an HTTP-only selected outbound.
+apply that drift through the real `omg reload`, reconverge the digests while the
+gateway returns to running, and fail close UDP/443 through an HTTP-only selected
+outbound.

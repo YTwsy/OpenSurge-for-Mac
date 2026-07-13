@@ -269,9 +269,10 @@ make lab-test-tun-device-policy
 `device/<id>/default` selector 可以独立选择不同 TUN egress，随后验证设备专属域名
 `REJECT`。它还断言 applied policy snapshot/state digest、`omg devices` 的
 `policy_identity_ready`/`lease_match` 对真实租约成立、desired 文件修改后的 drift，
-以及设备默认 selector 指向 HTTP-only outbound 时 UDP/443 命中 `REJECT` fallback
-而非 fall through 到全局 `MATCH,DIRECT`。它证明设备身份、默认出口、UDP fail-closed
-和覆盖规则的真实 LAN/TUN 数据路径。
+调用真实 `omg reload` 后网关回到 running 且 desired/applied digest 收敛，并再次检查
+selector 隔离；同时要求设备默认 selector 指向 HTTP-only outbound 时 UDP/443 命中
+`REJECT` fallback 而非 fall through 到全局 `MATCH,DIRECT`。它证明设备身份、默认出口、
+安全 reload、UDP fail-closed 和覆盖规则的真实 LAN/TUN 数据路径。
 
 大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
 `make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。当前设备身份

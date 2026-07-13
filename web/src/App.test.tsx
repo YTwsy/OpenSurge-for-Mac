@@ -35,6 +35,7 @@ vi.mock('./api', () => ({
     applyStatic: vi.fn(),
     probeDHCP: vi.fn(),
     confirmRouterRestored: vi.fn(),
+    finishRecoveryManually: vi.fn(),
     restoreMacDHCP: vi.fn(),
     validateClient: vi.fn(),
     sources: vi.fn(async () => ({ revision: 'config-revision', sources: [] })),
@@ -45,6 +46,7 @@ vi.mock('./api', () => ({
     devices: vi.fn(async () => ({ devices: [], leases: [], drift: false, applied: false })),
     deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0 }, unmatched_connections: 0 })),
     policies: vi.fn(async () => ({ groups: [] })),
+    selectPolicy: vi.fn(),
     devicePolicy: vi.fn(async () => null),
     saveDevicePolicy: vi.fn(),
     selectDevicePolicy: vi.fn(),
@@ -177,6 +179,31 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByText(/未能自动获取路由器地址/).textContent).toContain("networksetup -getinfo 'Wi-Fi'")
   })
 
+  it('does not let takeover plan blockers lock post-stop recovery actions', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'gateway_stopped_waiting_router_dhcp' } })
+    vi.mocked(api.gatewayPlan).mockResolvedValue({
+      schema_version: 1, revision: 'config-revision', topology: 'same_wifi_dhcp',
+      snapshot: { network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.103', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: [], ipv6_default: false },
+      protected_ipv4: [], dhcp_servers: [], warnings: [], blockers: ['Mac IPv4 192.168.1.103 differs from configured gateway.lan_ip 192.168.1.20'],
+    })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    expect((await screen.findByRole('button', { name: '路由器 DHCP 已恢复，执行 OFFER 探测' })).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: '跳过 OFFER 探测并恢复 Mac 自动 DHCP' }).hasAttribute('disabled')).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: '路由器 DHCP 已恢复，执行 OFFER 探测' }))
+    expect(api.confirmRouterRestored).toHaveBeenCalledOnce()
+  })
+
+  it('manually finishes post-stop recovery only after explicit confirmation', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'gateway_stopped_waiting_router_dhcp' } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(await screen.findByRole('button', { name: '跳过 OFFER 探测并恢复 Mac 自动 DHCP' }))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('如果路由器 DHCP 实际未恢复，Mac 可能断网'))
+    expect(api.finishRecoveryManually).toHaveBeenCalledOnce()
+  })
+
   it('does not immediately re-run IPv4 discovery after restoring Mac DHCP', async () => {
     vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'router_dhcp_restored' } })
     render(<App />)
@@ -251,6 +278,7 @@ describe('OpenSurge app shell', () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '设备' }))
+    await userEvent.click(await screen.findByRole('button', { name: /高级 \/ 复用机制/ }))
     await userEvent.type(await screen.findByLabelText('Template ID'), 'home')
     await userEvent.click(screen.getByRole('button', { name: '添加模板' }))
     expect(screen.getByText('template: home')).toBeTruthy()
@@ -275,9 +303,35 @@ describe('OpenSurge app shell', () => {
     expect((screen.getByLabelText('Device ID') as HTMLInputElement).value).toBe('pixel-10')
     expect((screen.getByLabelText('设备 MAC') as HTMLInputElement).value).toBe(lease.mac)
     expect((screen.getByLabelText('固定 IPv4') as HTMLInputElement).value).toBe(lease.ip)
-    expect((screen.getByLabelText('设备 Profile') as HTMLSelectElement).value).toBe('home')
     await userEvent.click(screen.getByRole('button', { name: '登记或更新设备' }))
-    await userEvent.click(screen.getByRole('button', { name: '保存 Desired Policy' }))
-    expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({ devices: [{ id: 'pixel-10', mac: lease.mac, ipv4: lease.ip, profile: 'home' }] }), 'policy-r')
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({
+      devices: [{ id: 'pixel-10', mac: lease.mac.toLowerCase(), ipv4: lease.ip, profile: 'pixel-10-policy' }],
+      profiles: expect.arrayContaining([expect.objectContaining({ id: 'pixel-10-policy', default_policies: ['DIRECT'] })]),
+    }), 'policy-r')
+  })
+
+  it('protects unsaved device edits before sidebar navigation', async () => {
+    vi.mocked(api.config).mockResolvedValue({
+      schema_version: 1, revision: 'config-revision',
+      gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      device_policy: { enabled: true, protected_ipv4: [] },
+    })
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '设备' }))
+    await userEvent.click(await screen.findByRole('button', { name: /高级 \/ 复用机制/ }))
+    await userEvent.type(await screen.findByLabelText('Template ID'), 'draft-template')
+    await userEvent.click(screen.getByRole('button', { name: '添加模板' }))
+    await userEvent.click(screen.getByRole('button', { name: '策略' }))
+    expect(window.location.pathname).toBe('/devices')
+    expect(screen.getByText('template: draft-template')).toBeTruthy()
+    confirm.mockReturnValue(true)
+    await userEvent.click(screen.getByRole('button', { name: '策略' }))
+    expect(window.location.pathname).toBe('/policies')
   })
 })
