@@ -38,6 +38,9 @@ mkdir -p "$ROOT/bin"
 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-install-config" ./cmd/opensurge-install-config
 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-network" ./cmd/opensurge-network
 "$ROOT/bin/opensurge-install-config" --source "$CONFIG" --validate-package-source
+if [[ -z "${OPENSURGE_APP_ARCH:-}" ]]; then
+  export OPENSURGE_APP_ARCH="$(/usr/bin/lipo -archs "$ROOT/bin/omg")"
+fi
 "$ROOT/scripts/build-menubar-app.sh"
 
 rm -rf "$ARTIFACTS"
@@ -54,6 +57,21 @@ install -m 0644 "$ROOT/packaging/launchd/com.opensurge.control.plist" "$APP_ROOT
 install -m 0644 "$ROOT/packaging/launchd/com.opensurge.helper.plist" "$APP_ROOT/share/com.opensurge.helper.plist"
 ditto --norsrc --noextattr "$ROOT/bin/OpenSurge Menu Bar.app" "$PAYLOAD/Applications/OpenSurge Menu Bar.app"
 xattr -cr "$PAYLOAD"
+
+for executable in \
+  "$PAYLOAD/Applications/OpenSurge Menu Bar.app/Contents/MacOS/OpenSurgeMenuBar" \
+  "$APP_ROOT/bin/omg" \
+  "$APP_ROOT/bin/opensurge-install-config" \
+  "$APP_ROOT/bin/opensurge-network" \
+  "$APP_ROOT/share/opensurge-control" \
+  "$PAYLOAD/Library/PrivilegedHelperTools/com.opensurge.helper" \
+  "$APP_ROOT/bin/mihomo" \
+  "$APP_ROOT/bin/dnsmasq"; do
+  /usr/bin/lipo "$executable" -verify_arch "$OPENSURGE_APP_ARCH" || {
+    echo "packaged executable does not support $OPENSURGE_APP_ARCH: $executable" >&2
+    exit 1
+  }
+done
 
 if [[ -n "${OPENSURGE_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Library/PrivilegedHelperTools/com.opensurge.helper"

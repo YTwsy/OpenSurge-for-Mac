@@ -48,5 +48,13 @@ grep -Fq 'plutil -replace CFBundleVersion' "$ROOT/scripts/build-menubar-app.sh" 
   echo "menu bar build must stamp the build number into Info.plist" >&2
   exit 1
 }
+grep -Fq -- '--arch "$ARCH"' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build must use the package architecture explicitly" >&2
+  exit 1
+}
+grep -Fq 'lipo "$executable" -verify_arch "$OPENSURGE_APP_ARCH"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "GUI package must verify bundled executable architectures" >&2
+  exit 1
+}
 
 echo "GUI packaging checks passed"
