@@ -174,11 +174,16 @@ func (m Manager) Start(_ context.Context) error {
 	if err != nil {
 		return err
 	}
+	profileDigest, err := config.MihomoProfileDigest(m.cfg)
+	if err != nil {
+		return fmt.Errorf("digest imported mihomo profile: %w", err)
+	}
 
 	state := runtime.State{
 		StartedAt:          deps.now(),
 		IPForwardingBefore: ipForwardingBefore,
 		PFEnabledBefore:    pfEnabledBefore,
+		ProfileDigest:      profileDigest,
 	}
 	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
 		state.DevicePolicyDigest = bundle.Digest

@@ -536,9 +536,20 @@ func TestSourceRefreshPreservesAppliedVersionAndBuildsInventoryDiff(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	sources, _ := server.store.Sources()
-	sources[0].Applied = true
-	if err := server.store.SaveSources(sources); err != nil {
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = first.SnapshotPath
+	if err := os.WriteFile(server.configPath, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := os.MkdirAll(paths.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{ProfileDigest: first.Digest, StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	second, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("proxies:\n  - {name: new, type: direct}\nproxy-groups:\n  - {name: Main, type: select, proxies: [DIRECT]}\nrules:\n  - DOMAIN,example.com,DIRECT\n  - MATCH,DIRECT\n"))
@@ -1044,13 +1055,16 @@ func waitForStoredOperation(t *testing.T, server *Server, id, state string) Oper
 	return Operation{}
 }
 
-type fakeConfigurationRunner struct{ profileErr error }
+type fakeConfigurationRunner struct {
+	profileErr      error
+	profileReloaded bool
+}
 
-func (f fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte) (string, error) {
+func (f fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte) (ProfileApplyResult, error) {
 	if f.profileErr != nil {
-		return "", f.profileErr
+		return ProfileApplyResult{}, f.profileErr
 	}
-	return revision + "-applied", nil
+	return ProfileApplyResult{Revision: revision + "-applied", Reloaded: f.profileReloaded}, nil
 }
 
 func (fakeConfigurationRunner) ApplyDevicePolicy(_ context.Context, _, _ string, payload []byte) (string, error) {

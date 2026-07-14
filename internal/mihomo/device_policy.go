@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v3"
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 )
@@ -200,7 +201,41 @@ func appendYAMLBlock(existing, header, items string) string {
 	if strings.TrimSpace(existing) == "" {
 		return header + "\n" + strings.TrimRight(items, "\n")
 	}
+	items = reindentYAMLBlockItems(items, importedYAMLBlockItemIndent(existing))
 	return strings.TrimRight(existing, "\n") + "\n" + strings.TrimRight(items, "\n")
+}
+
+// Imported sections are preserved as source text, including their indentation.
+// Generated items therefore need to match the section's existing top-level item
+// indentation instead of assuming the two spaces used by OpenSurge fixtures.
+func importedYAMLBlockItemIndent(block string) int {
+	lines := strings.Split(strings.TrimRight(block, "\n"), "\n")
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		if indent >= 2 {
+			return indent
+		}
+	}
+	return 2
+}
+
+func reindentYAMLBlockItems(items string, indent int) string {
+	const generatedIndent = 2
+	if indent <= generatedIndent {
+		return items
+	}
+	prefix := strings.Repeat(" ", indent-generatedIndent)
+	lines := strings.Split(items, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			lines[i] = prefix + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderSelectorGroups(groups []device.SelectorGroup) string {
@@ -283,12 +318,13 @@ func renderRules(existing string, preRules, defaultRules []string) (string, erro
 
 	var out strings.Builder
 	out.WriteString("rules:\n")
-	writeRuleLines(&out, preRules)
+	ruleIndent := importedYAMLBlockItemIndent(existing)
+	writeRuleLinesWithIndent(&out, preRules, ruleIndent)
 	for _, line := range before {
 		out.WriteString(line)
 		out.WriteString("\n")
 	}
-	writeRuleLines(&out, defaultRules)
+	writeRuleLinesWithIndent(&out, defaultRules, ruleIndent)
 	for _, line := range terminal {
 		out.WriteString(line)
 		out.WriteString("\n")
@@ -297,8 +333,13 @@ func renderRules(existing string, preRules, defaultRules []string) (string, erro
 }
 
 func writeRuleLines(out *strings.Builder, rules []string) {
+	writeRuleLinesWithIndent(out, rules, 2)
+}
+
+func writeRuleLinesWithIndent(out *strings.Builder, rules []string, indent int) {
+	prefix := strings.Repeat(" ", indent) + "- "
 	for _, rule := range rules {
-		out.WriteString("  - ")
+		out.WriteString(prefix)
 		out.WriteString(rule)
 		out.WriteString("\n")
 	}
@@ -310,6 +351,10 @@ func isTerminalMatch(line string) bool {
 		return false
 	}
 	value := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
+	var decoded string
+	if err := yaml.Unmarshal([]byte(value), &decoded); err == nil {
+		value = decoded
+	}
 	value = strings.ToUpper(value)
 	return strings.HasPrefix(value, "MATCH,") || value == "MATCH"
 }

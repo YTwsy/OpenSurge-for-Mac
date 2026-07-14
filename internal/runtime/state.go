@@ -15,6 +15,7 @@ type State struct {
 	PFEnabledBefore    bool      `json:"pf_enabled_before"`
 	PFAnchorLoaded     bool      `json:"pf_anchor_loaded"`
 	DevicePolicyDigest string    `json:"device_policy_digest,omitempty"`
+	ProfileDigest      string    `json:"profile_digest,omitempty"`
 	StartedAt          time.Time `json:"started_at"`
 }
 

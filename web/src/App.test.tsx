@@ -61,6 +61,7 @@ import { App } from './App'
 const overview: Overview = {
   schema_version: 1,
   revision: 'config-revision',
+  drift: false,
   warnings: [],
   status: {
     gateway: 'stopped', interface: 'en0', lan_ip: '192.168.1.20', dhcp: 'stopped',
@@ -264,6 +265,27 @@ describe('OpenSurge app shell', () => {
     await userEvent.type(screen.getByLabelText('HTTPS 订阅 URL'), 'https://example.com/profile')
     await userEvent.click(screen.getByRole('button', { name: '导入为草稿' }))
     expect(api.importURL).toHaveBeenCalledWith('Home', 'https://example.com/profile')
+  })
+
+  it('confirms and applies a source through a running gateway reload', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true, status: { ...overview.status, gateway: 'running', dhcp: 'running', mihomo: 'running', pf_anchor: 'loaded', forwarding: 'enabled' } })
+    const source = {
+      id: 'home', name: 'Home', kind: 'mihomo_profile', origin: 'file:home.yaml', digest: 'next', size: 100,
+      valid: true, validation: 'valid', desired: false, applied: false, versions: [], imported_at: '2026-07-15T00:00:00Z',
+      diff: { proxies_added: [], proxies_removed: [], groups_added: [], groups_removed: [], proxy_providers_added: [], proxy_providers_removed: [], rule_providers_added: [], rule_providers_removed: [], rule_count_delta: 0 },
+      inventory: { proxies: ['edge'], proxy_providers: [], proxy_groups: ['Main'], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
+    }
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
+    vi.mocked(api.applySource).mockResolvedValue({ ...source, desired: true, applied: true })
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+    await userEvent.click(await screen.findByRole('button', { name: '校验、应用并重载' }))
+    const dialog = screen.getByRole('dialog', { name: '应用订阅并重载网关？' })
+    expect(within(dialog).getByText(/只有重载成功后才会标记为运行版本/)).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '确认应用并重载' }))
+    await waitFor(() => expect(api.applySource).toHaveBeenCalledWith('home', 'config-revision'))
+    expect(await screen.findByText('订阅已应用，网关已使用新的运行配置。')).toBeTruthy()
   })
 
   it('edits templates in the structured device policy editor', async () => {

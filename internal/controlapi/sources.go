@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/runtime"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -169,11 +172,13 @@ func (s *Server) importReader(name, kind, origin string, reader io.Reader) (Sour
 	if loadErr != nil {
 		return Source{}, loadErr
 	}
+	sources = s.decorateSourceStates(sources)
 	for i := range sources {
 		if sources[i].ID == source.ID {
 			previous := sources[i]
 			if previous.Digest == source.Digest {
 				source.Versions = append([]SourceVersion{}, previous.Versions...)
+				source.Desired = previous.Desired
 				source.Applied = previous.Applied
 				source.Diff.PreviousDigest = previous.Digest
 			} else {
@@ -189,7 +194,35 @@ func (s *Server) importReader(name, kind, origin string, reader io.Reader) (Sour
 }
 
 func sourceVersion(source Source) SourceVersion {
-	return SourceVersion{Digest: source.Digest, Size: source.Size, Valid: source.Valid, Validation: source.Validation, Inventory: source.Inventory, ImportedAt: source.ImportedAt, Applied: source.Applied, SnapshotPath: source.SnapshotPath}
+	return SourceVersion{Digest: source.Digest, Size: source.Size, Valid: source.Valid, Validation: source.Validation, Inventory: source.Inventory, ImportedAt: source.ImportedAt, Desired: source.Desired, Applied: source.Applied, SnapshotPath: source.SnapshotPath}
+}
+
+func (s *Server) decorateSourceStates(sources []Source) []Source {
+	desired, applied := s.profileDigests()
+	result := append([]Source(nil), sources...)
+	for i := range result {
+		result[i].Versions = append([]SourceVersion(nil), result[i].Versions...)
+		result[i].Desired = desired != "" && result[i].Digest == desired
+		result[i].Applied = applied != "" && result[i].Digest == applied
+		for j := range result[i].Versions {
+			result[i].Versions[j].Desired = desired != "" && result[i].Versions[j].Digest == desired
+			result[i].Versions[j].Applied = applied != "" && result[i].Versions[j].Digest == applied
+		}
+	}
+	return result
+}
+
+func (s *Server) profileDigests() (string, string) {
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		return "", ""
+	}
+	desired, _ := config.MihomoProfileDigest(cfg)
+	applied := ""
+	if state, exists, _ := runtime.LoadState(runtime.NewPaths(cfg).StateFile); exists {
+		applied = state.ProfileDigest
+	}
+	return desired, applied
 }
 
 func emptySourceDiff() SourceDiff {

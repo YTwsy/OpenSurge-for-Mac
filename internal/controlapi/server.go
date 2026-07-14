@@ -432,13 +432,19 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if cfg.DevicePolicy.Bundle != nil {
 		desiredDigest = cfg.DevicePolicy.Bundle.Digest
 	}
+	desiredProfileDigest, profileDigestErr := config.MihomoProfileDigest(cfg)
 	appliedDigest := ""
+	appliedProfileDigest := ""
 	if state, exists, _ := runtime.LoadState(paths.StateFile); exists {
 		appliedDigest = state.DevicePolicyDigest
+		appliedProfileDigest = state.ProfileDigest
 	}
 	warnings := []string{}
 	if desiredErr != nil {
 		warnings = append(warnings, "desired configuration: "+desiredErr.Error())
+	}
+	if profileDigestErr != nil {
+		warnings = append(warnings, "desired imported profile: "+profileDigestErr.Error())
 	}
 	groups, groupErr := mihomo.FetchProxyGroups(ctx, cfg)
 	if groups == nil {
@@ -458,19 +464,22 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		warnings = append(warnings, "mihomo providers unavailable: "+providerErr.Error())
 	}
 	return Overview{
-		SchemaVersion: SchemaVersion,
-		Revision:      fileDigest(s.configPath),
-		DesiredDigest: desiredDigest,
-		AppliedDigest: appliedDigest,
-		Warnings:      warnings,
-		Status:        status,
-		StatusError:   errorString(statusErr),
-		Doctor:        report.Checks,
-		DoctorHealthy: doctorHealthyForControl(report.Checks),
-		Leases:        leases,
-		Policies:      groups,
-		Providers:     providers,
-		Recovery:      recovery,
+		SchemaVersion:        SchemaVersion,
+		Revision:             fileDigest(s.configPath),
+		DesiredDigest:        desiredDigest,
+		AppliedDigest:        appliedDigest,
+		DesiredProfileDigest: desiredProfileDigest,
+		AppliedProfileDigest: appliedProfileDigest,
+		Drift:                desiredDigest != appliedDigest || desiredProfileDigest != appliedProfileDigest,
+		Warnings:             warnings,
+		Status:               status,
+		StatusError:          errorString(statusErr),
+		Doctor:               report.Checks,
+		DoctorHealthy:        doctorHealthyForControl(report.Checks),
+		Leases:               leases,
+		Policies:             groups,
+		Providers:            providers,
+		Recovery:             recovery,
 	}, nil
 }
 
@@ -481,12 +490,11 @@ func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg, _ := config.LoadRuntime(s.configPath)
-	drift := overview.DesiredDigest != "" && overview.AppliedDigest != "" && overview.DesiredDigest != overview.AppliedDigest
 	writeJSON(w, http.StatusOK, MenuBarStatus{
 		SchemaVersion: SchemaVersion, Revision: overview.Revision, Gateway: overview.Status.Gateway,
 		Topology: cfg.Gateway.Mode, LANIP: overview.Status.LANIP, DHCP: overview.Status.DHCP,
 		Mihomo: overview.Status.Mihomo, PFAnchor: overview.Status.PFAnchor, Forwarding: overview.Status.Forwarding,
-		ClientCount: overview.Status.ClientCount, Drift: drift, DoctorHealthy: overview.DoctorHealthy,
+		ClientCount: overview.Status.ClientCount, Drift: overview.Drift, DoctorHealthy: overview.DoctorHealthy,
 		Recovery: overview.Recovery.Required, RecoveryStage: overview.Recovery.Stage, Warnings: overview.Warnings,
 	})
 }
@@ -596,22 +604,8 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 	if err != nil {
 		op.State = "failed"
 		op.Error = err.Error()
-		if topology == config.GatewayModeSameWiFiDHCP && op.Kind == "reload" && !strings.Contains(err.Error(), "reload stop failed") {
-			cfg, cfgErr := config.LoadRuntime(s.configPath)
-			if cfgErr == nil {
-				_, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
-				restartFailed := strings.Contains(err.Error(), "reload start failed after gateway stop")
-				if stateErr == nil && (restartFailed || !exists) {
-					recoveryBefore.Topology = topology
-					recoveryBefore.Stage = RecoveryRouterDHCPDisabledConfirmed
-					recoveryBefore.Required = true
-					if recoveryBefore.RecoveryNotes != "" {
-						recoveryBefore.RecoveryNotes += "; "
-					}
-					recoveryBefore.RecoveryNotes += "gateway reload failed after services stopped; router DHCP remains disabled; retry start or recover the LAN"
-					_ = s.store.SaveRecovery(recoveryBefore)
-				}
-			}
+		if op.Kind == "reload" {
+			s.recordReloadRecoveryFailure(topology, recoveryBefore, err)
 		}
 	} else {
 		op.State = "succeeded"
@@ -628,6 +622,29 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 		}
 	}
 	_ = s.store.SaveOperation(op)
+}
+
+func (s *Server) recordReloadRecoveryFailure(topology string, recoveryBefore RecoveryState, reloadErr error) {
+	if topology != config.GatewayModeSameWiFiDHCP || strings.Contains(reloadErr.Error(), "reload stop failed") {
+		return
+	}
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		return
+	}
+	_, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
+	restartFailed := strings.Contains(reloadErr.Error(), "reload start failed after gateway stop")
+	if stateErr != nil || (!restartFailed && exists) {
+		return
+	}
+	recoveryBefore.Topology = topology
+	recoveryBefore.Stage = RecoveryRouterDHCPDisabledConfirmed
+	recoveryBefore.Required = true
+	if recoveryBefore.RecoveryNotes != "" {
+		recoveryBefore.RecoveryNotes += "; "
+	}
+	recoveryBefore.RecoveryNotes += "gateway reload failed after services stopped; router DHCP remains disabled; retry start or recover the LAN"
+	_ = s.store.SaveRecovery(recoveryBefore)
 }
 
 func (s *Server) handleOperation(w http.ResponseWriter, r *http.Request) {
@@ -1019,6 +1036,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "sources_failed", err.Error())
 			return
 		}
+		sources = s.decorateSourceStates(sources)
 		revision := fileDigest(s.configPath)
 		w.Header().Set("ETag", `"`+revision+`"`)
 		writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "revision": revision, "sources": publicSources(sources)})
@@ -1082,8 +1100,20 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "source_not_applicable", "source must be a structurally valid mihomo profile")
 		return
 	}
-	if _, err := config.Load(s.configPath); err != nil {
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	paths := runtime.NewPaths(cfg)
+	_, gatewayActive, stateErr := runtime.LoadState(paths.StateFile)
+	if stateErr != nil {
+		writeError(w, http.StatusInternalServerError, "runtime_state_invalid", stateErr.Error())
+		return
+	}
+	recovery, _ := s.store.Recovery()
+	if gatewayActive && cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated {
+		writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover can apply a profile only while the gateway is active")
 		return
 	}
 	match := strings.Trim(r.Header.Get("If-Match"), `"`)
@@ -1101,30 +1131,60 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 	// geodata cache. Validating here as the UI user would download the same
 	// assets into every source snapshot directory, then validate a second time
 	// in the helper before applying.
-	newRevision, err := s.configRunner.ApplyProfile(r.Context(), s.configPath, match, payload)
+	var operation *Operation
+	if gatewayActive {
+		now := time.Now().UTC()
+		op := Operation{SchemaVersion: SchemaVersion, ID: randomToken(12), Kind: "reload", State: "running", CreatedAt: now, UpdatedAt: now}
+		if err := s.store.SaveOperation(op); err != nil {
+			writeError(w, http.StatusInternalServerError, "operation_failed", err.Error())
+			return
+		}
+		operation = &op
+	}
+	result, err := s.configRunner.ApplyProfile(r.Context(), s.configPath, match, payload)
+	if err == nil && gatewayActive && !result.Reloaded {
+		err = fmt.Errorf("running gateway did not reload the selected profile")
+	}
+	if operation != nil {
+		operation.UpdatedAt = time.Now().UTC()
+		if err != nil {
+			operation.State = "failed"
+			operation.Error = err.Error()
+		} else {
+			operation.State = "succeeded"
+		}
+		_ = s.store.SaveOperation(*operation)
+	}
 	if err != nil {
+		if gatewayActive {
+			s.recordReloadRecoveryFailure(cfg.Gateway.Mode, recovery, err)
+		}
 		status := http.StatusInternalServerError
 		code := "config_apply_failed"
 		if strings.Contains(err.Error(), "revision conflict") {
 			status, code = http.StatusConflict, "revision_conflict"
 		} else if strings.Contains(err.Error(), "mihomo config validation failed") {
 			status, code = http.StatusUnprocessableEntity, "mihomo_validation_failed"
+		} else if strings.Contains(err.Error(), "apply profile reload failed") {
+			status, code = http.StatusConflict, "profile_reload_failed"
+		} else if strings.Contains(err.Error(), "did not reload the selected profile") {
+			status, code = http.StatusInternalServerError, "profile_reload_incomplete"
 		}
 		writeError(w, status, code, err.Error())
 		return
 	}
 	sources, _ := s.store.Sources()
-	for i := range sources {
-		sources[i].Applied = sources[i].ID == source.ID
-		for version := range sources[i].Versions {
-			sources[i].Versions[version].Applied = false
+	sources = s.decorateSourceStates(sources)
+	_ = s.store.SaveSources(sources)
+	for _, candidate := range sources {
+		if candidate.ID == source.ID {
+			source = candidate
+			break
 		}
 	}
-	_ = s.store.SaveSources(sources)
-	source.Applied = true
 	source.SnapshotPath = ""
 	source.FetchURL = ""
-	w.Header().Set("ETag", `"`+newRevision+`"`)
+	w.Header().Set("ETag", `"`+result.Revision+`"`)
 	writeJSON(w, http.StatusOK, source)
 }
 
@@ -1459,11 +1519,14 @@ func (s *Server) stateEvent(ctx context.Context) (StateEvent, error) {
 		}
 	}
 	applied := ""
+	desiredProfile, _ := config.MihomoProfileDigest(cfg)
+	appliedProfile := ""
 	if state, exists, _ := runtime.LoadState(paths.StateFile); exists {
 		applied = state.DevicePolicyDigest
+		appliedProfile = state.ProfileDigest
 	}
 	recovery, _ := s.store.Recovery()
-	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, Drift: applied != "" && desired != applied, Recovery: recovery}, nil
+	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, DesiredProfileDigest: desiredProfile, AppliedProfileDigest: appliedProfile, Drift: desired != applied || desiredProfile != appliedProfile, Recovery: recovery}, nil
 }
 
 func (s *Server) sourceByID(id string) (Source, error) {

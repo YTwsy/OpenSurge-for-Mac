@@ -58,9 +58,16 @@ device-policy snapshot，避免把仍运行或 degraded 的网关误记为已完
 冲突检查和真实 `mihomo -t`。这一步不写 applied snapshot，也不改变 host network。
 
 全部通过后才调用完整 `stop`，再用已经通过校验的同一份 immutable config 调用完整
-`start`。成功会自然写入新的 applied snapshot 与 digest。预校验失败保持现有运行态；
+`start`。成功会自然写入新的 applied device-policy snapshot/digest；若使用 imported
+profile，也把 profile 内容 digest 写进 runtime state，作为运行版本的唯一依据。预校验失败保持现有运行态；
 stop 失败保留 state；stop 已成功但 start 失败时网关保持 stopped，由 Control API 根据
 拓扑进入明确的重试/恢复路径。Reload 不承诺零中断，也不做 mihomo/dnsmasq 热替换。
+
+运行中应用 imported profile 额外包一层 config 事务：先保留旧 config，写入并验证新
+desired config，再调用上述 reload。失败时恢复旧 config；如果 reload 已完成 stop 且
+runtime state 不存在，则尝试用旧 config 重新 start。只有新 start 成功、runtime state
+记录新 profile digest 且 `runtime/mihomo.yaml` 已重新生成后，控制面才可把来源标记为
+applied。网关停止时应用 profile 只更新 desired，留待下次正常 start。
 
 ## 产品不变量
 

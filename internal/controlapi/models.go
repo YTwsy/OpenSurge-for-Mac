@@ -24,19 +24,22 @@ type ErrorResponse struct {
 }
 
 type Overview struct {
-	SchemaVersion int                      `json:"schema_version"`
-	Revision      string                   `json:"revision"`
-	DesiredDigest string                   `json:"desired_digest,omitempty"`
-	AppliedDigest string                   `json:"applied_digest,omitempty"`
-	Warnings      []string                 `json:"warnings"`
-	Status        gateway.Status           `json:"status"`
-	StatusError   string                   `json:"status_error,omitempty"`
-	Doctor        []doctor.Check           `json:"doctor"`
-	DoctorHealthy bool                     `json:"doctor_healthy"`
-	Leases        []device.Client          `json:"leases"`
-	Policies      []mihomo.ProxyGroup      `json:"policies"`
-	Providers     mihomo.ProvidersSnapshot `json:"providers"`
-	Recovery      RecoveryState            `json:"recovery"`
+	SchemaVersion        int                      `json:"schema_version"`
+	Revision             string                   `json:"revision"`
+	DesiredDigest        string                   `json:"desired_digest,omitempty"`
+	AppliedDigest        string                   `json:"applied_digest,omitempty"`
+	DesiredProfileDigest string                   `json:"desired_profile_digest,omitempty"`
+	AppliedProfileDigest string                   `json:"applied_profile_digest,omitempty"`
+	Drift                bool                     `json:"drift"`
+	Warnings             []string                 `json:"warnings"`
+	Status               gateway.Status           `json:"status"`
+	StatusError          string                   `json:"status_error,omitempty"`
+	Doctor               []doctor.Check           `json:"doctor"`
+	DoctorHealthy        bool                     `json:"doctor_healthy"`
+	Leases               []device.Client          `json:"leases"`
+	Policies             []mihomo.ProxyGroup      `json:"policies"`
+	Providers            mihomo.ProvidersSnapshot `json:"providers"`
+	Recovery             RecoveryState            `json:"recovery"`
 }
 
 type MenuBarStatus struct {
@@ -188,6 +191,7 @@ type Source struct {
 	Validation    string          `json:"validation,omitempty"`
 	Inventory     Inventory       `json:"inventory"`
 	ImportedAt    time.Time       `json:"imported_at"`
+	Desired       bool            `json:"desired"`
 	Applied       bool            `json:"applied"`
 	Versions      []SourceVersion `json:"versions"`
 	Diff          SourceDiff      `json:"diff"`
@@ -200,6 +204,7 @@ type SourceVersion struct {
 	Validation   string    `json:"validation,omitempty"`
 	Inventory    Inventory `json:"inventory"`
 	ImportedAt   time.Time `json:"imported_at"`
+	Desired      bool      `json:"desired"`
 	Applied      bool      `json:"applied"`
 	SnapshotPath string    `json:"snapshot_path,omitempty"`
 }
@@ -295,14 +300,16 @@ type BootstrapResponse struct {
 }
 
 type StateEvent struct {
-	SchemaVersion int           `json:"schema_version"`
-	Revision      string        `json:"revision"`
-	Gateway       string        `json:"gateway"`
-	DesiredDigest string        `json:"desired_digest,omitempty"`
-	AppliedDigest string        `json:"applied_digest,omitempty"`
-	Drift         bool          `json:"drift"`
-	Recovery      RecoveryState `json:"recovery"`
-	At            time.Time     `json:"at"`
+	SchemaVersion        int           `json:"schema_version"`
+	Revision             string        `json:"revision"`
+	Gateway              string        `json:"gateway"`
+	DesiredDigest        string        `json:"desired_digest,omitempty"`
+	AppliedDigest        string        `json:"applied_digest,omitempty"`
+	DesiredProfileDigest string        `json:"desired_profile_digest,omitempty"`
+	AppliedProfileDigest string        `json:"applied_profile_digest,omitempty"`
+	Drift                bool          `json:"drift"`
+	Recovery             RecoveryState `json:"recovery"`
+	At                   time.Time     `json:"at"`
 }
 
 type DiagnosticsResponse struct {

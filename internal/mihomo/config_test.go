@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
 	"open-mihomo-gateway/internal/config"
 )
 
@@ -325,6 +326,71 @@ rules:
 		"DOMAIN-SUFFIX,global.example,Global",
 		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
 		"MATCH,DIRECT",
+	)
+}
+
+func TestRenderConfigWithDevicePolicyOverlayMatchesImportedSectionIndentation(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	policyPath := filepath.Join(dir, "devices.json")
+	profile := `proxies: []
+proxy-groups:
+    - name: Global
+      type: select
+      proxies:
+        - DIRECT
+rule-providers:
+    imported:
+      type: inline
+      behavior: domain
+      payload:
+        - imported.example
+rules:
+    - 'RULE-SET,imported,Global'
+    - 'MATCH,DIRECT'
+`
+	policy := `{
+  "rule_sets": [{"id":"streaming","behavior":"domain","payload":["netflix.com"]}],
+  "profiles": [{
+    "id":"home",
+    "default_policies":["DIRECT","Global"],
+    "rules":[{"id":"streaming","match":{"rule_sets":["streaming"]},"policies":["Global","DIRECT"]}]
+  }],
+  "devices": [{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home"}]
+}`
+	if err := os.WriteFile(profilePath, []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	cfg.DevicePolicy.File = policyPath
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	if err := yaml.Unmarshal([]byte(rendered), &map[string]any{}); err != nil {
+		t.Fatalf("rendered config is invalid YAML: %v\n%s", err, rendered)
+	}
+	for _, want := range []string{
+		"    - name: device/phone/default",
+		"    - name: device/phone/streaming",
+		"    open-surge-ruleset-streaming:",
+		"    - SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing imported indentation %q:\n%s", want, rendered)
+		}
+	}
+	assertOrdered(t, rendered,
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(RULE-SET,open-surge-ruleset-streaming)),device/phone/streaming",
+		"RULE-SET,imported,Global",
+		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+		"'MATCH,DIRECT'",
 	)
 }
 

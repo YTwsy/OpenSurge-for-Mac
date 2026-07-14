@@ -42,6 +42,11 @@ imported profile 使用 YAML AST 收集 proxy/group/provider 名称。生成的 
 `open-surge-ruleset-` provider namespace 不能与 imported 内容冲突；default candidate、rule
 candidate 与 action 也必须引用已有目标或显式内置目标。
 
+导入 section 的原始 YAML 文本会保留。追加生成的 selector、rule-provider 与规则时，必须
+沿用该 section 已有顶层 item 的缩进；订阅常见的 4 空格缩进不能与 OpenSurge 默认的 2
+空格混用。识别 terminal `MATCH` 时也必须同时接受带单引号、双引号和未加引号的规则，
+以确保设备 default 规则仍插在全局 `MATCH` 之前。
+
 mihomo 对不支持 UDP 的出口会继续向下匹配。设备 selector/default 因而默认在同条件后插入
 `REJECT` fallback；只有 policy 显式写 `on_unsupported: "fallthrough"` 才保留向下匹配。
 

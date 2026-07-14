@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -365,6 +366,13 @@ func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
 	cfg.Gateway.LANIP = "192.168.50.1"
 	cfg.Runtime.Dir = filepath.Join(t.TempDir(), "runtime")
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	profile := filepath.Join(filepath.Dir(cfg.Runtime.Dir), "imported.yaml")
+	profileData := []byte("proxies: []\nproxy-groups: []\nrules: []\n")
+	if err := os.WriteFile(profile, profileData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profile
 	paths := runtime.NewPaths(cfg)
 	if err := runtime.Ensure(paths); err != nil {
 		t.Fatal(err)
@@ -410,7 +418,11 @@ func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
 		t.Fatalf("reload events=%v", events)
 	}
 	state, exists, err := runtime.LoadState(paths.StateFile)
-	if err != nil || !exists || state.PIDDNSMasq != 21 || state.PIDMihomo != 22 {
+	profileDigest, digestErr := config.MihomoProfileDigest(cfg)
+	if digestErr != nil {
+		t.Fatal(digestErr)
+	}
+	if err != nil || !exists || state.PIDDNSMasq != 21 || state.PIDMihomo != 22 || state.ProfileDigest != profileDigest {
 		t.Fatalf("fresh runtime state=%#v exists=%v err=%v", state, exists, err)
 	}
 }

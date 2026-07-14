@@ -10,7 +10,7 @@ export function DashboardPage({ overview, busy, onAction }: { overview: Overview
     <section className="hero-grid">
       <article className="gateway-card"><div className="orb"><span /></div><div><small>GATEWAY</small><h2>{statusLabel(overview?.status.gateway)}</h2><p>{overview?.status.interface ?? '—'} · {overview?.status.lan_ip ?? '等待状态'}</p></div></article>
       <Metric label="在线客户端" value={overview?.status.client_count ?? '—'} note="DHCP leases" />
-      <Metric label="配置状态" value={overview?.desired_digest && overview.applied_digest && overview.desired_digest !== overview.applied_digest ? '待重启' : '已同步'} note="desired / applied" />
+      <Metric label="配置状态" value={overview?.drift ? running ? '待重载' : '下次启动应用' : '已同步'} note="desired / applied" />
     </section>
     <section className="section"><SectionTitle title="核心服务" subtitle="同一个网关运行期内的关键组件" /><div className="service-grid">
       <Service name="DHCP / DNS" state={overview?.status.dhcp} detail={overview?.status.dhcp_enabled ? 'OpenSurge 分配地址' : '外部 DHCP'} />

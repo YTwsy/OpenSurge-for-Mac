@@ -34,6 +34,9 @@ export type Overview = {
   revision: string
   desired_digest?: string
   applied_digest?: string
+  desired_profile_digest?: string
+  applied_profile_digest?: string
+  drift: boolean
   warnings: string[]
   status: GatewayStatus
   status_error?: string
@@ -54,8 +57,9 @@ export type Source = {
   size: number
   valid: boolean
   validation?: string
+  desired: boolean
   applied: boolean
-  versions: Array<{ digest: string; size: number; valid: boolean; validation?: string; imported_at: string; applied: boolean }>
+  versions: Array<{ digest: string; size: number; valid: boolean; validation?: string; imported_at: string; desired: boolean; applied: boolean }>
   diff: { previous_digest?: string; proxies_added: string[]; proxies_removed: string[]; groups_added: string[]; groups_removed: string[]; proxy_providers_added: string[]; proxy_providers_removed: string[]; rule_providers_added: string[]; rule_providers_removed: string[]; rule_count_delta: number }
   imported_at: string
   inventory: {

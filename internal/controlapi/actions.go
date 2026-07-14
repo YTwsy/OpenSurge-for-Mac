@@ -30,9 +30,14 @@ type NetworkRunner interface {
 }
 
 type ConfigurationRunner interface {
-	ApplyProfile(context.Context, string, string, []byte) (string, error)
+	ApplyProfile(context.Context, string, string, []byte) (ProfileApplyResult, error)
 	ApplyDevicePolicy(context.Context, string, string, []byte) (string, error)
 	ApplyControlConfig(context.Context, string, string, []byte) (string, error)
+}
+
+type ProfileApplyResult struct {
+	Revision string
+	Reloaded bool
 }
 
 type DirectRunner struct{}
@@ -107,6 +112,7 @@ type HelperResponse struct {
 	Error       string   `json:"error,omitempty"`
 	DHCPServers []string `json:"dhcp_servers,omitempty"`
 	Revision    string   `json:"revision,omitempty"`
+	Reloaded    bool     `json:"reloaded,omitempty"`
 }
 
 func (c HelperClient) Run(ctx context.Context, action, configPath string) error {
@@ -129,9 +135,9 @@ func (c HelperClient) ProbeDHCP(ctx context.Context, configPath, interfaceName s
 	return response.DHCPServers, err
 }
 
-func (c HelperClient) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
+func (c HelperClient) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte) (ProfileApplyResult, error) {
 	response, err := c.call(ctx, HelperRequest{Action: "config-apply-profile", ConfigPath: configPath, Revision: revision, Payload: payload})
-	return response.Revision, err
+	return ProfileApplyResult{Revision: response.Revision, Reloaded: response.Reloaded}, err
 }
 
 func (c HelperClient) ApplyDevicePolicy(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
@@ -283,7 +289,8 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 				response.DHCPServers, err = runner.ProbeDHCP(ctx, configPath, request.Interface, timeout)
 			}
 		case "config-apply-profile":
-			response.Revision, err = runner.ApplyProfile(ctx, configPath, request.Revision, request.Payload)
+			result, applyErr := runner.ApplyProfile(ctx, configPath, request.Revision, request.Payload)
+			response.Revision, response.Reloaded, err = result.Revision, result.Reloaded, applyErr
 		case "config-apply-device-policy":
 			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)
 		case "config-apply-control":

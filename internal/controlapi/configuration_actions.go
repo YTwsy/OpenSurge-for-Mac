@@ -12,52 +12,132 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/gateway"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
 
-func (DirectRunner) ApplyProfile(_ context.Context, configPath, revision string, payload []byte) (string, error) {
-	if os.Geteuid() != 0 {
-		return "", fmt.Errorf("privileged helper is required")
+type profileApplyDeps struct {
+	geteuid     func() int
+	validate    func(config.Config) error
+	stateExists func(config.Config) (bool, error)
+	reload      func(context.Context, config.Config) error
+	start       func(context.Context, config.Config) error
+}
+
+func defaultProfileApplyDeps() profileApplyDeps {
+	return profileApplyDeps{
+		geteuid: os.Geteuid,
+		validate: func(cfg config.Config) error {
+			temp, err := os.MkdirTemp(cfg.Runtime.Dir, ".profile-validation-*")
+			if err != nil {
+				return err
+			}
+			defer os.RemoveAll(temp)
+			validation := cfg
+			validation.Runtime.Dir = temp
+			validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
+			return mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig()
+		},
+		stateExists: func(cfg config.Config) (bool, error) {
+			_, exists, err := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
+			return exists, err
+		},
+		reload: func(ctx context.Context, cfg config.Config) error { return gateway.New(cfg).Reload(ctx) },
+		start:  func(ctx context.Context, cfg config.Config) error { return gateway.New(cfg).Start(ctx) },
+	}
+}
+
+func (DirectRunner) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte) (ProfileApplyResult, error) {
+	return applyProfile(ctx, configPath, revision, payload, defaultProfileApplyDeps())
+}
+
+func applyProfile(ctx context.Context, configPath, revision string, payload []byte, deps profileApplyDeps) (ProfileApplyResult, error) {
+	if deps.geteuid() != 0 {
+		return ProfileApplyResult{}, fmt.Errorf("privileged helper is required")
 	}
 	if len(payload) == 0 || len(payload) > maxSourceSize {
-		return "", fmt.Errorf("profile payload must be between 1 byte and 10 MiB")
+		return ProfileApplyResult{}, fmt.Errorf("profile payload must be between 1 byte and 10 MiB")
 	}
 	if revision == "" || revision != fileDigest(configPath) {
-		return "", fmt.Errorf("config revision conflict")
+		return ProfileApplyResult{}, fmt.Errorf("config revision conflict")
 	}
 	if _, err := inspectSource(payload, "mihomo_profile"); err != nil {
-		return "", err
+		return ProfileApplyResult{}, err
+	}
+	original, err := os.ReadFile(configPath)
+	if err != nil {
+		return ProfileApplyResult{}, err
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return "", err
+		return ProfileApplyResult{}, err
+	}
+	previousCfg := cfg
+	wasRunning, err := deps.stateExists(cfg)
+	if err != nil {
+		return ProfileApplyResult{}, err
 	}
 	digest := sha256.Sum256(payload)
 	profilePath := filepath.Join(filepath.Dir(configPath), "data", "imported-profile-"+hex.EncodeToString(digest[:8])+".yaml")
+	_, statErr := os.Stat(profilePath)
+	profileExisted := statErr == nil
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return ProfileApplyResult{}, statErr
+	}
 	if err := writeAtomic(profilePath, payload, 0o640); err != nil {
-		return "", err
+		return ProfileApplyResult{}, err
+	}
+	cleanupProfile := func() {
+		if !profileExisted {
+			_ = os.Remove(profilePath)
+		}
 	}
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
 	cfg.Mihomo.Profile = profilePath
-	temp, err := os.MkdirTemp(cfg.Runtime.Dir, ".profile-validation-*")
-	if err != nil {
-		_ = os.Remove(profilePath)
-		return "", err
-	}
-	defer os.RemoveAll(temp)
-	validation := cfg
-	validation.Runtime.Dir = temp
-	validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
-	if err := mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig(); err != nil {
-		_ = os.Remove(profilePath)
-		return "", err
+	if err := deps.validate(cfg); err != nil {
+		cleanupProfile()
+		return ProfileApplyResult{}, err
 	}
 	if err := writeAtomic(configPath, []byte(config.Render(cfg)), 0o640); err != nil {
-		_ = os.Remove(profilePath)
-		return "", err
+		cleanupProfile()
+		return ProfileApplyResult{}, err
 	}
-	return fileDigest(configPath), nil
+	result := ProfileApplyResult{Revision: fileDigest(configPath)}
+	if !wasRunning {
+		return result, nil
+	}
+	if err := deps.reload(ctx, cfg); err != nil {
+		rollbackErr := writeAtomic(configPath, original, 0o640)
+		var restartErr error
+		if rollbackErr == nil {
+			stillRunning, stateErr := deps.stateExists(previousCfg)
+			if stateErr != nil {
+				rollbackErr = fmt.Errorf("inspect gateway after failed reload: %w", stateErr)
+			} else if !stillRunning {
+				restartErr = deps.start(ctx, previousCfg)
+			}
+		}
+		cleanupProfile()
+		return ProfileApplyResult{}, profileApplyRollbackError(err, rollbackErr, restartErr)
+	}
+	result.Reloaded = true
+	return result, nil
+}
+
+func profileApplyRollbackError(reloadErr, rollbackErr, restartErr error) error {
+	message := fmt.Sprintf("apply profile reload failed: %v", reloadErr)
+	if rollbackErr != nil {
+		message += fmt.Sprintf("; restore previous config failed: %v", rollbackErr)
+	} else {
+		message += "; previous config restored"
+	}
+	if restartErr != nil {
+		message += fmt.Sprintf("; restart previous gateway failed: %v", restartErr)
+	} else if rollbackErr == nil {
+		message += "; previous running gateway preserved or restored"
+	}
+	return fmt.Errorf("%s", message)
 }
 
 func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision string, payload []byte) (string, error) {

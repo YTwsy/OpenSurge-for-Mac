@@ -117,7 +117,7 @@ export function App() {
       {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
       {page === 'dashboard' && <DashboardPage overview={overview} busy={busy} onAction={gatewayAction} />}
       {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
-      {page === 'sources' && <SourcesPage />}
+      {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
       {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
       {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
       {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
