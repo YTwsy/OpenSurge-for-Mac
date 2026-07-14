@@ -160,6 +160,11 @@ egress-proxy 切换，以及受控 CONNECT 证据。stop 检查 OpenSurge runtim
 helper 清理和 IPv4 forwarding 恢复；随后仍必须由操作者恢复路由器 DHCP 和客户端自动
 获取。完整 runbook 在 `tests/same-lan/WIFI-DHCP-RUNNER.zh-CN.md`。
 
+Web GUI 允许操作者跳过客户端验收，或在网关停止后保留 Mac 静态 IPv4 并结束状态机；
+这些是交互流程的明确 waiver，不是 Lab / same-WiFi gate 的通过证据。凡是宣称 DHCP、DNS、
+TUN 客户端路径或停止后自动获取恢复已验收，仍必须收集本节要求的真实证据，不能用
+`client_validation_skipped` / `complete_static` 代替。
+
 `make same-lan-adb-check` 是客户端证据入口。它应通过 ADB 采集 Android 默认路由、
 DNS 查询、无显式代理探针结果，并回看 Mac 侧 `dnsmasq.log` 和 `mihomo.log`。只有
 同时看到 Android 默认路由包含 `via <mac-lan-ip>`、DNS 查询走 Mac、客户端触发目标

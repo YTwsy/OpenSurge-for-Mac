@@ -128,7 +128,7 @@ func TestRecoveryTransitionsPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"同一 LAN DHCP 恢复卡", "原始 IPv4：192.168.1.20", "原始路由器：192.168.1.1", "原始 DNS：192.168.1.1", "正常路径必须先确认路由器 DHCP 已恢复并通过 OFFER 探测", "跳过 OFFER 探测并恢复 Mac 自动 DHCP"} {
+	for _, want := range []string{"同一 LAN DHCP 恢复卡", "原始 IPv4：192.168.1.20", "原始路由器：192.168.1.1", "原始 DNS：192.168.1.1", "恢复自动获取的路径必须先确认路由器 DHCP 已恢复并通过 OFFER 探测", "跳过 OFFER 探测并恢复 Mac 自动 DHCP", "保留静态 IP 并结束"} {
 		if !strings.Contains(string(card), want) {
 			t.Fatalf("recovery card missing %q:\n%s", want, card)
 		}
@@ -287,6 +287,37 @@ func TestManualRecoveryFinishRestoresMacDHCPAndRecordsOverride(t *testing.T) {
 	}
 	if !strings.Contains(state.RecoveryNotes, "OFFER evidence skipped") || !strings.Contains(state.RecoveryNotes, "client evidence saved") {
 		t.Fatalf("manual finish notes=%q", state.RecoveryNotes)
+	}
+}
+
+func TestRecoveryCanFinishWithStaticIPv4WithoutDHCPActions(t *testing.T) {
+	for _, stage := range []string{RecoveryGatewayStopped, RecoveryRouterDHCPRestored} {
+		t.Run(stage, func(t *testing.T) {
+			server, network := newTestServerWithNetwork(t)
+			state := RecoveryState{
+				Stage: stage, Required: true, RecoveryNotes: "gateway stopped",
+				NetworkSnapshot: &macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0"},
+			}
+			if err := server.store.SaveRecovery(state); err != nil {
+				t.Fatal(err)
+			}
+
+			response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/keep-static", []byte(`{"keep_static_confirmed":false}`))
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("unconfirmed keep-static status=%d body=%s", response.Code, response.Body.String())
+			}
+			response = performAuthorized(server, http.MethodPost, "/api/v1/recovery/keep-static", []byte(`{"keep_static_confirmed":true}`))
+			if response.Code != http.StatusOK {
+				t.Fatalf("keep-static status=%d body=%s", response.Code, response.Body.String())
+			}
+			state, _ = server.store.Recovery()
+			if state.Stage != RecoveryCompleteStatic || state.Required || network.dhcpRestored || network.probeCount != 0 {
+				t.Fatalf("keep-static state=%#v network=%#v", state, network)
+			}
+			if !strings.Contains(state.RecoveryNotes, "Mac kept static IPv4") || !strings.Contains(state.RecoveryNotes, "gateway stopped") {
+				t.Fatalf("keep-static notes=%q", state.RecoveryNotes)
+			}
+		})
 	}
 }
 
@@ -719,6 +750,27 @@ func TestGatewayReloadPreservesActiveTakeoverStage(t *testing.T) {
 	}
 }
 
+func TestGatewayStopAcceptsSkippedClientValidation(t *testing.T) {
+	server := newTestServer(t)
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryClientValidationSkipped, ClientValidationSkipped: true, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/stop", nil)
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("Idempotency-Key", "stop-after-client-skip")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("stop status=%d body=%s", response.Code, response.Body.String())
+	}
+	waitForStoredOperation(t, server, "stop-after-client-skip", "succeeded")
+	recovery, _ := server.store.Recovery()
+	if recovery.Stage != RecoveryGatewayStopped || !recovery.ClientValidationSkipped || !recovery.Required {
+		t.Fatalf("recovery=%#v", recovery)
+	}
+}
+
 func TestGatewayReloadStopFailurePreservesActiveTakeoverStage(t *testing.T) {
 	server := newTestServer(t)
 	cfg, err := config.LoadRuntime(server.configPath)
@@ -860,6 +912,28 @@ func TestClientAcceptanceRequiresLeaseDNSAndTUNEvidence(t *testing.T) {
 	state, _ := server.store.Recovery()
 	if state.Stage != RecoveryClientValidated {
 		t.Fatalf("state=%#v", state)
+	}
+}
+
+func TestClientAcceptanceCanBeExplicitlySkipped(t *testing.T) {
+	server := newTestServer(t)
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/client-validation-skip", []byte(`{"skip_confirmed":false}`))
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unconfirmed skip status=%d body=%s", response.Code, response.Body.String())
+	}
+	response = performAuthorized(server, http.MethodPost, "/api/v1/recovery/client-validation-skip", []byte(`{"skip_confirmed":true}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("skip status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ := server.store.Recovery()
+	if state.Stage != RecoveryClientValidationSkipped || !state.ClientValidationSkipped || !state.Required {
+		t.Fatalf("skip state=%#v", state)
+	}
+	if !strings.Contains(state.RecoveryNotes, "no client-path validation evidence") {
+		t.Fatalf("skip notes=%q", state.RecoveryNotes)
 	}
 }
 
@@ -1084,6 +1158,7 @@ type fakeNetworkRunner struct {
 	manual       macosnetwork.ManualConfig
 	dhcpRestored bool
 	servers      []string
+	probeCount   int
 }
 
 func (f *fakeNetworkRunner) SetManual(_ context.Context, _ string, cfg macosnetwork.ManualConfig) error {
@@ -1095,6 +1170,7 @@ func (f *fakeNetworkRunner) SetDHCP(_ context.Context, _, _ string) error {
 	return nil
 }
 func (f *fakeNetworkRunner) ProbeDHCP(_ context.Context, _, _ string, _ time.Duration) ([]string, error) {
+	f.probeCount++
 	return append([]string{}, f.servers...), nil
 }
 

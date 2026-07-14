@@ -26,7 +26,7 @@ struct MenuContentView: View {
                     statusGrid(status)
                 }
                 if status.takeoverActive {
-                    Label(status.recoveryStage == "client_validated" ? "同一 LAN DHCP 接管已验收" : "同一 LAN DHCP 接管运行中，等待客户端验收", systemImage: "checkmark.shield")
+                    Label(takeoverStatusLabel(status.recoveryStage), systemImage: "checkmark.shield")
                         .font(.caption).foregroundStyle(.green)
                 }
                 if status.recoverySnapshotPrepared {
@@ -127,8 +127,17 @@ private func recoveryStageLabel(_ stage: String) -> String {
     case "router_dhcp_disabled_confirmed": "路由器 DHCP 已关闭"
     case "gateway_active": "OpenSurge 已接管"
     case "client_validated": "客户端 DHCP、DNS 与 TUN 已验收"
+    case "client_validation_skipped": "客户端验收已跳过"
     case "gateway_stopped_waiting_router_dhcp": "已停止，等待恢复路由器 DHCP"
     case "router_dhcp_restored": "路由器 DHCP 已恢复"
     default: stage
+    }
+}
+
+private func takeoverStatusLabel(_ stage: String?) -> String {
+    switch stage {
+    case "client_validated": "同一 LAN DHCP 接管已验收"
+    case "client_validation_skipped": "同一 LAN DHCP 接管运行中，客户端验收已跳过"
+    default: "同一 LAN DHCP 接管运行中，等待客户端验收"
     }
 }

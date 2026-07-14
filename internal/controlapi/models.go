@@ -62,16 +62,17 @@ type MenuBarStatus struct {
 }
 
 type RecoveryState struct {
-	SchemaVersion   int                    `json:"schema_version"`
-	Stage           string                 `json:"stage"`
-	Topology        string                 `json:"topology,omitempty"`
-	NetworkService  string                 `json:"network_service,omitempty"`
-	OriginalIPv4    string                 `json:"original_ipv4,omitempty"`
-	OriginalRouter  string                 `json:"original_router,omitempty"`
-	RecoveryNotes   string                 `json:"recovery_notes,omitempty"`
-	NetworkSnapshot *macosnetwork.Snapshot `json:"network_snapshot,omitempty"`
-	Required        bool                   `json:"required"`
-	UpdatedAt       time.Time              `json:"updated_at"`
+	SchemaVersion           int                    `json:"schema_version"`
+	Stage                   string                 `json:"stage"`
+	Topology                string                 `json:"topology,omitempty"`
+	NetworkService          string                 `json:"network_service,omitempty"`
+	OriginalIPv4            string                 `json:"original_ipv4,omitempty"`
+	OriginalRouter          string                 `json:"original_router,omitempty"`
+	RecoveryNotes           string                 `json:"recovery_notes,omitempty"`
+	NetworkSnapshot         *macosnetwork.Snapshot `json:"network_snapshot,omitempty"`
+	ClientValidationSkipped bool                   `json:"client_validation_skipped,omitempty"`
+	Required                bool                   `json:"required"`
+	UpdatedAt               time.Time              `json:"updated_at"`
 }
 
 type GatewayPlanRequest struct {
@@ -98,6 +99,14 @@ type NetworkActionResponse struct {
 
 type ManualRecoveryFinishRequest struct {
 	RouterDHCPRestoredConfirmed bool `json:"router_dhcp_restored_confirmed"`
+}
+
+type ClientValidationSkipRequest struct {
+	SkipConfirmed bool `json:"skip_confirmed"`
+}
+
+type KeepStaticFinishRequest struct {
+	KeepStaticConfirmed bool `json:"keep_static_confirmed"`
 }
 
 type ControlConfig struct {
@@ -147,9 +156,11 @@ const (
 	RecoveryRouterDHCPDisabledConfirmed = "router_dhcp_disabled_confirmed"
 	RecoveryGatewayActive               = "gateway_active"
 	RecoveryClientValidated             = "client_validated"
+	RecoveryClientValidationSkipped     = "client_validation_skipped"
 	RecoveryGatewayStopped              = "gateway_stopped_waiting_router_dhcp"
 	RecoveryRouterDHCPRestored          = "router_dhcp_restored"
 	RecoveryComplete                    = "complete"
+	RecoveryCompleteStatic              = "complete_static"
 )
 
 type RecoveryUpdate struct {

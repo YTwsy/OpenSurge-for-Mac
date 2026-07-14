@@ -36,8 +36,10 @@ vi.mock('./api', () => ({
     probeDHCP: vi.fn(),
     confirmRouterRestored: vi.fn(),
     finishRecoveryManually: vi.fn(),
+    finishRecoveryKeepingStatic: vi.fn(),
     restoreMacDHCP: vi.fn(),
     validateClient: vi.fn(),
+    skipClientValidation: vi.fn(),
     sources: vi.fn(async () => ({ revision: 'config-revision', sources: [] })),
     importURL: vi.fn(),
     importFile: vi.fn(),
@@ -130,6 +132,16 @@ describe('OpenSurge app shell', () => {
     expect(screen.getAllByText('正在运行').length).toBeGreaterThan(0)
   })
 
+  it('allows the client acceptance checkpoint to be explicitly skipped', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' }, recovery: { ...overview.recovery, stage: 'gateway_active' } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(await screen.findByRole('button', { name: '跳过客户端验收' }))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('不能把本次运行称为已验收'))
+    expect(api.skipClientValidation).toHaveBeenCalledOnce()
+  })
+
   it('navigates to the cooperative same-LAN DHCP recovery flow', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
@@ -191,6 +203,7 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     expect((await screen.findByRole('button', { name: '路由器 DHCP 已恢复，执行 OFFER 探测' })).hasAttribute('disabled')).toBe(false)
     expect(screen.getByRole('button', { name: '跳过 OFFER 探测并恢复 Mac 自动 DHCP' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: '保留静态 IP 并结束' }).hasAttribute('disabled')).toBe(false)
     await userEvent.click(screen.getByRole('button', { name: '路由器 DHCP 已恢复，执行 OFFER 探测' }))
     expect(api.confirmRouterRestored).toHaveBeenCalledOnce()
   })
@@ -203,6 +216,18 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(await screen.findByRole('button', { name: '跳过 OFFER 探测并恢复 Mac 自动 DHCP' }))
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('如果路由器 DHCP 实际未恢复，Mac 可能断网'))
     expect(api.finishRecoveryManually).toHaveBeenCalledOnce()
+  })
+
+  it('can finish the post-stop flow while keeping the Mac static', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'gateway_stopped_waiting_router_dhcp' } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(await screen.findByRole('button', { name: '保留静态 IP 并结束' }))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('不会探测路由器 DHCP，也不会把 Mac 切回自动 DHCP'))
+    expect(api.finishRecoveryKeepingStatic).toHaveBeenCalledOnce()
+    expect(api.restoreMacDHCP).not.toHaveBeenCalled()
+    expect(api.confirmRouterRestored).not.toHaveBeenCalled()
   })
 
   it('does not immediately re-run IPv4 discovery after restoring Mac DHCP', async () => {

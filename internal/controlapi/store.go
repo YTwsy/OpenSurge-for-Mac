@@ -98,7 +98,7 @@ func (s *Store) SaveRecoveryCard(state RecoveryState) error {
 原始路由器：%s
 原始 DNS：%s
 
-恢复顺序：
+推荐恢复顺序：
 1. 在浏览器打开原始路由器地址，登录路由器管理后台。
 2. 进入 LAN / 网络设置 / DHCP 服务器，重新开启路由器 DHCP 并保存；保留路由器 LAN IP 不变。
 3. 确认另一台设备能够从路由器自动获得 IPv4、网关和 DNS。
@@ -107,9 +107,13 @@ func (s *Store) SaveRecoveryCard(state RecoveryState) error {
    networksetup -setdnsservers %q Empty
 5. 让客户端重新连接该 LAN（Wi-Fi 设备重连 Wi-Fi；有线设备重新获取地址），确认自动获取地址并能访问互联网。
 
-重要：正常路径必须先确认路由器 DHCP 已恢复并通过 OFFER 探测，再把 Mac 切回自动 DHCP。
+重要：恢复自动获取的路径必须先确认路由器 DHCP 已恢复并通过 OFFER 探测，再把 Mac 切回自动 DHCP。
 如果主动 OFFER 探测不可用，只能在人工确认路由器 DHCP 已恢复后，使用 Web GUI 中明确标注的
 “跳过 OFFER 探测并恢复 Mac 自动 DHCP”兜底；该动作仍会真实恢复 Mac DHCP，不会只改状态标记。
+
+如果你明确要让 Mac 长期保持当前静态 IPv4，可在 OpenSurge 网关停止后使用 Web GUI 的
+“保留静态 IP 并结束”跳过路由器 DHCP 探测和 Mac 自动 DHCP 恢复。此选择不会验证或恢复
+其他客户端的自动获取能力；其他设备必须使用有效静态配置，或由另一个 DHCP 服务器提供地址。
 `, time.Now().UTC().Format(time.RFC3339), snapshot.NetworkService, snapshot.Interface, snapshot.IPv4, snapshot.SubnetMask, snapshot.Router, strings.Join(snapshot.DNS, ", "), snapshot.NetworkService, snapshot.NetworkService)
 	return writeAtomic(filepath.Join(s.dir, "WIFI-DHCP-RECOVERY-CARD.txt"), []byte(card), 0o600)
 }

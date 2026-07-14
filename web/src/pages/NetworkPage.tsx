@@ -4,7 +4,6 @@ import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { recoveryLabel } from '../status'
 import type { ControlConfig, GatewayPlan, Overview } from '../types'
 
-const stages = ['prepared', 'mac_static', 'router_dhcp_disabled_confirmed', 'gateway_active', 'client_validated', 'gateway_stopped_waiting_router_dhcp', 'router_dhcp_restored', 'complete'] as const
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 
 export function NetworkPage({ overview, onChanged }: { overview: Overview | null; onChanged: () => Promise<void> }) {
@@ -17,11 +16,14 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const [clientConfirmed, setClientConfirmed] = useState(false)
   const [ipv6Acknowledged, setIPv6Acknowledged] = useState(false)
   const current = overview?.recovery.stage ?? 'idle'
-  const currentIndex = stages.indexOf(current as typeof stages[number])
+  const clientCheckpoint = overview?.recovery.client_validation_skipped ? 'client_validation_skipped' : 'client_validated'
+  const completion = current === 'complete_static' ? 'complete_static' : 'complete'
+  const stages = ['prepared', 'mac_static', 'router_dhcp_disabled_confirmed', 'gateway_active', clientCheckpoint, 'gateway_stopped_waiting_router_dhcp', 'router_dhcp_restored', completion]
+  const currentIndex = stages.indexOf(current)
   const recoveryBlocksConfig = Boolean(overview?.recovery.required && current !== 'prepared')
   const configDirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
   const configurationEditable = !busy && overview?.status.gateway !== 'running' && !recoveryBlocksConfig
-  const planBlockersApply = ['idle', 'complete', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
+  const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
   const blockedByPlan = planBlockersApply && (plan?.blockers.length ?? 0) > 0
   const recoverySnapshot = overview?.recovery.network_snapshot
   const router = plan?.snapshot.router || recoverySnapshot?.router || ''
@@ -60,12 +62,12 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     setBusy(true); setError('')
     try {
       switch (current) {
-      case 'idle': case 'complete': await api.prepareRecovery(); break
+      case 'idle': case 'complete': case 'complete_static': await api.prepareRecovery(); break
       case 'prepared': await api.applyStatic(); break
       case 'mac_static': await api.probeDHCP(); break
       case 'router_dhcp_disabled_confirmed': await waitForOperation((await api.gateway('start')).id); break
       case 'gateway_active': await api.validateClient(clientIPv4, ipv6Acknowledged); break
-      case 'client_validated': await waitForOperation((await api.gateway('stop')).id); break
+      case 'client_validated': case 'client_validation_skipped': await waitForOperation((await api.gateway('stop')).id); break
       case 'gateway_stopped_waiting_router_dhcp': await api.confirmRouterRestored(); break
       case 'router_dhcp_restored': await api.restoreMacDHCP(); break
       }
@@ -100,8 +102,28 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     finally { setBusy(false) }
   }
 
+  const skipClientValidation = async () => {
+    if (!window.confirm('跳过后不会检查客户端租约、DHCPACK、DNS 查询或 mihomo TUN 日志，也不能把本次运行称为已验收。OpenSurge 会记录这次跳过，并允许继续停止网关。仍要跳过吗？')) return
+    setBusy(true); setError('')
+    try {
+      await api.skipClientValidation()
+      await onChanged()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+
+  const finishKeepingStatic = async () => {
+    if (!window.confirm('OpenSurge 将结束恢复流程，但不会探测路由器 DHCP，也不会把 Mac 切回自动 DHCP。请确认当前静态 IPv4、路由器和 DNS 可长期使用；其他客户端需要有效静态配置或另一个 DHCP 服务器。仍要保留静态 IP 并结束吗？')) return
+    setBusy(true); setError('')
+    try {
+      await api.finishRecoveryKeepingStatic()
+      await onChanged()
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+
   return <>
-    <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择 topology 并保存 desired 配置；同一 LAN DHCP 接管必须完成恢复，主动 OFFER 不可用时可人工确认并安全收尾。" />
+    <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择 topology 并保存 desired 配置；客户端验收可以明确跳过，停止后也可选择恢复自动 DHCP 或保持静态 IPv4。" />
     {error && <div className="notice warn" role="alert">{error}</div>}
     {config && <>
       <div className="mode-grid">
@@ -173,19 +195,25 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         <div className="recovery-card-actions"><a href="/api/v1/recovery/card" target="_blank" rel="noopener noreferrer">查看恢复卡</a><a href="/api/v1/recovery/card?download=1" download="OpenSurge-WiFi-DHCP-Recovery-Card.txt">下载恢复卡</a></div>
       </section>}
       <section className="section">
-        <SectionTitle title="恢复状态机" subtitle="正常路径保留真实系统动作与网络证据；停止后提供显式人工恢复兜底" />
+        <SectionTitle title="恢复状态机" subtitle="推荐路径保留真实系统动作与网络证据；可跳过节点会明确记录为未验证" />
         <div className="timeline">{stages.map((stage, index) => <div className={index < currentIndex ? 'done' : index === currentIndex ? 'current' : ''} key={stage}><span>{index < currentIndex ? '✓' : index + 1}</span><p>{recoveryLabel(stage)}</p></div>)}</div>
         <div className="cooperative"><strong>合作式 IPv4 模式</strong><p>同一二层 LAN 中，客户端仍可能通过手工路由器网关或 IPv6 绕过 Mac。要求不可绕过时请选择独立 AP/SSID/VLAN。</p></div>
         {current === 'prepared' && <div className="notice">恢复资料已经保存，但 Mac、路由器与 DHCP 都尚未改动。此时仍可修正并保存目标配置；保存会清除这张预备恢复卡，并从第 1 步重新开始。</div>}
         {configDirty && <div className="notice warn">网络配置有未保存的修改。先保存配置，再保存恢复资料或继续第 2 步。</div>}
         {current === 'mac_static' && <RouterDHCPGuide action="关闭" router={router} networkService={networkService} />}
         {current === 'gateway_active' && <div className="form-stack"><input aria-label="验收客户端 IPv4" placeholder="客户端从 OpenSurge 获得的 IPv4" value={clientIPv4} onChange={event => setClientIPv4(event.target.value)} /><label><input type="checkbox" checked={clientConfirmed} onChange={event => setClientConfirmed(event.target.checked)} /> 已在客户端确认默认网关/DNS 为 Mac，且没有显式代理</label>{plan?.snapshot.ipv6_default && <label><input type="checkbox" checked={ipv6Acknowledged} onChange={event => setIPv6Acknowledged(event.target.checked)} /> 已知 IPv6 默认路由可能绕过 IPv4 设备策略</label>}</div>}
+        {current === 'gateway_active' && <div className="notice">推荐完成客户端验收。若当前没有合适客户端，可跳过；跳过只解除 GUI 流程阻塞，不会产生 DHCP、DNS 或 TUN 验收证据。</div>}
+        {current === 'client_validation_skipped' && <div className="notice warn">客户端验收已由用户跳过，本次运行没有客户端 DHCP、DNS 与 TUN 数据面验收结论。</div>}
         {current === 'gateway_stopped_waiting_router_dhcp' && <RouterDHCPGuide action="恢复" router={router} networkService={networkService} />}
-        {current === 'gateway_stopped_waiting_router_dhcp' && <div className="notice warn">如果路由器 DHCP 已经恢复，但主动 OFFER 探测不可用，可以人工确认并跳过该证据。兜底动作仍会真实执行 Mac 自动 DHCP 恢复，不会只把状态标成完成。</div>}
+        {current === 'gateway_stopped_waiting_router_dhcp' && <div className="notice warn">可以恢复路由器 DHCP 并执行 OFFER 探测，也可以人工确认后跳过 OFFER 证据并恢复 Mac 自动 DHCP。若要长期保持静态 IPv4，可直接结束；这不会恢复其他客户端的自动获取能力。</div>}
+        {current === 'router_dhcp_restored' && <div className="notice">已经检测到 DHCP OFFER。你可以把 Mac 恢复为自动 DHCP，也可以保留当前静态 IPv4 后结束流程。</div>}
+        {current === 'complete_static' && <div className="notice">恢复流程已结束，Mac 仍使用静态 IPv4；路由器 DHCP 与其他客户端的自动获取能力没有在这条路径中验证。</div>}
         <div className="recovery-actions">
           <button className="primary" disabled={busy || configDirty || blockedByPlan || (current === 'gateway_active' && (!clientIPv4 || !clientConfirmed || Boolean(plan?.snapshot.ipv6_default && !ipv6Acknowledged)))} onClick={() => void advance()}>{busy ? '正在验证…' : actionLabel(current)}</button>
           {current === 'prepared' && <button className="danger" disabled={busy} onClick={() => void discardRecovery()}>放弃恢复并销毁资料</button>}
+          {current === 'gateway_active' && <button className="danger" disabled={busy} onClick={() => void skipClientValidation()}>跳过客户端验收</button>}
           {current === 'gateway_stopped_waiting_router_dhcp' && <button className="danger" disabled={busy} onClick={() => void finishRecoveryManually()}>跳过 OFFER 探测并恢复 Mac 自动 DHCP</button>}
+          {(current === 'gateway_stopped_waiting_router_dhcp' || current === 'router_dhcp_restored') && <button className="danger" disabled={busy} onClick={() => void finishKeepingStatic()}>保留静态 IP 并结束</button>}
         </div>
       </section>
     </>}
@@ -219,12 +247,13 @@ function ConfigField({ label, setting, hint, className = '', children }: { label
 
 function actionLabel(stage: string) {
   switch (stage) {
-  case 'idle': case 'complete': return '保存网络快照与离线恢复卡'
+  case 'idle': case 'complete': case 'complete_static': return '保存网络快照与离线恢复卡'
   case 'prepared': return '将 Mac 切换为固定 IPv4'
   case 'mac_static': return '已关闭路由器 DHCP，执行 OFFER 探测'
   case 'router_dhcp_disabled_confirmed': return '启动 OpenSurge'
   case 'gateway_active': return '验证客户端 DHCP、DNS 与 TUN 证据'
   case 'client_validated': return '停止 OpenSurge'
+  case 'client_validation_skipped': return '停止 OpenSurge'
   case 'gateway_stopped_waiting_router_dhcp': return '路由器 DHCP 已恢复，执行 OFFER 探测'
   case 'router_dhcp_restored': return '将 Mac 恢复为自动 DHCP'
   default: return recoveryLabel(stage)

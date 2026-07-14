@@ -43,6 +43,16 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(status.indicator, .running)
     }
 
+    func testSkippedClientAcceptanceRemainsAnActiveTakeover() {
+        let status = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "running", topology: "same_wifi_dhcp",
+                                   lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded",
+                                   forwarding: "enabled", clientCount: 0, drift: false, doctorHealthy: true,
+                                   recoveryRequired: true, recoveryStage: "client_validation_skipped", warnings: [], errorCode: nil)
+        XCTAssertTrue(status.takeoverActive)
+        XCTAssertFalse(status.recoveryNeedsAttention)
+        XCTAssertEqual(status.indicator, .running)
+    }
+
     func testQuitWarningDistinguishesGatewayFromMenuBarProcess() {
         let active = fixture(gateway: "running", recovery: false, drift: false)
         XCTAssertTrue(active.gatewayServicesActive)

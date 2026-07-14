@@ -12,9 +12,11 @@ export function recoveryLabel(stage: string) {
     router_dhcp_disabled_confirmed: '路由器 DHCP 已关闭',
     gateway_active: 'OpenSurge 已接管',
     client_validated: '客户端 DHCP、DNS 与 TUN 已验收',
+    client_validation_skipped: '客户端验收已跳过',
     gateway_stopped_waiting_router_dhcp: '已停止，等待恢复路由器 DHCP',
     router_dhcp_restored: '路由器 DHCP 已恢复',
     complete: 'Mac 与客户端已恢复自动获取',
+    complete_static: '流程已结束，Mac 保持静态 IPv4',
     idle: '尚未开始',
   } as Record<string, string>)[stage] ?? stage
 }
@@ -23,5 +25,5 @@ export function recoveryLabel(stage: string) {
 // state rather than an unfinished restoration. Reserve the cross-page warning
 // for interrupted setup and the post-stop path that needs operator action.
 export function needsNetworkRecoveryWarning(stage: string) {
-  return !['idle', 'prepared', 'gateway_active', 'client_validated', 'complete'].includes(stage)
+  return !['idle', 'prepared', 'gateway_active', 'client_validated', 'client_validation_skipped', 'complete', 'complete_static'].includes(stage)
 }

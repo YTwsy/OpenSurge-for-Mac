@@ -98,12 +98,12 @@ extension MenuBarStatus {
     var recoveryNeedsAttention: Bool {
         guard recoveryRequired else { return false }
         guard let stage = recoveryStage else { return true }
-        return !["prepared", "gateway_active", "client_validated"].contains(stage)
+        return !["prepared", "gateway_active", "client_validated", "client_validation_skipped"].contains(stage)
     }
 
     var takeoverActive: Bool {
         guard recoveryRequired, let stage = recoveryStage else { return false }
-        return ["gateway_active", "client_validated"].contains(stage)
+        return ["gateway_active", "client_validated", "client_validation_skipped"].contains(stage)
     }
 
     var recoverySnapshotPrepared: Bool {

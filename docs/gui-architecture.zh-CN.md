@@ -79,8 +79,8 @@ JSON 结构检查。`GET /api/v1/devices` 同时返回 desired/applied 设备与
 privileged helper
 allowlist。Reload 只允许健康运行的网关；先在临时 runtime 做完整静态校验、接口/LAN、
 protected/reservation 冲突和真实 `mihomo -t`，失败不触发 stop。通过后执行完整 stop/start，
-成功写入新 applied device-policy snapshot/digest 和 applied profile digest。same-LAN 成功保留 `gateway_active` 或
-`client_validated`；stop 失败保留原 recovery，stop 成功但 restart 失败降回
+成功写入新 applied device-policy snapshot/digest 和 applied profile digest。same-LAN 成功保留 `gateway_active`、
+`client_validated` 或 `client_validation_skipped`；stop 失败保留原 recovery，stop 成功但 restart 失败降回
 `router_dhcp_disabled_confirmed`，让用户直接重试启动或进入恢复。它不承诺零中断。
 
 `/api/v1/events` 每两秒观察 config、gateway、device-policy 与 profile 的 desired/applied
@@ -104,18 +104,24 @@ connections 与最多 80 行近期日志；已知 mihomo/upstream 凭据在 API 
 
 ```text
 idle -> prepared -> mac_static -> router_dhcp_disabled_confirmed
-     -> gateway_active -> client_validated -> gateway_stopped_waiting_router_dhcp
-     -> router_dhcp_restored -> complete
+     -> gateway_active -> client_validated | client_validation_skipped
+     -> gateway_stopped_waiting_router_dhcp
+        -> router_dhcp_restored -> complete | complete_static
+        -> complete_static
 ```
 
 当配置为 `same_wifi_dhcp` 时，Control API 在没有
 `router_dhcp_disabled_confirmed` 收据时拒绝 start。确认收据来自 root helper 的主动
 DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
-`gateway_stopped_waiting_router_dhcp`。正常路径重新探测到路由器 OFFER 后再把 Mac 恢复
+`gateway_stopped_waiting_router_dhcp`。推荐路径重新探测到路由器 OFFER 后再把 Mac 恢复
 为自动 DHCP；启动期 plan blockers 不得禁用停止后的恢复动作。若主动 OFFER 探测不可用，
 用户可在明确确认路由器 DHCP 已恢复并接受断网风险后，使用人工兜底跳过 OFFER 证据；
 该动作仍经 root helper 真实恢复 Mac 自动 DHCP，成功后才写入 `complete`，不能只跳状态。
-`gateway_active` / `client_validated` 是预期的接管运行态，显示正常运行或
+如果用户明确要长期保持静态 IPv4，也可在网关已成功停止后从
+`gateway_stopped_waiting_router_dhcp` 或 `router_dhcp_restored` 进入 `complete_static`。这条
+路径不调用 DHCP OFFER 探测或 `SetDHCP`，必须警告路由器 DHCP 与其他客户端的自动获取
+能力没有被验证或恢复。
+`gateway_active` / `client_validated` / `client_validation_skipped` 是预期的接管运行态，显示正常运行或
 验收状态；恢复警报仅用于启动前的中断状态和 stop 后等待路由器/Mac DHCP 恢复的阶段。
 状态机不会自动修改未知路由器，
 也不能把同一二层 LAN 描述为不可绕过隔离。现有配置枚举仍保留
@@ -131,10 +137,12 @@ DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
 Web GUI 的侧边栏提供浅色 / 深色主题切换，选择保存在浏览器本地存储中，不进入 Control
 API 配置或 root-owned gateway 配置。
 
-启动后不能在 GUI 中直接进入正常停止步骤：先输入验收客户端 IPv4，后端要求活跃租约、
+启动后推荐先输入验收客户端 IPv4，后端要求活跃租约、
 DHCPACK、该源 IP 的 DNS 查询和 mihomo TUN 日志，同时操作者确认客户端网关/DNS 指向
 Mac 且无显式代理；若快照存在 IPv6 default，还必须确认绕过警告。紧急 stop API 始终
-可用，不会因验收失败阻碍恢复。
+可用，不会因验收失败阻碍恢复。Web GUI 也提供显式“跳过客户端验收”：它写入
+`client_validation_skipped` 和持久化说明后允许正常停止，但必须明确本次运行没有客户端
+DHCP、DNS 或 TUN 验收证据，不能显示成“已验收”。
 
 ## 菜单栏边界
 

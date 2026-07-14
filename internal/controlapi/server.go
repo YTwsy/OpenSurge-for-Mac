@@ -178,6 +178,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
 	mux.Handle("POST /api/v1/recovery/manual-finish", s.auth(http.HandlerFunc(s.handleManualRecoveryFinish)))
 	mux.Handle("POST /api/v1/recovery/client-validated", s.auth(http.HandlerFunc(s.handleClientValidated)))
+	mux.Handle("POST /api/v1/recovery/client-validation-skip", s.auth(http.HandlerFunc(s.handleClientValidationSkip)))
+	mux.Handle("POST /api/v1/recovery/keep-static", s.auth(http.HandlerFunc(s.handleKeepStaticFinish)))
 	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
 	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
 	mux.Handle("POST /api/v1/network/dhcp-probe", s.auth(http.HandlerFunc(s.handleDHCPProbe)))
@@ -578,7 +580,7 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "gateway_not_running", "reload requires a running gateway; use start instead")
 			return
 		}
-		if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated {
+		if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated && recovery.Stage != RecoveryClientValidationSkipped {
 			writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover can reload only while the gateway is active")
 			return
 		}
@@ -614,6 +616,7 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 			recovery.Topology = topology
 			if op.Kind == "start" {
 				recovery.Stage = RecoveryGatewayActive
+				recovery.ClientValidationSkipped = false
 			} else {
 				recovery.Stage = RecoveryGatewayStopped
 			}
@@ -770,7 +773,34 @@ func (s *Server) handleClientValidated(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state.Stage = RecoveryClientValidated
+	state.ClientValidationSkipped = false
 	state.RecoveryNotes = fmt.Sprintf("client %s: DHCP ACK, DNS and TUN source observed; gateway/DNS and no explicit proxy confirmed", request.ClientIPv4)
+	state.Required = true
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
+func (s *Server) handleClientValidationSkip(w http.ResponseWriter, r *http.Request) {
+	request := ClientValidationSkipRequest{}
+	if err := decodeJSON(r, &request, 64<<10); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if !request.SkipConfirmed {
+		writeError(w, http.StatusUnprocessableEntity, "skip_confirmation_required", "confirm that client DHCP, DNS and TUN evidence will not be validated")
+		return
+	}
+	state, _ := s.store.Recovery()
+	if state.Stage != RecoveryGatewayActive {
+		writeError(w, http.StatusConflict, "recovery_precondition", "gateway must be active before skipping client acceptance")
+		return
+	}
+	state.Stage = RecoveryClientValidationSkipped
+	state.ClientValidationSkipped = true
+	appendRecoveryNote(&state, "client DHCP, DNS and TUN acceptance explicitly skipped by operator; no client-path validation evidence was collected")
 	state.Required = true
 	if err := s.store.SaveRecovery(state); err != nil {
 		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
@@ -970,16 +1000,44 @@ func (s *Server) handleManualRecoveryFinish(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadGateway, "restore_dhcp_failed", err.Error())
 		return
 	}
-	if state.RecoveryNotes != "" {
-		state.RecoveryNotes += "; "
-	}
-	state.RecoveryNotes += "router DHCP manually confirmed; OFFER evidence skipped; Mac restored to automatic DHCP"
+	appendRecoveryNote(&state, "router DHCP manually confirmed; OFFER evidence skipped; Mac restored to automatic DHCP")
 	state.Stage, state.Required = RecoveryComplete, false
 	if err := s.store.SaveRecovery(state); err != nil {
 		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
+func (s *Server) handleKeepStaticFinish(w http.ResponseWriter, r *http.Request) {
+	request := KeepStaticFinishRequest{}
+	if err := decodeJSON(r, &request, 64<<10); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if !request.KeepStaticConfirmed {
+		writeError(w, http.StatusUnprocessableEntity, "keep_static_confirmation_required", "confirm that the Mac will keep its static IPv4 configuration")
+		return
+	}
+	state, _ := s.store.Recovery()
+	if (state.Stage != RecoveryGatewayStopped && state.Stage != RecoveryRouterDHCPRestored) || state.NetworkSnapshot == nil {
+		writeError(w, http.StatusConflict, "recovery_precondition", "stop OpenSurge before finishing the flow with a static Mac IPv4")
+		return
+	}
+	appendRecoveryNote(&state, "post-stop router DHCP verification and Mac automatic DHCP restore explicitly skipped by operator; Mac kept static IPv4")
+	state.Stage, state.Required = RecoveryCompleteStatic, false
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state})
+}
+
+func appendRecoveryNote(state *RecoveryState, note string) {
+	if state.RecoveryNotes != "" {
+		state.RecoveryNotes += "; "
+	}
+	state.RecoveryNotes += note
 }
 
 func (s *Server) handleRestoreDHCP(w http.ResponseWriter, r *http.Request) {
@@ -1001,15 +1059,22 @@ func (s *Server) handleRestoreDHCP(w http.ResponseWriter, r *http.Request) {
 }
 
 func allowedRecoveryTransition(from, to string) bool {
-	if to == RecoveryPrepared && (from == RecoveryIdle || from == RecoveryComplete) {
+	if to == RecoveryPrepared && (from == RecoveryIdle || from == RecoveryComplete || from == RecoveryCompleteStatic) {
+		return true
+	}
+	if from == RecoveryGatewayActive && (to == RecoveryClientValidated || to == RecoveryClientValidationSkipped) {
+		return true
+	}
+	if (from == RecoveryClientValidated || from == RecoveryClientValidationSkipped) && to == RecoveryGatewayStopped {
+		return true
+	}
+	if (from == RecoveryGatewayStopped || from == RecoveryRouterDHCPRestored) && to == RecoveryCompleteStatic {
 		return true
 	}
 	allowed := map[string]string{
 		RecoveryPrepared:                    RecoveryMacStatic,
 		RecoveryMacStatic:                   RecoveryRouterDHCPDisabledConfirmed,
 		RecoveryRouterDHCPDisabledConfirmed: RecoveryGatewayActive,
-		RecoveryGatewayActive:               RecoveryClientValidated,
-		RecoveryClientValidated:             RecoveryGatewayStopped,
 		RecoveryGatewayStopped:              RecoveryRouterDHCPRestored,
 		RecoveryRouterDHCPRestored:          RecoveryComplete,
 	}
@@ -1112,7 +1177,7 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	recovery, _ := s.store.Recovery()
-	if gatewayActive && cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated {
+	if gatewayActive && cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated && recovery.Stage != RecoveryClientValidationSkipped {
 		writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover can apply a profile only while the gateway is active")
 		return
 	}
