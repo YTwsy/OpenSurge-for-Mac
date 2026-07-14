@@ -23,6 +23,15 @@ provider files:
 - `rule-providers`
 - `rules`
 
+The profile's top-level `dns` section is merged at field level. OpenSurge
+rejects the imported values for `enable`, `listen`, `ipv6`, `enhanced-mode`,
+and `fake-ip-range`, but preserves the remaining resolver and filtering fields.
+This includes `default-nameserver`, `nameserver`, `nameserver-policy`,
+`proxy-server-nameserver`, `direct-nameserver`, `fake-ip-filter`, and fallback
+settings. Proxy server hostnames can depend on these fields, so discarding them
+can leave mihomo healthy while every imported node resolves to an unreachable
+address.
+
 ## Gateway-owned fields
 
 Imported profiles must not become raw pass-through configs. OpenSurge still
@@ -33,7 +42,8 @@ renders and owns:
   have the expected API target;
 - `profile.store-selected: true`, so mihomo can persist selected policy-group
   members across restarts;
-- DNS listener, fake-ip behavior, and TUN DNS hijack;
+- DNS enablement, listener, IPv4-only mode, fake-ip mode/range, and TUN DNS
+  hijack; imported resolver/filter policy is merged around these owned fields;
 - TUN device, stack, routing flags, and LAN/private route exclusions.
 
 This prevents a desktop mihomo profile from disabling LAN access, turning off

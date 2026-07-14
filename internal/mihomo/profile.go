@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,23 @@ var importableProfileSections = map[string]bool{
 	"proxy-groups":    true,
 	"rule-providers":  true,
 	"rules":           true,
+}
+
+const defaultDNSResolverFieldsYAML = `nameserver:
+  - 1.1.1.1
+  - 8.8.8.8
+`
+
+// These fields define the gateway-facing DNS contract and must not be
+// overridden by a desktop profile. The remaining dns fields describe resolver
+// and filtering behavior; preserving them is required for profiles whose proxy
+// server hostnames depend on nameserver-policy or private resolvers.
+var gatewayOwnedDNSFields = map[string]bool{
+	"enable":        true,
+	"listen":        true,
+	"ipv6":          true,
+	"enhanced-mode": true,
+	"fake-ip-range": true,
 }
 
 func LoadImportedProfileSections(path string) (string, error) {
@@ -34,8 +52,9 @@ func loadImportedProfileBlocks(path string) ([]importedProfileBlock, error) {
 }
 
 type importedProfile struct {
-	blocks    []importedProfileBlock
-	inventory importedProfileInventory
+	blocks            []importedProfileBlock
+	inventory         importedProfileInventory
+	dnsResolverFields string
 }
 
 type importedProfileInventory struct {
@@ -53,6 +72,10 @@ func loadImportedProfile(path string) (importedProfile, error) {
 	if err != nil {
 		return importedProfile{}, fmt.Errorf("parse imported mihomo profile: %w", err)
 	}
+	dnsResolverFields, err := renderImportedDNSResolverFields(data)
+	if err != nil {
+		return importedProfile{}, fmt.Errorf("parse imported mihomo profile dns: %w", err)
+	}
 
 	blocks, found := extractImportableProfileSections(string(data))
 	if !found["rules"] {
@@ -67,12 +90,79 @@ func loadImportedProfile(path string) (importedProfile, error) {
 			blocks[i].text = rewriteProviderPaths(block.text, profileDir)
 		}
 	}
-	return importedProfile{blocks: blocks, inventory: inventory}, nil
+	return importedProfile{blocks: blocks, inventory: inventory, dnsResolverFields: dnsResolverFields}, nil
 }
 
 type importedProfileBlock struct {
 	key  string
 	text string
+}
+
+func renderImportedDNSResolverFields(data []byte) (string, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return "", err
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return "", fmt.Errorf("top level must be a mapping")
+	}
+
+	var dns *yaml.Node
+	root := document.Content[0]
+	for i := 0; i < len(root.Content); i += 2 {
+		key, value := root.Content[i], root.Content[i+1]
+		if key.Kind == yaml.ScalarNode && key.Value == "dns" {
+			dns = value
+			break
+		}
+	}
+	if dns == nil {
+		return strings.TrimRight(defaultDNSResolverFieldsYAML, "\n"), nil
+	}
+	if dns.Kind != yaml.MappingNode {
+		return "", fmt.Errorf("dns must be a mapping")
+	}
+
+	filtered := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	seen := make(map[string]bool, len(dns.Content)/2)
+	hasNameserver := false
+	for i := 0; i < len(dns.Content); i += 2 {
+		key, value := dns.Content[i], dns.Content[i+1]
+		if key.Kind != yaml.ScalarNode || strings.TrimSpace(key.Value) == "" {
+			return "", fmt.Errorf("dns field name must be a non-empty scalar")
+		}
+		if seen[key.Value] {
+			return "", fmt.Errorf("duplicate dns field %q", key.Value)
+		}
+		seen[key.Value] = true
+		if gatewayOwnedDNSFields[key.Value] {
+			continue
+		}
+		if key.Value == "nameserver" {
+			hasNameserver = true
+		}
+		filtered.Content = append(filtered.Content, key, value)
+	}
+
+	if !hasNameserver {
+		var defaults yaml.Node
+		if err := yaml.Unmarshal([]byte(defaultDNSResolverFieldsYAML), &defaults); err != nil {
+			return "", err
+		}
+		defaultMapping := defaults.Content[0]
+		filtered.Content = append(defaultMapping.Content[:2], filtered.Content...)
+	}
+
+	var out bytes.Buffer
+	encoder := yaml.NewEncoder(&out)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(&filtered); err != nil {
+		return "", err
+	}
+	if err := encoder.Close(); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(out.String(), "\n"), nil
 }
 
 func inspectImportedProfileYAML(data []byte) (importedProfileInventory, error) {

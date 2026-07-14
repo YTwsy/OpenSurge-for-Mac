@@ -17,20 +17,19 @@ type policySections struct {
 	defaults  []string
 }
 
-func renderPolicySections(cfg config.Config) (string, error) {
+func renderPolicySections(cfg config.Config, imported *importedProfile) (string, error) {
 	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File)
 	if err != nil {
 		return "", err
 	}
 	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
-		profile, err := loadImportedProfile(cfg.Mihomo.Profile)
-		if err != nil {
+		if imported == nil {
+			return "", fmt.Errorf("imported mihomo profile was not loaded")
+		}
+		if err := validateImportedPolicySections(imported.inventory, sections); err != nil {
 			return "", err
 		}
-		if err := validateImportedPolicySections(profile.inventory, sections); err != nil {
-			return "", err
-		}
-		return composeImportedPolicySections(profile.blocks, sections)
+		return composeImportedPolicySections(imported.blocks, sections)
 	}
 	if err := validateManagedPolicySections(cfg, sections); err != nil {
 		return "", err

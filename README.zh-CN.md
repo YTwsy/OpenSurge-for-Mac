@@ -55,11 +55,14 @@ macOS 上支持的透明代理路径是 TUN。mihomo `redir-port` 和 PF TCP 重
 
 ## mihomo profile
 
-OpenSurge for Mac 可以渲染托管的 mihomo 配置，也可以从已有 mihomo profile
-导入代理和规则 section。在 imported 模式下，OpenSurge 仍然接管网关关键字段：
-LAN 绑定、`allow-lan`、DNS、TUN、`external-controller` 和 runtime 路径。
-导入的 profile 只贡献 `proxies`、`proxy-providers`、`proxy-groups`、
-`rule-providers` 和 `rules` 这些引擎层 section。
+OpenSurge for Mac 可以渲染托管的 mihomo 配置，也可以导入已有 mihomo profile。
+在 imported 模式下，OpenSurge 仍然接管 LAN 绑定、`allow-lan`、DNS 监听与
+fake-IP 网段、TUN、`external-controller` 和 runtime 路径等网关关键字段。导入的
+profile 会贡献 `proxies`、`proxy-providers`、`proxy-groups`、`rule-providers`、
+`rules`，以及不改变网关边界的 DNS 解析器/过滤字段。保留
+`nameserver-policy`、`proxy-server-nameserver`、`fake-ip-filter` 等字段，可以让依赖
+专用 DNS 的代理节点域名继续正确解析，同时不允许 profile 替换网关 DNS 监听或
+TUN DNS 契约。
 
 ```yaml
 mihomo:

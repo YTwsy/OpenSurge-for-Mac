@@ -89,6 +89,19 @@ bind-address: 127.0.0.1
 external-controller: 127.0.0.1:9999
 dns:
   enable: false
+  listen: 127.0.0.1:5335
+  ipv6: true
+  enhanced-mode: redir-host
+  fake-ip-range: 198.19.0.1/16
+  default-nameserver:
+    - system
+  nameserver:
+    - https://dns.example/dns-query
+  nameserver-policy:
+    "+.nodes.example":
+      - https://nodes-dns.example/dns-query
+  fake-ip-filter:
+    - "*.lan"
 proxies:
   - name: Imported
     type: socks5
@@ -125,7 +138,18 @@ tun:
 		"allow-lan: true",
 		"bind-address: \"*\"",
 		"external-controller: 127.0.0.1:19090",
+		"listen: 0.0.0.0:1053",
+		"ipv6: false",
 		"enhanced-mode: fake-ip",
+		"fake-ip-range: 198.18.0.1/16",
+		"default-nameserver:",
+		"- system",
+		"- https://dns.example/dns-query",
+		"nameserver-policy:",
+		`"+.nodes.example":`,
+		"- https://nodes-dns.example/dns-query",
+		"fake-ip-filter:",
+		`- "*.lan"`,
 		"tun:",
 		"  enable: true",
 		"proxies:",
@@ -142,11 +166,36 @@ tun:
 		"allow-lan: false",
 		"external-controller: 127.0.0.1:9999",
 		"enable: false",
+		"listen: 127.0.0.1:5335",
+		"ipv6: true",
+		"enhanced-mode: redir-host",
+		"fake-ip-range: 198.19.0.1/16",
 		"open-surge-egress",
 	} {
 		if strings.Contains(rendered, notWant) {
 			t.Fatalf("rendered config kept unwanted profile/default value %q:\n%s", notWant, rendered)
 		}
+	}
+}
+
+func TestRenderConfigRejectsMalformedImportedDNS(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	body := `dns:
+  - https://dns.example/dns-query
+rules:
+  - MATCH,DIRECT
+`
+	if err := os.WriteFile(profilePath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	_, err := RenderConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "dns must be a mapping") {
+		t.Fatalf("RenderConfig() error = %v", err)
 	}
 }
 

@@ -18,6 +18,12 @@ sections:
 - `rule-providers`
 - `rules`
 
+DNS is a field-level overlay rather than an all-or-nothing top-level import.
+OpenSurge owns `dns.enable`, `dns.listen`, `dns.ipv6`, `dns.enhanced-mode`, and
+`dns.fake-ip-range`. Other imported DNS resolver and filtering fields are
+preserved, including `nameserver-policy` and `proxy-server-nameserver`, because
+they may be required to resolve the imported proxy server hostnames correctly.
+
 Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
 directory. Relative `path:` entries inside imported `proxy-providers` and
 `rule-providers` are resolved from the imported mihomo profile's directory.
@@ -31,7 +37,7 @@ OpenSurge continues to render and own gateway-critical fields, including:
 - `bind-address`
 - `external-controller`
 - `profile.store-selected: true`
-- DNS listener and fake-ip settings
+- DNS enablement, listener, IPv4-only mode, and fake-ip mode/range
 - TUN settings and LAN/private route exclusions
 - runtime config path
 

@@ -2,6 +2,7 @@ package mihomo
 
 import (
 	"bytes"
+	"strings"
 	"text/template"
 
 	"open-mihomo-gateway/internal/config"
@@ -39,9 +40,7 @@ dns:
   ipv6: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
-  nameserver:
-    - 1.1.1.1
-    - 8.8.8.8
+{{ .DNSResolverFields }}
 
 {{ if .TUNEnabled }}
 tun:
@@ -93,6 +92,7 @@ type templateData struct {
 	UpstreamInterface      string
 	LANPrefix              string
 	UpstreamProxy          config.UpstreamProxyConfig
+	DNSResolverFields      string
 	PolicySections         string
 }
 
@@ -101,7 +101,17 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err != nil {
 		return templateData{}, err
 	}
-	policySections, err := renderPolicySections(cfg)
+	var imported *importedProfile
+	dnsResolverFields := defaultDNSResolverFieldsYAML
+	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
+		loaded, err := loadImportedProfile(cfg.Mihomo.Profile)
+		if err != nil {
+			return templateData{}, err
+		}
+		imported = &loaded
+		dnsResolverFields = loaded.dnsResolverFields
+	}
+	policySections, err := renderPolicySections(cfg, imported)
 	if err != nil {
 		return templateData{}, err
 	}
@@ -117,6 +127,15 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 		UpstreamInterface:      cfg.Gateway.UpstreamInterface,
 		LANPrefix:              lanPrefix,
 		UpstreamProxy:          cfg.UpstreamProxy,
+		DNSResolverFields:      indentYAMLBlock(dnsResolverFields, "  "),
 		PolicySections:         policySections,
 	}, nil
+}
+
+func indentYAMLBlock(value, indent string) string {
+	lines := strings.Split(strings.TrimRight(value, "\n"), "\n")
+	for i := range lines {
+		lines[i] = indent + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
