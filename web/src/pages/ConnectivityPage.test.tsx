@@ -63,6 +63,16 @@ describe('ConnectivityPage', () => {
     expect(within(github).getByText('MATCH · DIRECT')).toBeTruthy()
   })
 
+  it('permits probes when the running mihomo status includes its live version', async () => {
+    render(<ConnectivityPage overview={{ ...running, status: { ...running.status, mihomo: 'running (v1.19.27)' } }} />)
+    await screen.findByText('百度')
+
+    expect((screen.getByRole('button', { name: '检测全部' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText(/启动网关和 mihomo/)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '检测全部' }))
+    await waitFor(() => expect(api.testConnectivity).toHaveBeenCalledWith(['baidu', 'github']))
+  })
+
   it('keeps external browser testing available while the gateway is stopped', async () => {
     render(<ConnectivityPage overview={{ ...running, status: { ...running.status, gateway: 'stopped', mihomo: 'stopped' } }} />)
     await screen.findByText('百度')

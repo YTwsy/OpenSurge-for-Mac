@@ -14,7 +14,9 @@ export function ConnectivityPage({ overview }: { overview: Overview | null }) {
   const [recovering, setRecovering] = useState(false)
   const [error, setError] = useState('')
   const [enforceBaseline, setEnforceBaseline] = useState(() => window.localStorage.getItem(baselineKey) !== 'observe')
-  const running = overview?.status.gateway === 'running' && overview.status.mihomo === 'running'
+  // The status API appends the live engine version when available, for example
+  // "running (v1.19.27)". Keep that display detail from disabling probes.
+  const running = overview?.status.gateway === 'running' && overview.status.mihomo.startsWith('running')
   const runtimeActive = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
 
   const loadCatalog = useCallback(async () => {
