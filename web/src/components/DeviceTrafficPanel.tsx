@@ -51,6 +51,7 @@ function TrafficRow({ device }: { device: DeviceTrafficRow }) {
 }
 
 function deviceName(device: DeviceTrafficRow) {
+  if (device.name) return device.name
   if (device.hostname) return device.hostname
   const parts = device.mac.toLowerCase().split(':')
   return `未知设备 ${parts.length > 3 ? `${parts.slice(0, 3).join(':')}:…` : device.mac.toLowerCase()}`

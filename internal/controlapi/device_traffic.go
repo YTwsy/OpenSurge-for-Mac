@@ -34,12 +34,42 @@ func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 	connections, connectionErr := s.fetchConnections(r.Context(), cfg)
 	response := aggregateDeviceTraffic(leases, connections)
+	if cfg.DevicePolicy.File != "" {
+		if bundle, policyErr := device.LoadPolicyBundle(cfg.DevicePolicy.File); policyErr == nil {
+			annotateRegisteredDeviceNames(&response, bundle.Policy)
+		}
+	}
 	response.SchemaVersion = SchemaVersion
 	response.Revision = fileDigest(s.configPath)
 	response.SampledAt = time.Now().UTC()
 	response.Scope = deviceTrafficScope
 	response.ConnectionError = errorString(connectionErr)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func annotateRegisteredDeviceNames(response *DeviceTrafficResponse, policy device.PolicySet) {
+	byMAC := registeredDeviceNames(policy)
+	for index := range response.Devices {
+		response.Devices[index].Name = byMAC[response.Devices[index].MAC]
+	}
+}
+
+func annotateRegisteredLeaseNames(leases []device.Client, policy device.PolicySet) {
+	byMAC := registeredDeviceNames(policy)
+	for index := range leases {
+		leases[index].RegisteredName = byMAC[strings.ToLower(strings.TrimSpace(leases[index].MAC))]
+	}
+}
+
+func registeredDeviceNames(policy device.PolicySet) map[string]string {
+	byMAC := make(map[string]string, len(policy.Devices))
+	for _, managed := range policy.Devices {
+		mac := strings.ToLower(strings.TrimSpace(managed.MAC))
+		if mac != "" {
+			byMAC[mac] = device.DisplayName(managed)
+		}
+	}
+	return byMAC
 }
 
 func aggregateDeviceTraffic(leases []device.Client, snapshot mihomo.ConnectionsSnapshot) DeviceTrafficResponse {

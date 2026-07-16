@@ -54,3 +54,26 @@ func TestAggregateDeviceTrafficUsesNewestLeaseForMAC(t *testing.T) {
 		t.Fatalf("devices = %#v", result.Devices)
 	}
 }
+
+func TestRegisteredDeviceNamesOverrideMissingLeaseHostnames(t *testing.T) {
+	policy := device.PolicySet{Devices: []device.ManagedDevice{
+		{ID: "PlayStation-5", MAC: "90:47:48:c8:f9:1b"},
+		{ID: "living-room-tv", Name: "Living Room TV", MAC: "AA:BB:CC:DD:EE:02"},
+	}}
+	response := DeviceTrafficResponse{Devices: []DeviceTraffic{
+		{MAC: "90:47:48:c8:f9:1b"},
+		{MAC: "aa:bb:cc:dd:ee:02", Hostname: "vendor-hostname"},
+	}}
+	annotateRegisteredDeviceNames(&response, policy)
+	if response.Devices[0].Name != "PlayStation-5" || response.Devices[1].Name != "Living Room TV" {
+		t.Fatalf("registered traffic names = %#v", response.Devices)
+	}
+	leases := []device.Client{
+		{MAC: "90:47:48:C8:F9:1B"},
+		{MAC: "aa:bb:cc:dd:ee:02", Hostname: "vendor-hostname"},
+	}
+	annotateRegisteredLeaseNames(leases, policy)
+	if leases[0].RegisteredName != "PlayStation-5" || leases[1].RegisteredName != "Living Room TV" {
+		t.Fatalf("registered lease names = %#v", leases)
+	}
+}

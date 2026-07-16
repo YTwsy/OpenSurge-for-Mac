@@ -27,6 +27,12 @@ save-and-reload；只有 applied 的独立出口设备显示可即时切换的 d
 设备规则区修改候选或规则时，会将解析后的有效内容复制为无 Template 的确定性私有
 Profile，只改变该设备引用；ID 冲突时追加数字后缀。
 
+设备的 `name` 是允许空格和 Unicode 的显示元数据，`id` 则是进入 mihomo selector
+命名空间的稳定技术标识，仍限制为字母、数字、下划线和连字符。Web GUI 从显示名称自动
+生成无冲突 ID，已有设备改名时保持 ID 不变；旧文档没有 `name` 时以 `id` 回退显示。
+总览的设备流量与最近租约会按规范化 MAC 合并登记名称，并优先于 DHCP hostname，因而
+客户端不提供 hostname 时也不会继续显示为未知设备。
+
 旧文件省略 `egress_mode` 时解析为 `legacy_fallback`，继续保持“设备覆盖 → 全局规则 →
 设备默认兜底 → terminal MATCH”。GUI 会显示兼容提示并要求用户明确迁移到跟随或独立，
 不会静默改变现有流量。

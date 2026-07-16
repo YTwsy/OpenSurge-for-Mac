@@ -194,6 +194,7 @@ button{cursor:pointer}
 .lease-choice code{color:#a6d8c4}.lease-choice>span:last-child{font-size:11px;color:#7c9189}
 .registration-form{display:grid;gap:12px;align-content:start;padding-top:20px}
 .registration-form>label,.candidate-picker>label,.token-input{display:grid;gap:7px;color:#9eb2aa;font-size:12px;font-weight:700}
+.registration-id-hint{margin-top:-6px;color:#71847d;font-size:10px}.registration-id-hint code{color:#9eb2aa}
 .registration-form input,.registration-form select,.candidate-picker input,.candidate-picker select,.token-input input,.egress-mode select,.advanced-policy input,.advanced-policy select,.default-slot select,.rule-slots select{width:100%;min-width:0;border:1px solid #2a4038;border-radius:9px;background:#091512;color:#e4eee9;padding:10px}
 .inline-advanced{padding:10px 12px;border:1px solid #20382f;border-radius:10px;background:#0a1713}
 .inline-advanced summary,.rule-technical summary{cursor:pointer;color:#91a69e;font-size:12px;font-weight:700}
@@ -219,7 +220,7 @@ button{cursor:pointer}
 .device-card{min-width:0;transition:border-color .15s,transform .15s}
 .device-card.selected{border-color:#6fcfa6;box-shadow:0 0 0 2px #6fcfa622}
 .device-title{display:grid;gap:4px;border:0;background:transparent;color:inherit;padding:0;text-align:left}
-.device-title strong{font-size:17px}.device-title:disabled{cursor:default}
+.device-title strong{font-size:17px}.device-title code{color:#71847d;font-size:10px}.device-title:disabled{cursor:default}
 .identity-state{display:block;margin-top:10px;color:#8ba097;font-size:10px;line-height:1.45}.identity-state.ready{color:#83e9b8}
 .device-routing-mode,.registration-routing{margin:16px 0 0;padding:0;border:0}
 .device-routing-mode legend,.registration-routing legend{width:100%;margin-bottom:8px;color:#9eb2aa;font-size:11px;font-weight:800;letter-spacing:.08em}

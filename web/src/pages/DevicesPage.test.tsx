@@ -201,13 +201,13 @@ describe('DevicesPage', () => {
     expect(screen.queryByLabelText('独立出口候选')).toBeNull()
     await userEvent.click(screen.getByRole('radio', { name: /独立设备出口/ }))
     expect(screen.getByLabelText('独立出口候选')).toBeTruthy()
-    await userEvent.type(screen.getByLabelText('Device ID'), 'pixel')
+    await userEvent.type(screen.getByLabelText('设备名称'), 'Pixel Living Room')
     await userEvent.type(screen.getByLabelText('设备 MAC'), 'aa:bb:cc:dd:ee:ff')
     await userEvent.type(screen.getByLabelText('固定 IPv4'), '192.168.1.137')
     await userEvent.click(screen.getByRole('button', { name: '登记或更新设备' }))
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
-    expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0]).toEqual(expect.objectContaining({ id: 'pixel', egress_mode: 'dedicated' }))
+    expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0]).toEqual(expect.objectContaining({ id: 'pixel-living-room', name: 'Pixel Living Room', egress_mode: 'dedicated' }))
   })
 
   it('privatizes a shared template profile before adding a validated flat rule', async () => {

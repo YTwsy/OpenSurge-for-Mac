@@ -68,6 +68,13 @@ only for an applied dedicated/legacy device. It creates a private
 template-derived profile, it copies the resolved effective content to a
 template-free private profile and changes only that device reference.
 
+A device may also carry human-readable `name` metadata with spaces or Unicode.
+Its technical `id` remains restricted and stable because it is part of the
+generated mihomo selector namespace. The GUI derives a collision-free ID for a
+new display name and preserves the ID on later renames; older policies fall back
+to displaying the ID. Dashboard lease and traffic views join this registered
+name by normalized MAC and prefer it over a DHCP hostname.
+
 Mihomo may continue rule evaluation for UDP when a selected outbound lacks UDP
 support. Generated selector/default rules therefore add a same-condition
 `REJECT` fallback by default; `on_unsupported: fallthrough` is an explicit

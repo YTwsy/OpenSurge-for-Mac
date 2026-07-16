@@ -11,7 +11,7 @@ export type GatewayStatus = {
 }
 
 export type DoctorCheck = { name: string; ok: boolean; message?: string }
-export type Lease = { ip: string; mac: string; hostname?: string; expires_at: string; online: boolean }
+export type Lease = { ip: string; mac: string; hostname?: string; registered_name?: string; expires_at: string; online: boolean }
 export type ProxyGroup = { name: string; type: string; selected: string; options: string[] }
 export type ProxyHealthEntry = {
   name: string
@@ -107,6 +107,7 @@ export type DevicesResponse = {
 }
 
 export type DeviceTrafficRow = {
+  name?: string
   hostname?: string
   ip: string
   mac: string
@@ -136,7 +137,7 @@ export type PolicyRule = {
   on_unsupported?: string
 }
 export type PolicyProfile = { id: string; template?: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
-export type PolicyDevice = { id: string; mac: string; ipv4: string; profile: string; egress_mode?: DeviceEgressMode }
+export type PolicyDevice = { id: string; name?: string; mac: string; ipv4: string; profile: string; egress_mode?: DeviceEgressMode }
 export type PolicyTemplate = { id: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
 export type PolicyRuleSet = { id: string; type?: 'inline' | 'http'; behavior: 'domain' | 'ipcidr' | 'classical'; format?: string; url?: string; interval?: number; payload?: string[] }
 export type PolicySet = { devices: PolicyDevice[]; profiles: PolicyProfile[]; templates: PolicyTemplate[]; rule_sets: PolicyRuleSet[] }

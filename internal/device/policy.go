@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // PolicySet is the declarative, gateway-owned source of per-device routing.
@@ -26,6 +28,7 @@ type PolicySet struct {
 
 type ManagedDevice struct {
 	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
 	MAC        string `json:"mac"`
 	IPv4       string `json:"ipv4"`
 	Profile    string `json:"profile"`
@@ -242,6 +245,9 @@ func ValidatePolicySet(set PolicySet) error {
 		if !validID(managed.ID) {
 			return fmt.Errorf("device id %q must contain only letters, numbers, underscores, or hyphens", managed.ID)
 		}
+		if err := validateDeviceName(managed.Name); err != nil {
+			return fmt.Errorf("device %q name: %w", managed.ID, err)
+		}
 		if seenIDs[managed.ID] {
 			return fmt.Errorf("duplicate device id %q", managed.ID)
 		}
@@ -268,6 +274,33 @@ func ValidatePolicySet(set PolicySet) error {
 		}
 		if managed.EgressMode != "" && managed.EgressMode != EgressModeInheritGlobal && managed.EgressMode != EgressModeDedicated {
 			return fmt.Errorf("device %q egress_mode must be %q or %q", managed.ID, EgressModeInheritGlobal, EgressModeDedicated)
+		}
+	}
+	return nil
+}
+
+// DisplayName keeps older policy documents useful while allowing the GUI to
+// separate a human-readable name from the stable technical device ID.
+func DisplayName(managed ManagedDevice) string {
+	if managed.Name != "" {
+		return managed.Name
+	}
+	return managed.ID
+}
+
+func validateDeviceName(name string) error {
+	if name == "" {
+		return nil
+	}
+	if strings.TrimSpace(name) != name {
+		return fmt.Errorf("must not start or end with whitespace")
+	}
+	if utf8.RuneCountInString(name) > 80 {
+		return fmt.Errorf("must be at most 80 characters")
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("must not contain control characters")
 		}
 	}
 	return nil

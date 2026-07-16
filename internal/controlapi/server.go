@@ -440,6 +440,9 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if leases == nil {
 		leases = []device.Client{}
 	}
+	if cfg.DevicePolicy.Bundle != nil {
+		annotateRegisteredLeaseNames(leases, cfg.DevicePolicy.Bundle.Policy)
+	}
 	recovery, _ := s.store.Recovery()
 	desiredDigest := ""
 	if cfg.DevicePolicy.Bundle != nil {

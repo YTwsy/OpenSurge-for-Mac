@@ -149,7 +149,7 @@ func TestCompileInheritedDeviceDoesNotReferenceUnusedDefaultPolicies(t *testing.
 func TestPolicySetValidationRejectsUnsafeOrAmbiguousPolicies(t *testing.T) {
 	base := PolicySet{
 		Profiles: []Profile{{ID: "default", DefaultPolicies: []string{"DIRECT"}}},
-		Devices:  []ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "default"}},
+		Devices:  []ManagedDevice{{ID: "phone", Name: "Living Room Phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "default"}},
 	}
 	tests := []struct {
 		name string
@@ -162,6 +162,11 @@ func TestPolicySetValidationRejectsUnsafeOrAmbiguousPolicies(t *testing.T) {
 				set.Devices = append(set.Devices, ManagedDevice{ID: "tablet", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.50.101", Profile: "default"})
 			},
 			want: "duplicate device ipv4",
+		},
+		{
+			name: "device name surrounding whitespace",
+			edit: func(set *PolicySet) { set.Devices[0].Name = " Living Room Phone" },
+			want: "must not start or end with whitespace",
 		},
 		{
 			name: "unknown profile",

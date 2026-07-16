@@ -281,6 +281,7 @@ type DeviceTrafficResponse struct {
 }
 
 type DeviceTraffic struct {
+	Name              string `json:"name,omitempty"`
 	Hostname          string `json:"hostname,omitempty"`
 	IP                string `json:"ip"`
 	MAC               string `json:"mac"`

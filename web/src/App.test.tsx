@@ -121,6 +121,22 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByText(/1 个连接无法匹配 DHCP 租约/)).toBeTruthy()
   })
 
+  it('prefers registered device names in traffic and recent lease summaries', async () => {
+    vi.mocked(api.overview).mockResolvedValue({
+      ...overview,
+      leases: [{ ip: '192.168.1.190', mac: '90:47:48:c8:f9:1b', registered_name: 'PlayStation 5', expires_at: '2099-01-01T00:00:00Z', online: true }],
+    })
+    vi.mocked(api.deviceTraffic).mockResolvedValue({
+      schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', unmatched_connections: 0,
+      devices: [{ name: 'PlayStation 5', ip: '192.168.1.190', mac: '90:47:48:c8:f9:1b', online: true, active_connections: 1, upload: 1, download: 2 }],
+      totals: { devices: 1, active_connections: 1, upload: 1, download: 2 },
+    })
+    render(<App />)
+    expect((await screen.findAllByText('PlayStation 5')).length).toBe(2)
+    expect(screen.queryByText(/未知设备 90:47:48/)).toBeNull()
+    expect(screen.queryByText('未命名设备')).toBeNull()
+  })
+
   it('warns on every page only after the recovery flow changes network state', async () => {
     vi.mocked(api.overview).mockResolvedValue({ ...overview, recovery: { ...overview.recovery, stage: 'mac_static' } })
     render(<App />)
@@ -359,13 +375,13 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(screen.getByRole('button', { name: '设备' }))
     expect(await screen.findByText('当前已接管设备')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '配置此设备' }))
-    expect((screen.getByLabelText('Device ID') as HTMLInputElement).value).toBe('pixel-10')
+    expect((screen.getByLabelText('设备名称') as HTMLInputElement).value).toBe('Pixel-10')
     expect((screen.getByLabelText('设备 MAC') as HTMLInputElement).value).toBe(lease.mac)
     expect((screen.getByLabelText('固定 IPv4') as HTMLInputElement).value).toBe(lease.ip)
     await userEvent.click(screen.getByRole('button', { name: '登记或更新设备' }))
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({
-      devices: [{ id: 'pixel-10', mac: lease.mac.toLowerCase(), ipv4: lease.ip, profile: 'pixel-10-policy', egress_mode: 'inherit_global' }],
+      devices: [{ id: 'pixel-10', name: 'Pixel-10', mac: lease.mac.toLowerCase(), ipv4: lease.ip, profile: 'pixel-10-policy', egress_mode: 'inherit_global' }],
       profiles: expect.arrayContaining([expect.objectContaining({ id: 'pixel-10-policy', default_policies: ['DIRECT'] })]),
     }), 'policy-r')
   })

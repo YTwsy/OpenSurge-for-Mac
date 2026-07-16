@@ -1060,6 +1060,10 @@ func TestDeviceTrafficKeepsLeaseInventoryWhenMihomoIsUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	policy := `{"devices":[{"id":"iphone-15","name":"Living Room iPhone","mac":"aa:bb:cc:dd:ee:ff","ipv4":"192.168.1.151","profile":"home","egress_mode":"inherit_global"}],"profiles":[{"id":"home","default_policies":["DIRECT"]}],"templates":[],"rule_sets":[]}`
+	if err := os.WriteFile(cfg.DevicePolicy.File, []byte(policy), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	server.fetchConnections = func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error) {
 		return mihomo.ConnectionsSnapshot{}, errors.New("mihomo unavailable")
 	}
@@ -1080,7 +1084,7 @@ func TestDeviceTrafficKeepsLeaseInventoryWhenMihomoIsUnavailable(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Scope != deviceTrafficScope || len(payload.Devices) != 1 || payload.Devices[0].Hostname != "iPhone-15" {
+	if payload.Scope != deviceTrafficScope || len(payload.Devices) != 1 || payload.Devices[0].Hostname != "iPhone-15" || payload.Devices[0].Name != "Living Room iPhone" {
 		t.Fatalf("device traffic = %#v", payload)
 	}
 	if payload.ConnectionError == "" || payload.Totals.Devices != 1 || payload.Totals.ActiveConnections != 0 {

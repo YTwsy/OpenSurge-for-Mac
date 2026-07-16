@@ -40,8 +40,8 @@ There are no built-in household, parental-control, streaming, or vendor rule
 lists. Operators own the policy content. The JSON model has four independent
 collections:
 
-- `devices`: stable identity (`id`, MAC, reserved IPv4, profile id) plus an
-  explicit `egress_mode`;
+- `devices`: stable identity (`id`, MAC, reserved IPv4, profile id), an optional
+  human-readable `name`, plus an explicit `egress_mode`;
 - `profiles`: default selector candidates plus device rule overlays;
 - `templates`: optional reusable profile defaults and rule fragments;
 - `rule_sets`: inline or HTTP mihomo rule-provider definitions.
@@ -85,6 +85,7 @@ managed or imported global mihomo profile.
   "devices": [
     {
       "id": "alice-phone",
+      "name": "Alice Phone",
       "mac": "aa:bb:cc:dd:ee:01",
       "ipv4": "192.168.50.101",
       "profile": "phone",
@@ -93,6 +94,14 @@ managed or imported global mihomo profile.
   ]
 }
 ```
+
+`name` is display metadata and may contain spaces or Unicode characters. The
+stable `id` remains limited to letters, numbers, underscores, and hyphens
+because it is used in generated selector names such as
+`device/<device-id>/default`. The Web GUI accepts the display name and creates
+a collision-free technical ID automatically; changing the display name of an
+existing device does not change its ID. Older documents without `name` display
+the device ID as their name.
 
 `egress_mode` is either:
 
@@ -221,6 +230,10 @@ global rules. The device path creates a private `<device-id>-policy` profile by
 default. On the first edit of a shared or template-derived profile, the GUI
 copies its resolved effective content into a template-free private profile and
 changes only that device reference.
+
+Dashboard traffic and recent-lease summaries join the registered display name
+by normalized MAC and prefer it over the DHCP hostname. This makes a saved
+device name visible even when the client does not publish a DHCP hostname.
 
 `lease_active` means only that dnsmasq has an unexpired lease. It is not a
 reachability claim. `policy_identity_ready` is true only when the gateway is
