@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { api, RequestError, waitForOperation } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
-import type { CompiledDevice, DevicePolicyDocument, DevicesResponse, Lease, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, ProxyGroup } from '../types'
+import type { AppliedDeviceEgressMode, CompiledDevice, DeviceEgressMode, DevicePolicyDocument, DevicesResponse, Lease, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, ProxyGroup } from '../types'
 
 const emptyPolicy = (): PolicySet => ({ devices: [], profiles: [], templates: [], rule_sets: [] })
 const normalizePolicy = (value: PolicySet): PolicySet => ({ devices: value.devices ?? [], profiles: value.profiles ?? [], templates: value.templates ?? [], rule_sets: value.rule_sets ?? [] })
@@ -114,7 +114,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
   }
 
   return <>
-    <PageHeader eyebrow="DEVICES" title="设备与规则" description="上方出口选择即时生效；设备身份、候选出口和规则保存后需要重载网关。" />
+    <PageHeader eyebrow="DEVICES" title="设备与规则" description="设备可以跟随本机 / 全局规则，也可以使用独立出口；路由方式保存后需要重载，已应用的出口选择即时生效。" />
     {data?.drift && <DriftBanner data={data} running={overview?.status.gateway === 'running'} onReload={() => setReloadOpen(true)} onDashboard={() => onNavigate('dashboard')} />}
     {message && <div className="notice ok-notice" role="status">{message}</div>}
     {error && <div className="notice warn" role="alert">{error}{revisionConflict && <button className="inline-action" type="button" onClick={() => void discardDraft()}>放弃本地修改并加载最新版本</button>}</div>}
@@ -126,7 +126,12 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
         <SectionTitle title="设备出口" subtitle="即时生效 · 只切换已经应用的 mihomo selector，不改变规则结构" />
         <div className="device-layout">
           <ThisMacCard overview={overview} groups={globalGroups} onChanged={async () => { await onChanged(); await refresh() }} onPolicies={() => onNavigate('policies')} />
-          {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? [])).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} leases={data?.leases ?? []} groups={groups} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onChanged={async () => { await onChanged(); await refresh() }} />)}
+          {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? [])).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} leases={data?.leases ?? []} groups={groups} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onEgressModeChange={mode => {
+            if (!view.desired) return
+            const next = copyPolicy(policy)
+            next.devices = next.devices.map(device => device.id === view.desired!.id ? { ...device, egress_mode: mode } : device)
+            setPolicy(next)
+          }} onChanged={async () => { await onChanged(); await refresh() }} />)}
         </div>
         {!policy.devices.length && !data?.devices.length && <Empty text="尚未登记设备。使用上方“登记新设备”可直接从当前 DHCP 租约开始。" />}
       </section>
@@ -179,25 +184,39 @@ function deviceViews(desired: PolicyDevice[], applied: CompiledDevice[], changed
     const running = appliedByID.get(device.id)
     appliedByID.delete(device.id)
     if (!running) return { desired: device, state: 'pending' }
-    const same = running.mac.toLowerCase() === device.mac.toLowerCase() && running.ipv4 === device.ipv4 && running.profile === device.profile
+    const same = running.mac.toLowerCase() === device.mac.toLowerCase() && running.ipv4 === device.ipv4 && running.profile === device.profile && appliedEgressMode(running) === desiredEgressMode(device)
     return { desired: device, applied: running, state: same && !changed.has(device.id) ? 'applied' : 'updated' }
   })
   for (const device of appliedByID.values()) views.push({ applied: device, state: 'removing' })
   return views
 }
 
-function DeviceCard({ view, leases, groups, selected, onSelect, onChanged }: { view: DeviceView; leases: Lease[]; groups: ProxyGroup[]; selected: boolean; onSelect: () => void; onChanged: () => Promise<void> }) {
+function DeviceCard({ view, leases, groups, selected, onSelect, onEgressModeChange, onChanged }: { view: DeviceView; leases: Lease[]; groups: ProxyGroup[]; selected: boolean; onSelect: () => void; onEgressModeChange: (mode: DeviceEgressMode) => void; onChanged: () => Promise<void> }) {
   const [rulesOpen, setRulesOpen] = useState(false)
   const device = view.desired ?? view.applied!
   const applied = view.applied
+  const desiredMode = view.desired ? desiredEgressMode(view.desired) : undefined
+  const runningMode = applied ? appliedEgressMode(applied) : undefined
   const lease = applied ? leases.find(item => item.mac.toLowerCase() === applied.mac.toLowerCase() && item.ip === applied.ipv4 && item.online && (!item.expires_at || Date.parse(item.expires_at) > Date.now())) : undefined
   const entries = Object.entries(applied?.groups ?? {})
   const defaultEntry = entries.find(([slot]) => slot === 'default')
   const ruleEntries = entries.filter(([slot]) => slot !== 'default')
-  return <article className={`device-card ${selected ? 'selected' : ''}`}><div className="source-head"><button className="device-title" type="button" disabled={!view.desired} aria-pressed={selected} onClick={onSelect}><small>{device.profile}</small><strong>{device.id}</strong></button><span className={`pill ${view.state === 'applied' ? 'ok' : ''}`}>{deviceStateLabel(view.state)}</span></div><code>{device.ipv4}</code><small>{device.mac}</small>{applied && <span className={`identity-state ${lease ? 'ready' : ''}`}>{lease ? '身份就绪' : '身份待确认：需要在线且未过期的精确 MAC / IPv4 租约'}</span>}<div className="default-slot"><span><strong>默认出口</strong><small>即时切换</small></span>{defaultEntry ? <DeviceGroupSelect device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} onChanged={onChanged} /> : <select aria-label={`${device.id} 默认出口`} disabled><option>重载后可用</option></select>}</div>{ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <label key={slot}><span>{slot}</span><DeviceGroupSelect device={applied!.id} slot={slot} groupName={groupName} groups={groups} onChanged={onChanged} /></label>)}</div>}{view.desired && <button className="edit-device" type="button" onClick={onSelect}>编辑此设备规则</button>}</article>
+  return <article className={`device-card ${selected ? 'selected' : ''}`}>
+    <div className="source-head"><button className="device-title" type="button" disabled={!view.desired} aria-pressed={selected} onClick={onSelect}><small>{device.profile}</small><strong>{device.id}</strong></button><span className={`pill ${view.state === 'applied' ? 'ok' : ''}`}>{deviceStateLabel(view.state)}</span></div>
+    <code>{device.ipv4}</code><small>{device.mac}</small>
+    {applied && <span className={`identity-state ${lease ? 'ready' : ''}`}>{lease ? '身份就绪' : '身份待确认：需要在线且未过期的精确 MAC / IPv4 租约'}</span>}
+    {view.desired && <fieldset className="device-routing-mode"><legend>设备路由方式 <span className="effect-badge restart">保存后重载</span></legend><div className="route-options"><label className={desiredMode === 'inherit_global' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'inherit_global'} onChange={() => onEgressModeChange('inherit_global')} /><span><strong>跟随本机 / 全局规则</strong><small>按与本机相同的全局规则选择出口；设备专属规则仍优先。</small></span></label><label className={desiredMode === 'dedicated' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'dedicated'} onChange={() => onEgressModeChange('dedicated')} /><span><strong>独立设备出口</strong><small>公网流量优先使用设备出口；局域网和私网地址保持直连。</small></span></label></div></fieldset>}
+    {desiredMode === 'legacy_fallback' && <div className="legacy-mode-warning" role="status"><strong>需要选择新的路由方式</strong><small>当前配置使用旧版兼容行为：先匹配全局规则，设备出口仅作兜底。</small></div>}
+    {runningMode === 'inherit_global' && <div className="runtime-route following"><span><strong>当前运行</strong><small>跟随本机 / 全局规则</small></span><span className="effect-badge live">已应用</span></div>}
+    {(runningMode === 'dedicated' || runningMode === 'legacy_fallback') && <div className={`default-slot ${runningMode === 'legacy_fallback' ? 'legacy' : ''}`}><span><strong>{runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}</strong><small>即时切换</small></span>{defaultEntry ? <DeviceGroupSelect device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} ariaLabel={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}`} onChanged={onChanged} /> : <select aria-label={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}`} disabled><option>重载后可用</option></select>}</div>}
+    {!runningMode && desiredMode && <div className="runtime-route"><span><strong>重载后应用</strong><small>{egressModeLabel(desiredMode)}</small></span></div>}
+    {runningMode && desiredMode && runningMode !== desiredMode && <small className="draft-mode-delta">草稿将改为“{egressModeLabel(desiredMode)}”；保存并重载前仍按“{egressModeLabel(runningMode)}”运行。</small>}
+    {ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <label key={slot}><span>{slot}</span><DeviceGroupSelect device={applied!.id} slot={slot} groupName={groupName} groups={groups} onChanged={onChanged} /></label>)}</div>}
+    {view.desired && <button className="edit-device" type="button" onClick={onSelect}>编辑此设备规则</button>}
+  </article>
 }
 
-function DeviceGroupSelect({ device, slot, groupName, groups, onChanged }: { device: string; slot: string; groupName: string; groups: ProxyGroup[]; onChanged: () => Promise<void> }) {
+function DeviceGroupSelect({ device, slot, groupName, groups, ariaLabel, onChanged }: { device: string; slot: string; groupName: string; groups: ProxyGroup[]; ariaLabel?: string; onChanged: () => Promise<void> }) {
   const group = groups.find(item => item.name === groupName)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -207,7 +226,21 @@ function DeviceGroupSelect({ device, slot, groupName, groups, onChanged }: { dev
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
-  return <span className="select-with-error"><select aria-label={`${device} ${slot} 出口`} value={group?.selected ?? ''} disabled={!group || busy} onChange={event => void select(event.target.value)}><option value="">不可用</option>{group?.options.map(option => <option key={option}>{option}</option>)}</select>{busy && <small className="switch-status" role="status">正在切换…</small>}{error && <small className="field-error" role="alert">{error}</small>}</span>
+  return <span className="select-with-error"><select aria-label={ariaLabel ?? `${device} ${slot} 出口`} value={group?.selected ?? ''} disabled={!group || busy} onChange={event => void select(event.target.value)}><option value="">不可用</option>{group?.options.map(option => <option key={option}>{option}</option>)}</select>{busy && <small className="switch-status" role="status">正在切换…</small>}{error && <small className="field-error" role="alert">{error}</small>}</span>
+}
+
+function desiredEgressMode(device: PolicyDevice): AppliedDeviceEgressMode {
+  return device.egress_mode ?? 'legacy_fallback'
+}
+
+function appliedEgressMode(device: CompiledDevice): AppliedDeviceEgressMode {
+  return device.egress_mode || 'legacy_fallback'
+}
+
+function egressModeLabel(mode: AppliedDeviceEgressMode) {
+  if (mode === 'inherit_global') return '跟随本机 / 全局规则'
+  if (mode === 'dedicated') return '独立设备出口'
+  return '旧版兼容兜底'
 }
 
 function deviceStateLabel(state: DeviceView['state']) {
@@ -217,38 +250,41 @@ function deviceStateLabel(state: DeviceView['state']) {
   return '已应用'
 }
 
-type RegistrationDraft = { id: string; mac: string; ipv4: string; profile: string }
+type RegistrationDraft = { id: string; mac: string; ipv4: string; profile: string; egress_mode: DeviceEgressMode | '' }
 function RegistrationPanel({ open, onToggle, leases, policy, candidates, onPolicyChange, onRegistered }: { open: boolean; onToggle: () => void; leases: Lease[]; policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void; onRegistered: (id: string) => void }) {
-  const [draft, setDraft] = useState<RegistrationDraft>({ id: '', mac: '', ipv4: '', profile: '' })
+  const [draft, setDraft] = useState<RegistrationDraft>({ id: '', mac: '', ipv4: '', profile: '', egress_mode: 'inherit_global' })
   const [defaults, setDefaults] = useState(['DIRECT'])
   const [useExisting, setUseExisting] = useState(false)
   const [error, setError] = useState('')
   const chooseLease = (lease: Lease) => {
     const registered = policy.devices.find(item => item.mac.toLowerCase() === lease.mac.toLowerCase())
-    setDraft({ id: registered?.id ?? availableDeviceID(lease, policy.devices), mac: lease.mac, ipv4: lease.ip, profile: registered?.profile ?? policy.profiles[0]?.id ?? '' })
+    setDraft({ id: registered?.id ?? availableDeviceID(lease, policy.devices), mac: lease.mac, ipv4: lease.ip, profile: registered?.profile ?? policy.profiles[0]?.id ?? '', egress_mode: registered ? registered.egress_mode ?? '' : 'inherit_global' })
     setUseExisting(Boolean(registered))
   }
   const register = () => {
     if (!draft.id || !draft.mac || !draft.ipv4) { setError('请填写设备名称、MAC 和固定 IPv4。'); return }
+    if (!draft.egress_mode) { setError('请选择“跟随本机 / 全局规则”或“独立设备出口”。'); return }
     if (useExisting && !draft.profile) { setError('请选择一个现有 Profile。'); return }
     let next = copyPolicy(policy)
     let profile = draft.profile
+    const egressMode = draft.egress_mode as DeviceEgressMode
     if (!useExisting) {
       profile = uniqueProfileID(`${draft.id}-policy`, next.profiles)
       next.profiles.push({ id: profile, default_policies: defaults.length ? defaults : ['DIRECT'], on_unsupported: 'reject', rules: [] })
     }
     const normalizedMAC = draft.mac.toLowerCase()
-    next.devices = [...next.devices.filter(item => item.id !== draft.id && item.mac.toLowerCase() !== normalizedMAC), { ...draft, mac: normalizedMAC, profile }]
+    next.devices = [...next.devices.filter(item => item.id !== draft.id && item.mac.toLowerCase() !== normalizedMAC), { id: draft.id, mac: normalizedMAC, ipv4: draft.ipv4, profile, egress_mode: egressMode }]
     onPolicyChange(next); onRegistered(draft.id)
-    setDraft({ id: '', mac: '', ipv4: '', profile: '' }); setDefaults(['DIRECT']); setUseExisting(false); setError('')
+    setDraft({ id: '', mac: '', ipv4: '', profile: '', egress_mode: 'inherit_global' }); setDefaults(['DIRECT']); setUseExisting(false); setError('')
   }
   const sorted = [...leases].sort((left, right) => Number(right.online) - Number(left.online) || left.ip.localeCompare(right.ip, undefined, { numeric: true }))
-  return <section className="section registration"><button className="section-toggle" type="button" aria-expanded={open} onClick={onToggle}><span><strong>登记新设备</strong><small>从当前 DHCP 租约开始，只需确认身份与默认出口</small></span><span>{open ? '收起' : '展开'}</span></button>{open && <div className="registration-body"><div className="lease-picker"><SectionTitle title="当前已接管设备" subtitle="点击租约会自动填写 MAC 与当前 IPv4" />{sorted.length ? sorted.map(lease => <button className="lease-choice" type="button" aria-label="配置此设备" key={`${lease.mac}-${lease.ip}`} onClick={() => chooseLease(lease)}><span className={lease.online ? 'pill ok' : 'pill'}>{lease.online ? '在线' : '历史租约'}</span><span><strong>{lease.hostname || '未命名设备'}</strong><small>{lease.mac}</small></span><code>{lease.ip}</code><span>配置此设备</span></button>) : <Empty text="当前没有 DHCP 租约；也可以手工填写设备。" />}</div><div className="registration-form"><label>设备名称<input aria-label="Device ID" value={draft.id} onChange={event => setDraft({ ...draft, id: event.target.value })} /></label><label>MAC 地址<input aria-label="设备 MAC" value={draft.mac} onChange={event => setDraft({ ...draft, mac: event.target.value })} /></label><label>固定 IPv4<input aria-label="固定 IPv4" value={draft.ipv4} onChange={event => setDraft({ ...draft, ipv4: event.target.value })} /></label>{!useExisting && <CandidatePicker label="默认出口候选" values={defaults} candidates={candidates} onChange={setDefaults} />}
+  return <section className="section registration"><button className="section-toggle" type="button" aria-expanded={open} onClick={onToggle}><span><strong>登记新设备</strong><small>从当前 DHCP 租约开始，确认身份与设备路由方式</small></span><span>{open ? '收起' : '展开'}</span></button>{open && <div className="registration-body"><div className="lease-picker"><SectionTitle title="当前已接管设备" subtitle="点击租约会自动填写 MAC 与当前 IPv4" />{sorted.length ? sorted.map(lease => <button className="lease-choice" type="button" aria-label="配置此设备" key={`${lease.mac}-${lease.ip}`} onClick={() => chooseLease(lease)}><span className={lease.online ? 'pill ok' : 'pill'}>{lease.online ? '在线' : '历史租约'}</span><span><strong>{lease.hostname || '未命名设备'}</strong><small>{lease.mac}</small></span><code>{lease.ip}</code><span>配置此设备</span></button>) : <Empty text="当前没有 DHCP 租约；也可以手工填写设备。" />}</div><div className="registration-form"><label>设备名称<input aria-label="Device ID" value={draft.id} onChange={event => setDraft({ ...draft, id: event.target.value })} /></label><label>MAC 地址<input aria-label="设备 MAC" value={draft.mac} onChange={event => setDraft({ ...draft, mac: event.target.value })} /></label><label>固定 IPv4<input aria-label="固定 IPv4" value={draft.ipv4} onChange={event => setDraft({ ...draft, ipv4: event.target.value })} /></label><fieldset className="registration-routing"><legend>设备路由方式</legend><label className={draft.egress_mode === 'inherit_global' ? 'active' : ''}><input type="radio" name="registration-route" checked={draft.egress_mode === 'inherit_global'} onChange={() => setDraft({ ...draft, egress_mode: 'inherit_global' })} /><span><strong>跟随本机 / 全局规则</strong><small>默认推荐；按全局规则路由，其余流量使用全局 MATCH。</small></span></label><label className={draft.egress_mode === 'dedicated' ? 'active' : ''}><input type="radio" name="registration-route" checked={draft.egress_mode === 'dedicated'} onChange={() => setDraft({ ...draft, egress_mode: 'dedicated' })} /><span><strong>独立设备出口</strong><small>公网流量优先使用专属 selector，局域网和私网仍直连。</small></span></label>{!draft.egress_mode && <small className="field-error" role="status">这是旧版设备，请选择新的路由方式后再保存。</small>}</fieldset>{!useExisting && draft.egress_mode === 'dedicated' && <CandidatePicker label="独立出口候选" values={defaults} candidates={candidates} onChange={setDefaults} />}
     <details className="inline-advanced"><summary>高级：使用已有 Profile</summary><label className="checkbox-field"><input type="checkbox" checked={useExisting} onChange={event => setUseExisting(event.target.checked)} /> 使用已有 Profile</label>{useExisting && <select aria-label="设备 Profile" value={draft.profile} onChange={event => setDraft({ ...draft, profile: event.target.value })}><option value="">选择 Profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select>}</details>{error && <small className="field-error" role="alert">{error}</small>}<button className="primary" type="button" onClick={register}>登记或更新设备</button></div></div>}</section>
 }
 
 function DeviceRulesPanel({ deviceID, policy, candidates, onPolicyChange }: { deviceID: string; policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void }) {
   const device = policy.devices.find(item => item.id === deviceID)!
+  const mode = desiredEgressMode(device)
   const effective = resolveProfile(policy, device.profile)
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const changeProfile = (change: (profile: PolicyProfile) => PolicyProfile) => {
@@ -268,7 +304,12 @@ function DeviceRulesPanel({ deviceID, policy, candidates, onPolicyChange }: { de
     if (!window.confirm('删除这条设备规则吗？保存并重载后它将不再生效。')) return
     changeProfile(profile => ({ ...profile, rules: (profile.rules ?? []).filter((_, current) => current !== index) }))
   }
-  return <section className="section device-rules"><div className="section-heading-row"><SectionTitle title={`${device.id} 的规则`} subtitle="保存后重载 · 这些规则只属于当前设备" /><span className="effect-badge restart">需重载</span></div><div className="device-defaults"><CandidatePicker label="可切换的默认出口" values={effective.default_policies} candidates={candidates} onChange={values => changeProfile(profile => ({ ...profile, default_policies: values }))} /><small>候选成员变化需要重载；重载后在上方设备卡即时选择。</small></div><div className="flat-rules">{effective.rules?.map((rule, index) => <div className="flat-rule" key={rule.id}><div className="rule-summary"><div>{matchChips(rule).map(chip => <span className="rule-chip" key={chip}>{chip}</span>)}</div><span className="rule-arrow">→</span><strong>{rule.policies?.length ? rule.policies.join(' / ') : rule.action}</strong></div><div className="rule-actions"><button type="button" disabled={index === 0} aria-label={`上移规则 ${rule.id}`} onClick={() => move(index, -1)}>↑</button><button type="button" disabled={index === (effective.rules?.length ?? 0) - 1} aria-label={`下移规则 ${rule.id}`} onClick={() => move(index, 1)}>↓</button><button type="button" onClick={() => setEditing(index)}>编辑</button><button className="danger-link" type="button" onClick={() => remove(index)}>删除</button></div>{editing === index && <RuleForm initial={rule} candidates={candidates} existing={effective.rules ?? []} onCancel={() => setEditing(null)} onSave={updated => { changeProfile(profile => ({ ...profile, rules: (profile.rules ?? []).map((item, current) => current === index ? updated : item) })); setEditing(null) }} />}</div>)}{!effective.rules?.length && <Empty text="这台设备还没有覆盖规则；所有流量使用默认出口。" />}</div>{editing === 'new' ? <RuleForm candidates={candidates} existing={effective.rules ?? []} onCancel={() => setEditing(null)} onSave={rule => { changeProfile(profile => ({ ...profile, rules: [...(profile.rules ?? []), rule] })); setEditing(null) }} /> : <button className="add-rule" type="button" onClick={() => setEditing('new')}>＋ 添加设备规则</button>}</section>
+  const emptyRulesText = mode === 'inherit_global'
+    ? '这台设备还没有覆盖规则；其余流量跟随本机 / 全局规则。'
+    : mode === 'dedicated'
+      ? '这台设备还没有覆盖规则；其余公网流量使用独立设备出口。'
+      : '这台设备还没有覆盖规则；全局规则优先，兼容兜底出口仅处理尚未命中的流量。'
+  return <section className="section device-rules"><div className="section-heading-row"><SectionTitle title={`${device.id} 的规则`} subtitle="保存后重载 · 这些规则只属于当前设备" /><span className="effect-badge restart">需重载</span></div>{mode === 'inherit_global' ? <div className="device-defaults following"><strong>默认出口跟随本机 / 全局规则</strong><small>设备专属规则仍然优先。若希望其余公网流量固定到这台设备的 selector，请在上方改为“独立设备出口”。</small></div> : <div className={`device-defaults ${mode === 'legacy_fallback' ? 'legacy' : ''}`}><CandidatePicker label={mode === 'dedicated' ? '独立出口候选' : '兼容兜底出口候选'} values={effective.default_policies} candidates={candidates} onChange={values => changeProfile(profile => ({ ...profile, default_policies: values }))} /><small>{mode === 'legacy_fallback' ? '这是旧版兼容配置：全局规则仍优先。请在上方明确选择新的路由方式。' : '候选成员变化需要重载；重载后可在上方设备卡即时选择。'}</small></div>}<div className="flat-rules">{effective.rules?.map((rule, index) => <div className="flat-rule" key={rule.id}><div className="rule-summary"><div>{matchChips(rule).map(chip => <span className="rule-chip" key={chip}>{chip}</span>)}</div><span className="rule-arrow">→</span><strong>{rule.policies?.length ? rule.policies.join(' / ') : rule.action}</strong></div><div className="rule-actions"><button type="button" disabled={index === 0} aria-label={`上移规则 ${rule.id}`} onClick={() => move(index, -1)}>↑</button><button type="button" disabled={index === (effective.rules?.length ?? 0) - 1} aria-label={`下移规则 ${rule.id}`} onClick={() => move(index, 1)}>↓</button><button type="button" onClick={() => setEditing(index)}>编辑</button><button className="danger-link" type="button" onClick={() => remove(index)}>删除</button></div>{editing === index && <RuleForm initial={rule} candidates={candidates} existing={effective.rules ?? []} onCancel={() => setEditing(null)} onSave={updated => { changeProfile(profile => ({ ...profile, rules: (profile.rules ?? []).map((item, current) => current === index ? updated : item) })); setEditing(null) }} />}</div>)}{!effective.rules?.length && <Empty text={emptyRulesText} />}</div>{editing === 'new' ? <RuleForm candidates={candidates} existing={effective.rules ?? []} onCancel={() => setEditing(null)} onSave={rule => { changeProfile(profile => ({ ...profile, rules: [...(profile.rules ?? []), rule] })); setEditing(null) }} /> : <button className="add-rule" type="button" onClick={() => setEditing('new')}>＋ 添加设备规则</button>}</section>
 }
 
 function RuleForm({ initial, candidates, existing, onCancel, onSave }: { initial?: PolicyRule; candidates: string[]; existing: PolicyRule[]; onCancel: () => void; onSave: (rule: PolicyRule) => void }) {

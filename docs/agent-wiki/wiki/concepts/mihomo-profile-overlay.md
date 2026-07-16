@@ -81,9 +81,11 @@ behavior, or real proxy egress semantics, use the matching network gate:
 `make lab-test-tun-imported-egress`, or a documented real-device smoke.
 
 When `device_policy.file` is configured, its device overrides are inserted
-before imported global rules, while per-device default selectors are inserted
-after them and before an imported terminal `MATCH`. An imported profile with
-rules after `MATCH` is rejected. Device identity and the selector data path use
+before imported global rules. A `dedicated` device default is also inserted
+before global rules after source-scoped local/private `DIRECT` guards; an
+`inherit_global` device has no default selector. Only a document with no
+explicit mode retains the legacy default after global rules and before terminal
+`MATCH`. An imported profile with rules after `MATCH` is rejected. Device identity and the selector data path use
 `make lab-test-tun-device-policy`; template and rule-provider compilation use
 `make test`.
 

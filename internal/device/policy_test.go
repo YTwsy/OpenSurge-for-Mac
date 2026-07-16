@@ -77,6 +77,75 @@ func TestCompilePolicySetCreatesIndependentDeviceGroupsAndRules(t *testing.T) {
 	}
 }
 
+func TestCompilePolicySetSeparatesExplicitEgressModesAndLegacyFallback(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT", "Proxy"}}},
+		Devices: []ManagedDevice{
+			{ID: "follower", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home", EgressMode: EgressModeInheritGlobal},
+			{ID: "dedicated", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.50.102", Profile: "home", EgressMode: EgressModeDedicated},
+			{ID: "legacy", MAC: "aa:bb:cc:dd:ee:03", IPv4: "192.168.50.103", Profile: "home"},
+		},
+	}
+
+	compiled, err := CompilePolicySet(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]CompiledDevice{}
+	for _, managed := range compiled.Devices {
+		byID[managed.ID] = managed
+	}
+	if byID["follower"].EgressMode != EgressModeInheritGlobal || len(byID["follower"].Groups) != 0 {
+		t.Fatalf("follower = %#v", byID["follower"])
+	}
+	if byID["dedicated"].EgressMode != EgressModeDedicated || byID["dedicated"].Groups["default"] != "device/dedicated/default" {
+		t.Fatalf("dedicated = %#v", byID["dedicated"])
+	}
+	if byID["legacy"].EgressMode != EgressModeLegacyFallback || byID["legacy"].Groups["default"] != "device/legacy/default" {
+		t.Fatalf("legacy = %#v", byID["legacy"])
+	}
+	if containsRule(compiled.DedicatedRules, "SRC-IP-CIDR,192.168.50.101/32,device/follower/default") ||
+		containsRule(compiled.DefaultRules, "SRC-IP-CIDR,192.168.50.101/32,device/follower/default") {
+		t.Fatalf("inherit-global device emitted a catch-all: dedicated=%#v default=%#v", compiled.DedicatedRules, compiled.DefaultRules)
+	}
+	for _, want := range []string{
+		"SRC-IP-CIDR,192.168.50.102/32,device/dedicated/default",
+		"SRC-IP-CIDR,192.168.50.102/32,REJECT",
+	} {
+		if !containsRule(compiled.DedicatedRules, want) {
+			t.Fatalf("dedicated rules missing %q: %#v", want, compiled.DedicatedRules)
+		}
+	}
+	for _, want := range []string{
+		"SRC-IP-CIDR,192.168.50.103/32,device/legacy/default",
+		"SRC-IP-CIDR,192.168.50.103/32,REJECT",
+	} {
+		if !containsRule(compiled.DefaultRules, want) {
+			t.Fatalf("legacy rules missing %q: %#v", want, compiled.DefaultRules)
+		}
+	}
+	if _, err := DeviceGroup(set, "follower", "default"); err == nil || !strings.Contains(err.Error(), "has no selectable policy slot") {
+		t.Fatalf("DeviceGroup(follower/default) error = %v", err)
+	}
+}
+
+func TestCompileInheritedDeviceDoesNotReferenceUnusedDefaultPolicies(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"ArchivedProxy"}}},
+		Devices: []ManagedDevice{{
+			ID: "follower", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home", EgressMode: EgressModeInheritGlobal,
+		}},
+	}
+
+	compiled, err := CompilePolicySet(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.SelectorGroups) != 0 || len(compiled.SelectorTargets) != 0 {
+		t.Fatalf("inherit-global device emitted unused selector references: groups=%#v targets=%#v", compiled.SelectorGroups, compiled.SelectorTargets)
+	}
+}
+
 func TestPolicySetValidationRejectsUnsafeOrAmbiguousPolicies(t *testing.T) {
 	base := PolicySet{
 		Profiles: []Profile{{ID: "default", DefaultPolicies: []string{"DIRECT"}}},
@@ -98,6 +167,11 @@ func TestPolicySetValidationRejectsUnsafeOrAmbiguousPolicies(t *testing.T) {
 			name: "unknown profile",
 			edit: func(set *PolicySet) { set.Devices[0].Profile = "missing" },
 			want: "unknown profile",
+		},
+		{
+			name: "unknown egress mode",
+			edit: func(set *PolicySet) { set.Devices[0].EgressMode = "sometimes" },
+			want: "egress_mode must be",
 		},
 		{
 			name: "rule action and selector",

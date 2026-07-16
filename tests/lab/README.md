@@ -90,12 +90,14 @@ provider-backed policy selection changes the transparent TUN egress path; it
 does not prove a real subscription node or remote exit IP.
 
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
-devices. It assigns them fixed `.101` and `.102` DHCP leases, proves their
-per-device selector groups can choose different egress paths without affecting
-each other, creates desired drift, applies it with a real `omg reload`, verifies
-the applied digest is synchronized while selectors remain isolated, and then
-proves a device-specific domain `REJECT`. It is the required
-data-plane gate for device identity, device defaults, and device overrides. It
+devices. It assigns them fixed `.101` and `.102` DHCP leases, proves one
+`dedicated` device takes its selector before global `MATCH`, and proves one
+`inherit_global` device follows global `MATCH` without exposing a default
+selector. It creates desired drift, applies a change to dedicated mode with a
+real `omg reload`, verifies the applied digest is synchronized, then proves the
+two selectors choose different egress paths without affecting each other and a
+device-specific IP `REJECT` remains enforced. It is the required data-plane
+gate for device identity, routing modes, device defaults, and device overrides. It
 also verifies the applied bundle/state digest, both exact DHCP identities,
 desired-vs-applied drift after a policy-file edit, and a UDP/443 request through
 an HTTP-only selected outbound that must log `REJECT` instead of falling through

@@ -668,6 +668,14 @@ func TestChangedDeviceIDsTracksResolvedPrivateProfileChanges(t *testing.T) {
 	if !reflect.DeepEqual(changed, []string{"alice"}) {
 		t.Fatalf("changed devices=%v", changed)
 	}
+
+	desired = applied
+	desired.Devices = append([]device.ManagedDevice(nil), applied.Devices...)
+	desired.Devices[0].EgressMode = device.EgressModeDedicated
+	changed = changedDeviceIDs(desired, applied)
+	if !reflect.DeepEqual(changed, []string{"alice"}) {
+		t.Fatalf("egress-mode changed devices=%v", changed)
+	}
 }
 
 func TestControlConfigUsesRevisionAndAppliesTopology(t *testing.T) {

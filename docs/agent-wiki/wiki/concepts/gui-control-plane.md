@@ -94,11 +94,13 @@ production 写入经 helper 落到 root-owned config。`/events` 发送真实
 config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的短日志尾部。
 
 设备页的主交互必须区分绿色“即时生效”和黄色“需重载”。前者只允许切换已应用的非
-`device/` 全局组和 `device/<id>/<slot>`；后者编辑 desired 设备身份、候选与规则。
+`device/` 全局组和 `device/<id>/<slot>`；后者编辑 desired 设备身份、路由模式、候选与规则。
+设备路由模式是 `inherit_global`（跟随本机/全局规则）或 `dedicated`（公网流量优先设备
+default selector，本地/私网保持直连）；缺失字段显示旧版兼容状态并要求显式迁移。
 全局组说明不得暗示 macOS system proxy 或统一 fallback。登记面板复用 OpenSurge DHCP
 租约自动填写 hostname、MAC 与 IPv4，默认创建 `<device-id>-policy` 私有 Profile；首次
-编辑共享/Template Profile 时将解析后内容复制为无 Template 的设备私有 Profile，不改变
-PolicySet schema。Profiles/Templates/Rule Sets 作为高级复用机制默认折叠。
+编辑共享/Template Profile 时将解析后内容复制为无 Template 的设备私有 Profile。
+Profiles/Templates/Rule Sets 作为高级复用机制默认折叠。
 
 安全重载入口是 desired 保存之后的 `POST /api/v1/gateway/reload`；运行中应用 source 也
 进入同一 reload 生命周期。它复用 operation ID、

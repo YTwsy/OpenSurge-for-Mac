@@ -329,6 +329,91 @@ rules:
 	)
 }
 
+func TestRenderConfigSeparatesInheritedAndDedicatedDeviceEgress(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	policyPath := filepath.Join(dir, "devices.json")
+	profile := `proxies: []
+proxy-groups:
+  - name: Global
+    type: select
+    proxies:
+      - DIRECT
+rules:
+  - DOMAIN-SUFFIX,global.example,Global
+  - MATCH,DIRECT
+`
+	policy := `{
+  "profiles": [{
+    "id":"home",
+    "default_policies":["DIRECT","Global"],
+    "rules":[{"id":"private","match":{"domains":["device.example"]},"action":"REJECT"}]
+  }],
+  "devices": [
+    {"id":"follower","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"inherit_global"},
+    {"id":"dedicated","mac":"aa:bb:cc:dd:ee:02","ipv4":"192.168.50.102","profile":"home","egress_mode":"dedicated"}
+  ]
+}`
+	if err := os.WriteFile(profilePath, []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	cfg.DevicePolicy.File = policyPath
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rendered, "device/follower/default") {
+		t.Fatalf("inherit-global device unexpectedly rendered a default selector:\n%s", rendered)
+	}
+	for _, want := range []string{
+		"  - name: device/dedicated/default",
+		"AND,((SRC-IP-CIDR,192.168.50.102/32),(IP-CIDR,192.168.0.0/16)),DIRECT",
+		"AND,((SRC-IP-CIDR,192.168.50.102/32),(DOMAIN-SUFFIX,device.example)),REJECT",
+		"SRC-IP-CIDR,192.168.50.102/32,device/dedicated/default",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
+	}
+	assertOrdered(t, rendered,
+		"AND,((SRC-IP-CIDR,192.168.50.102/32),(IP-CIDR,192.168.0.0/16)),DIRECT",
+		"AND,((SRC-IP-CIDR,192.168.50.102/32),(DOMAIN-SUFFIX,device.example)),REJECT",
+		"SRC-IP-CIDR,192.168.50.102/32,device/dedicated/default",
+		"DOMAIN-SUFFIX,global.example,Global",
+		"MATCH,DIRECT",
+	)
+}
+
+func TestRenderManagedConfigPlacesDedicatedEgressBeforeGlobalMatch(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{
+  "profiles":[{"id":"home","default_policies":["DIRECT"]}],
+  "devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"dedicated"}]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.DevicePolicy.File = policyPath
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOrdered(t, rendered,
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,192.168.0.0/16)),DIRECT",
+		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+		"MATCH,DIRECT",
+	)
+}
+
 func TestRenderConfigWithDevicePolicyOverlayMatchesImportedSectionIndentation(t *testing.T) {
 	dir := t.TempDir()
 	profilePath := filepath.Join(dir, "profile.yaml")

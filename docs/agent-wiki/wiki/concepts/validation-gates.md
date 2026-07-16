@@ -269,15 +269,16 @@ proxy 日志出现 `CONNECT <host>:443`。它证明 imported provider-backed 策
 make lab-test-tun-device-policy
 ```
 
-当改动 MAC 绑定 DHCP reservation、每设备 selector 或设备规则覆盖的数据路径时，
-使用此门槛。它使用两个 Lima VM，验证两个设备获得 `.101`/`.102` 固定 IPv4、各自的
-`device/<id>/default` selector 可以独立选择不同 TUN egress，随后验证设备专属域名
-`REJECT`。它还断言 applied policy snapshot/state digest、`omg devices` 的
+当改动 MAC 绑定 DHCP reservation、设备路由模式、每设备 selector 或设备规则覆盖的
+数据路径时，使用此门槛。它使用两个 Lima VM，验证两个设备获得 `.101`/`.102` 固定
+IPv4，先证明 `dedicated` 设备的 default selector 位于全局 `MATCH` 之前，再证明
+`inherit_global` 设备没有 default selector 且走全局 `MATCH`；随后通过 reload 把后者改成
+独立模式，验证两台设备可独立选择不同 TUN egress，并验证设备专属 IP `REJECT`。它还断言 applied policy snapshot/state digest、`omg devices` 的
 `policy_identity_ready`/`lease_match` 对真实租约成立、desired 文件修改后的 drift，
 调用真实 `omg reload` 后网关回到 running 且 desired/applied digest 收敛，并再次检查
 selector 隔离；同时要求设备默认 selector 指向 HTTP-only outbound 时 UDP/443 命中
-`REJECT` fallback 而非 fall through 到全局 `MATCH,DIRECT`。它证明设备身份、默认出口、
-安全 reload、UDP fail-closed 和覆盖规则的真实 LAN/TUN 数据路径。
+`REJECT` fallback 而非 fall through 到全局 `MATCH,DIRECT`。它证明设备身份、跟随与
+独立模式、默认出口、安全 reload、UDP fail-closed 和覆盖规则的真实 LAN/TUN 数据路径。
 
 大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
 `make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。当前设备身份

@@ -73,7 +73,9 @@ export type Source = {
   }
 }
 
-export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; groups: Record<string, string> }
+export type DeviceEgressMode = 'inherit_global' | 'dedicated'
+export type AppliedDeviceEgressMode = DeviceEgressMode | 'legacy_fallback'
+export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; egress_mode?: AppliedDeviceEgressMode | ''; groups: Record<string, string> }
 export type DevicesResponse = {
   desired_digest?: string
   applied_digest?: string
@@ -116,7 +118,7 @@ export type PolicyRule = {
   on_unsupported?: string
 }
 export type PolicyProfile = { id: string; template?: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
-export type PolicyDevice = { id: string; mac: string; ipv4: string; profile: string }
+export type PolicyDevice = { id: string; mac: string; ipv4: string; profile: string; egress_mode?: DeviceEgressMode }
 export type PolicyTemplate = { id: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
 export type PolicyRuleSet = { id: string; type?: 'inline' | 'http'; behavior: 'domain' | 'ipcidr' | 'classical'; format?: string; url?: string; interval?: number; payload?: string[] }
 export type PolicySet = { devices: PolicyDevice[]; profiles: PolicyProfile[]; templates: PolicyTemplate[]; rule_sets: PolicyRuleSet[] }

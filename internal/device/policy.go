@@ -25,11 +25,18 @@ type PolicySet struct {
 }
 
 type ManagedDevice struct {
-	ID      string `json:"id"`
-	MAC     string `json:"mac"`
-	IPv4    string `json:"ipv4"`
-	Profile string `json:"profile"`
+	ID         string `json:"id"`
+	MAC        string `json:"mac"`
+	IPv4       string `json:"ipv4"`
+	Profile    string `json:"profile"`
+	EgressMode string `json:"egress_mode,omitempty"`
 }
+
+const (
+	EgressModeInheritGlobal  = "inherit_global"
+	EgressModeDedicated      = "dedicated"
+	EgressModeLegacyFallback = "legacy_fallback"
+)
 
 // Profile is a reusable routing policy. Every device that uses it still gets
 // its own mihomo selector groups after compilation.
@@ -106,11 +113,12 @@ type RuleProvider struct {
 }
 
 type CompiledDevice struct {
-	ID      string            `json:"id"`
-	MAC     string            `json:"mac"`
-	IPv4    string            `json:"ipv4"`
-	Profile string            `json:"profile"`
-	Groups  map[string]string `json:"groups"` // slot (default or rule id) -> mihomo group name
+	ID         string            `json:"id"`
+	MAC        string            `json:"mac"`
+	IPv4       string            `json:"ipv4"`
+	Profile    string            `json:"profile"`
+	EgressMode string            `json:"egress_mode"`
+	Groups     map[string]string `json:"groups"` // slot (default or rule id) -> mihomo group name
 }
 
 type CompiledPolicy struct {
@@ -118,6 +126,7 @@ type CompiledPolicy struct {
 	SelectorGroups  []SelectorGroup  `json:"selector_groups"`
 	RuleProviders   []RuleProvider   `json:"rule_providers"`
 	OverrideRules   []string         `json:"override_rules"`
+	DedicatedRules  []string         `json:"dedicated_rules"`
 	DefaultRules    []string         `json:"default_rules"`
 	Devices         []CompiledDevice `json:"devices"`
 	SelectorTargets []string         `json:"selector_targets"`
@@ -257,6 +266,9 @@ func ValidatePolicySet(set PolicySet) error {
 		if _, exists := profiles[managed.Profile]; !exists {
 			return fmt.Errorf("device %q references unknown profile %q", managed.ID, managed.Profile)
 		}
+		if managed.EgressMode != "" && managed.EgressMode != EgressModeInheritGlobal && managed.EgressMode != EgressModeDedicated {
+			return fmt.Errorf("device %q egress_mode must be %q or %q", managed.ID, EgressModeInheritGlobal, EgressModeDedicated)
+		}
 	}
 	return nil
 }
@@ -333,18 +345,21 @@ func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 		mac, _ := normalizedMAC(managed.MAC)
 		ip := net.ParseIP(managed.IPv4).To4().String()
 		device := CompiledDevice{
-			ID:      managed.ID,
-			MAC:     mac,
-			IPv4:    ip,
-			Profile: profile.ID,
-			Groups:  map[string]string{},
+			ID:         managed.ID,
+			MAC:        mac,
+			IPv4:       ip,
+			Profile:    profile.ID,
+			EgressMode: EffectiveEgressMode(managed.EgressMode),
+			Groups:     map[string]string{},
 		}
 		compiled.Reservations = append(compiled.Reservations, Reservation{ID: device.ID, MAC: mac, IPv4: ip})
 
 		defaultGroup := DeviceGroupName(device.ID, "default")
-		device.Groups["default"] = defaultGroup
-		compiled.SelectorGroups = append(compiled.SelectorGroups, SelectorGroup{Name: defaultGroup, Policies: append([]string(nil), profile.DefaultPolicies...)})
-		compiled.SelectorTargets = append(compiled.SelectorTargets, profile.DefaultPolicies...)
+		if device.EgressMode != EgressModeInheritGlobal {
+			device.Groups["default"] = defaultGroup
+			compiled.SelectorGroups = append(compiled.SelectorGroups, SelectorGroup{Name: defaultGroup, Policies: append([]string(nil), profile.DefaultPolicies...)})
+			compiled.SelectorTargets = append(compiled.SelectorTargets, profile.DefaultPolicies...)
+		}
 
 		for _, rule := range profile.Rules {
 			action := rule.Action
@@ -373,9 +388,15 @@ func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 				}
 			}
 		}
-		compiled.DefaultRules = append(compiled.DefaultRules, "SRC-IP-CIDR,"+ip+"/32,"+defaultGroup)
+		defaultRules := []string{"SRC-IP-CIDR," + ip + "/32," + defaultGroup}
 		if resolveUnsupported("", profile.OnUnsupported) == "reject" {
-			compiled.DefaultRules = append(compiled.DefaultRules, "SRC-IP-CIDR,"+ip+"/32,REJECT")
+			defaultRules = append(defaultRules, "SRC-IP-CIDR,"+ip+"/32,REJECT")
+		}
+		switch device.EgressMode {
+		case EgressModeDedicated:
+			compiled.DedicatedRules = append(compiled.DedicatedRules, defaultRules...)
+		case EgressModeLegacyFallback:
+			compiled.DefaultRules = append(compiled.DefaultRules, defaultRules...)
 		}
 		compiled.Devices = append(compiled.Devices, device)
 	}
@@ -393,6 +414,17 @@ func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 		})
 	}
 	return compiled, nil
+}
+
+// EffectiveEgressMode preserves the pre-mode device-policy behavior for old
+// documents. New control surfaces write an explicit mode, while a missing
+// field continues to mean global rules first with the device selector as the
+// final fallback until the operator chooses a new mode.
+func EffectiveEgressMode(mode string) string {
+	if mode == "" {
+		return EgressModeLegacyFallback
+	}
+	return mode
 }
 
 func DeviceGroupName(deviceID, slot string) string {

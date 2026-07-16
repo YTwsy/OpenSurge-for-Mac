@@ -366,13 +366,14 @@ wait_for_tun_policy_log_for_host() {
 }
 
 wait_for_tun_action_log() {
-  local host action i log_file
+  local host action source_ip i log_file
   host="$1"
   action="$2"
+  source_ip="${3:-}"
   log_file="$STATE_DIR/logs/mihomo.log"
   for i in {1..20}; do
     if [[ -f "$log_file" ]] &&
-      grep -F -- "--> $host:443" "$log_file" | grep -Fq -- "using $action"; then
+      grep -F -- "--> $host:443" "$log_file" | grep -F -- "$source_ip" | grep -Fq -- "using $action"; then
       echo "device TUN action log observed for $host:443 using $action"
       return 0
     fi
@@ -594,13 +595,15 @@ EOF
       "id": "$client_one",
       "mac": "$mac_one",
       "ipv4": "192.168.50.101",
-      "profile": "controlled"
+      "profile": "controlled",
+      "egress_mode": "dedicated"
     },
     {
       "id": "$client_two",
       "mac": "$mac_two",
       "ipv4": "192.168.50.102",
-      "profile": "direct-blocked"
+      "profile": "direct-blocked",
+      "egress_mode": "inherit_global"
     }
   ]
 }
@@ -608,7 +611,7 @@ EOF
 }
 
 write_device_block_rule() {
-  local client_one=$1 client_two=$2 mac_one mac_two host=$3
+  local client_one=$1 client_two=$2 mac_one mac_two
   mac_one="$(client_mac "$client_one")"
   mac_two="$(client_mac "$client_two")"
   cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
@@ -623,8 +626,8 @@ write_device_block_rule() {
       "default_policies": ["DIRECT", "lab-controlled"],
       "rules": [
         {
-          "id": "block-test-host",
-          "match": {"domains": ["$host"]},
+          "id": "block-test-ip",
+          "match": {"ip_cidrs": ["1.1.1.1/32"]},
           "action": "REJECT"
         }
       ]
@@ -635,13 +638,15 @@ write_device_block_rule() {
       "id": "$client_one",
       "mac": "$mac_one",
       "ipv4": "192.168.50.101",
-      "profile": "controlled"
+      "profile": "controlled",
+      "egress_mode": "dedicated"
     },
     {
       "id": "$client_two",
       "mac": "$mac_two",
       "ipv4": "192.168.50.102",
-      "profile": "direct-blocked"
+      "profile": "direct-blocked",
+      "egress_mode": "dedicated"
     }
   ]
 }
@@ -696,6 +701,8 @@ run_device_policy_test() {
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies.json"
   grep -Fq '"ipv4": "192.168.50.101"' "$STATE_DIR/device-policies.json"
   grep -Fq '"ipv4": "192.168.50.102"' "$STATE_DIR/device-policies.json"
+  grep -Fq '"egress_mode": "dedicated"' "$STATE_DIR/device-policies.json"
+  grep -Fq '"egress_mode": "inherit_global"' "$STATE_DIR/device-policies.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies.json"
 
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
@@ -708,8 +715,18 @@ run_device_policy_test() {
 
   : >"$STATE_DIR/egress/proxy.log"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
-  wait_for_tun_policy_log_for_host "device/$client_two/default" "DIRECT" "$host"
+  wait_for_tun_action_log "$host" "DIRECT" "192.168.50.102"
   assert_tun_egress_proxy_unused
+  "$BINARY" policies --config "$CONFIG" --format json >"$STATE_DIR/device-policies-initial-live.json"
+  if grep -Fq "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-initial-live.json"; then
+    echo "inherit_global device unexpectedly exposed a default selector" >&2
+    exit 1
+  fi
+  if "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-inherit-select.json" 2>&1; then
+    echo "inherit_global device unexpectedly accepted a default selector change" >&2
+    exit 1
+  fi
+  grep -Fq 'has no selectable policy slot' "$STATE_DIR/device-two-inherit-select.json"
 
   mutate_device_policy_desired
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-drift.json"
@@ -721,16 +738,14 @@ run_device_policy_test() {
   wait_for_tun_policy_log_for_host "device/$client_one/default" "DIRECT" "$host"
   assert_tun_egress_proxy_unused
 
-  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-controlled.json"
-  : >"$STATE_DIR/egress/proxy.log"
-  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
-  wait_for_tun_policy_log_for_host "device/$client_two/default" "lab-controlled" "$host"
-  assert_tun_egress_proxy_used
   "$BINARY" policies --config "$CONFIG" --format json >"$STATE_DIR/device-policies-live.json"
   grep -A 4 -F "\"name\": \"device/$client_one/default\"" "$STATE_DIR/device-policies-live.json" | grep -Fq '"selected": "DIRECT"'
-  grep -A 4 -F "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-live.json" | grep -Fq '"selected": "lab-controlled"'
+  if grep -Fq "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-live.json"; then
+    echo "inherit_global device gained a default selector before reload" >&2
+    exit 1
+  fi
 
-  write_device_block_rule "$client_one" "$client_two" "$host"
+  write_device_block_rule "$client_one" "$client_two"
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-reload-drift.json"
   assert_applied_policy_drift "$STATE_DIR/device-policies-reload-drift.json"
   sudo -n "$BINARY" reload --config "$CONFIG" --format json >"$STATE_DIR/device-policy-reload.json"
@@ -749,12 +764,18 @@ run_device_policy_test() {
   grep -A 4 -F "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-live-after-reload.json" | grep -Fq '"selected": "lab-controlled"'
 
   : >"$STATE_DIR/egress/proxy.log"
-  if limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"; then
-    echo "device-specific REJECT unexpectedly allowed $host" >&2
-    exit 1
-  fi
-  wait_for_tun_action_log "$host" "REJECT"
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_one/default" "DIRECT" "$host"
   assert_tun_egress_proxy_unused
+
+  : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_two/default" "lab-controlled" "$host"
+  assert_tun_egress_proxy_used
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy DIRECT --format json >"$STATE_DIR/device-two-direct-after-reload.json"
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
+  wait_for_tun_udp_reject "192.168.50.102" "1.1.1.1" 443
 
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0

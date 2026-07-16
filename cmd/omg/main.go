@@ -390,6 +390,7 @@ type configuredDeviceJSON struct {
 	IPv4                     string            `json:"ipv4"`
 	ExpectedIP               string            `json:"expected_ip"`
 	Profile                  string            `json:"profile"`
+	EgressMode               string            `json:"egress_mode"`
 	Groups                   map[string]string `json:"groups"`
 	PolicySource             string            `json:"policy_source"`
 	DesiredDigest            string            `json:"desired_digest"`
@@ -558,6 +559,7 @@ func configuredDevices(cfg config.Config) ([]configuredDeviceJSON, error) {
 			IPv4:                     managed.IPv4,
 			ExpectedIP:               managed.IPv4,
 			Profile:                  managed.Profile,
+			EgressMode:               managed.EgressMode,
 			Groups:                   managed.Groups,
 			PolicySource:             policySource,
 			DesiredDigest:            desiredDigest,
@@ -829,7 +831,7 @@ func formatConfiguredDevices(devices []configuredDeviceJSON) string {
 		if device.PolicyIdentityReady {
 			status = "policy identity ready"
 		}
-		fmt.Fprintf(&out, "%s %s %s (%s, %s, %s)\n", device.ID, device.IPv4, device.MAC, device.Profile, device.PolicySource, status)
+		fmt.Fprintf(&out, "%s %s %s (%s, %s, %s, %s)\n", device.ID, device.IPv4, device.MAC, device.Profile, device.EgressMode, device.PolicySource, status)
 		if device.Hostname != "" {
 			fmt.Fprintf(&out, "  hostname: %s\n", device.Hostname)
 		}

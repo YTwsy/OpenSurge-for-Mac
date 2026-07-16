@@ -15,6 +15,7 @@ type policySections struct {
 	groups    []device.SelectorGroup
 	providers []device.RuleProvider
 	preRules  []string
+	dedicated []string
 	defaults  []string
 }
 
@@ -54,6 +55,7 @@ func loadPolicySections(bundle *device.PolicyBundle, path string) (policySection
 		groups:    bundle.Compiled.SelectorGroups,
 		providers: bundle.Compiled.RuleProviders,
 		preRules:  bundle.Compiled.OverrideRules,
+		dedicated: bundle.Compiled.DedicatedRules,
 		defaults:  bundle.Compiled.DefaultRules,
 	}, nil
 }
@@ -91,7 +93,7 @@ func composeManagedPolicySections(cfg config.Config, policy policySections) stri
 		out.WriteString("\n")
 	}
 
-	rules := append([]string(nil), policy.preRules...)
+	rules := orderedDevicePreRules(policy)
 	if cfg.UpstreamProxy.Enabled {
 		rules = append(rules, "DOMAIN,"+cfg.UpstreamProxy.MatchDomain+",open-surge-egress")
 	}
@@ -116,7 +118,7 @@ func composeImportedPolicySections(blocks []importedProfileBlock, policy policyS
 	if len(policy.providers) > 0 {
 		byKey["rule-providers"] = appendYAMLBlock(byKey["rule-providers"], "rule-providers:", renderRuleProviderItems(policy.providers))
 	}
-	rules, err := renderRules(byKey["rules"], policy.preRules, policy.defaults)
+	rules, err := renderRules(byKey["rules"], orderedDevicePreRules(policy), policy.defaults)
 	if err != nil {
 		return "", err
 	}
@@ -130,6 +132,37 @@ func composeImportedPolicySections(blocks []importedProfileBlock, policy policyS
 		}
 	}
 	return strings.TrimRight(out.String(), "\n") + "\n", nil
+}
+
+var dedicatedLocalCIDRs = []string{
+	"127.0.0.0/8",
+	"10.0.0.0/8",
+	"100.64.0.0/10",
+	"169.254.0.0/16",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"224.0.0.0/4",
+}
+
+// Dedicated device egress is a public-Internet routing choice. Keep local,
+// link-local, carrier-grade NAT, and multicast destinations direct before any
+// device-owned override or catch-all selector so gateway and LAN access cannot
+// be accidentally sent to a remote proxy.
+func orderedDevicePreRules(policy policySections) []string {
+	rules := []string{}
+	if policy.bundle != nil {
+		for _, managed := range policy.bundle.Compiled.Devices {
+			if managed.EgressMode != device.EgressModeDedicated {
+				continue
+			}
+			for _, cidr := range dedicatedLocalCIDRs {
+				rules = append(rules, fmt.Sprintf("AND,((SRC-IP-CIDR,%s/32),(IP-CIDR,%s)),DIRECT", managed.IPv4, cidr))
+			}
+		}
+	}
+	rules = append(rules, policy.preRules...)
+	rules = append(rules, policy.dedicated...)
+	return rules
 }
 
 func validateImportedPolicySections(inventory importedProfileInventory, policy policySections) error {
@@ -281,9 +314,10 @@ func renderRuleProviderItems(providers []device.RuleProvider) string {
 	return strings.TrimRight(out.String(), "\n")
 }
 
-// renderRules inserts device overrides before global rules and inserts each
-// device's default selector after global rules but before an imported terminal
-// MATCH. This preserves imported-profile fallback semantics.
+// renderRules inserts system, device override, and dedicated-egress rules
+// before global rules. Legacy device defaults remain after global rules but
+// before an imported terminal MATCH so old policy documents keep their exact
+// fallback behavior until the operator selects an explicit mode.
 func renderRules(existing string, preRules, defaultRules []string) (string, error) {
 	if strings.TrimSpace(existing) == "" {
 		return renderRules("rules:\n", append(preRules, defaultRules...), []string{"MATCH,DIRECT"})

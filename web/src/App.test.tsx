@@ -353,7 +353,7 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(screen.getByRole('button', { name: '登记或更新设备' }))
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({
-      devices: [{ id: 'pixel-10', mac: lease.mac.toLowerCase(), ipv4: lease.ip, profile: 'pixel-10-policy' }],
+      devices: [{ id: 'pixel-10', mac: lease.mac.toLowerCase(), ipv4: lease.ip, profile: 'pixel-10-policy', egress_mode: 'inherit_global' }],
       profiles: expect.arrayContaining([expect.objectContaining({ id: 'pixel-10-policy', default_policies: ['DIRECT'] })]),
     }), 'policy-r')
   })

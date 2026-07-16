@@ -40,7 +40,8 @@ There are no built-in household, parental-control, streaming, or vendor rule
 lists. Operators own the policy content. The JSON model has four independent
 collections:
 
-- `devices`: stable identity (`id`, MAC, reserved IPv4, profile id);
+- `devices`: stable identity (`id`, MAC, reserved IPv4, profile id) plus an
+  explicit `egress_mode`;
 - `profiles`: default selector candidates plus device rule overlays;
 - `templates`: optional reusable profile defaults and rule fragments;
 - `rule_sets`: inline or HTTP mihomo rule-provider definitions.
@@ -86,13 +87,33 @@ managed or imported global mihomo profile.
       "id": "alice-phone",
       "mac": "aa:bb:cc:dd:ee:01",
       "ipv4": "192.168.50.101",
-      "profile": "phone"
+      "profile": "phone",
+      "egress_mode": "dedicated"
     }
   ]
 }
 ```
 
-`default_policies` creates `device/<device-id>/default`. A rule with
+`egress_mode` is either:
+
+- `inherit_global`: device overrides remain active, then unmatched traffic
+  follows the same global rules and terminal `MATCH` used by the Mac;
+- `dedicated`: unmatched public-Internet traffic uses the device-owned
+  `device/<device-id>/default` selector before global rules. Local, private,
+  link-local, CGNAT, and multicast destinations remain `DIRECT`.
+
+New devices created in the Web GUI default to `inherit_global`. A document that
+omits `egress_mode` keeps the previous global-first/device-fallback behavior as
+`legacy_fallback`; the GUI displays that state explicitly and asks the operator
+to choose either new mode instead of silently migrating it.
+
+An inherit-only device retains its profile's `default_policies` as future
+configuration, but those unused candidates are not rendered or checked against
+the current imported profile until a dedicated/legacy device actually needs
+that selector.
+
+For `dedicated` (and legacy compatibility), `default_policies` creates
+`device/<device-id>/default`. A rule with
 `policies` creates a separately selectable group named
 `device/<device-id>/<rule-id>`. A rule with `action` routes directly to a
 built-in policy such as `DIRECT` or `REJECT`, or to an existing global mihomo
@@ -115,12 +136,12 @@ protocol compile to:
 AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,media.example),(NETWORK,tcp)),device/alice-phone/media
 ```
 
-Generated ordering is deliberate:
-
-1. device-specific overrides;
-2. imported or managed global rules;
-3. per-device default selector;
-4. global terminal `MATCH`.
+Generated ordering is deliberate. All modes put device-specific overrides
+before global rules. `inherit_global` then continues through global rules and
+the terminal `MATCH`. `dedicated` adds source-scoped local/private `DIRECT`
+guards first, followed by device overrides, the device default selector,
+global rules, and the terminal `MATCH`. A legacy document keeps its historical
+device default after global rules and before `MATCH`.
 
 An imported profile must keep `MATCH` terminal. OpenSurge rejects an imported
 profile that places later rules after a terminal `MATCH`, because the device
@@ -160,7 +181,9 @@ without cloning a full mihomo profile.
 ```
 
 The second command changes only the named device selector. It does not switch
-another device's selector or the global policy group.
+another device's selector or the global policy group. The `default` slot exists
+only for an applied `dedicated` device or a legacy compatibility device;
+`inherit_global` intentionally has no default selector.
 
 To apply a saved desired policy while the gateway is already running:
 
@@ -191,12 +214,13 @@ normal `start`. Stale lease rows for a managed MAC with the old reserved IPv4
 are removed at startup; wait for a fresh DHCP ACK before testing policy traffic.
 
 The Web GUI separates these semantics: applied selector choices are green and
-immediate; device identity, selector membership, and rule edits are yellow and
-require save plus reload. The device path creates a private `<device-id>-policy`
-profile by default. On the first edit of a shared or template-derived profile,
-the GUI copies its resolved effective content into a template-free private
-profile and changes only that device reference. The JSON `PolicySet` schema is
-unchanged.
+immediate; device identity, routing mode, selector membership, and rule edits
+are yellow and require save plus reload. Only an applied `dedicated` device
+shows the live default selector; an inherited device shows that it is following
+global rules. The device path creates a private `<device-id>-policy` profile by
+default. On the first edit of a shared or template-derived profile, the GUI
+copies its resolved effective content into a template-free private profile and
+changes only that device reference.
 
 `lease_active` means only that dnsmasq has an unexpired lease. It is not a
 reachability claim. `policy_identity_ready` is true only when the gateway is
@@ -218,9 +242,11 @@ make lab-test-tun-device-policy
 make lab-down
 ```
 
-It uses two Lima clients, verifies the fixed `.101` and `.102` leases, distinct
-TUN policy groups and egress paths, independent selector changes, and a
-device-specific domain `REJECT`. It creates desired drift, calls the real
+It uses two Lima clients, verifies the fixed `.101` and `.102` leases, proves
+one dedicated device takes its selector before global `MATCH`, proves one
+inherited device follows global `MATCH` without exposing a default selector,
+then reloads the inherited device into dedicated mode and verifies independent
+selector changes and a device-specific IP `REJECT`. It creates desired drift, calls the real
 `omg reload`, requires the gateway to remain running and desired/applied digests
 to converge, then rechecks independent selectors and the new rule. It also
 asserts exact DHCP identity and that UDP/443 over an HTTP-only egress is logged

@@ -342,8 +342,8 @@ render_wifi_device_policy_fixture() {
     }
   ],
   "devices": [
-    {"id": "$DEVICE_ONE_ID", "mac": "$mac_one", "ipv4": "$DEVICE_ONE_IP", "profile": "controlled-first"},
-    {"id": "$DEVICE_TWO_ID", "mac": "$mac_two", "ipv4": "$DEVICE_TWO_IP", "profile": "direct-first"}
+    {"id": "$DEVICE_ONE_ID", "mac": "$mac_one", "ipv4": "$DEVICE_ONE_IP", "profile": "controlled-first", "egress_mode": "dedicated"},
+    {"id": "$DEVICE_TWO_ID", "mac": "$mac_two", "ipv4": "$DEVICE_TWO_IP", "profile": "direct-first", "egress_mode": "dedicated"}
   ]
 }
 EOF

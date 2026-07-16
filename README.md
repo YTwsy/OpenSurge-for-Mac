@@ -45,8 +45,10 @@ Today OpenSurge for Mac can:
 One mihomo process can apply independent policies to registered LAN devices.
 OpenSurge gives each device a MAC-backed fixed IPv4 DHCP lease, then emits
 per-device mihomo selector groups and `SRC-IP-CIDR` rules. The optional JSON
-policy file supports a device default egress, direct device-specific actions
-such as `REJECT`, and later domain/IP/protocol/port/rule-provider overlays.
+policy file lets each device either follow the Mac/global rules or take a
+dedicated device selector before global rules. It also supports direct
+device-specific actions such as `REJECT` and domain/IP/protocol/port/rule-provider
+overlays. Local/private destinations remain direct in dedicated mode.
 
 OpenSurge intentionally ships no household templates or third-party rule
 lists. Operators supply their own policy content; the empty starter file is
@@ -197,11 +199,12 @@ prove `policy-select` changes the TUN egress path between `DIRECT` and the
 controlled proxy.
 
 Use `make lab-test-tun-device-policy` when changing the MAC reservation,
-per-device selector, or device override data path. It proves two clients get
-their distinct fixed leases, independently select different TUN egress paths,
-creates desired drift, applies it through the real interrupting `omg reload`,
-requires desired/applied digests to converge while the gateway returns to
-running, and proves that a device-specific domain `REJECT` takes effect.
+routing mode, per-device selector, or device override data path. It proves two
+clients get distinct fixed leases, compares dedicated egress with inherited
+global `MATCH`, reloads the inherited client into dedicated mode, independently
+selects different TUN egress paths, requires desired/applied digests to
+converge while the gateway returns to running, and proves that a device-specific
+IP `REJECT` takes effect.
 Domain/protocol rule
 compilation, templates, and HTTP/MRS rule-provider configuration are covered by
 unit tests; they do not require one Lab run per operator-defined rule.

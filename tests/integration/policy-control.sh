@@ -10,6 +10,7 @@ CONFIG="$WORK_DIR/config.yaml"
 PROFILE="$WORK_DIR/profile.yaml"
 PROVIDER="$WORK_DIR/provider.yaml"
 REMOTE_PROVIDER="$WORK_DIR/remote-provider.yaml"
+DEVICE_POLICY="$WORK_DIR/device-policy.json"
 MIHOMO_CONFIG="$WORK_DIR/mihomo.yaml"
 MIHOMO_LOG="$WORK_DIR/logs/mihomo.log"
 OMG_BIN="$WORK_DIR/omg"
@@ -109,6 +110,33 @@ proxies:
     port: 18083
 EOF
 
+  cat >"$DEVICE_POLICY" <<'EOF'
+{
+  "profiles": [
+    {
+      "id": "integration-egress",
+      "default_policies": ["DIRECT", "EgressSwitch"]
+    }
+  ],
+  "devices": [
+    {
+      "id": "integration-dedicated",
+      "mac": "aa:bb:cc:dd:ee:01",
+      "ipv4": "192.168.50.101",
+      "profile": "integration-egress",
+      "egress_mode": "dedicated"
+    },
+    {
+      "id": "integration-inherited",
+      "mac": "aa:bb:cc:dd:ee:02",
+      "ipv4": "192.168.50.102",
+      "profile": "integration-egress",
+      "egress_mode": "inherit_global"
+    }
+  ]
+}
+EOF
+
   cat >"$CONFIG" <<EOF
 mihomo:
   binary: "$MIHOMO_BINARY"
@@ -121,6 +149,9 @@ mihomo:
 
 runtime:
   dir: "$WORK_DIR"
+
+device_policy:
+  file: "$DEVICE_POLICY"
 EOF
 }
 
@@ -234,6 +265,13 @@ section "validate mihomo config"
 "$OMG_BIN" validate-mihomo --config "$CONFIG" --format json
 assert_file_contains "$MIHOMO_CONFIG" "store-selected: true"
 assert_file_contains "$MIHOMO_CONFIG" "- DIRECT"
+assert_file_contains "$MIHOMO_CONFIG" "name: device/integration-dedicated/default"
+assert_file_contains "$MIHOMO_CONFIG" "AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,192.168.0.0/16)),DIRECT"
+assert_file_contains "$MIHOMO_CONFIG" "SRC-IP-CIDR,192.168.50.101/32,device/integration-dedicated/default"
+if grep -Fq -- "device/integration-inherited/default" "$MIHOMO_CONFIG"; then
+  echo "inherit_global integration fixture unexpectedly generated a default selector" >&2
+  exit 1
+fi
 
 section "start mihomo"
 start_mihomo "initial start"

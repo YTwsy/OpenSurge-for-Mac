@@ -76,9 +76,9 @@ describe('DevicesPage', () => {
     const policy: PolicySet = {
       ...basePolicy,
       devices: [
-        { id: 'ready', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'ready-policy' },
-        { id: 'updated', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'updated-policy' },
-        { id: 'pending', mac: 'aa:bb:cc:dd:ee:03', ipv4: '192.168.1.123', profile: 'pending-policy' },
+        { id: 'ready', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'ready-policy', egress_mode: 'dedicated' },
+        { id: 'updated', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'updated-policy', egress_mode: 'dedicated' },
+        { id: 'pending', mac: 'aa:bb:cc:dd:ee:03', ipv4: '192.168.1.123', profile: 'pending-policy', egress_mode: 'dedicated' },
       ],
       profiles: ['ready', 'updated', 'pending'].map(id => ({ id: `${id}-policy`, default_policies: ['DIRECT'], rules: [] })),
     }
@@ -86,9 +86,9 @@ describe('DevicesPage', () => {
     vi.mocked(api.devices).mockResolvedValue(devicesResponse({
       applied: true,
       applied_devices: [
-        { id: 'ready', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'ready-policy', groups: { default: 'device/ready/default' } },
-        { id: 'updated', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'updated-policy', groups: { default: 'device/updated/default' } },
-        { id: 'removing', mac: 'aa:bb:cc:dd:ee:04', ipv4: '192.168.1.124', profile: 'old-policy', groups: { default: 'device/removing/default' } },
+        { id: 'ready', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'ready-policy', egress_mode: 'dedicated', groups: { default: 'device/ready/default' } },
+        { id: 'updated', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'updated-policy', egress_mode: 'dedicated', groups: { default: 'device/updated/default' } },
+        { id: 'removing', mac: 'aa:bb:cc:dd:ee:04', ipv4: '192.168.1.124', profile: 'old-policy', egress_mode: 'dedicated', groups: { default: 'device/removing/default' } },
       ],
       changed_devices: ['updated'],
       leases: [{ ip: '192.168.1.121', mac: 'aa:bb:cc:dd:ee:01', hostname: 'Ready', expires_at: '2099-01-01T00:00:00Z', online: true }],
@@ -101,14 +101,14 @@ describe('DevicesPage', () => {
     expect(screen.getByText('待移除')).toBeTruthy()
     expect(screen.getByText('身份就绪')).toBeTruthy()
     expect(screen.getAllByText(/身份待确认/).length).toBe(2)
-    expect(screen.getByLabelText('ready default 出口')).toBeTruthy()
-    expect(screen.getAllByText('默认出口')).toHaveLength(4)
+    expect(screen.getByLabelText('ready 独立出口')).toBeTruthy()
+    expect(screen.getByText('重载后应用')).toBeTruthy()
   })
 
   it('keeps the default outlet primary, exposes rule outlets explicitly, and reports switching progress', async () => {
     const policy: PolicySet = {
       ...basePolicy,
-      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy' }],
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'dedicated' }],
       profiles: [{ id: 'alice-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [{ id: 'video', match: { domains: ['video.example'] }, policies: ['DIRECT', 'Proxy-A'] }] }],
     }
     const deviceOverview = {
@@ -121,13 +121,13 @@ describe('DevicesPage', () => {
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
     vi.mocked(api.devices).mockResolvedValue(devicesResponse({
       applied: true,
-      desired_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', groups: { default: 'device/alice/default', 'rule/video': 'device/alice/rule/video' } }],
-      applied_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', groups: { default: 'device/alice/default', 'rule/video': 'device/alice/rule/video' } }],
+      desired_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'dedicated', groups: { default: 'device/alice/default', 'rule/video': 'device/alice/rule/video' } }],
+      applied_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'dedicated', groups: { default: 'device/alice/default', 'rule/video': 'device/alice/rule/video' } }],
     }))
     let finishSwitch!: () => void
     vi.mocked(api.selectDevicePolicy).mockReturnValueOnce(new Promise(resolve => { finishSwitch = () => resolve({} as never) }))
     renderPage(deviceOverview)
-    const defaultOutlet = await screen.findByLabelText('alice default 出口')
+    const defaultOutlet = await screen.findByLabelText('alice 独立出口')
     const ruleToggle = screen.getByRole('button', { name: /规则出口（1）/ })
     expect(ruleToggle.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByLabelText('alice rule/video 出口')).toBeNull()
@@ -141,11 +141,71 @@ describe('DevicesPage', () => {
     await waitFor(() => expect(api.selectDevicePolicy).toHaveBeenCalledWith('alice', 'default', 'Proxy-A'))
   })
 
+  it('separates an applied inherited route from a draft dedicated route', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global', groups: {} }],
+    }))
+    renderPage()
+    expect(await screen.findByText('默认出口跟随本机 / 全局规则')).toBeTruthy()
+    expect(screen.queryByLabelText('alice 独立出口')).toBeNull()
+    await userEvent.click(screen.getByRole('radio', { name: /独立设备出口/ }))
+    expect(screen.getByText(/草稿将改为“独立设备出口”/)).toBeTruthy()
+    expect(screen.getByLabelText('独立出口候选')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0].egress_mode).toBe('dedicated')
+  })
+
+  it('keeps legacy routing readable and requires an explicit migration choice', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: '', groups: { default: 'device/alice/default' } }],
+    }))
+    renderPage()
+    expect(await screen.findByText('需要选择新的路由方式')).toBeTruthy()
+    expect(screen.getByLabelText('alice 兼容兜底出口')).toBeTruthy()
+    expect((screen.getByRole('radio', { name: /跟随本机/ }) as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByRole('radio', { name: /独立设备出口/ }) as HTMLInputElement).checked).toBe(false)
+    await userEvent.click(screen.getByRole('radio', { name: /跟随本机/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0].egress_mode).toBe('inherit_global')
+  })
+
+  it('defaults newly registered devices to following global rules and reveals candidates only for dedicated routing', async () => {
+    renderPage()
+    const follow = await screen.findByRole('radio', { name: /跟随本机/ })
+    expect((follow as HTMLInputElement).checked).toBe(true)
+    expect(screen.queryByLabelText('独立出口候选')).toBeNull()
+    await userEvent.click(screen.getByRole('radio', { name: /独立设备出口/ }))
+    expect(screen.getByLabelText('独立出口候选')).toBeTruthy()
+    await userEvent.type(screen.getByLabelText('Device ID'), 'pixel')
+    await userEvent.type(screen.getByLabelText('设备 MAC'), 'aa:bb:cc:dd:ee:ff')
+    await userEvent.type(screen.getByLabelText('固定 IPv4'), '192.168.1.137')
+    await userEvent.click(screen.getByRole('button', { name: '登记或更新设备' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0]).toEqual(expect.objectContaining({ id: 'pixel', egress_mode: 'dedicated' }))
+  })
+
   it('privatizes a shared template profile before adding a validated flat rule', async () => {
     const policy: PolicySet = {
       devices: [
-        { id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'shared' },
-        { id: 'bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'shared' },
+        { id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'shared', egress_mode: 'dedicated' },
+        { id: 'bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'shared', egress_mode: 'dedicated' },
       ],
       profiles: [{ id: 'shared', template: 'base', default_policies: [], rules: [{ id: 'existing', match: { ports: ['443'] }, action: 'DIRECT' }] }],
       templates: [{ id: 'base', default_policies: ['DIRECT'], rules: [{ id: 'template-rule', match: { protocols: ['udp'] }, action: 'REJECT' }] }],
@@ -154,7 +214,7 @@ describe('DevicesPage', () => {
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
     renderPage()
     await screen.findByRole('heading', { name: 'alice 的规则' })
-    const searchableOutlet = screen.getByLabelText('可切换的默认出口')
+    const searchableOutlet = screen.getByLabelText('独立出口候选')
     expect(searchableOutlet.getAttribute('type')).toBe('search')
     await userEvent.type(searchableOutlet, 'REJECT{Enter}')
     expect(screen.getByRole('button', { name: '移除 REJECT' })).toBeTruthy()
@@ -180,7 +240,7 @@ describe('DevicesPage', () => {
   it('supports rule reorder, deletion, and mutually exclusive selector output', async () => {
     const policy: PolicySet = {
       ...basePolicy,
-      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy' }],
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' }],
       profiles: [{ id: 'alice-policy', default_policies: ['DIRECT'], rules: [
         { id: 'first', match: { domains: ['first.example'] }, action: 'DIRECT' },
         { id: 'second', match: { domains: ['second.example'] }, action: 'REJECT' },
@@ -209,7 +269,7 @@ describe('DevicesPage', () => {
 
   it('keeps advanced reuse tools collapsed and disables referenced-object deletion', async () => {
     const policy: PolicySet = {
-      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'home' }],
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'home', egress_mode: 'inherit_global' }],
       profiles: [{ id: 'home', template: 'base', default_policies: [], rules: [{ id: 'managed', match: { rule_sets: ['streaming'] }, action: 'DIRECT' }] }],
       templates: [{ id: 'base', default_policies: ['DIRECT'], rules: [] }],
       rule_sets: [{ id: 'streaming', type: 'inline', behavior: 'domain', payload: ['youtube.example'] }],
