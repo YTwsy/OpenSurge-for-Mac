@@ -272,6 +272,84 @@ func (m Manager) Reload(ctx context.Context) error {
 	return nil
 }
 
+// RestartMihomo rebuilds only the proxy engine process. It deliberately keeps
+// dnsmasq, PF, IPv4 forwarding, and the host network configuration untouched,
+// so an upstream link recovery does not turn into a full gateway takeover
+// transition. The existing rendered configuration is validated before the
+// live process is stopped, and the previous log is archived for diagnosis.
+func (m Manager) RestartMihomo(_ context.Context) error {
+	deps := m.gatewayDeps()
+	if deps.geteuid() != 0 {
+		return fmt.Errorf("restart-mihomo requires sudo/root privileges")
+	}
+	state, exists, err := deps.loadState(m.paths.StateFile)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("gateway is not running; run start instead")
+	}
+	desiredProfileDigest, err := config.MihomoProfileDigest(m.cfg)
+	if err != nil {
+		return fmt.Errorf("digest current imported mihomo profile: %w", err)
+	}
+	if desiredProfileDigest != state.ProfileDigest {
+		return fmt.Errorf("desired imported mihomo profile differs from the applied runtime; run reload instead")
+	}
+
+	mihomoManager := deps.newMihomo(m.cfg, m.paths)
+	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
+		return fmt.Errorf("prepared mihomo config validation failed: %w", err)
+	}
+
+	previousPID := state.PIDMihomo
+	state.PIDMihomo = 0
+	if err := deps.saveState(m.paths.StateFile, state); err != nil {
+		return fmt.Errorf("mark mihomo restart in runtime state: %w", err)
+	}
+	if err := mihomoManager.Stop(previousPID); err != nil {
+		if mihomoManager.Running(previousPID) {
+			state.PIDMihomo = previousPID
+		}
+		return errors.Join(fmt.Errorf("stop mihomo pid %d: %w", previousPID, err), deps.saveState(m.paths.StateFile, state))
+	}
+
+	archivedLog, err := archiveMihomoLog(m.paths.MihomoLog, deps.now())
+	if err != nil {
+		return fmt.Errorf("archive mihomo log before restart: %w", err)
+	}
+	newPID, err := mihomoManager.Start()
+	if err != nil {
+		return fmt.Errorf("start replacement mihomo process: %w", err)
+	}
+	state.PIDMihomo = newPID
+	if err := deps.saveState(m.paths.StateFile, state); err != nil {
+		stopErr := mihomoManager.Stop(newPID)
+		return errors.Join(fmt.Errorf("save replacement mihomo pid: %w", err), stopErr)
+	}
+
+	fmt.Printf("mihomo restarted with pid %d\n", newPID)
+	if archivedLog != "" {
+		fmt.Printf("previous mihomo log archived at %s\n", archivedLog)
+	}
+	return nil
+}
+
+func archiveMihomoLog(path string, now time.Time) (string, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(filepath.Base(path), ext)
+	archive := filepath.Join(filepath.Dir(path), fmt.Sprintf("%s-before-restart-%s%s", base, now.UTC().Format("20060102T150405.000000000Z"), ext))
+	if err := os.Rename(path, archive); err != nil {
+		return "", err
+	}
+	return archive, nil
+}
+
 // validateReloadCandidate renders every generated artifact into an isolated
 // temporary runtime and runs the real mihomo validator. It deliberately does
 // not write applied policy state or alter host networking.

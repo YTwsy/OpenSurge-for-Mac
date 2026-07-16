@@ -226,6 +226,29 @@ func TestReloadCommandPrintsJSON(t *testing.T) {
 	}
 }
 
+func TestRestartMihomoCommandPrintsJSON(t *testing.T) {
+	oldNewGatewayManager := newGatewayManager
+	t.Cleanup(func() { newGatewayManager = oldNewGatewayManager })
+	fake := &fakeGatewayManager{}
+	newGatewayManager = func(cfg config.Config) gatewayManager { return fake }
+
+	configPath := writeRuntimeConfig(t)
+	var exitCode int
+	output := captureStdout(t, func() {
+		exitCode = run([]string{"restart-mihomo", "--config", configPath, "--format", "json"})
+	})
+	if exitCode != 0 || !fake.restartMihomoCalled {
+		t.Fatalf("restart-mihomo exit=%d called=%v output=%s", exitCode, fake.restartMihomoCalled, output)
+	}
+	var payload commandResultJSON
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Command != "restart-mihomo" || !payload.OK || payload.ConfigPath != configPath {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
 func TestConfigLoadErrorPrintsJSON(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "missing.yaml")
 	var exitCode int
@@ -1391,14 +1414,16 @@ func writeDevicePolicyConfig(t *testing.T) string {
 }
 
 type fakeGatewayManager struct {
-	startCalled  bool
-	stopCalled   bool
-	reloadCalled bool
-	status       gateway.Status
-	startErr     error
-	stopErr      error
-	reloadErr    error
-	statusErr    error
+	startCalled         bool
+	stopCalled          bool
+	reloadCalled        bool
+	restartMihomoCalled bool
+	status              gateway.Status
+	startErr            error
+	stopErr             error
+	reloadErr           error
+	restartMihomoErr    error
+	statusErr           error
 }
 
 func (m *fakeGatewayManager) Start(ctx context.Context) error {
@@ -1414,6 +1439,11 @@ func (m *fakeGatewayManager) Stop(ctx context.Context) error {
 func (m *fakeGatewayManager) Reload(ctx context.Context) error {
 	m.reloadCalled = true
 	return m.reloadErr
+}
+
+func (m *fakeGatewayManager) RestartMihomo(ctx context.Context) error {
+	m.restartMihomoCalled = true
+	return m.restartMihomoErr
 }
 
 func (m *fakeGatewayManager) Status(ctx context.Context) (gateway.Status, error) {

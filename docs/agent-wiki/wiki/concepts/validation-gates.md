@@ -308,6 +308,25 @@ make same-wifi-dhcp-verify-device-policy-recovery
 截至本实现落地时该 gate 尚未在本轮真机运行；因此 same-WiFi per-device 只能标记为
 Experimental / cooperative IPv4，不能借用 virtual lab 的通过记录宣称已验收。
 
+## same-WiFi 上游断链恢复门槛
+
+Mac 与下游客户端共用同一个 Wi-Fi 接口时，普通连通性 smoke 不足以证明上游断链恢复。
+需要在完整恢复手册可用的前提下，单独记录以下证据：
+
+1. 断链前，连通性探针分别证明一个 DIRECT 国内目标和一个真实/受控代理目标可用，并记录
+   Mihomo 的 rule、chain 与日志；
+2. 人工让 Wi-Fi 断开并重新关联，确认接口、静态 IPv4、router 和 DNS 已恢复；
+3. 若 Mihomo 路径持续失败，保存 macOS Wi-Fi 时间线和当前 `mihomo.log`，执行
+   `sudo omg restart-mihomo --config <path>`；
+4. 证明 dnsmasq PID、PF anchor、IPv4 forwarding、Mac 静态网络和 DHCP 接管恢复阶段在
+   动作前后没有变化，只有 Mihomo PID 改变；
+5. 重复 DIRECT 与代理出口探针，要求均恢复，并确认旧日志已归档；
+6. 最后完成 same-WiFi stop 与路由器 DHCP、Mac DHCP、客户端自动获取恢复门槛。
+
+`make test` 只证明独立恢复动作的状态事务和接口边界。普通 `make lab-test-tun` 使用虚拟
+LAN，不能代替物理 Wi-Fi 断开/重关联证据；在上述真实门槛未运行前，不得宣称自动恢复或
+根因已经彻底修复。
+
 ## 结论纪律
 
 最终报告必须明确说出实际运行了哪些命令。如果只运行了 `make test`，不要暗示

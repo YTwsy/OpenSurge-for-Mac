@@ -74,6 +74,9 @@ button{cursor:pointer}
 .notice,.error-banner,.recovery-banner{border-radius:12px;padding:14px 16px}
 .notice{background:#132720;color:#a6b8b1;margin:8px 0}
 .notice.warn{border:1px solid #5b4b29;background:#2b2414;color:#ead4a0}
+.notice.actionable{display:flex;align-items:center;justify-content:space-between;gap:18px;border:1px solid #29483c}
+.notice.actionable p{margin:4px 0 0;color:#82978f}
+.notice.actionable button{flex:0 0 auto}
 .error-banner{display:flex;align-items:center;gap:14px;background:#321a18;border:1px solid #6b3932;margin-bottom:18px}
 .error-banner span{color:#ffad9f;font-weight:800}
 .error-banner p{flex:1;margin:0}

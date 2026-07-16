@@ -37,6 +37,7 @@ type gatewayManager interface {
 	Start(context.Context) error
 	Stop(context.Context) error
 	Reload(context.Context) error
+	RestartMihomo(context.Context) error
 	Status(context.Context) (gateway.Status, error)
 }
 
@@ -103,6 +104,13 @@ func run(args []string) int {
 		}
 		if jsonOutput {
 			return writeJSONExit(commandResultJSON{Command: "reload", OK: true, ConfigPath: *configPath})
+		}
+	case "restart-mihomo":
+		if err := manager.RestartMihomo(ctx); err != nil {
+			return writeErrorExit(command, jsonOutput, 1, "restart-mihomo", err)
+		}
+		if jsonOutput {
+			return writeJSONExit(commandResultJSON{Command: "restart-mihomo", OK: true, ConfigPath: *configPath})
 		}
 	case "status":
 		status, err := manager.Status(ctx)
@@ -994,6 +1002,8 @@ Commands:
   start    prepare runtime state and start gateway services
   stop     stop gateway services and clean runtime state
   reload   validate desired configuration, then stop and restart gateway services
+  restart-mihomo
+           validate and restart only mihomo, preserving DHCP/DNS, PF, and forwarding
   status   print gateway status
   doctor   run environment checks
   leases   print DHCP leases

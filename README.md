@@ -126,6 +126,7 @@ go run ./cmd/omg provider-update --config examples/config.imported-profile.examp
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
 sudo go run ./cmd/omg reload --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg restart-mihomo --config examples/config.example.yaml --format json
 sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 ```
 
@@ -138,6 +139,9 @@ with per-file existence and read-error fields for control surfaces.
 `snapshot --format json` aggregates status, doctor checks, leases, log tails,
 policy groups, connections, and provider status; mihomo API failures are
 reported inside the `mihomo` fields so the rest of the snapshot remains usable.
+`restart-mihomo` validates and restarts only the applied proxy engine process.
+It preserves dnsmasq, PF, IPv4 forwarding, and host network settings, and
+archives the previous Mihomo log before rebuilding TUN and outbound sockets.
 `start --format json` and `stop --format json` return a success payload with
 `command`, `ok`, and `config_path` after the gateway action succeeds.
 When `--format json` is used, command failures are emitted to stderr as

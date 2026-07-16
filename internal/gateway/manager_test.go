@@ -427,6 +427,171 @@ func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
 	}
 }
 
+func TestRestartMihomoValidatesBeforeStoppingLiveProcess(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	original := runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, PFAnchorLoaded: true, StartedAt: time.Now()}
+	if err := runtime.SaveState(paths.StateFile, original); err != nil {
+		t.Fatal(err)
+	}
+	mihomoManager := &fakeMihomo{validateErr: errors.New("invalid prepared config")}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, now: time.Now,
+	}}
+
+	err := manager.RestartMihomo(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "invalid prepared config") {
+		t.Fatalf("RestartMihomo() error=%v", err)
+	}
+	if mihomoManager.stopCalled || mihomoManager.startCalled {
+		t.Fatal("restart touched the live process before prepared config validation passed")
+	}
+	state, exists, loadErr := runtime.LoadState(paths.StateFile)
+	if loadErr != nil || !exists || state.PIDMihomo != original.PIDMihomo || state.PIDDNSMasq != original.PIDDNSMasq {
+		t.Fatalf("runtime state=%#v exists=%v err=%v", state, exists, loadErr)
+	}
+}
+
+func TestRestartMihomoRejectsImportedProfileDrift(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = filepath.Join(cfg.Runtime.Dir, "imported.yaml")
+	if err := os.WriteFile(cfg.Mihomo.Profile, []byte("proxies: []\nproxy-groups: []\nrules: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, ProfileDigest: "older-applied-digest", StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	mihomoManager := &fakeMihomo{}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, now: time.Now,
+	}}
+
+	err := manager.RestartMihomo(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "differs from the applied runtime") {
+		t.Fatalf("RestartMihomo() error=%v", err)
+	}
+	if mihomoManager.stopCalled || mihomoManager.startCalled {
+		t.Fatal("restart touched mihomo while desired imported profile was not applied")
+	}
+}
+
+func TestRestartMihomoReplacesOnlyProxyEngineAndArchivesLog(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	original := runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, PFAnchorLoaded: true, IPForwardingBefore: "0", StartedAt: time.Now()}
+	if err := runtime.SaveState(paths.StateFile, original); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.MihomoLog, []byte("link-down evidence\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	restartedAt := time.Date(2026, 7, 16, 12, 53, 33, 123456789, time.UTC)
+	mihomoManager := &fakeMihomo{startPID: 22}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, now: func() time.Time { return restartedAt },
+	}}
+
+	if err := manager.RestartMihomo(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !mihomoManager.stopCalled || mihomoManager.stoppedPID != original.PIDMihomo || !mihomoManager.startCalled {
+		t.Fatalf("mihomo calls stop=%v stoppedPID=%d start=%v", mihomoManager.stopCalled, mihomoManager.stoppedPID, mihomoManager.startCalled)
+	}
+	state, exists, err := runtime.LoadState(paths.StateFile)
+	if err != nil || !exists || state.PIDMihomo != 22 || state.PIDDNSMasq != original.PIDDNSMasq || !state.PFAnchorLoaded || state.IPForwardingBefore != original.IPForwardingBefore {
+		t.Fatalf("runtime state=%#v exists=%v err=%v", state, exists, err)
+	}
+	archive := filepath.Join(paths.LogDir, "mihomo-before-restart-20260716T125333.123456789Z.log")
+	data, err := os.ReadFile(archive)
+	if err != nil || string(data) != "link-down evidence\n" {
+		t.Fatalf("archived log=%q err=%v", data, err)
+	}
+}
+
+func TestRestartMihomoStartFailureLeavesRetryableRuntimeState(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.MihomoLog, []byte("incident\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	mihomoManager := &fakeMihomo{startErr: errors.New("replacement failed")}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, now: time.Now,
+	}}
+
+	err := manager.RestartMihomo(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "replacement failed") {
+		t.Fatalf("RestartMihomo() error=%v", err)
+	}
+	state, exists, loadErr := runtime.LoadState(paths.StateFile)
+	if loadErr != nil || !exists || state.PIDMihomo != 0 || state.PIDDNSMasq != 11 {
+		t.Fatalf("retryable runtime state=%#v exists=%v err=%v", state, exists, loadErr)
+	}
+	matches, globErr := filepath.Glob(filepath.Join(paths.LogDir, "mihomo-before-restart-*.log"))
+	if globErr != nil || len(matches) != 1 {
+		t.Fatalf("archived logs=%v err=%v", matches, globErr)
+	}
+}
+
+func TestRestartMihomoStopFailureRestoresLivePID(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	mihomoManager := &fakeMihomo{stopErr: errors.New("old process is busy"), running: true}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, now: time.Now,
+	}}
+
+	err := manager.RestartMihomo(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "old process is busy") {
+		t.Fatalf("RestartMihomo() error=%v", err)
+	}
+	state, exists, loadErr := runtime.LoadState(paths.StateFile)
+	if loadErr != nil || !exists || state.PIDMihomo != 12 || state.PIDDNSMasq != 11 {
+		t.Fatalf("restored runtime state=%#v exists=%v err=%v", state, exists, loadErr)
+	}
+	if mihomoManager.startCalled {
+		t.Fatal("replacement started while the old process was still alive")
+	}
+}
+
 func TestStopFailureRetainsRuntimeStateForRetryAndRecovery(t *testing.T) {
 	cfg := config.Default()
 	cfg.Runtime.Dir = t.TempDir()
@@ -502,7 +667,9 @@ type fakeMihomo struct {
 	startPID    int
 	startErr    error
 	stopErr     error
+	startCalled bool
 	stopCalled  bool
+	stoppedPID  int
 	running     bool
 	events      *[]string
 }
@@ -526,14 +693,16 @@ func (f *fakeMihomo) ValidateWrittenConfig() error {
 }
 
 func (f *fakeMihomo) Start() (int, error) {
+	f.startCalled = true
 	if f.events != nil {
 		*f.events = append(*f.events, "mihomo-start")
 	}
 	return f.startPID, f.startErr
 }
 
-func (f *fakeMihomo) Stop(int) error {
+func (f *fakeMihomo) Stop(pid int) error {
 	f.stopCalled = true
+	f.stoppedPID = pid
 	if f.events != nil {
 		*f.events = append(*f.events, "mihomo-stop")
 	}

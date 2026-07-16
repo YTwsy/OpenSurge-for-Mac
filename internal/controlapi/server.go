@@ -176,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/gateway/start", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("POST /api/v1/gateway/stop", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("POST /api/v1/gateway/reload", s.auth(http.HandlerFunc(s.handleGatewayAction)))
+	mux.Handle("POST /api/v1/gateway/restart-mihomo", s.auth(http.HandlerFunc(s.handleGatewayAction)))
 	mux.Handle("GET /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
 	mux.Handle("POST /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
 	mux.Handle("GET /api/v1/recovery/card", s.auth(http.HandlerFunc(s.handleRecoveryCard)))
@@ -561,7 +562,7 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/api/v1/gateway/")
-	if action != "start" && action != "stop" && action != "reload" {
+	if action != "start" && action != "stop" && action != "reload" && action != "restart-mihomo" {
 		writeError(w, http.StatusNotFound, "not_found", "unknown gateway action")
 		return
 	}
@@ -595,6 +596,21 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if action == "restart-mihomo" {
+		_, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
+		if stateErr != nil {
+			writeError(w, http.StatusInternalServerError, "runtime_state_invalid", stateErr.Error())
+			return
+		}
+		if !exists {
+			writeError(w, http.StatusConflict, "gateway_not_running", "restart-mihomo requires an active gateway runtime; use start instead")
+			return
+		}
+		if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated && recovery.Stage != RecoveryClientValidationSkipped {
+			writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover can restart mihomo only while the gateway is active")
+			return
+		}
+	}
 	if id == "" {
 		id = randomToken(12)
 	}
@@ -621,7 +637,7 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 		}
 	} else {
 		op.State = "succeeded"
-		if topology == config.GatewayModeSameWiFiDHCP && op.Kind != "reload" {
+		if topology == config.GatewayModeSameWiFiDHCP && (op.Kind == "start" || op.Kind == "stop") {
 			recovery, _ := s.store.Recovery()
 			recovery.Topology = topology
 			if op.Kind == "start" {

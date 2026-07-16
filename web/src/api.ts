@@ -24,7 +24,7 @@ export const api = {
   overview: () => request<Overview>('/api/v1/overview'),
   config: () => request<ControlConfig>('/api/v1/config'),
   saveConfig: (config: ControlConfig) => request<ControlConfig>('/api/v1/config', { method: 'PUT', headers: { 'If-Match': `"${config.revision}"` }, body: JSON.stringify(config) }),
-  gateway: (action: 'start' | 'stop' | 'reload') => request<Operation>(`/api/v1/gateway/${action}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
+  gateway: (action: 'start' | 'stop' | 'reload' | 'restart-mihomo') => request<Operation>(`/api/v1/gateway/${action}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
   operation: (id: string) => request<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`),
   gatewayPlan: (routerDHCPDisabled = false) => request<GatewayPlan>('/api/v1/gateway/plan', { method: 'POST', body: JSON.stringify({ router_dhcp_disabled: routerDHCPDisabled }) }),
   recovery: (stage: string) => request('/api/v1/recovery', { method: 'POST', body: JSON.stringify({ stage }) }),

@@ -69,6 +69,26 @@ runtime state 不存在，则尝试用旧 config 重新 start。只有新 start 
 记录新 profile digest 且 `runtime/mihomo.yaml` 已重新生成后，控制面才可把来源标记为
 applied。网关停止时应用 profile 只更新 desired，留待下次正常 start。
 
+## Mihomo 独立恢复
+
+`restart-mihomo` 用于上游接口断开并重新关联后，Mihomo/TUN 进程仍存活但出站 socket
+没有恢复，或 Mihomo 进程已经退出而网关 runtime 仍存在的场景。它不是配置 reload：
+
+1. 要求 root 权限和已有 gateway runtime state；
+2. 对当前已经生成的 applied Mihomo config 运行真实 `mihomo -t`；
+3. 先把 runtime state 中的 Mihomo PID 清零，再停止旧进程；
+4. 把旧 `mihomo.log` 归档为带 UTC 时间戳的 `mihomo-before-restart-*.log`；
+5. 使用同一份 applied config 启动 Mihomo，并原子写回新 PID。
+
+这个动作不停止 dnsmasq、不卸载 PF、不恢复 IPv4 forwarding，也不修改 Mac 静态地址、
+router 或 DNS。启动替代进程失败时 state 保持 Mihomo PID 为 0，便于再次执行恢复或完整
+`stop`；旧事故日志不会被新进程清空。Control API 在 same-WiFi DHCP 拓扑中只允许 active、
+client validated 或明确跳过客户端验收的接管阶段执行，且成功或失败都不改变 DHCP 恢复
+状态机。
+
+这是一条显式恢复路径，不是自动 watchdog。只有真实 same-WiFi 链路断开/重连门槛证明
+触发条件不会误判、恢复后本机 DIRECT 和代理出口均重新可用，才应增加自动触发。
+
 ## 产品不变量
 
 生命周期服务于全屋代理能力。不要把 DHCP、mihomo、pf 或 forwarding 当作互不

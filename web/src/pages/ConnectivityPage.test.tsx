@@ -4,9 +4,9 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConnectivityResponse, Overview } from '../types'
 
-vi.mock('../api', () => ({ api: { connectivity: vi.fn(), testConnectivity: vi.fn() } }))
+vi.mock('../api', () => ({ api: { connectivity: vi.fn(), testConnectivity: vi.fn(), gateway: vi.fn() }, waitForOperation: vi.fn() }))
 
-import { api } from '../api'
+import { api, waitForOperation } from '../api'
 import { ConnectivityPage } from './ConnectivityPage'
 
 const catalog: ConnectivityResponse = {
@@ -39,6 +39,8 @@ describe('ConnectivityPage', () => {
         { target_id: 'github', status: 'reachable', grade: 'good', median_ms: 188, http_status: 200, chain: ['DIRECT'], rule: 'MATCH', rule_payload: 'DIRECT', route: 'direct', route_match: false, tested_at: '2026-07-16T08:00:02Z', samples: [{ status: 'reachable', delay_ms: 188, http_status: 200 }] },
       ],
     })
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'restart-1', kind: 'restart-mihomo', state: 'running' } as never)
+    vi.mocked(waitForOperation).mockResolvedValue({ id: 'restart-1', kind: 'restart-mihomo', state: 'succeeded' } as never)
   })
 
   afterEach(() => { cleanup(); vi.clearAllMocks() })
@@ -67,5 +69,15 @@ describe('ConnectivityPage', () => {
     expect((screen.getByRole('button', { name: '检测全部' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByRole('link', { name: /本机浏览器线路/ }).getAttribute('href')).toBe('https://ip.net.coffee/link/')
     expect(screen.getByText(/启动网关和 mihomo/)).toBeTruthy()
+  })
+
+  it('restarts only mihomo and reruns applied-path probes after recovery', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<ConnectivityPage overview={running} />)
+    await screen.findByText('百度')
+    await userEvent.click(screen.getByRole('button', { name: '仅重启 Mihomo' }))
+    await waitFor(() => expect(api.gateway).toHaveBeenCalledWith('restart-mihomo'))
+    expect(waitForOperation).toHaveBeenCalledWith('restart-1')
+    await waitFor(() => expect(api.testConnectivity).toHaveBeenCalledWith(['baidu', 'github']))
   })
 })

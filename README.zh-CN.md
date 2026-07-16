@@ -113,6 +113,7 @@ go run ./cmd/omg providers --config examples/config.imported-profile.example.yam
 go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
 go run ./cmd/omg render-mihomo --config examples/config.example.yaml
 sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg restart-mihomo --config examples/config.example.yaml --format json
 sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
 ```
 
@@ -124,6 +125,9 @@ provider，并返回刷新后的 provider 状态。`logs --tail N --format json`
 `snapshot --format json` 会聚合 status、doctor、leases、日志尾部、策略组、连接
 和 provider 状态；mihomo API 失败会留在 `mihomo` 字段内部，不影响其余 snapshot
 可用。
+`restart-mihomo` 会先验证当前 applied 配置，再只重启代理核心。它不会停止 dnsmasq、
+卸载 PF、恢复 IPv4 forwarding 或修改本机网络设置，并会在重建 TUN 与出站 socket 前
+归档旧 Mihomo 日志。
 `start --format json` 和 `stop --format json` 会在网关动作成功后返回包含
 `command`、`ok` 和 `config_path` 的成功 payload。
 使用 `--format json` 时，命令失败会在 stderr 输出

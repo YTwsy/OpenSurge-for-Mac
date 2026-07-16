@@ -477,14 +477,34 @@ func TestHelperRejectsActionOutsideWhitelist(t *testing.T) {
 	}
 }
 
-func TestHelperAllowlistIncludesOnlyNamedReloadAction(t *testing.T) {
+func TestHelperAllowlistIncludesNamedLifecycleActions(t *testing.T) {
 	if !helperActionAllowed("reload") {
 		t.Fatal("reload is not available to the privileged helper")
+	}
+	if !helperActionAllowed("restart-mihomo") {
+		t.Fatal("restart-mihomo is not available to the privileged helper")
 	}
 	for _, action := range []string{"hot-reload", "restart", "shell"} {
 		if helperActionAllowed(action) {
 			t.Fatalf("unexpected helper action %q", action)
 		}
+	}
+}
+
+func TestHelperRestartMihomoDefersInvalidDesiredDevicePolicy(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(filepath.Join(dir, "device-policy.json"), []byte("{invalid-json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("device_policy:\n  file: ./device-policy.json\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadHelperConfig("restart-mihomo", configPath); err != nil {
+		t.Fatalf("restart-mihomo runtime config error=%v", err)
+	}
+	if _, err := loadHelperConfig("start", configPath); err == nil {
+		t.Fatal("start accepted an invalid desired device policy")
 	}
 }
 
@@ -755,6 +775,53 @@ func TestGatewayReloadPreservesActiveTakeoverStage(t *testing.T) {
 	recovery, _ := server.store.Recovery()
 	if recovery.Stage != RecoveryClientValidated {
 		t.Fatalf("recovery stage=%q", recovery.Stage)
+	}
+}
+
+func TestGatewayRestartMihomoPreservesActiveTakeoverStage(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	// A zero mihomo PID represents a failed or interrupted earlier recovery. The
+	// narrow action must remain available without requiring a full gateway reload.
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: os.Getpid(), PIDMihomo: 0, StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryClientValidated, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingActionRunner{}
+	server.runner = runner
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/restart-mihomo", nil)
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("Idempotency-Key", "restart-mihomo-success")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("restart-mihomo status=%d body=%s", response.Code, response.Body.String())
+	}
+	waitForStoredOperation(t, server, "restart-mihomo-success", "succeeded")
+	if runner.action != "restart-mihomo" {
+		t.Fatalf("runner action=%q", runner.action)
+	}
+	recovery, _ := server.store.Recovery()
+	if recovery.Stage != RecoveryClientValidated {
+		t.Fatalf("recovery stage=%q", recovery.Stage)
+	}
+}
+
+func TestGatewayRestartMihomoRejectsMissingRuntimeState(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/restart-mihomo", nil)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "gateway_not_running") {
+		t.Fatalf("restart-mihomo status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

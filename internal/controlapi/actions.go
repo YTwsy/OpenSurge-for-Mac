@@ -66,6 +66,8 @@ func (DirectRunner) Run(ctx context.Context, action, configPath string) error {
 		return manager.Stop(ctx)
 	case "reload":
 		return manager.Reload(ctx)
+	case "restart-mihomo":
+		return manager.RestartMihomo(ctx)
 	default:
 		return fmt.Errorf("unsupported privileged action %q", action)
 	}
@@ -241,12 +243,12 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	}
 	var cfg config.Config
 	if err == nil {
-		cfg, err = config.Load(configPath)
+		cfg, err = loadHelperConfig(request.Action, configPath)
 	}
 	if err == nil {
 		err = requireTrustedRuntime(cfg, allowedRoot)
 	}
-	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "config-apply-profile") {
+	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile") {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
 	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control") {
@@ -266,7 +268,7 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	if err == nil {
 		runner := DirectRunner{}
 		switch request.Action {
-		case "start", "stop", "reload":
+		case "start", "stop", "reload", "restart-mihomo":
 			err = runner.Run(ctx, request.Action, configPath)
 		case "network-set-manual":
 			if request.Manual == nil {
@@ -304,9 +306,16 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	_ = json.NewEncoder(conn).Encode(response)
 }
 
+func loadHelperConfig(action, configPath string) (config.Config, error) {
+	if action == "stop" || action == "restart-mihomo" {
+		return config.LoadRuntime(configPath)
+	}
+	return config.Load(configPath)
+}
+
 func helperActionAllowed(action string) bool {
 	switch action {
-	case "start", "stop", "reload", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control":
+	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control":
 		return true
 	default:
 		return false
