@@ -13,6 +13,24 @@ export type GatewayStatus = {
 export type DoctorCheck = { name: string; ok: boolean; message?: string }
 export type Lease = { ip: string; mac: string; hostname?: string; expires_at: string; online: boolean }
 export type ProxyGroup = { name: string; type: string; selected: string; options: string[] }
+export type ProxyHealthEntry = {
+  name: string
+  type: string
+  selected?: string
+  provider?: string
+  udp: boolean
+  status: 'untested' | 'reachable' | 'unreachable' | 'timeout' | 'error' | 'not_applicable'
+  delay_ms?: number
+  tested_at?: string
+  probeable: boolean
+  error?: string
+}
+export type ProxyHealthSnapshot = { schema_version: number; test_url: string; proxies: ProxyHealthEntry[] }
+export type ProxyHealthTestResponse = {
+  schema_version: number
+  test_url: string
+  results: Array<{ name: string; status: ProxyHealthEntry['status']; delay_ms?: number; tested_at: string; test_url: string; error?: string }>
+}
 export type ProviderProxy = { name: string; type: string; alive: boolean }
 export type ProxyProvider = { name: string; type: string; vehicle_type: string; updated_at?: string; proxy_count: number; proxies: ProviderProxy[] }
 export type RuleProvider = { name: string; type: string; vehicle_type: string; behavior?: string; updated_at?: string; rule_count: number }
@@ -126,3 +144,37 @@ export type DevicePolicyDocument = { schema_version: number; revision: string; p
 
 export type APIError = { error?: { code?: string; message?: string } }
 export type Diagnostics = { schema_version: number; revision: string; connections: { upload_total: number; download_total: number; connections: Array<{ id: string; upload: number; download: number; rule?: string; chains?: string[]; metadata?: Record<string, unknown> }> }; connection_error?: string; logs: Record<string, string[]>; operations: Array<{ id: string; kind: string; state: string; error?: string; created_at: string; updated_at: string }>; recovery: Recovery }
+
+export type ConnectivityTarget = {
+  id: string
+  name: string
+  category: 'china' | 'global' | 'ai' | 'developer'
+  symbol: string
+  url: string
+  expected_route: 'direct' | 'proxy' | 'reject' | 'any'
+}
+export type ConnectivitySample = { status: string; delay_ms?: number; http_status?: number; error?: string }
+export type ConnectivityResult = {
+  target_id: string
+  status: string
+  grade: 'excellent' | 'good' | 'slow' | 'very_slow' | 'timeout'
+  median_ms?: number
+  http_status?: number
+  chain: string[]
+  rule?: string
+  rule_payload?: string
+  route: 'direct' | 'proxy' | 'reject' | 'unknown'
+  route_match?: boolean
+  samples: ConnectivitySample[]
+  tested_at: string
+}
+export type ConnectivityResponse = {
+  schema_version: number
+  source: 'gateway_mihomo'
+  scope: 'applied_global_rules'
+  rounds: number
+  targets: ConnectivityTarget[]
+  results: ConnectivityResult[]
+  started_at?: string
+  completed_at?: string
+}

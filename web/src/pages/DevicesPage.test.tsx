@@ -14,6 +14,7 @@ vi.mock('../api', () => {
     api: {
       devices: vi.fn(), config: vi.fn(), sources: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
       selectPolicy: vi.fn(), selectDevicePolicy: vi.fn(), gateway: vi.fn(),
+      proxyHealth: vi.fn(), testProxyHealth: vi.fn(),
     },
   }
 })
@@ -28,8 +29,8 @@ const basePolicy: PolicySet = {
 const overview = {
   status: { gateway: 'running', interface: 'en0', lan_ip: '192.168.1.20' },
   policies: [
-    { name: 'Main', type: 'select', selected: 'DIRECT', options: ['DIRECT', 'Proxy-A'] },
-    { name: 'device/alice/default', type: 'select', selected: 'DIRECT', options: ['DIRECT', 'Proxy-A'] },
+    { name: 'Main', type: 'Selector', selected: 'DIRECT', options: ['DIRECT', 'Proxy-A'] },
+    { name: 'device/alice/default', type: 'Selector', selected: 'DIRECT', options: ['DIRECT', 'Proxy-A'] },
   ],
   leases: [],
 } as unknown as Overview
@@ -59,6 +60,11 @@ describe('DevicesPage', () => {
     vi.mocked(api.selectPolicy).mockResolvedValue({} as never)
     vi.mocked(api.selectDevicePolicy).mockResolvedValue({} as never)
     vi.mocked(api.gateway).mockResolvedValue({ id: 'reload-1', kind: 'reload', state: 'running' })
+    vi.mocked(api.proxyHealth).mockResolvedValue({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', proxies: [
+      { name: 'DIRECT', type: 'Direct', selected: '', provider: '', udp: true, status: 'not_applicable', probeable: false },
+      { name: 'Proxy-A', type: 'Hysteria2', selected: '', provider: 'demo', udp: true, status: 'reachable', delay_ms: 88, tested_at: '2026-07-15T10:00:00Z', probeable: true },
+    ] })
+    vi.mocked(api.testProxyHealth).mockResolvedValue({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', results: [] })
     vi.mocked(api.saveDevicePolicy).mockImplementation(async (policy, revision) => documentFor(policy, `${revision}-next`))
   })
 
@@ -66,9 +72,10 @@ describe('DevicesPage', () => {
 
   it('shows only global groups on THIS MAC and switches them immediately', async () => {
     renderPage()
-    const selector = await screen.findByLabelText('Main selected policy')
-    expect(screen.queryByLabelText('device/alice/default selected policy')).toBeNull()
-    await userEvent.selectOptions(selector, 'Proxy-A')
+    const selector = await screen.findByLabelText('Main 当前出口 DIRECT')
+    expect(screen.queryByLabelText('device/alice/default 当前出口 DIRECT')).toBeNull()
+    await userEvent.click(selector)
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Proxy-A/ }))
     await waitFor(() => expect(api.selectPolicy).toHaveBeenCalledWith('Main', 'Proxy-A'))
   })
 
@@ -101,7 +108,7 @@ describe('DevicesPage', () => {
     expect(screen.getByText('待移除')).toBeTruthy()
     expect(screen.getByText('身份就绪')).toBeTruthy()
     expect(screen.getAllByText(/身份待确认/).length).toBe(2)
-    expect(screen.getByLabelText('ready 独立出口')).toBeTruthy()
+    expect(screen.getByLabelText('ready 独立出口 当前摘要')).toBeTruthy()
     expect(screen.getByText('重载后应用')).toBeTruthy()
   })
 
@@ -115,7 +122,7 @@ describe('DevicesPage', () => {
       ...overview,
       policies: [
         ...overview.policies,
-        { name: 'device/alice/rule/video', type: 'select', selected: 'DIRECT', options: ['DIRECT', 'Proxy-A'] },
+        { name: 'device/alice/rule/video', type: 'Selector', selected: 'DIRECT', options: ['DIRECT', 'Proxy-A'] },
       ],
     } as unknown as Overview
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
@@ -127,16 +134,18 @@ describe('DevicesPage', () => {
     let finishSwitch!: () => void
     vi.mocked(api.selectDevicePolicy).mockReturnValueOnce(new Promise(resolve => { finishSwitch = () => resolve({} as never) }))
     renderPage(deviceOverview)
-    const defaultOutlet = await screen.findByLabelText('alice 独立出口')
+    const defaultOutlet = await screen.findByLabelText('alice 独立出口 当前摘要')
     const ruleToggle = screen.getByRole('button', { name: /规则出口（1）/ })
     expect(ruleToggle.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByLabelText('alice rule/video 出口')).toBeNull()
+    expect(screen.queryByLabelText('alice rule/video 出口当前摘要')).toBeNull()
     await userEvent.click(ruleToggle)
     expect(ruleToggle.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByLabelText('alice rule/video 出口')).toBeTruthy()
-    await userEvent.selectOptions(defaultOutlet, 'Proxy-A')
+    expect(screen.getByLabelText('alice rule/video 出口当前摘要')).toBeTruthy()
+    await userEvent.click(defaultOutlet)
+    const proxyOption = within(screen.getByRole('dialog')).getByRole('button', { name: /Proxy-A/ })
+    await userEvent.click(proxyOption)
     expect(await screen.findByText('正在切换…')).toBeTruthy()
-    expect((defaultOutlet as HTMLSelectElement).disabled).toBe(true)
+    expect((proxyOption as HTMLButtonElement).disabled).toBe(true)
     finishSwitch()
     await waitFor(() => expect(api.selectDevicePolicy).toHaveBeenCalledWith('alice', 'default', 'Proxy-A'))
   })
@@ -154,7 +163,7 @@ describe('DevicesPage', () => {
     }))
     renderPage()
     expect(await screen.findByText('默认出口跟随本机 / 全局规则')).toBeTruthy()
-    expect(screen.queryByLabelText('alice 独立出口')).toBeNull()
+    expect(screen.queryByLabelText('alice 独立出口 当前摘要')).toBeNull()
     await userEvent.click(screen.getByRole('radio', { name: /独立设备出口/ }))
     expect(screen.getByText(/草稿将改为“独立设备出口”/)).toBeTruthy()
     expect(screen.getByLabelText('独立出口候选')).toBeTruthy()
@@ -176,7 +185,7 @@ describe('DevicesPage', () => {
     }))
     renderPage()
     expect(await screen.findByText('需要选择新的路由方式')).toBeTruthy()
-    expect(screen.getByLabelText('alice 兼容兜底出口')).toBeTruthy()
+    expect(screen.getByLabelText('alice 兼容兜底出口 当前摘要')).toBeTruthy()
     expect((screen.getByRole('radio', { name: /跟随本机/ }) as HTMLInputElement).checked).toBe(false)
     expect((screen.getByRole('radio', { name: /独立设备出口/ }) as HTMLInputElement).checked).toBe(false)
     await userEvent.click(screen.getByRole('radio', { name: /跟随本机/ }))

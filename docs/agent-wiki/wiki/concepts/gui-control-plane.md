@@ -102,6 +102,19 @@ default selector，本地/私网保持直连）；缺失字段显示旧版兼容
 编辑共享/Template Profile 时将解析后内容复制为无 Template 的设备私有 Profile。
 Profiles/Templates/Rule Sets 作为高级复用机制默认折叠。
 
+策略页承担完整节点健康中心：`GET /api/v1/proxy-health` 汇总 mihomo `/proxies`，
+`POST /api/v1/proxy-health/tests` 只允许探测当前 snapshot 中的 leaf proxy，并使用固定
+`generate_204` URL 和受限并发调用 mihomo delay API。策略页显示全部节点状态并允许
+Selector 即时切换；设备页仅显示当前出口摘要，打开选择器后才展开候选。该探测是网关
+Mac 上 mihomo 到检测地址的节点可达性，不是下游设备数据面证据。
+
+连通性页使用后端固定 catalog，避免把任意 URL 探测变成 SSRF 接口。
+`POST /api/v1/connectivity/tests` 从 Control Service 经 applied runtime mixed-port 发起
+三轮请求，并在请求仍活跃时尽力关联 mihomo connection 的 rule、rule payload 和 chain。
+它能证明 applied 全局规则路径，不证明设备 `SRC-IP-CIDR`、DHCP、DNS 或 TUN。页面把
+Net.Coffee 明确标为浏览器本机外部检测，并把尚无真实客户端发起器的“设备端检测”显示
+为不可用，不能把三种 scope 合并为一个模糊的“网络正常”。
+
 安全重载入口是 desired 保存之后的 `POST /api/v1/gateway/reload`；运行中应用 source 也
 进入同一 reload 生命周期。它复用 operation ID、
 审计 store 与 helper 的窄权限 `reload` action；只接受 healthy running，先在临时 runtime

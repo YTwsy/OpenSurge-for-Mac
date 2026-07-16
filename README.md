@@ -35,6 +35,10 @@ Today OpenSurge for Mac can:
 - attribute current active-session traffic to OpenSurge DHCP devices in the
   Web GUI, including per-device connection counts, upload/download, and the
   dominant mihomo egress chain;
+- inspect and test proxy-node reachability/latency from the Web GUI, then switch
+  applied Selector groups from the same health view;
+- test a fixed catalog of real services through the applied mihomo mixed-port
+  path, including three-round median latency and the observed rule/egress chain;
 - inspect runtime log paths and recent dnsmasq/mihomo log lines from the CLI;
 - collect a partial-failure JSON snapshot for UI and diagnostics surfaces;
 - validate risky network behavior in an isolated virtual LAN before touching a
@@ -155,6 +159,9 @@ make menubar-build
 The control service listens only on `127.0.0.1` and prints a one-time Web GUI
 bootstrap link. The menu bar app shows status and recovery warnings and opens
 the Web GUI; it deliberately has no start/stop or policy-selection actions.
+The Web GUI includes a native connectivity page for the applied gateway policy
+path and links to Net.Coffee for a separate browser-local check. Neither result
+is presented as proof of a downstream device's DHCP/DNS/TUN path.
 See the [GUI architecture notes](docs/gui-architecture.zh-CN.md) for the current
 security and packaging boundary.
 

@@ -1,4 +1,4 @@
-import type { APIError, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, Operation, Overview, PolicySet, ProxyGroup, Source } from './types'
+import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -56,6 +56,10 @@ export const api = {
   policies: () => request<{ groups: ProxyGroup[] }>('/api/v1/policies'),
   selectPolicy: (group: string, policy: string) => request(`/api/v1/policies/${encodeURIComponent(group)}/selection`, { method: 'POST', body: JSON.stringify({ policy }) }),
   selectDevicePolicy: (device: string, slot: string, policy: string) => request(`/api/v1/devices/${encodeURIComponent(device)}/selectors/${encodeURIComponent(slot)}`, { method: 'POST', body: JSON.stringify({ policy }) }),
+  proxyHealth: () => request<ProxyHealthSnapshot>('/api/v1/proxy-health'),
+  testProxyHealth: (names: string[]) => request<ProxyHealthTestResponse>('/api/v1/proxy-health/tests', { method: 'POST', body: JSON.stringify({ names }) }),
+  connectivity: () => request<ConnectivityResponse>('/api/v1/connectivity'),
+  testConnectivity: (targetIDs: string[] = []) => request<ConnectivityResponse>('/api/v1/connectivity/tests', { method: 'POST', body: JSON.stringify({ target_ids: targetIDs }) }),
   refreshProvider: (name: string) => request(`/api/v1/providers/${encodeURIComponent(name)}/refresh`, { method: 'POST' }),
   diagnostics: () => request<Diagnostics>('/api/v1/diagnostics'),
 }

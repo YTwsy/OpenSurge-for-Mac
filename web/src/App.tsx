@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, RequestError } from './api'
 import { RecoveryBanner, StatusDot } from './components/Common'
 import { DashboardPage } from './pages/DashboardPage'
+import { ConnectivityPage } from './pages/ConnectivityPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { DiagnosticsPage } from './pages/DiagnosticsPage'
 import { NetworkPage } from './pages/NetworkPage'
@@ -10,7 +11,7 @@ import { SourcesPage } from './pages/SourcesPage'
 import { needsNetworkRecoveryWarning, statusLabel } from './status'
 import type { Overview } from './types'
 
-type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'diagnostics'
+type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connectivity' | 'diagnostics'
 type Theme = 'dark' | 'light'
 
 const nav = [
@@ -19,6 +20,7 @@ const nav = [
   { id: 'sources', label: '代理与规则源', icon: '◎' },
   { id: 'devices', label: '设备', icon: '▣' },
   { id: 'policies', label: '策略', icon: '⇄' },
+  { id: 'connectivity', label: '连通性', icon: '◌' },
   { id: 'diagnostics', label: '诊断', icon: '⌘' },
 ] as const satisfies ReadonlyArray<{ id: Page; label: string; icon: string }>
 
@@ -120,6 +122,7 @@ export function App() {
       {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
       {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
       {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
+      {page === 'connectivity' && <ConnectivityPage overview={overview} />}
       {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
     </main>
   </div>

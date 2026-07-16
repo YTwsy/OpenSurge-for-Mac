@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { api, RequestError, waitForOperation } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
-import type { AppliedDeviceEgressMode, CompiledDevice, DeviceEgressMode, DevicePolicyDocument, DevicesResponse, Lease, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, ProxyGroup } from '../types'
+import { DeviceOutletSummary } from '../components/DeviceOutletSummary'
+import { OutletSummary } from '../components/OutletSummary'
+import { useProxyHealth } from '../hooks/useProxyHealth'
+import type { AppliedDeviceEgressMode, CompiledDevice, DeviceEgressMode, DevicePolicyDocument, DevicesResponse, Lease, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, ProxyGroup, ProxyHealthEntry } from '../types'
 
 const emptyPolicy = (): PolicySet => ({ devices: [], profiles: [], templates: [], rule_sets: [] })
 const normalizePolicy = (value: PolicySet): PolicySet => ({ devices: value.devices ?? [], profiles: value.profiles ?? [], templates: value.templates ?? [], rule_sets: value.rule_sets ?? [] })
@@ -15,6 +18,7 @@ type DevicesPageProps = {
 }
 
 export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: DevicesPageProps) {
+  const proxyHealth = useProxyHealth()
   const [data, setData] = useState<DevicesResponse | null>(null)
   const [document, setDocument] = useState<DevicePolicyDocument | null>(null)
   const [policy, setPolicy] = useState<PolicySet>(emptyPolicy)
@@ -125,13 +129,13 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
       <section className="section live-section">
         <SectionTitle title="设备出口" subtitle="即时生效 · 只切换已经应用的 mihomo selector，不改变规则结构" />
         <div className="device-layout">
-          <ThisMacCard overview={overview} groups={globalGroups} onChanged={async () => { await onChanged(); await refresh() }} onPolicies={() => onNavigate('policies')} />
-          {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? [])).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} leases={data?.leases ?? []} groups={groups} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onEgressModeChange={mode => {
+          <ThisMacCard overview={overview} groups={globalGroups} healthByName={proxyHealth.byName} testing={proxyHealth.testing} onHealthTest={proxyHealth.test} onChanged={async () => { await onChanged(); await refresh(); await proxyHealth.refresh() }} onPolicies={() => onNavigate('policies')} />
+          {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? [])).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} leases={data?.leases ?? []} groups={groups} healthByName={proxyHealth.byName} healthTesting={proxyHealth.testing} onHealthTest={proxyHealth.test} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onEgressModeChange={mode => {
             if (!view.desired) return
             const next = copyPolicy(policy)
             next.devices = next.devices.map(device => device.id === view.desired!.id ? { ...device, egress_mode: mode } : device)
             setPolicy(next)
-          }} onChanged={async () => { await onChanged(); await refresh() }} />)}
+          }} onChanged={async () => { await onChanged(); await refresh(); await proxyHealth.refresh() }} />)}
         </div>
         {!policy.devices.length && !data?.devices.length && <Empty text="尚未登记设备。使用上方“登记新设备”可直接从当前 DHCP 租约开始。" />}
       </section>
@@ -161,20 +165,8 @@ function ReloadDialog({ busy, onCancel, onConfirm }: { busy: boolean; onCancel: 
   return <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="reload-title"><h2 id="reload-title">应用设备配置并重载网关？</h2><p>OpenSurge 会先验证完整候选配置。验证通过后，DHCP/DNS、mihomo、PF 与 IPv4 forwarding 会短暂重启。</p><ul><li>当前连接会中断并重新建立。</li><li>改变固定 IPv4 的设备可能需要重新连接网络。</li><li>若候选配置验证失败，现有网关不会被停止。</li></ul><div className="dialog-actions"><button type="button" disabled={busy} onClick={onCancel}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={onConfirm}>{busy ? '正在验证并重载…' : '确认应用并重载'}</button></div></dialog>
 }
 
-function ThisMacCard({ overview, groups, onChanged, onPolicies }: { overview: Overview | null; groups: ProxyGroup[]; onChanged: () => Promise<void>; onPolicies: () => void }) {
-  return <article className="this-mac"><div className="source-head"><div><small>THIS MAC</small><h3>本机 / 全局策略组</h3></div><span className="effect-badge live">即时生效</span></div><p>{overview?.status.interface} · {overview?.status.lan_ip}</p><small className="card-help">仅影响当前 mihomo 规则引用相应策略组的流量；不等同于全部 Mac 流量或 macOS 系统代理开关。</small><div className="global-groups">{groups.map(group => <LiveGroupSelect key={group.name} group={group} onChanged={onChanged} />)}{!groups.length && <Empty text="mihomo 未运行或没有全局可选策略组" />}</div><button className="text-link" type="button" onClick={onPolicies}>完整策略组见策略页 →</button></article>
-}
-
-function LiveGroupSelect({ group, onChanged }: { group: ProxyGroup; onChanged: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const select = async (policy: string) => {
-    setBusy(true); setError('')
-    try { await api.selectPolicy(group.name, policy); await onChanged() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
-  }
-  return <label className="live-group"><span><strong>{group.name}</strong><small>{group.type}</small></span><select aria-label={`${group.name} selected policy`} value={group.selected} disabled={busy} onChange={event => void select(event.target.value)}>{group.options.map(option => <option key={option}>{option}</option>)}</select>{busy && <small className="switch-status" role="status">正在切换…</small>}{error && <small className="field-error" role="alert">{error}</small>}</label>
+function ThisMacCard({ overview, groups, healthByName, testing, onHealthTest, onChanged, onPolicies }: { overview: Overview | null; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; testing: Set<string>; onHealthTest: (names: string[]) => Promise<void>; onChanged: () => Promise<void>; onPolicies: () => void }) {
+  return <article className="this-mac"><div className="source-head"><div><small>THIS MAC</small><h3>本机 / 全局策略组</h3></div><span className="effect-badge live">即时生效</span></div><p>{overview?.status.interface} · {overview?.status.lan_ip}</p><small className="card-help">仅显示当前出口摘要；打开后可查看候选节点健康并切换，不等同于 macOS 系统代理开关。</small><div className="global-groups">{groups.map(group => <OutletSummary key={group.name} title={group.name} ariaLabel={`${group.name} 当前出口 ${group.selected}`} group={group} healthByName={healthByName} testing={testing} onTest={onHealthTest} onSelect={async policy => { await api.selectPolicy(group.name, policy); await onChanged() }} />)}{!groups.length && <Empty text="mihomo 未运行或没有全局可选策略组" />}</div><button className="text-link" type="button" onClick={onPolicies}>完整节点健康见策略页 →</button></article>
 }
 
 type DeviceView = { desired?: PolicyDevice; applied?: CompiledDevice; state: 'applied' | 'pending' | 'updated' | 'removing' }
@@ -191,7 +183,7 @@ function deviceViews(desired: PolicyDevice[], applied: CompiledDevice[], changed
   return views
 }
 
-function DeviceCard({ view, leases, groups, selected, onSelect, onEgressModeChange, onChanged }: { view: DeviceView; leases: Lease[]; groups: ProxyGroup[]; selected: boolean; onSelect: () => void; onEgressModeChange: (mode: DeviceEgressMode) => void; onChanged: () => Promise<void> }) {
+function DeviceCard({ view, leases, groups, healthByName, healthTesting, onHealthTest, selected, onSelect, onEgressModeChange, onChanged }: { view: DeviceView; leases: Lease[]; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; healthTesting: Set<string>; onHealthTest: (names: string[]) => Promise<void>; selected: boolean; onSelect: () => void; onEgressModeChange: (mode: DeviceEgressMode) => void; onChanged: () => Promise<void> }) {
   const [rulesOpen, setRulesOpen] = useState(false)
   const device = view.desired ?? view.applied!
   const applied = view.applied
@@ -208,25 +200,12 @@ function DeviceCard({ view, leases, groups, selected, onSelect, onEgressModeChan
     {view.desired && <fieldset className="device-routing-mode"><legend>设备路由方式 <span className="effect-badge restart">保存后重载</span></legend><div className="route-options"><label className={desiredMode === 'inherit_global' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'inherit_global'} onChange={() => onEgressModeChange('inherit_global')} /><span><strong>跟随本机 / 全局规则</strong><small>按与本机相同的全局规则选择出口；设备专属规则仍优先。</small></span></label><label className={desiredMode === 'dedicated' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'dedicated'} onChange={() => onEgressModeChange('dedicated')} /><span><strong>独立设备出口</strong><small>公网流量优先使用设备出口；局域网和私网地址保持直连。</small></span></label></div></fieldset>}
     {desiredMode === 'legacy_fallback' && <div className="legacy-mode-warning" role="status"><strong>需要选择新的路由方式</strong><small>当前配置使用旧版兼容行为：先匹配全局规则，设备出口仅作兜底。</small></div>}
     {runningMode === 'inherit_global' && <div className="runtime-route following"><span><strong>当前运行</strong><small>跟随本机 / 全局规则</small></span><span className="effect-badge live">已应用</span></div>}
-    {(runningMode === 'dedicated' || runningMode === 'legacy_fallback') && <div className={`default-slot ${runningMode === 'legacy_fallback' ? 'legacy' : ''}`}><span><strong>{runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}</strong><small>即时切换</small></span>{defaultEntry ? <DeviceGroupSelect device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} ariaLabel={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}`} onChanged={onChanged} /> : <select aria-label={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}`} disabled><option>重载后可用</option></select>}</div>}
+    {(runningMode === 'dedicated' || runningMode === 'legacy_fallback') && <div className={`default-slot ${runningMode === 'legacy_fallback' ? 'legacy' : ''}`}>{defaultEntry ? <DeviceOutletSummary device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} title={runningMode === 'dedicated' ? '独立出口 · 即时切换' : '兼容兜底出口 · 即时切换'} ariaLabel={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'} 当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /> : <button className="outlet-summary unavailable" type="button" disabled><span className="outlet-summary-copy"><small>{runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}</small><strong>重载后可用</strong></span></button>}</div>}
     {!runningMode && desiredMode && <div className="runtime-route"><span><strong>重载后应用</strong><small>{egressModeLabel(desiredMode)}</small></span></div>}
     {runningMode && desiredMode && runningMode !== desiredMode && <small className="draft-mode-delta">草稿将改为“{egressModeLabel(desiredMode)}”；保存并重载前仍按“{egressModeLabel(runningMode)}”运行。</small>}
-    {ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <label key={slot}><span>{slot}</span><DeviceGroupSelect device={applied!.id} slot={slot} groupName={groupName} groups={groups} onChanged={onChanged} /></label>)}</div>}
+    {ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <div className="rule-outlet-summary" key={slot}><DeviceOutletSummary device={applied!.id} slot={slot} groupName={groupName} groups={groups} title={slot} ariaLabel={`${device.id} ${slot} 出口当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /></div>)}</div>}
     {view.desired && <button className="edit-device" type="button" onClick={onSelect}>编辑此设备规则</button>}
   </article>
-}
-
-function DeviceGroupSelect({ device, slot, groupName, groups, ariaLabel, onChanged }: { device: string; slot: string; groupName: string; groups: ProxyGroup[]; ariaLabel?: string; onChanged: () => Promise<void> }) {
-  const group = groups.find(item => item.name === groupName)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const select = async (policy: string) => {
-    setBusy(true); setError('')
-    try { await api.selectDevicePolicy(device, slot, policy); await onChanged() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusy(false) }
-  }
-  return <span className="select-with-error"><select aria-label={ariaLabel ?? `${device} ${slot} 出口`} value={group?.selected ?? ''} disabled={!group || busy} onChange={event => void select(event.target.value)}><option value="">不可用</option>{group?.options.map(option => <option key={option}>{option}</option>)}</select>{busy && <small className="switch-status" role="status">正在切换…</small>}{error && <small className="field-error" role="alert">{error}</small>}</span>
 }
 
 function desiredEgressMode(device: PolicyDevice): AppliedDeviceEgressMode {

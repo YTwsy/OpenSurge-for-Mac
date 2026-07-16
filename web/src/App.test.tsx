@@ -52,6 +52,10 @@ vi.mock('./api', () => ({
     devicePolicy: vi.fn(async () => null),
     saveDevicePolicy: vi.fn(),
     selectDevicePolicy: vi.fn(),
+    proxyHealth: vi.fn(async () => ({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', proxies: [] })),
+    testProxyHealth: vi.fn(async () => ({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', results: [] })),
+    connectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'applied_global_rules', rounds: 3, targets: [], results: [] })),
+    testConnectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'applied_global_rules', rounds: 3, targets: [], results: [] })),
     refreshProvider: vi.fn(),
     diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {}, operations: [], recovery: { stage: 'idle', required: false } })),
   },
@@ -149,6 +153,14 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(screen.getByText('合作式 IPv4 模式')).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
+  })
+
+  it('navigates to the native applied-path connectivity page', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '连通性' }))
+    expect(screen.getByRole('heading', { name: '分流与网络连通性' })).toBeTruthy()
+    expect(window.location.pathname).toBe('/connectivity')
   })
 
   it('shows, links, downloads, and can discard the prepared recovery card', async () => {
