@@ -21,7 +21,10 @@ make control-build
 控制服务会输出一个 30 秒内有效、只能使用一次的 bootstrap URL。浏览器通过它换取
 `HttpOnly`、`SameSite=Strict` session cookie。API mutation 还会校验 Origin；菜单栏
 App 使用应用支持目录内权限为 `0600` 的本地 token 请求一个新的短期 bootstrap URL，
-不会把长期凭据放进浏览器历史。
+不会把长期凭据放进浏览器历史，也不会把该 token 再复制到 Keychain。该 token 的事实
+来源始终是用户级 Control Service；文件尚未生成时，菜单栏自动唤醒服务并重试，仍失败
+才显示“OpenSurge 后台服务尚未准备好”和显式“重新连接”。用户点击重新连接只会重启
+用户级 Control Service，不会停止正在运行的网关数据面。
 
 Control API 默认位置是 `http://127.0.0.1:61767`。端点描述、token、来源快照、操作记录
 和同一 LAN DHCP 接管恢复状态位于：

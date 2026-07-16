@@ -25,6 +25,12 @@ Control API 的 bootstrap `expires_at` 来自 Go `time.Time`，可能包含 RFC3
 菜单栏客户端必须同时接受带小数秒和不带小数秒的时间格式，不能把该解码失败误判为浏览器
 打开失败。
 
+菜单栏的 Control API bearer token 只从用户应用支持目录内权限为 `0600` 的
+`control-token` 读取，不复制到 Keychain，也不回退到可能过期的旧 Keychain 副本。文件
+缺失与 endpoint 尚未生成都表示用户级 Control Service 尚未准备好：先轻量 kickstart 并
+重试，仍失败才显示友好错误和“重新连接”。用户主动重新连接可用 `kickstart -k` 重启
+Control Service，但不能停止或重置 DHCP/DNS、mihomo、PF、forwarding 等网关数据面。
+
 同一 LAN DHCP 接管的恢复状态、source snapshots 和 operation records 保存在用户的
 `~/Library/Application Support/OpenSurge/`。`same_wifi_dhcp` start 需要持久化的路由器
 DHCP 已关闭确认；正常确认与恢复由 root helper 的 DHCP OFFER 探测提供证据。stop 后仍

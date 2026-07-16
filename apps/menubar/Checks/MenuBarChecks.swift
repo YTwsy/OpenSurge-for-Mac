@@ -57,6 +57,24 @@ struct MenuBarChecks {
         try require(status.gatewayServicesActive && menuBarQuitWarning(for: status).contains("都不会停止"), "active gateway quit warning mismatch")
         try require(status.diagnosticSummary.contains("PF: loaded"), "diagnostic summary omitted PF")
 
+        try Data("file-token".utf8).write(to: directory.appending(path: "control-token"))
+        let fileTokenClient = ControlAPIClient(session: URLSession(configuration: configuration), applicationSupport: directory)
+        CheckURLProtocol.handler = { request in
+            try require(request.value(forHTTPHeaderField: "Authorization") == "Bearer file-token", "application support token was not used")
+            let body = #"{"schema_version":1,"revision":"r1","gateway":"stopped","topology":"isolated_lan","lan_ip":"192.168.50.1","dhcp":"stopped","mihomo":"stopped","pf_anchor":"unloaded","forwarding":"disabled","client_count":0,"drift":false,"doctor_healthy":true,"recovery_required":false,"warnings":[]}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        _ = try await fileTokenClient.status()
+
+        try FileManager.default.removeItem(at: directory.appending(path: "control-token"))
+        do {
+            _ = try await fileTokenClient.status()
+            throw CheckFailure.failed("missing local token did not fail")
+        } catch let error as ControlAPIError {
+            try require(error.serviceUnavailable, "missing local token was not classified as a service availability failure")
+            try require(error.localizedDescription == "OpenSurge 后台服务尚未准备好", "missing local token exposed a technical error")
+        }
+
         CheckURLProtocol.handler = { request in
             try require(request.url?.query == nil, "long-lived token leaked into request URL")
             try require(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token", "bootstrap bearer token missing")

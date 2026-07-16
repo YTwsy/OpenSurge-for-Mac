@@ -38,9 +38,23 @@ struct MenuContentView: View {
                         .font(.caption).foregroundStyle(.orange)
                 }
             } else {
-                Label(model.error ?? "Control API 不可达", systemImage: "network.slash")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(
+                        model.isRefreshing && model.error == nil
+                            ? "正在连接 OpenSurge 后台服务…"
+                            : model.error ?? "OpenSurge 后台服务尚未准备好",
+                        systemImage: model.isRefreshing && model.error == nil ? "network" : "network.slash"
+                    )
+                        .font(.callout).foregroundStyle(.secondary)
+                    if model.serviceNeedsReconnect {
+                        Button { Task { await model.reconnectService() } } label: {
+                            Label("重新连接", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.isRefreshing)
+                    }
+                }
+                .padding(.vertical, 8)
             }
 
             if let error = model.error, model.status != nil {

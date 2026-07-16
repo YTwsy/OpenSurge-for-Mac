@@ -35,14 +35,39 @@ final class APIClientTests: XCTestCase {
         XCTAssertFalse(url.absoluteString.contains("test-token"))
     }
 
-    private func makeClient() throws -> ControlAPIClient {
+    func testStatusReadsLocalTokenFromApplicationSupport() async throws {
+        let client = try makeClient(tokenOverride: nil, fileToken: "file-token")
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer file-token")
+            let body = #"{"schema_version":1,"revision":"r1","gateway":"stopped","topology":"isolated_lan","lan_ip":"192.168.50.1","dhcp":"stopped","mihomo":"stopped","pf_anchor":"unloaded","forwarding":"disabled","client_count":0,"drift":false,"doctor_healthy":true,"recovery_required":false,"warnings":[]}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+
+        _ = try await client.status()
+    }
+
+    func testMissingLocalTokenUsesFriendlyServiceUnavailableError() async throws {
+        let client = try makeClient(tokenOverride: nil)
+        do {
+            _ = try await client.status()
+            XCTFail("expected missing token to fail")
+        } catch let error as ControlAPIError {
+            XCTAssertTrue(error.serviceUnavailable)
+            XCTAssertEqual(error.localizedDescription, "OpenSurge 后台服务尚未准备好")
+        }
+    }
+
+    private func makeClient(tokenOverride: String? = "test-token", fileToken: String? = nil) throws -> ControlAPIClient {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let descriptor = #"{"schema_version":1,"url":"http://127.0.0.1:61767"}"#
         try Data(descriptor.utf8).write(to: directory.appending(path: "control-endpoint.json"))
+        if let fileToken {
+            try Data(fileToken.utf8).write(to: directory.appending(path: "control-token"))
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
-        return ControlAPIClient(session: URLSession(configuration: configuration), applicationSupport: directory, tokenOverride: "test-token")
+        return ControlAPIClient(session: URLSession(configuration: configuration), applicationSupport: directory, tokenOverride: tokenOverride)
     }
 }
 

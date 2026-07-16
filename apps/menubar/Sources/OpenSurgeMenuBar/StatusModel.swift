@@ -7,6 +7,7 @@ final class StatusModel: ObservableObject {
     @Published private(set) var status: MenuBarStatus?
     @Published private(set) var error: String?
     @Published private(set) var isRefreshing = false
+    @Published private(set) var serviceNeedsReconnect = false
     @Published var openAtLogin = false
 
     private let client: ControlAPIClient
@@ -42,24 +43,41 @@ final class StatusModel: ObservableObject {
         do {
             status = try await client.status()
             error = nil
+            serviceNeedsReconnect = false
             failureCount = 0
-        } catch ControlAPIError.descriptorUnavailable {
+        } catch let controlError as ControlAPIError where controlError.serviceUnavailable {
             await ControlServiceLauncher.wake()
             try? await Task.sleep(for: .milliseconds(350))
             do {
                 status = try await client.status()
                 error = nil
+                serviceNeedsReconnect = false
                 failureCount = 0
             } catch {
-                status = nil
-                self.error = error.localizedDescription
-                failureCount += 1
+                recordFailure(error)
             }
         } catch {
-            status = nil
-            self.error = error.localizedDescription
-            failureCount += 1
+            recordFailure(error)
         }
+    }
+
+    func reconnectService() async {
+        guard !isRefreshing else { return }
+        timer?.invalidate()
+        isRefreshing = true
+        error = nil
+        serviceNeedsReconnect = false
+        await ControlServiceLauncher.wake(restart: true)
+        try? await Task.sleep(for: .milliseconds(350))
+        isRefreshing = false
+        await refresh()
+    }
+
+    private func recordFailure(_ error: Error) {
+        status = nil
+        self.error = error.localizedDescription
+        serviceNeedsReconnect = (error as? ControlAPIError)?.serviceUnavailable ?? false
+        failureCount += 1
     }
 
     private func scheduleNextRefresh() {

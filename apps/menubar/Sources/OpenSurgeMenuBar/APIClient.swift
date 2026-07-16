@@ -1,20 +1,23 @@
 import Foundation
-import Security
 
 enum ControlAPIError: LocalizedError {
     case descriptorUnavailable
     case tokenUnavailable
     case invalidResponse
     case http(Int)
-    case keychain(OSStatus)
+
+    var serviceUnavailable: Bool {
+        switch self {
+        case .descriptorUnavailable, .tokenUnavailable: true
+        case .invalidResponse, .http: false
+        }
+    }
 
     var errorDescription: String? {
         switch self {
-        case .descriptorUnavailable: "找不到 OpenSurge Control Service"
-        case .tokenUnavailable: "找不到菜单栏客户端凭据"
+        case .descriptorUnavailable, .tokenUnavailable: "OpenSurge 后台服务尚未准备好"
         case .invalidResponse: "Control API 返回了无效数据"
         case .http(let status): "Control API 请求失败（HTTP \(status)）"
-        case .keychain(let status): "无法保存菜单栏凭据到 Keychain（\(status)）"
         }
     }
 }
@@ -50,15 +53,12 @@ struct ControlAPIClient {
     private func token() throws -> String {
         if let tokenOverride { return tokenOverride }
         let url = applicationSupport.appending(path: "control-token")
-        if let data = try? Data(contentsOf: url),
-           let fileToken = String(data: data, encoding: .utf8), !fileToken.isEmpty {
-            if KeychainStore.token() != fileToken { try KeychainStore.save(token: fileToken) }
-            return fileToken
-        }
-        guard let keychainToken = KeychainStore.token(), !keychainToken.isEmpty else {
+        guard let data = try? Data(contentsOf: url),
+              let fileToken = String(data: data, encoding: .utf8),
+              !fileToken.isEmpty else {
             throw ControlAPIError.tokenUnavailable
         }
-        return keychainToken
+        return fileToken
     }
 
     private func request(_ url: URL, method: String, body: Data? = nil) async throws -> Data {

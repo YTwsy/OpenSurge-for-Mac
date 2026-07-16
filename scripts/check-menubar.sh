@@ -7,9 +7,7 @@ MODULE_CACHE="${CLANG_MODULE_CACHE_PATH:-/private/tmp/opensurge-swift-module-cac
 OUTPUT="${OPENSURGE_MENUBAR_CHECK_BINARY:-/private/tmp/opensurge-menubar-check}"
 
 swiftc -parse-as-library -sdk "$SDKROOT" -module-cache-path "$MODULE_CACHE" \
-  -framework Security \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/APIClient.swift" \
-  "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/KeychainStore.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/Models.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/WebGUIURLLauncher.swift" \
   "$ROOT/apps/menubar/Checks/MenuBarChecks.swift" \
