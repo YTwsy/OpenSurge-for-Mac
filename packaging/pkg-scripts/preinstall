@@ -2,6 +2,9 @@
 set -euo pipefail
 
 ROOT="/Library/Application Support/OpenSurge"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=packaging/pkg-scripts/recovery-state.sh
+source "$SCRIPT_DIR/recovery-state.sh"
 CONSOLE_USER="$(stat -f '%Su' /dev/console)"
 [[ "$CONSOLE_USER" != "root" && "$CONSOLE_USER" != "loginwindow" ]] || { echo "OpenSurge upgrade requires a logged-in GUI user" >&2; exit 1; }
 
@@ -11,18 +14,14 @@ RECOVERY="$USER_HOME/Library/Application Support/OpenSurge/recovery.json"
 
 if [[ -f "$RECOVERY" ]]; then
   RECOVERY_STAGE="$(/usr/bin/plutil -extract stage raw -o - "$RECOVERY" 2>/dev/null || true)"
-  case "$RECOVERY_STAGE" in
-    idle|complete)
-      ;;
-    "")
-      echo "OpenSurge recovery state is unreadable; refusing to upgrade: $RECOVERY" >&2
-      exit 2
-      ;;
-    *)
-      echo "OpenSurge recovery is incomplete at stage $RECOVERY_STAGE. Finish same-LAN DHCP recovery before upgrading: $RECOVERY" >&2
-      exit 2
-      ;;
-  esac
+  if [[ -z "$RECOVERY_STAGE" ]]; then
+    echo "OpenSurge recovery state is unreadable; refusing to upgrade: $RECOVERY" >&2
+    exit 2
+  fi
+  if ! opensurge_recovery_stage_is_terminal "$RECOVERY_STAGE"; then
+    echo "OpenSurge recovery is incomplete at stage $RECOVERY_STAGE. Finish same-LAN DHCP recovery before upgrading: $RECOVERY" >&2
+    exit 2
+  fi
 fi
 
 # Stop processes that can keep old executables open before Installer replaces

@@ -139,8 +139,9 @@ Service 只通过 admin 组只读访问 applied 状态，通过 helper 执行固
 `OPENSURGE_BUILD_NUMBER` 写入 App build number，避免新安装包继续携带旧的 bundle 版本标识。
 
 pkg 升级必须在覆盖 payload 前执行 recovery 门禁，并按 Control Service/菜单栏退出、
-旧版 `omg stop`、root helper bootout 的顺序清理运行进程。recovery 非 `idle`/`complete`
-或旧版网关停止失败时直接拒绝升级。postinstall 不得覆盖已有 `config.yaml`，导入源、
+旧版 `omg stop`、root helper bootout 的顺序清理运行进程。recovery 非 `idle`/`complete`/
+`complete_static` 或旧版网关停止失败时直接拒绝升级；`complete_static` 是明确保留 Mac
+静态 IPv4 的终态，不应被误判为恢复未完成。postinstall 不得覆盖已有 `config.yaml`，导入源、
 设备策略和 runtime 记录也必须跨升级保留。
 
 开发期用 `make web-build`、`make menubar-build` 和 `make test`。这些检查不证明真实

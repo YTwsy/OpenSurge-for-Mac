@@ -4,9 +4,34 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREINSTALL="$ROOT/packaging/pkg-scripts/preinstall"
 POSTINSTALL="$ROOT/packaging/pkg-scripts/postinstall"
+RECOVERY_STATE="$ROOT/packaging/pkg-scripts/recovery-state.sh"
 
-bash -n "$PREINSTALL" "$POSTINSTALL" "$ROOT/scripts/uninstall-gui.sh" "$ROOT/scripts/build-gui-installer.sh"
+bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" "$ROOT/scripts/build-gui-installer.sh"
 [[ -x "$PREINSTALL" ]] || { echo "preinstall must be executable" >&2; exit 1; }
+
+# shellcheck source=packaging/pkg-scripts/recovery-state.sh
+source "$RECOVERY_STATE"
+for stage in idle complete complete_static; do
+  opensurge_recovery_stage_is_terminal "$stage" || {
+    echo "terminal recovery stage must allow upgrade and uninstall: $stage" >&2
+    exit 1
+  }
+done
+for stage in "" prepared mac_static router_dhcp_disabled_confirmed gateway_active client_validated client_validation_skipped gateway_stopped_waiting_router_dhcp router_dhcp_restored unknown; do
+  if opensurge_recovery_stage_is_terminal "$stage"; then
+    echo "incomplete recovery stage must block upgrade and uninstall: ${stage:-<empty>}" >&2
+    exit 1
+  fi
+done
+
+grep -Fq 'source "$SCRIPT_DIR/recovery-state.sh"' "$PREINSTALL" || {
+  echo "preinstall must use the shared recovery terminal-state guard" >&2
+  exit 1
+}
+grep -Fq 'source "$REPO_ROOT/packaging/pkg-scripts/recovery-state.sh"' "$ROOT/scripts/uninstall-gui.sh" || {
+  echo "uninstall must use the shared recovery terminal-state guard" >&2
+  exit 1
+}
 
 line_of() {
   local pattern="$1"

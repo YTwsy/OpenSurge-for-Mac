@@ -198,8 +198,9 @@ relocatable bundle，确保它固定安装到 `/Applications/OpenSurge Menu Bar.
 CLI 和 root helper。postinstall 会创建 root:admin、用户只读的 applied 配置/runtime，
 安装固定 launchd 服务；卸载脚本在 recovery 未完成时拒绝删除，并先停止网关。
 
-升级采用与安全卸载一致的前置顺序：preinstall 先检查 recovery 只能处于 `idle` 或
-`complete`，再 bootout 用户级 Control Service 并退出菜单栏 App，调用旧版本
+升级采用与安全卸载一致的前置顺序：preinstall 先检查 recovery 只能处于 `idle`、
+`complete` 或明确保留静态 IPv4 的终态 `complete_static`，再 bootout 用户级 Control
+Service 并退出菜单栏 App，调用旧版本
 `omg stop` 清理 DHCP/DNS/mihomo/pf/forwarding，最后 bootout root helper。任何一步
 失败都在 Installer 覆盖旧 payload 前终止。postinstall 只在首次安装时 seed
 `config.yaml`，升级保留现有 config、`data/` 与 `runtime/`。
