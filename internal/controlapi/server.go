@@ -42,19 +42,22 @@ type Options struct {
 }
 
 type Server struct {
-	configPath       string
-	addr             string
-	store            *Store
-	runner           ActionRunner
-	networkRunner    NetworkRunner
-	configRunner     ConfigurationRunner
-	discoverNetwork  func(context.Context, string, string) (macosnetwork.Snapshot, error)
-	pingRouter       func(context.Context, string) error
-	static           http.Handler
-	credentials      SourceCredentialStore
-	fetchConnections func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
-	token            string
-	baseURL          string
+	configPath        string
+	addr              string
+	store             *Store
+	runner            ActionRunner
+	networkRunner     NetworkRunner
+	configRunner      ConfigurationRunner
+	discoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	pingRouter        func(context.Context, string) error
+	static            http.Handler
+	credentials       SourceCredentialStore
+	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
+	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
+	measureProxyDelay func(context.Context, config.Config, string, string, time.Duration) mihomo.ProxyDelayResult
+	probeConnectivity func(context.Context, config.Config, ConnectivityTarget) ConnectivityResult
+	token             string
+	baseURL           string
 
 	mu         sync.Mutex
 	sessions   map[string]time.Time
@@ -126,21 +129,24 @@ func New(options Options) (*Server, error) {
 		return nil, err
 	}
 	return &Server{
-		configPath:       configPath,
-		addr:             options.Addr,
-		store:            store,
-		runner:           options.Runner,
-		networkRunner:    options.NetworkRunner,
-		configRunner:     options.ConfigRunner,
-		discoverNetwork:  options.DiscoverNetwork,
-		pingRouter:       options.PingRouter,
-		static:           options.Static,
-		credentials:      options.Credentials,
-		fetchConnections: mihomo.FetchConnections,
-		token:            token,
-		baseURL:          "http://" + options.Addr,
-		sessions:         map[string]time.Time{},
-		bootstraps:       map[string]bootstrapGrant{},
+		configPath:        configPath,
+		addr:              options.Addr,
+		store:             store,
+		runner:            options.Runner,
+		networkRunner:     options.NetworkRunner,
+		configRunner:      options.ConfigRunner,
+		discoverNetwork:   options.DiscoverNetwork,
+		pingRouter:        options.PingRouter,
+		static:            options.Static,
+		credentials:       options.Credentials,
+		fetchConnections:  mihomo.FetchConnections,
+		fetchProxyHealth:  mihomo.FetchProxyHealth,
+		measureProxyDelay: mihomo.MeasureProxyDelay,
+		probeConnectivity: probeConnectivityTarget,
+		token:             token,
+		baseURL:           "http://" + options.Addr,
+		sessions:          map[string]time.Time{},
+		bootstraps:        map[string]bootstrapGrant{},
 	}, nil
 }
 
@@ -195,6 +201,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
+	mux.Handle("GET /api/v1/proxy-health", s.auth(http.HandlerFunc(s.handleProxyHealth)))
+	mux.Handle("POST /api/v1/proxy-health/tests", s.auth(http.HandlerFunc(s.handleProxyHealthTests)))
+	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
+	mux.Handle("POST /api/v1/connectivity/tests", s.auth(http.HandlerFunc(s.handleConnectivityTests)))
 	mux.Handle("GET /api/v1/providers", s.auth(http.HandlerFunc(s.handleProviders)))
 	mux.Handle("GET /api/v1/diagnostics", s.auth(http.HandlerFunc(s.handleDiagnostics)))
 	mux.Handle("POST /api/v1/providers/{name}/refresh", s.auth(http.HandlerFunc(s.handleProviderRefresh)))
@@ -400,7 +410,7 @@ func allowedWebPath(value string) string {
 	switch value {
 	case "network", "recovery":
 		return "network"
-	case "sources", "devices", "policies", "diagnostics":
+	case "sources", "devices", "policies", "connectivity", "diagnostics":
 		return value
 	default:
 		return "dashboard"

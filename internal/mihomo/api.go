@@ -28,6 +28,34 @@ type ProxyGroup struct {
 	Options  []string `json:"options"`
 }
 
+const DefaultProxyDelayTestURL = "https://www.gstatic.com/generate_204"
+
+type ProxyHealthSnapshot struct {
+	TestURL string        `json:"test_url"`
+	Proxies []ProxyHealth `json:"proxies"`
+}
+
+type ProxyHealth struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Selected  string `json:"selected,omitempty"`
+	Provider  string `json:"provider,omitempty"`
+	UDP       bool   `json:"udp"`
+	Status    string `json:"status"`
+	DelayMS   int    `json:"delay_ms,omitempty"`
+	TestedAt  string `json:"tested_at,omitempty"`
+	Probeable bool   `json:"probeable"`
+}
+
+type ProxyDelayResult struct {
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	DelayMS  int    `json:"delay_ms,omitempty"`
+	TestedAt string `json:"tested_at"`
+	TestURL  string `json:"test_url"`
+	Error    string `json:"error,omitempty"`
+}
+
 type ConnectionsSnapshot struct {
 	UploadTotal   int64        `json:"upload_total"`
 	DownloadTotal int64        `json:"download_total"`
@@ -77,10 +105,19 @@ type RuleProvider struct {
 }
 
 type proxyRecord struct {
-	Name string   `json:"name"`
-	Type string   `json:"type"`
-	Now  string   `json:"now"`
-	All  []string `json:"all"`
+	Name     string               `json:"name"`
+	Type     string               `json:"type"`
+	Now      string               `json:"now"`
+	All      []string             `json:"all"`
+	Provider string               `json:"provider"`
+	UDP      bool                 `json:"udp"`
+	Alive    *bool                `json:"alive"`
+	History  []proxyHistoryRecord `json:"history"`
+}
+
+type proxyHistoryRecord struct {
+	Time  string `json:"time"`
+	Delay int    `json:"delay"`
 }
 
 type proxiesResponse struct {
@@ -148,6 +185,22 @@ func FetchProxyGroups(ctx context.Context, cfg config.Config) ([]ProxyGroup, err
 	return fetchProxyGroupsWithClient(ctx, cfg, client)
 }
 
+func FetchProxyHealth(ctx context.Context, cfg config.Config) (ProxyHealthSnapshot, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	return fetchProxyHealthWithClient(ctx, cfg, client)
+}
+
+func MeasureProxyDelay(ctx context.Context, cfg config.Config, proxyName, testURL string, timeout time.Duration) ProxyDelayResult {
+	if strings.TrimSpace(testURL) == "" {
+		testURL = DefaultProxyDelayTestURL
+	}
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	client := &http.Client{Timeout: timeout + time.Second}
+	return measureProxyDelayWithClient(ctx, cfg, client, proxyName, testURL, timeout)
+}
+
 func SelectProxyGroup(ctx context.Context, cfg config.Config, groupName, selected string) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	return selectProxyGroupWithClient(ctx, cfg, client, groupName, selected)
@@ -194,25 +247,8 @@ func fetchVersionWithClient(ctx context.Context, cfg config.Config, client *http
 }
 
 func fetchProxyGroupsWithClient(ctx context.Context, cfg config.Config, client *http.Client) ([]ProxyGroup, error) {
-	req, err := newAPIRequest(ctx, cfg, http.MethodGet, "/proxies", nil)
+	body, err := fetchProxiesWithClient(ctx, cfg, client)
 	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("mihomo API returned %s", resp.Status)
-	}
-
-	var body proxiesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("empty mihomo API response")
-		}
 		return nil, err
 	}
 
@@ -235,6 +271,132 @@ func fetchProxyGroupsWithClient(ctx context.Context, cfg config.Config, client *
 		return groups[i].Name < groups[j].Name
 	})
 	return groups, nil
+}
+
+func fetchProxyHealthWithClient(ctx context.Context, cfg config.Config, client *http.Client) (ProxyHealthSnapshot, error) {
+	body, err := fetchProxiesWithClient(ctx, cfg, client)
+	if err != nil {
+		return ProxyHealthSnapshot{}, err
+	}
+
+	proxies := make([]ProxyHealth, 0, len(body.Proxies))
+	for name, proxy := range body.Proxies {
+		if proxy.Name == "" {
+			proxy.Name = name
+		}
+		health := ProxyHealth{
+			Name:      proxy.Name,
+			Type:      proxy.Type,
+			Selected:  proxy.Now,
+			Provider:  proxy.Provider,
+			UDP:       proxy.UDP,
+			Status:    "untested",
+			Probeable: proxyIsProbeable(proxy.Type),
+		}
+		if !health.Probeable {
+			health.Status = "not_applicable"
+		}
+		if health.Probeable && len(proxy.History) > 0 {
+			latest := proxy.History[len(proxy.History)-1]
+			health.DelayMS = latest.Delay
+			health.TestedAt = latest.Time
+			if latest.Delay > 0 {
+				health.Status = "reachable"
+			} else if health.Probeable {
+				health.Status = "unreachable"
+			}
+		} else if health.Probeable && proxy.Alive != nil {
+			if *proxy.Alive {
+				health.Status = "reachable"
+			} else if health.Probeable {
+				health.Status = "unreachable"
+			}
+		}
+		proxies = append(proxies, health)
+	}
+	sort.Slice(proxies, func(i, j int) bool { return proxies[i].Name < proxies[j].Name })
+	return ProxyHealthSnapshot{TestURL: DefaultProxyDelayTestURL, Proxies: proxies}, nil
+}
+
+func fetchProxiesWithClient(ctx context.Context, cfg config.Config, client *http.Client) (proxiesResponse, error) {
+	req, err := newAPIRequest(ctx, cfg, http.MethodGet, "/proxies", nil)
+	if err != nil {
+		return proxiesResponse{}, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return proxiesResponse{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return proxiesResponse{}, fmt.Errorf("mihomo API returned %s", resp.Status)
+	}
+	var body proxiesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			return proxiesResponse{}, fmt.Errorf("empty mihomo API response")
+		}
+		return proxiesResponse{}, err
+	}
+	return body, nil
+}
+
+func measureProxyDelayWithClient(ctx context.Context, cfg config.Config, client *http.Client, proxyName, testURL string, timeout time.Duration) ProxyDelayResult {
+	result := ProxyDelayResult{Name: proxyName, Status: "unreachable", TestedAt: time.Now().UTC().Format(time.RFC3339), TestURL: testURL}
+	query := url.Values{}
+	query.Set("url", testURL)
+	query.Set("timeout", fmt.Sprintf("%d", timeout.Milliseconds()))
+	path := "/proxies/" + url.PathEscape(proxyName) + "/delay?" + query.Encode()
+	req, err := newAPIRequest(ctx, cfg, http.MethodGet, path, nil)
+	if err != nil {
+		result.Status, result.Error = "error", err.Error()
+		return result
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			result.Status = "timeout"
+		} else if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+			result.Status = "timeout"
+		}
+		result.Error = err.Error()
+		return result
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		result.Error = strings.TrimSpace(string(message))
+		if resp.StatusCode == http.StatusGatewayTimeout || strings.Contains(strings.ToLower(result.Error), "timeout") || strings.Contains(strings.ToLower(result.Error), "deadline exceeded") {
+			result.Status = "timeout"
+		}
+		if result.Error == "" {
+			result.Error = "mihomo API returned " + resp.Status
+		}
+		return result
+	}
+	var body struct {
+		Delay int `json:"delay"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		result.Status, result.Error = "error", err.Error()
+		return result
+	}
+	if body.Delay <= 0 {
+		result.Error = "proxy delay probe returned no usable delay"
+		return result
+	}
+	result.Status = "reachable"
+	result.DelayMS = body.Delay
+	return result
+}
+
+func proxyIsProbeable(proxyType string) bool {
+	switch strings.ToLower(strings.TrimSpace(proxyType)) {
+	case "reject", "rejectdrop", "reject-drop", "pass", "pass-rule", "compatible":
+		return false
+	default:
+		return true
+	}
 }
 
 func fetchConnectionsWithClient(ctx context.Context, cfg config.Config, client *http.Client) (ConnectionsSnapshot, error) {

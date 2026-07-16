@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"open-mihomo-gateway/internal/config"
 )
@@ -82,6 +83,85 @@ func TestFetchProxyGroups(t *testing.T) {
 	}
 	if groups[1].Name != "Proxy" || groups[1].Selected != "HK" || strings.Join(groups[1].Options, ",") != "DIRECT,HK" {
 		t.Fatalf("groups[1] = %#v", groups[1])
+	}
+}
+
+func TestFetchProxyHealthKeepsLeafStatusAndLatestDelay(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.APIAddr = "127.0.0.1:9090"
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body: io.NopCloser(strings.NewReader(`{
+			  "proxies": {
+			    "DIRECT": {"name":"DIRECT","type":"Direct","alive":true,"udp":true},
+			    "REJECT": {"name":"REJECT","type":"Reject","alive":true},
+			    "HK": {"name":"HK","type":"Hysteria2","provider":"demo","alive":true,"udp":true,"history":[
+			      {"time":"2026-07-15T09:00:00Z","delay":91},
+			      {"time":"2026-07-15T09:05:00Z","delay":84}
+			    ]},
+			    "JP": {"name":"JP","type":"Vless","alive":false,"history":[{"time":"2026-07-15T09:05:00Z","delay":0}]},
+			    "Proxy": {"name":"Proxy","type":"Selector","now":"HK","all":["HK","JP"]}
+			  }
+			}`)),
+			Header: make(http.Header),
+		}, nil
+	})}
+
+	snapshot, err := fetchProxyHealthWithClient(context.Background(), cfg, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.TestURL != DefaultProxyDelayTestURL || len(snapshot.Proxies) != 5 {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	byName := map[string]ProxyHealth{}
+	for _, proxy := range snapshot.Proxies {
+		byName[proxy.Name] = proxy
+	}
+	if got := byName["HK"]; got.Status != "reachable" || got.DelayMS != 84 || got.TestedAt != "2026-07-15T09:05:00Z" || !got.UDP || got.Provider != "demo" {
+		t.Fatalf("HK = %#v", got)
+	}
+	if got := byName["JP"]; got.Status != "unreachable" || !got.Probeable {
+		t.Fatalf("JP = %#v", got)
+	}
+	if got := byName["REJECT"]; got.Status != "not_applicable" || got.Probeable {
+		t.Fatalf("REJECT = %#v", got)
+	}
+	if got := byName["Proxy"]; got.Selected != "HK" || !got.Probeable {
+		t.Fatalf("Proxy = %#v", got)
+	}
+}
+
+func TestMeasureProxyDelay(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.APIAddr = "127.0.0.1:9090"
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/proxies/HK%20Node/delay" && req.URL.EscapedPath() != "/proxies/HK%20Node/delay" {
+			t.Fatalf("path = %q escaped=%q", req.URL.Path, req.URL.EscapedPath())
+		}
+		if req.URL.Query().Get("url") != "https://example.com/generate_204" || req.URL.Query().Get("timeout") != "3500" {
+			t.Fatalf("query = %q", req.URL.RawQuery)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{"delay":137}`)), Header: make(http.Header)}, nil
+	})}
+
+	result := measureProxyDelayWithClient(context.Background(), cfg, client, "HK Node", "https://example.com/generate_204", 3500*time.Millisecond)
+	if result.Status != "reachable" || result.DelayMS != 137 || result.Name != "HK Node" || result.Error != "" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestMeasureProxyDelayKeepsTimeoutSeparateFromLatency(t *testing.T) {
+	cfg := config.Default()
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusGatewayTimeout, Status: "504 Gateway Timeout", Body: io.NopCloser(strings.NewReader("context deadline exceeded")), Header: make(http.Header)}, nil
+	})}
+
+	result := measureProxyDelayWithClient(context.Background(), cfg, client, "slow", DefaultProxyDelayTestURL, 5*time.Second)
+	if result.Status != "timeout" || result.DelayMS != 0 || result.Error != "context deadline exceeded" {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
