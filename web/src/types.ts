@@ -50,6 +50,7 @@ export type ControlConfig = {
 export type Overview = {
   schema_version: number
   revision: string
+  topology: string
   desired_digest?: string
   applied_digest?: string
   desired_profile_digest?: string
@@ -115,8 +116,12 @@ export type DeviceTrafficRow = {
   active_connections: number
   upload: number
   download: number
+  upload_rate: number
+  download_rate: number
   primary_egress?: string
 }
+
+export type TrafficRates = { upload: number; download: number }
 
 export type DeviceTraffic = {
   schema_version: number
@@ -124,9 +129,17 @@ export type DeviceTraffic = {
   sampled_at: string
   scope: 'active_sessions'
   devices: DeviceTrafficRow[]
-  totals: { devices: number; active_connections: number; upload: number; download: number }
+  totals: { devices: number; active_connections: number; upload: number; download: number; upload_rate: number; download_rate: number }
+  gateway_rates: TrafficRates
   unmatched_connections: number
   connection_error?: string
+}
+
+export type TrafficHistoryPoint = {
+  sampled_at: string
+  upload: number
+  download: number
+  devices: Record<string, TrafficRates>
 }
 
 export type PolicyRule = {

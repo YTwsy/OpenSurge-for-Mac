@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Overview } from './types'
+import type { Overview, Source } from './types'
 
 vi.mock('./api', () => ({
   RequestError: class RequestError extends Error { status = 500 },
@@ -46,7 +46,7 @@ vi.mock('./api', () => ({
     refreshSource: vi.fn(),
     applySource: vi.fn(),
     devices: vi.fn(async () => ({ devices: [], leases: [], drift: false, applied: false })),
-    deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0 }, unmatched_connections: 0 })),
+    deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })),
     policies: vi.fn(async () => ({ groups: [] })),
     selectPolicy: vi.fn(),
     devicePolicy: vi.fn(async () => null),
@@ -67,6 +67,7 @@ import { App } from './App'
 const overview: Overview = {
   schema_version: 1,
   revision: 'config-revision',
+  topology: 'same_wifi_dhcp',
   drift: false,
   warnings: [],
   status: {
@@ -90,13 +91,18 @@ describe('OpenSurge app shell', () => {
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
     vi.mocked(api.overview).mockResolvedValue(overview)
-    vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0 }, unmatched_connections: 0 })
+    vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
   it('does not present a saved recovery card as an unfinished network recovery', async () => {
     render(<App />)
     expect(await screen.findByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
+    const gateway = screen.getByRole('article', { name: '网关状态' })
+    expect(within(gateway).getByText('en0 · 192.168.1.20')).toBeTruthy()
+    expect(within(gateway).getByText('接管模式')).toBeTruthy()
+    expect(within(gateway).getByText('配置状态')).toBeTruthy()
+    expect(screen.getByRole('img', { name: '上传最近 60 秒趋势' }).querySelector('.rate-line')?.getAttribute('d')).toContain(' C ')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('button', { name: '启动网关' }).hasAttribute('disabled')).toBe(false)
   })
@@ -105,20 +111,28 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.deviceTraffic).mockResolvedValue({
       schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', unmatched_connections: 1,
       devices: [
-        { hostname: 'Apple-TV', ip: '192.168.1.88', mac: 'aa:bb:cc:dd:ee:88', online: true, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024, primary_egress: '流媒体组 → 美国-02' },
-        { ip: '192.168.1.110', mac: 'a4:5e:60:00:00:01', online: false, active_connections: 0, upload: 0, download: 0 },
+        { hostname: 'Apple-TV', ip: '192.168.1.88', mac: 'aa:bb:cc:dd:ee:88', online: true, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024, upload_rate: 123_000, download_rate: 2_400_000, primary_egress: '流媒体组 → 美国-02' },
+        { ip: '192.168.1.110', mac: 'a4:5e:60:00:00:01', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 },
       ],
-      totals: { devices: 2, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024 },
+      totals: { devices: 2, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024, upload_rate: 123_000, download_rate: 2_400_000 },
+      gateway_rates: { upload: 125_000, download: 2_500_000 },
     })
     render(<App />)
-    expect(await screen.findByRole('heading', { name: '设备流量' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '活跃设备' })).toBeTruthy()
     expect(await screen.findByText('Apple-TV')).toBeTruthy()
-    expect(screen.getByText('流媒体组 → 美国-02')).toBeTruthy()
+    expect(screen.getAllByText('流媒体组 → 美国-02').length).toBeGreaterThan(0)
     expect(screen.getByText('未知设备 a4:5e:60:…')).toBeTruthy()
-    expect(screen.getByText('96 KB')).toBeTruthy()
-    expect(screen.getByText('412 MB')).toBeTruthy()
-    expect(screen.getByText(/合计 2 台 · 3 个活跃连接/)).toBeTruthy()
+    expect(screen.getByText('累计 96 KB')).toBeTruthy()
+    expect(screen.getByText('累计 412 MB')).toBeTruthy()
+    expect(screen.getAllByText('123 kB/s').length).toBeGreaterThan(0)
+    expect(screen.getByText(/合计 2 台 · 3 个设备连接/)).toBeTruthy()
     expect(screen.getByText(/1 个连接无法匹配 DHCP 租约/)).toBeTruthy()
+    expect(screen.getByText('192.168.1.88')).toBeTruthy()
+
+    const deviceButton = screen.getByRole('button', { name: '查看 Apple-TV 192.168.1.88 流量趋势' })
+    await userEvent.click(deviceButton)
+    expect(deviceButton.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('heading', { name: 'Apple-TV 流量趋势' })).toBeTruthy()
   })
 
   it('prefers registered device names in traffic and recent lease summaries', async () => {
@@ -128,11 +142,12 @@ describe('OpenSurge app shell', () => {
     })
     vi.mocked(api.deviceTraffic).mockResolvedValue({
       schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', unmatched_connections: 0,
-      devices: [{ name: 'PlayStation 5', ip: '192.168.1.190', mac: '90:47:48:c8:f9:1b', online: true, active_connections: 1, upload: 1, download: 2 }],
-      totals: { devices: 1, active_connections: 1, upload: 1, download: 2 },
+      devices: [{ name: 'PlayStation 5', ip: '192.168.1.190', mac: '90:47:48:c8:f9:1b', online: true, active_connections: 1, upload: 1, download: 2, upload_rate: 0, download_rate: 0 }],
+      totals: { devices: 1, active_connections: 1, upload: 1, download: 2, upload_rate: 0, download_rate: 0 },
+      gateway_rates: { upload: 0, download: 0 },
     })
     render(<App />)
-    expect((await screen.findAllByText('PlayStation 5')).length).toBe(2)
+    expect((await screen.findAllByText('PlayStation 5')).length).toBe(1)
     expect(screen.queryByText(/未知设备 90:47:48/)).toBeNull()
     expect(screen.queryByText('未命名设备')).toBeNull()
   })
@@ -307,10 +322,13 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(screen.getByRole('button', { name: '公共 DNS（调试）' }))
     expect((screen.getByLabelText('上游 DNS') as HTMLInputElement).value).toBe('1.1.1.1')
     expect(screen.getByText('填写顺序')).toBeTruthy()
+    expect(screen.getByText(/保存不会立即改动网络/)).toBeTruthy()
+    expect(screen.getByText('有未保存的修改')).toBeTruthy()
     expect(screen.getByRole('button', { name: '保存网络配置' })).toBeTruthy()
   })
 
   it('imports an HTTPS source as a draft', async () => {
+    vi.mocked(api.importURL).mockImplementationOnce(() => new Promise<Source>(() => {}))
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
@@ -318,18 +336,36 @@ describe('OpenSurge app shell', () => {
     await userEvent.type(screen.getByLabelText('HTTPS 订阅 URL'), 'https://example.com/profile')
     await userEvent.click(screen.getByRole('button', { name: '导入为草稿' }))
     expect(api.importURL).toHaveBeenCalledWith('Home', 'https://example.com/profile')
+    expect(await screen.findByRole('button', { name: '正在导入并校验…' })).toBeTruthy()
+  })
+
+  it('shows explicit feedback after refreshing a source draft', async () => {
+    const source: Source = {
+      id: 'remote', name: 'Home', kind: 'mihomo_profile', origin: 'https://example.com/profile', digest: 'next', size: 100,
+      valid: true, validation: 'valid', desired: false, applied: false, versions: [], imported_at: '2026-07-15T00:00:00Z',
+      diff: { proxies_added: [], proxies_removed: [], groups_added: [], groups_removed: [], proxy_providers_added: [], proxy_providers_removed: [], rule_providers_added: [], rule_providers_removed: [], rule_count_delta: 0 },
+      inventory: { proxies: ['edge'], proxy_providers: [], proxy_groups: ['Main'], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
+    }
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
+    vi.mocked(api.refreshSource).mockResolvedValue(source)
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+    await userEvent.click(await screen.findByRole('button', { name: '刷新草稿' }))
+    expect(await screen.findByText('Home 已刷新；新内容已保存为草稿。')).toBeTruthy()
   })
 
   it('confirms and applies a source through a running gateway reload', async () => {
     vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true, status: { ...overview.status, gateway: 'running', dhcp: 'running', mihomo: 'running', pf_anchor: 'loaded', forwarding: 'enabled' } })
-    const source = {
+    const source: Source = {
       id: 'home', name: 'Home', kind: 'mihomo_profile', origin: 'file:home.yaml', digest: 'next', size: 100,
       valid: true, validation: 'valid', desired: false, applied: false, versions: [], imported_at: '2026-07-15T00:00:00Z',
       diff: { proxies_added: [], proxies_removed: [], groups_added: [], groups_removed: [], proxy_providers_added: [], proxy_providers_removed: [], rule_providers_added: [], rule_providers_removed: [], rule_count_delta: 0 },
       inventory: { proxies: ['edge'], proxy_providers: [], proxy_groups: ['Main'], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
     }
     vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
-    vi.mocked(api.applySource).mockResolvedValue({ ...source, desired: true, applied: true })
+    let resolveApply!: (value: Source) => void
+    vi.mocked(api.applySource).mockImplementationOnce(() => new Promise<Source>(resolve => { resolveApply = resolve }))
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
@@ -338,6 +374,8 @@ describe('OpenSurge app shell', () => {
     expect(within(dialog).getByText(/只有重载成功后才会标记为运行版本/)).toBeTruthy()
     await userEvent.click(within(dialog).getByRole('button', { name: '确认应用并重载' }))
     await waitFor(() => expect(api.applySource).toHaveBeenCalledWith('home', 'config-revision'))
+    expect(within(dialog).getByRole('button', { name: '正在验证并应用…' })).toBeTruthy()
+    resolveApply({ ...source, desired: true, applied: true })
     expect(await screen.findByText('订阅已应用，网关已使用新的运行配置。')).toBeTruthy()
   })
 

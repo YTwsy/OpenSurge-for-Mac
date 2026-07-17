@@ -134,7 +134,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
       <section className="section">
         <SectionTitle title="Desired 网络配置" subtitle={`这是下次启动要使用的目标值；保存本身不会切换网络。revision ${config.revision.slice(0, 12)}`} />
         <fieldset disabled={!configurationEditable} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
-          <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方拓扑，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址；保存后的配置会在启动网关时应用。恢复资料已准备但尚未改动网络时仍可修正配置；保存会重新从第 1 步开始。</p></div>
+          <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方拓扑，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址。保存不会立即改动网络；保存后的配置会在启动网关时应用。恢复资料已准备但网络尚未改动时仍可修正配置，保存后会从第 1 步重新开始。</p></div>
           <div className="config-form">
           <ConfigField label="下游 LAN 接口" setting="gateway.interface" hint="承载客户端流量的 Mac 接口。在同一 LAN DHCP 接管中，它必须和上游接口相同；独立 LAN 通常是 AP、SSID 或 VLAN 的下游接口。">
             <input aria-label="下游 LAN 接口" value={config.gateway.interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, interface: event.target.value } })} />
@@ -173,7 +173,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
           </ConfigField>
           </div>
         </fieldset>
-        <button className="primary" disabled={!configurationEditable} onClick={() => void save()}>{busy ? '正在保存…' : '保存网络配置'}</button>
+        <div className="network-save-bar" aria-live="polite"><span className={configDirty ? 'dirty' : ''}><i aria-hidden="true">{configDirty ? '•' : '✓'}</i>{configDirty ? '有未保存的修改' : '当前配置已保存'}</span><button className="primary" disabled={!configurationEditable} onClick={() => void save()}>{busy ? <><span className="button-spinner" aria-hidden="true" />正在保存…</> : '保存网络配置'}</button></div>
       </section>
     </>}
     {config?.gateway.mode === 'same_wifi_dhcp' && <>

@@ -33,8 +33,8 @@ Today OpenSurge for Mac can:
 - inspect imported mihomo proxy/rule provider status from the CLI;
 - inspect current mihomo connections from the CLI;
 - attribute current active-session traffic to OpenSurge DHCP devices in the
-  Web GUI, including per-device connection counts, upload/download, and the
-  dominant mihomo egress chain;
+  Web GUI, including per-device connection counts, live upload/download rates,
+  active-session byte counters, and the dominant mihomo egress chain;
 - inspect and test proxy-node reachability/latency from the Web GUI, then switch
   applied Selector groups from the same health view;
 - test a fixed catalog of real services through the applied mihomo mixed-port

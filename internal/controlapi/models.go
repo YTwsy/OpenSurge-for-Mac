@@ -26,6 +26,7 @@ type ErrorResponse struct {
 type Overview struct {
 	SchemaVersion        int                      `json:"schema_version"`
 	Revision             string                   `json:"revision"`
+	Topology             string                   `json:"topology"`
 	DesiredDigest        string                   `json:"desired_digest,omitempty"`
 	AppliedDigest        string                   `json:"applied_digest,omitempty"`
 	DesiredProfileDigest string                   `json:"desired_profile_digest,omitempty"`
@@ -276,6 +277,7 @@ type DeviceTrafficResponse struct {
 	Scope                string              `json:"scope"`
 	Devices              []DeviceTraffic     `json:"devices"`
 	Totals               DeviceTrafficTotals `json:"totals"`
+	GatewayRates         TrafficRates        `json:"gateway_rates"`
 	UnmatchedConnections int                 `json:"unmatched_connections"`
 	ConnectionError      string              `json:"connection_error,omitempty"`
 }
@@ -289,6 +291,8 @@ type DeviceTraffic struct {
 	ActiveConnections int    `json:"active_connections"`
 	Upload            int64  `json:"upload"`
 	Download          int64  `json:"download"`
+	UploadRate        int64  `json:"upload_rate"`
+	DownloadRate      int64  `json:"download_rate"`
 	PrimaryEgress     string `json:"primary_egress,omitempty"`
 }
 
@@ -297,6 +301,13 @@ type DeviceTrafficTotals struct {
 	ActiveConnections int   `json:"active_connections"`
 	Upload            int64 `json:"upload"`
 	Download          int64 `json:"download"`
+	UploadRate        int64 `json:"upload_rate"`
+	DownloadRate      int64 `json:"download_rate"`
+}
+
+type TrafficRates struct {
+	Upload   int64 `json:"upload"`
+	Download int64 `json:"download"`
 }
 
 type DevicePolicyResponse struct {

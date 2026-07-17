@@ -56,6 +56,7 @@ type Server struct {
 	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
 	measureProxyDelay func(context.Context, config.Config, string, string, time.Duration) mihomo.ProxyDelayResult
 	probeConnectivity func(context.Context, config.Config, ConnectivityTarget) ConnectivityResult
+	trafficSampler    *trafficRateSampler
 	token             string
 	baseURL           string
 
@@ -143,6 +144,7 @@ func New(options Options) (*Server, error) {
 		fetchProxyHealth:  mihomo.FetchProxyHealth,
 		measureProxyDelay: mihomo.MeasureProxyDelay,
 		probeConnectivity: probeConnectivityTarget,
+		trafficSampler:    newTrafficRateSampler(),
 		token:             token,
 		baseURL:           "http://" + options.Addr,
 		sessions:          map[string]time.Time{},
@@ -482,6 +484,7 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	return Overview{
 		SchemaVersion:        SchemaVersion,
 		Revision:             fileDigest(s.configPath),
+		Topology:             cfg.Gateway.Mode,
 		DesiredDigest:        desiredDigest,
 		AppliedDigest:        appliedDigest,
 		DesiredProfileDigest: desiredProfileDigest,

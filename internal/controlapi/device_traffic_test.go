@@ -55,6 +55,58 @@ func TestAggregateDeviceTrafficUsesNewestLeaseForMAC(t *testing.T) {
 	}
 }
 
+func TestTrafficRateSamplerUsesConnectionDeltasForGatewayAndDevices(t *testing.T) {
+	now := time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+	sampler := newTrafficRateSampler()
+	leases := []device.Client{
+		{Hostname: "Pixel", IP: "192.168.1.60", MAC: "aa:bb:cc:dd:ee:60", Online: true, ExpiresAt: now.Add(time.Hour)},
+	}
+	first := mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{
+		{ID: "device", Upload: 100, Download: 1000, Metadata: map[string]any{"sourceIP": "192.168.1.60"}},
+		{ID: "host", Upload: 40, Download: 400, Metadata: map[string]any{"sourceIP": "127.0.0.1"}},
+	}}
+	firstResponse := aggregateDeviceTraffic(leases, first)
+	sampler.annotate(&firstResponse, first, now)
+	if firstResponse.GatewayRates != (TrafficRates{}) || firstResponse.Devices[0].UploadRate != 0 {
+		t.Fatalf("first sample rates = %#v / %#v", firstResponse.GatewayRates, firstResponse.Devices[0])
+	}
+
+	second := mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{
+		{ID: "device", Upload: 2100, Download: 7000, Metadata: map[string]any{"sourceIP": "192.168.1.60"}},
+		{ID: "host", Upload: 1040, Download: 2400, Metadata: map[string]any{"sourceIP": "127.0.0.1"}},
+		{ID: "new", Upload: 9999, Download: 9999, Metadata: map[string]any{"sourceIP": "192.168.1.60"}},
+	}}
+	secondResponse := aggregateDeviceTraffic(leases, second)
+	sampler.annotate(&secondResponse, second, now.Add(2*time.Second))
+
+	if secondResponse.GatewayRates.Upload != 1500 || secondResponse.GatewayRates.Download != 4000 {
+		t.Fatalf("gateway rates = %#v", secondResponse.GatewayRates)
+	}
+	deviceTraffic := secondResponse.Devices[0]
+	if deviceTraffic.UploadRate != 1000 || deviceTraffic.DownloadRate != 3000 {
+		t.Fatalf("device rates = %#v", deviceTraffic)
+	}
+	if secondResponse.Totals.UploadRate != 1000 || secondResponse.Totals.DownloadRate != 3000 {
+		t.Fatalf("matched rates = %#v", secondResponse.Totals)
+	}
+}
+
+func TestTrafficRateSamplerResetsAfterLongGap(t *testing.T) {
+	now := time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
+	sampler := newTrafficRateSampler()
+	snapshot := mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{{ID: "one", Upload: 100, Download: 200}}}
+	response := DeviceTrafficResponse{}
+	sampler.annotate(&response, snapshot, now)
+
+	snapshot.Connections[0].Upload = 10_000
+	snapshot.Connections[0].Download = 20_000
+	response = DeviceTrafficResponse{}
+	sampler.annotate(&response, snapshot, now.Add(maxTrafficSampleGap+time.Second))
+	if response.GatewayRates != (TrafficRates{}) {
+		t.Fatalf("rates after long gap = %#v", response.GatewayRates)
+	}
+}
+
 func TestRegisteredDeviceNamesOverrideMissingLeaseHostnames(t *testing.T) {
 	policy := device.PolicySet{Devices: []device.ManagedDevice{
 		{ID: "PlayStation-5", MAC: "90:47:48:c8:f9:1b"},

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"open-mihomo-gateway/internal/config"
@@ -15,9 +16,26 @@ import (
 
 const deviceTrafficScope = "active_sessions"
 
+const maxTrafficSampleGap = 15 * time.Second
+
 type egressUsage struct {
 	connections int
 	bytes       int64
+}
+
+type trafficConnectionCounters struct {
+	upload   int64
+	download int64
+}
+
+type trafficRateSampler struct {
+	mu          sync.Mutex
+	sampledAt   time.Time
+	connections map[string]trafficConnectionCounters
+}
+
+func newTrafficRateSampler() *trafficRateSampler {
+	return &trafficRateSampler{connections: map[string]trafficConnectionCounters{}}
 }
 
 func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +51,13 @@ func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connections, connectionErr := s.fetchConnections(r.Context(), cfg)
+	sampledAt := time.Now().UTC()
 	response := aggregateDeviceTraffic(leases, connections)
+	if connectionErr == nil {
+		s.trafficSampler.annotate(&response, connections, sampledAt)
+	} else {
+		s.trafficSampler.reset()
+	}
 	if cfg.DevicePolicy.File != "" {
 		if bundle, policyErr := device.LoadPolicyBundle(cfg.DevicePolicy.File); policyErr == nil {
 			annotateRegisteredDeviceNames(&response, bundle.Policy)
@@ -41,10 +65,85 @@ func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 	response.SchemaVersion = SchemaVersion
 	response.Revision = fileDigest(s.configPath)
-	response.SampledAt = time.Now().UTC()
+	response.SampledAt = sampledAt
 	response.Scope = deviceTrafficScope
 	response.ConnectionError = errorString(connectionErr)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *trafficRateSampler) annotate(response *DeviceTrafficResponse, snapshot mihomo.ConnectionsSnapshot, sampledAt time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current := make(map[string]trafficConnectionCounters, len(snapshot.Connections))
+	for _, connection := range snapshot.Connections {
+		if id := strings.TrimSpace(connection.ID); id != "" {
+			current[id] = trafficConnectionCounters{
+				upload:   nonnegativeBytes(connection.Upload),
+				download: nonnegativeBytes(connection.Download),
+			}
+		}
+	}
+
+	elapsed := sampledAt.Sub(s.sampledAt)
+	if s.sampledAt.IsZero() || elapsed <= 0 || elapsed > maxTrafficSampleGap {
+		s.sampledAt = sampledAt
+		s.connections = current
+		return
+	}
+
+	byIP := make(map[string]*DeviceTraffic, len(response.Devices))
+	for index := range response.Devices {
+		byIP[response.Devices[index].IP] = &response.Devices[index]
+	}
+
+	for _, connection := range snapshot.Connections {
+		id := strings.TrimSpace(connection.ID)
+		previous, ok := s.connections[id]
+		if id == "" || !ok {
+			continue
+		}
+		uploadDelta := counterDelta(connection.Upload, previous.upload)
+		downloadDelta := counterDelta(connection.Download, previous.download)
+		response.GatewayRates.Upload += bytesPerSecond(uploadDelta, elapsed)
+		response.GatewayRates.Download += bytesPerSecond(downloadDelta, elapsed)
+
+		sourceIP := normalizeTrafficIP(metadataString(connection.Metadata, "sourceIP"))
+		if row := byIP[sourceIP]; row != nil {
+			row.UploadRate += bytesPerSecond(uploadDelta, elapsed)
+			row.DownloadRate += bytesPerSecond(downloadDelta, elapsed)
+		}
+	}
+
+	for _, row := range response.Devices {
+		response.Totals.UploadRate += row.UploadRate
+		response.Totals.DownloadRate += row.DownloadRate
+	}
+	s.sampledAt = sampledAt
+	s.connections = current
+}
+
+func (s *trafficRateSampler) reset() {
+	s.mu.Lock()
+	s.sampledAt = time.Time{}
+	s.connections = map[string]trafficConnectionCounters{}
+	s.mu.Unlock()
+}
+
+func counterDelta(current, previous int64) int64 {
+	current = nonnegativeBytes(current)
+	previous = nonnegativeBytes(previous)
+	if current <= previous {
+		return 0
+	}
+	return current - previous
+}
+
+func bytesPerSecond(delta int64, elapsed time.Duration) int64 {
+	if delta <= 0 || elapsed <= 0 {
+		return 0
+	}
+	return int64(float64(delta) / elapsed.Seconds())
 }
 
 func annotateRegisteredDeviceNames(response *DeviceTrafficResponse, policy device.PolicySet) {

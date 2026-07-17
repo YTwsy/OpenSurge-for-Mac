@@ -1,24 +1,28 @@
-import { Empty, Metric, PageHeader, SectionTitle, Service, StatusDot } from '../components/Common'
+import { ActivityCard } from '../components/ActivityCard'
+import { PageHeader } from '../components/Common'
 import { DeviceTrafficPanel } from '../components/DeviceTrafficPanel'
-import { statusLabel } from '../status'
+import { GatewayHealthCard } from '../components/GatewayHealthCard'
+import { LiveRateCard } from '../components/LiveRateCard'
+import { TrafficTrendCard } from '../components/TrafficTrendCard'
+import { useDeviceTraffic } from '../hooks/useDeviceTraffic'
 import type { Overview } from '../types'
 
 export function DashboardPage({ overview, busy, onAction }: { overview: Overview | null; busy: boolean; onAction: (action: 'start' | 'stop') => void }) {
   const running = overview?.status.gateway === 'running'
+  const { traffic, history, error } = useDeviceTraffic(overview?.status.gateway)
+  const rates = traffic?.gateway_rates ?? { upload: 0, download: 0 }
   return <>
     <PageHeader eyebrow="CONTROL CENTER" title="全屋网关，一眼可见" description="OpenSurge 负责网关生命周期；mihomo 是当前代理引擎。" action={<button className={running ? 'danger' : 'primary'} disabled={busy || !overview} onClick={() => onAction(running ? 'stop' : 'start')}>{busy ? '正在提交…' : running ? '停止网关' : '启动网关'}</button>} />
-    <section className="hero-grid">
-      <article className="gateway-card"><div className="orb"><span /></div><div><small>GATEWAY</small><h2>{statusLabel(overview?.status.gateway)}</h2><p>{overview?.status.interface ?? '—'} · {overview?.status.lan_ip ?? '等待状态'}</p></div></article>
-      <Metric label="在线客户端" value={overview?.status.client_count ?? '—'} note="DHCP leases" />
-      <Metric label="配置状态" value={overview?.drift ? running ? '待重载' : '下次启动应用' : '已同步'} note="desired / applied" />
+    {overview?.warnings?.length ? <div className="dashboard-warning-stack" role="status">{overview.warnings.map(item => <div className="notice warn" key={item}>{item}</div>)}</div> : null}
+    <section className="dashboard-live-grid">
+      <GatewayHealthCard overview={overview} />
+      <LiveRateCard direction="upload" value={rates.upload} history={history} />
+      <LiveRateCard direction="download" value={rates.download} history={history} />
     </section>
-    <section className="section"><SectionTitle title="核心服务" subtitle="同一个网关运行期内的关键组件" /><div className="service-grid">
-      <Service name="DHCP / DNS" state={overview?.status.dhcp} detail={overview?.status.dhcp_enabled ? 'OpenSurge 分配地址' : '外部 DHCP'} />
-      <Service name="mihomo" state={overview?.status.mihomo} detail="TUN 与策略执行" />
-      <Service name="PF Anchor" state={overview?.status.pf_anchor} detail="NAT 与转发边界" />
-      <Service name="IPv4 Forwarding" state={overview?.status.forwarding} detail="macOS 内核转发" />
-    </div></section>
-    <DeviceTrafficPanel gateway={overview?.status.gateway} />
-    <section className="section split"><div><SectionTitle title="最近设备" subtitle="来自当前 DHCP 租约" />{overview?.leases?.length ? overview.leases.slice(0, 5).map(lease => <div className="row" key={`${lease.mac}-${lease.ip}`}><StatusDot status={lease.online ? 'running' : 'stopped'} /><div className="grow"><strong>{lease.registered_name || lease.hostname || '未命名设备'}</strong><small>{lease.mac}</small></div><code>{lease.ip}</code></div>) : <Empty text="暂无租约" />}</div><div><SectionTitle title="注意事项" subtitle="不会被静默忽略" />{overview?.warnings?.length ? overview.warnings.map(item => <div className="notice" key={item}>{item}</div>) : <Empty text="当前没有警告" />}</div></section>
+    <section className="dashboard-monitor-grid">
+      <ActivityCard traffic={traffic} />
+      <TrafficTrendCard title="流量趋势" subtitle="网关全部 mihomo 活跃连接 · 近 60 秒内存采样" history={history} className="gateway-trend-card" />
+    </section>
+    <DeviceTrafficPanel gateway={overview?.status.gateway} traffic={traffic} history={history} error={error} />
   </>
 }
