@@ -2,19 +2,28 @@
 
 [简体中文](README.zh-CN.md) | English
 
-OpenSurge for Mac is a macOS CLI gateway MVP. It prepares a Mac to act as an
-IPv4 LAN gateway, runs dnsmasq for DHCP/DNS, runs mihomo for proxying, and uses
-macOS pf for NAT. Its goal is to turn a Mac into a
-controlled IPv4 LAN gateway that can share proxy-backed connectivity with
-phones, tablets, VMs, test devices, and other downstream clients.
+OpenSurge for Mac is a Surge-style macOS gateway and control plane in active
+development. Instead of proxying only the Mac itself, it prepares the Mac to
+serve an IPv4 LAN: phones, tablets, VMs, test devices, and other downstream
+clients can receive DHCP/DNS and share policy-controlled connectivity through
+the Mac.
 
-The project direction is broader: a Mac-native, auditable gateway with
-transparent routing, reproducible lab validation, and eventually a friendlier
-control surface.
+Under the hood, dnsmasq provides DHCP/DNS, mihomo is the current proxy engine,
+and macOS pf plus IPv4 forwarding provide the native gateway path. OpenSurge is
+the product; mihomo is an engine that it manages. The project is moving toward
+a Mac-native, auditable whole-home proxy gateway with transparent routing,
+reproducible validation, and approachable Web and native control surfaces.
+
+The repository is also designed as an
+[AI-agent-friendly engineering workspace](#an-ai-agent-friendly-engineering-workspace):
+project knowledge is versioned beside the code, risky network behavior has
+executable proof gates, and virtual-lab plus real-device evidence is fed back
+into the next engineering loop.
 
 ## Current scope
 
-The current implementation is a CLI-driven MVP:
+The gateway core is still a CLI-driven MVP, now accompanied by a loopback Web
+GUI and a native menu bar launcher:
 
 1. CLI, config, runtime state, and text/JSON status/doctor/logs/snapshot
    commands.
@@ -22,6 +31,8 @@ The current implementation is a CLI-driven MVP:
 3. mihomo config, process management, version API checks, and policy-group
    selection through the mihomo external-controller API.
 4. pf anchor management and IPv4 forwarding restore.
+5. A loopback Go Control API, embedded React Web GUI, and read-only SwiftUI menu
+   bar launcher.
 
 Today OpenSurge for Mac can:
 
@@ -179,6 +190,90 @@ Before replacing payload files, preinstall stops the user control service and
 menu bar app, runs the installed `omg stop`, and unloads the root helper. The
 existing config, imported sources, policy data, and runtime history are kept;
 only a first installation seeds `config.yaml` from the packaged example.
+
+## An AI-agent-friendly engineering workspace
+
+OpenSurge treats the repository as part of the engineering system, not merely a
+place to store code. The goal is to make product intent, network safety rules,
+runtime evidence, and accumulated project knowledge directly legible to both
+human contributors and coding agents.
+
+### Harness Engineering: engineer the environment around the agent
+
+The workspace applies the practical idea behind
+[Harness Engineering](https://openai.com/index/harness-engineering/): reliable
+agent work depends on the context, constraints, tools, observability, and
+acceptance gates around the model.
+
+- `AGENTS.md` is the compact entry map: it states product identity, hard network
+  invariants, and which deeper documents an agent must read for a task.
+- [`docs/agent-wiki/`](docs/agent-wiki/README.md) provides progressively
+  disclosed architecture, decision, and validation context instead of forcing
+  every task to rediscover the repository from scratch.
+- Machine-readable CLI surfaces such as `status`, `doctor`, `logs`, and
+  `snapshot`, plus deterministic `make` targets and retained artifacts, make the
+  running system observable to agents.
+- Config validation, TUN-only transparent routing, rollback behavior, isolated
+  labs, and explicit recovery contracts turn safety guidance into enforceable
+  boundaries.
+
+### Loop Engineering: close the loop with executable evidence
+
+OpenSurge follows the core of
+[Loop Engineering](https://addyosmani.com/blog/loop-engineering/): design a
+repeatable system that can act, observe, verify, recover, and carry the result
+into the next iteration, rather than relying on a single clever prompt.
+
+```text
+intent + constraints
+        ↓
+AGENTS.md → Agent Wiki → source of truth
+        ↓
+implement → fast tests → Virtual LAN Lab
+        ↓
+ADB-assisted or manual real-device validation
+        ↓
+logs + artifacts + cleanup/recovery proof
+        ↓
+durable learning returns to sources/ and wiki/
+        ↺
+```
+
+The verification layers are complementary:
+
+- `make test` and focused UI/control-plane gates provide the fast inner loop.
+- The Lima + socket_vmnet Virtual LAN Lab makes privileged DHCP, DNS, pf/NAT,
+  forwarding, TUN, policy, rollback, and cleanup behavior reproducible without
+  risking a normal LAN.
+- Real-device and same-LAN/same-WiFi runners close the physical-topology loop.
+  ADB can collect Android route, DNS, and connectivity evidence while the Mac
+  side correlates dnsmasq/mihomo logs; manual phone checkpoints remain supported
+  when the operator needs to retain direct control.
+- Recovery is part of acceptance for risky DHCP takeover flows. A successful
+  traffic probe alone is not enough if the router, Mac, or clients cannot be
+  returned to a known-good state.
+
+Virtual Lab results do not stand in for real-device behavior, and one physical
+smoke does not replace the deterministic Lab gates. See the
+[validation contract](docs/agent-wiki/wiki/concepts/validation-gates.md) for the
+exact claim each gate is allowed to support.
+
+### Agent Wiki: externalized project memory
+
+The [Agent Wiki](docs/agent-wiki/wiki/index.md) applies the LLM Wiki idea of
+moving durable memory out of a transient context window and into a small,
+versioned, source-backed knowledge layer:
+
+- `docs/agent-wiki/sources/` records stable project briefs, decisions, and
+  validation contracts.
+- `docs/agent-wiki/wiki/` distills those sources into short, linked pages that
+  an agent can load progressively for the task at hand.
+- `.codex/hooks.json` integrates the local Session Wiki hook, when installed,
+  so session continuity and compaction can use project-local memory without
+  committing private session state.
+
+Only reusable, verified knowledge belongs in this layer. One-off logs,
+temporary output, unverified guesses, and ordinary TODOs do not.
 
 ## Safety
 
