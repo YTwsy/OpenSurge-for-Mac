@@ -8,9 +8,8 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Image(systemName: model.indicator.systemImage)
-                    .font(.title2)
-                    .foregroundStyle(model.indicator == .recovery ? .orange : .green)
+                OpenSurgeAppIconView()
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("OpenSurge for Mac").font(.headline)
                     Text(model.indicator.accessibilityLabel).font(.caption).foregroundStyle(.secondary)

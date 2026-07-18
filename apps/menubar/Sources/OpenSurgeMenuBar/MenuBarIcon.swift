@@ -2,6 +2,18 @@ import AppKit
 import SwiftUI
 
 @MainActor
+private enum OpenSurgeAppIconAsset {
+    static let image: NSImage = {
+        if let url = Bundle.main.url(forResource: "OpenSurgeAppIcon", withExtension: "icns"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+
+        return NSImage(systemSymbolName: "network", accessibilityDescription: nil) ?? NSImage(size: NSSize(width: 34, height: 34))
+    }()
+}
+
+@MainActor
 private enum OpenSurgeMenuBarIconAsset {
     static let image: NSImage = {
         if let url = Bundle.main.url(forResource: "OpenSurgeMenuBarIcon", withExtension: "png"),
@@ -13,6 +25,15 @@ private enum OpenSurgeMenuBarIconAsset {
 
         return NSImage(systemSymbolName: "network", accessibilityDescription: nil) ?? NSImage(size: NSSize(width: 18, height: 18))
     }()
+}
+
+struct OpenSurgeAppIconView: View {
+    var body: some View {
+        Image(nsImage: OpenSurgeAppIconAsset.image)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: 34, height: 34)
+    }
 }
 
 struct OpenSurgeMenuBarLabel: View {

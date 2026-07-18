@@ -15,6 +15,7 @@ MENU_BAR_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeMenuBarIcon.png"
 WEB_ICON_SOURCE="$ROOT/web/public/opensurge-icon.png"
 WEB_INDEX="$ROOT/web/index.html"
 WEB_APP="$ROOT/web/src/App.tsx"
+MENUBAR_CONTENT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuContentView.swift"
 
 bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" \
   "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$RELEASE_VERIFY"
@@ -108,6 +109,10 @@ grep -Fq 'OpenSurgeAppIcon.icns' "$ROOT/scripts/build-menubar-app.sh" || {
 }
 grep -Fq 'OpenSurgeMenuBarIcon.png' "$ROOT/scripts/build-menubar-app.sh" || {
   echo "menu bar build must include the monochrome menu bar icon resource" >&2
+  exit 1
+}
+grep -Fq 'OpenSurgeAppIconView()' "$MENUBAR_CONTENT" || {
+  echo "menu bar window header must use the OpenSurge app icon" >&2
   exit 1
 }
 [[ -s "$WEB_ICON_SOURCE" ]] || {
