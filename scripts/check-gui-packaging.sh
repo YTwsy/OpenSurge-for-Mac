@@ -98,6 +98,10 @@ grep -Fq 'actions/attest@v4' "$RELEASE_WORKFLOW" || {
   echo "unsigned release workflow must attest the package provenance" >&2
   exit 1
 }
+grep -Fq 'actions/upload-artifact@v7' "$RELEASE_WORKFLOW" || {
+  echo "unsigned release workflow must use the Node 24 artifact uploader" >&2
+  exit 1
+}
 grep -Fq -- '--prerelease' "$RELEASE_WORKFLOW" || {
   echo "unsigned packages must be published as prereleases" >&2
   exit 1
