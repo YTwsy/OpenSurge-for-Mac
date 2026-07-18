@@ -33,3 +33,15 @@ gateway remains stopped until you explicitly start it from the OpenSurge control
 
 不要全局关闭 Gatekeeper，也不要递归删除 quarantine。安装完成后网关仍保持停止，只有在
 OpenSurge 控制面中明确操作才会启动。
+
+## License / 许可证
+
+OpenSurge original code is licensed under `GPL-3.0-only`. Third-party license
+texts, notices, and exact corresponding-source links are installed under
+`/Library/Application Support/OpenSurge/share/licenses/`.
+
+- mihomo 1.19.27 source: <https://github.com/MetaCubeX/mihomo/tree/5184081ac327394d9e15fa5d5f9f4a61e723fd94>
+- dnsmasq 2.93 source: <https://thekelleys.org.uk/dnsmasq/dnsmasq-2.93.tar.gz>
+
+OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准确的对应源码链接会安装到
+`/Library/Application Support/OpenSurge/share/licenses/`。
