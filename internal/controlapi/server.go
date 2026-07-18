@@ -124,9 +124,15 @@ func New(options Options) (*Server, error) {
 		options.PingRouter = macosnetwork.PingRouter
 	}
 	if options.Credentials == nil {
-		options.Credentials = KeychainCredentialStore{}
-	}
-	if err := migrateSourceCredentials(context.Background(), store, options.Credentials); err != nil {
+		fileCredentials := NewFileCredentialStore(store.Dir())
+		if err := migrateSourceCredentials(context.Background(), store, fileCredentials); err != nil {
+			return nil, err
+		}
+		if err := migrateLegacyKeychainCredentials(context.Background(), store, fileCredentials, LegacyKeychainCredentialReader{}); err != nil {
+			return nil, err
+		}
+		options.Credentials = fileCredentials
+	} else if err := migrateSourceCredentials(context.Background(), store, options.Credentials); err != nil {
 		return nil, err
 	}
 	return &Server{
