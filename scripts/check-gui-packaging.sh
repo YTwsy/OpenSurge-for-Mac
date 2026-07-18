@@ -8,6 +8,7 @@ RECOVERY_STATE="$ROOT/packaging/pkg-scripts/recovery-state.sh"
 RELEASE_DEPS="$ROOT/scripts/prepare-gui-release-deps.sh"
 RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
+MENUBAR_PACKAGE="$ROOT/apps/menubar/Package.swift"
 
 bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" \
   "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$RELEASE_VERIFY"
@@ -83,6 +84,10 @@ grep -Fq 'plutil -replace CFBundleVersion' "$ROOT/scripts/build-menubar-app.sh" 
 }
 grep -Fq -- '--arch "$ARCH"' "$ROOT/scripts/build-menubar-app.sh" || {
   echo "menu bar build must use the package architecture explicitly" >&2
+  exit 1
+}
+grep -Fq '// swift-tools-version: 5.10' "$MENUBAR_PACKAGE" || {
+  echo "menu bar package must remain buildable by the macOS 14 release runner" >&2
   exit 1
 }
 grep -Fq 'lipo "$executable" -verify_arch "$OPENSURGE_APP_ARCH"' "$ROOT/scripts/build-gui-installer.sh" || {
