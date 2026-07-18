@@ -107,6 +107,25 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('button', { name: '启动网关' }).hasAttribute('disabled')).toBe(false)
   })
 
+  it('routes the dashboard start button to network settings without starting the gateway', async () => {
+    render(<App />)
+    const start = await screen.findByRole('button', { name: '启动网关' })
+    await waitFor(() => expect(start.hasAttribute('disabled')).toBe(false))
+    await userEvent.click(start)
+    expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
+    expect(window.location.pathname).toBe('/network')
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
+  it('routes the dashboard stop button to network settings without stopping the gateway', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
+    expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
+    expect(window.location.pathname).toBe('/network')
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
   it('joins managed DHCP devices with active mihomo session traffic', async () => {
     vi.mocked(api.deviceTraffic).mockResolvedValue({
       schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', unmatched_connections: 1,

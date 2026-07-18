@@ -9,6 +9,10 @@ mihomo 和 runtime 包中。
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
 演变成第二控制面。
 
+Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
+gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP
+接管与恢复状态在用户确认前保持可见。
+
 菜单栏 indicator 先判断需要用户处理的 recovery，再判断 gateway 是否明确 `stopped`；
 只有正在运行或 degraded 的 gateway 才把 drift/doctor failure 表示为“运行异常”。停止状态
 下的 runtime doctor failure 或待应用配置不能覆盖“OpenSurge 网关已停止”。

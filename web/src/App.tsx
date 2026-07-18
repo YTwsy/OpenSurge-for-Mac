@@ -39,7 +39,6 @@ export function App() {
   const [page, setPage] = useState<Page>(currentPage)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [devicesDirty, setDevicesDirty] = useState(false)
   const pageRef = useRef(page)
@@ -93,18 +92,6 @@ export function App() {
     setPage(next)
   }
 
-  const gatewayAction = async (action: 'start' | 'stop') => {
-    setBusy(true)
-    try {
-      await api.gateway(action)
-      window.setTimeout(() => void refresh(), 1000)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">OS</span><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
@@ -117,7 +104,7 @@ export function App() {
     <main className="workspace">
       {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network')} />}
       {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
-      {page === 'dashboard' && <DashboardPage overview={overview} busy={busy} onAction={gatewayAction} />}
+      {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={() => go('network')} />}
       {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
       {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
       {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
