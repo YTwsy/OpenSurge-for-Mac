@@ -85,7 +85,8 @@ final class StatusModel: ObservableObject {
         let multiplier = pow(2.0, Double(min(failureCount, 4)))
         let interval = min(base * multiplier, 60.0)
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
-            Task { @MainActor in await self?.refresh() }
+            guard let model = self else { return }
+            Task { @MainActor in await model.refresh() }
         }
     }
 
