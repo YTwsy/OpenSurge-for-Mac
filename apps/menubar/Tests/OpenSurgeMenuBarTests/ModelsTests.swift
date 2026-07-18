@@ -31,6 +31,8 @@ final class ModelsTests: XCTestCase {
                                    recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
         XCTAssertEqual(status.indicator, .stopped)
         XCTAssertEqual(status.indicator.accessibilityLabel, "OpenSurge 网关已停止")
+        XCTAssertTrue(status.indicator.usesBrandMenuBarIcon)
+        XCTAssertEqual(status.indicator.menuBarIconOpacity, 0.55)
     }
 
     func testActiveTakeoverUsesRunningIndicatorInsteadOfRecovery() {
@@ -41,6 +43,17 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(status.takeoverActive)
         XCTAssertFalse(status.recoveryNeedsAttention)
         XCTAssertEqual(status.indicator, .running)
+        XCTAssertTrue(status.indicator.usesBrandMenuBarIcon)
+        XCTAssertEqual(status.indicator.menuBarIconOpacity, 1)
+    }
+
+    func testAlertStatesKeepSystemStatusSymbols() {
+        for state in [IndicatorState.degraded, .recovery, .unreachable] {
+            XCTAssertFalse(state.usesBrandMenuBarIcon)
+            XCTAssertEqual(state.menuBarIconOpacity, 1)
+        }
+        XCTAssertEqual(IndicatorState.recovery.systemImage, "exclamationmark.triangle.fill")
+        XCTAssertEqual(IndicatorState.unreachable.systemImage, "network.slash")
     }
 
     func testSkippedClientAcceptanceRemainsAnActiveTakeover() {

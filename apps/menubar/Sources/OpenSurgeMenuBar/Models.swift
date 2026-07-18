@@ -60,6 +60,14 @@ struct EndpointDescriptor: Codable {
 enum IndicatorState: Equatable {
     case stopped, running, degraded, recovery, unreachable
 
+    var usesBrandMenuBarIcon: Bool {
+        self == .stopped || self == .running
+    }
+
+    var menuBarIconOpacity: Double {
+        self == .stopped ? 0.55 : 1
+    }
+
     var systemImage: String {
         switch self {
         case .stopped: "network"

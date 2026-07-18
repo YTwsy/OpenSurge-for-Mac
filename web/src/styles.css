@@ -8,7 +8,7 @@ button{cursor:pointer}
 .app-shell{display:grid;grid-template-columns:238px 1fr;min-height:100vh}
 .sidebar{position:fixed;inset:0 auto 0 0;width:238px;padding:28px 18px;border-right:1px solid #20302b;background:#091512cc;backdrop-filter:blur(24px);display:flex;flex-direction:column}
 .brand{display:flex;align-items:center;gap:12px;padding:0 10px 32px}
-.brand-mark{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:#a9f5d1;color:#092019;font-weight:900}
+.brand-mark{width:42px;height:42px;display:block;object-fit:contain;flex:0 0 auto}
 .brand strong,.brand small{display:block}
 .brand small{color:#71847d;margin-top:2px}
 .sidebar nav{display:grid;gap:6px}

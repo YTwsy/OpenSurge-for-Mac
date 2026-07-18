@@ -57,7 +57,7 @@ export function App() {
       setError('')
     } catch (cause) {
       setError(cause instanceof RequestError && cause.status === 401
-        ? '此页面需要由 OpenSurge 菜单栏 App 或控制服务生成的安全链接打开。'
+        ? '此页面需要由 OpenSurge App 或控制服务生成的安全链接打开。'
         : cause instanceof Error ? cause.message : String(cause))
     }
   }, [])
@@ -94,7 +94,7 @@ export function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">OS</span><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
+      <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
       <nav aria-label="OpenSurge sections">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}
       </nav>

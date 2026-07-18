@@ -9,6 +9,12 @@ RELEASE_DEPS="$ROOT/scripts/prepare-gui-release-deps.sh"
 RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
 MENUBAR_PACKAGE="$ROOT/apps/menubar/Package.swift"
+MENUBAR_INFO="$ROOT/apps/menubar/Resources/Info.plist"
+APP_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeAppIcon.png"
+MENU_BAR_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeMenuBarIcon.png"
+WEB_ICON_SOURCE="$ROOT/web/public/opensurge-icon.png"
+WEB_INDEX="$ROOT/web/index.html"
+WEB_APP="$ROOT/web/src/App.tsx"
 
 bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" \
   "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$RELEASE_VERIFY"
@@ -80,6 +86,40 @@ grep -Fq 'plutil -replace CFBundleShortVersionString' "$ROOT/scripts/build-menub
 }
 grep -Fq 'plutil -replace CFBundleVersion' "$ROOT/scripts/build-menubar-app.sh" || {
   echo "menu bar build must stamp the build number into Info.plist" >&2
+  exit 1
+}
+[[ -s "$APP_ICON_SOURCE" && -s "$MENU_BAR_ICON_SOURCE" ]] || {
+  echo "menu bar app icon assets must be present" >&2
+  exit 1
+}
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$MENUBAR_INFO")" == "OpenSurgeAppIcon" ]] || {
+  echo "menu bar app Info.plist must reference the OpenSurge app icon" >&2
+  exit 1
+}
+for bundle_name_key in CFBundleName CFBundleDisplayName; do
+  [[ "$(/usr/libexec/PlistBuddy -c "Print :$bundle_name_key" "$MENUBAR_INFO")" == "OpenSurge" ]] || {
+    echo "menu bar app $bundle_name_key must use the OpenSurge product name" >&2
+    exit 1
+  }
+done
+grep -Fq 'OpenSurgeAppIcon.icns' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build must generate the app icon resource" >&2
+  exit 1
+}
+grep -Fq 'OpenSurgeMenuBarIcon.png' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build must include the monochrome menu bar icon resource" >&2
+  exit 1
+}
+[[ -s "$WEB_ICON_SOURCE" ]] || {
+  echo "Web GUI app icon must be present" >&2
+  exit 1
+}
+grep -Fq 'rel="icon" type="image/png" href="/opensurge-icon.png"' "$WEB_INDEX" || {
+  echo "Web GUI must expose the OpenSurge browser icon" >&2
+  exit 1
+}
+grep -Fq 'className="brand-mark" src="/opensurge-icon.png"' "$WEB_APP" || {
+  echo "Web GUI sidebar must use the OpenSurge app icon" >&2
   exit 1
 }
 grep -Fq -- '--arch "$ARCH"' "$ROOT/scripts/build-menubar-app.sh" || {

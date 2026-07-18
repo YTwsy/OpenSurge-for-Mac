@@ -9,7 +9,7 @@ struct OpenSurgeMenuBarApp: App {
         MenuBarExtra {
             MenuContentView(model: model)
         } label: {
-            Image(systemName: model.indicator.systemImage)
+            OpenSurgeMenuBarLabel(indicator: model.indicator)
                 .accessibilityLabel(model.indicator.accessibilityLabel)
         }
         .menuBarExtraStyle(.window)

@@ -8,6 +8,7 @@ OUTPUT="${OPENSURGE_MENUBAR_CHECK_BINARY:-/private/tmp/opensurge-menubar-check}"
 
 swiftc -parse-as-library -sdk "$SDKROOT" -module-cache-path "$MODULE_CACHE" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/APIClient.swift" \
+  "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuBarIcon.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/Models.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/WebGUIURLLauncher.swift" \
   "$ROOT/apps/menubar/Checks/MenuBarChecks.swift" \

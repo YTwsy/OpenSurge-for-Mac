@@ -2,10 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleIdentifier</key><string>com.opensurge.menubar</string>
-  <key>CFBundleName</key><string>OpenSurge Menu Bar</string>
-  <key>CFBundleDisplayName</key><string>OpenSurge Menu Bar</string>
+  <key>CFBundleName</key><string>OpenSurge</string>
+  <key>CFBundleDisplayName</key><string>OpenSurge</string>
   <key>CFBundleExecutable</key><string>OpenSurgeMenuBar</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>OpenSurgeAppIcon</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
