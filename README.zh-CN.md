@@ -161,7 +161,26 @@ Web GUI 内置 applied 网关策略路径的连通性页面，并提供 Net.Coff
 检测入口；两者都不会被描述成下游设备 DHCP/DNS/TUN 路径已经验收。
 
 `make gui-installer` 会在取得真实 mihomo、dnsmasq 二进制后构建 macOS 安装包。
-Developer ID 签名和 notarization 必须显式提供发布凭据；本地未签名 pkg 不视为发布产物。
+Developer ID 签名和 notarization 必须显式提供发布凭据。GitHub 预发布可以提供文件名中
+明确带有 `arm64-unsigned.pkg` 的高级用户便利构建，但不能把它描述成已经签名、已经
+notarize 或可被 Gatekeeper 直接放行的安装包。
+
+### 安装 GitHub 未签名预发布包
+
+当前未签名预发布包支持 Apple Silicon Mac。下载对应 GitHub Pre-release 中的
+`arm64-unsigned.pkg` 和 `SHA256SUMS`，可运行 `shasum -a 256 -c SHA256SUMS`
+核对文件，并使用以下命令验证 GitHub 构建来源：
+
+```sh
+gh attestation verify OpenSurge-for-Mac-*-arm64-unsigned.pkg \
+  -R YTwsy/OpenSurge-for-Mac
+```
+
+双击安装包。如果 Gatekeeper 阻止安装，进入**系统设置 → 隐私与安全性**，选择
+**仍要打开**并完成身份验证，然后再次打开同一个安装包。不要全局关闭 Gatekeeper，
+也不要递归删除 quarantine。使用管理员账户完成 Installer 后，从 `/Applications`
+打开 **OpenSurge Menu Bar**。安装过程会启动本地 helper 与 Control Service，但网关
+仍保持停止，只有在控制面中明确操作才会启动。
 
 pkg 升级会在同一 LAN DHCP 恢复未完成时拒绝执行。替换 payload 前，preinstall 先停止
 用户级 Control Service 与菜单栏 App，再使用当前已安装的 `omg stop` 清理网关，最后

@@ -1,0 +1,127 @@
+name: Unsigned macOS prerelease
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: unsigned-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-arm64:
+    name: Build and publish Apple Silicon package
+    runs-on: macos-14
+    env:
+      OPENSURGE_APP_ARCH: arm64
+      OPENSURGE_RELEASE_ARCH: arm64
+      OPENSURGE_MINIMUM_MACOS: "13.0"
+      RELEASE_ARCH: arm64
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require a release tag on master
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "unsupported release tag: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          git fetch origin master --depth=1
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/master || {
+            echo "release tag is not reachable from origin/master" >&2
+            exit 1
+          }
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install Web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Prepare pinned runtime dependencies
+        run: ./scripts/prepare-gui-release-deps.sh
+
+      - name: Run GUI release checks
+        env:
+          GOCACHE: ${{ runner.temp }}/go-build-cache
+        run: make gui-test
+
+      - name: Build and verify unsigned installer
+        id: package
+        shell: bash
+        env:
+          GOCACHE: ${{ runner.temp }}/go-build-cache
+          OPENSURGE_VERSION: ${{ steps.version.outputs.version }}
+          OPENSURGE_BUILD_NUMBER: ${{ github.run_number }}
+          OPENSURGE_MIHOMO_BINARY: ${{ github.workspace }}/runtime/release-tools/bin/mihomo
+          OPENSURGE_DNSMASQ_BINARY: ${{ github.workspace }}/runtime/release-tools/bin/dnsmasq
+        run: |
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          make gui-installer
+          release_dir="$GITHUB_WORKSPACE/artifacts/release"
+          release_pkg="$release_dir/OpenSurge-for-Mac-${OPENSURGE_VERSION}-${RELEASE_ARCH}-unsigned.pkg"
+          mkdir -p "$release_dir"
+          mv "$GITHUB_WORKSPACE/artifacts/gui-installer/OpenSurge-for-Mac-${OPENSURGE_VERSION}.pkg" "$release_pkg"
+          ./scripts/verify-unsigned-gui-installer.sh "$release_pkg" "$OPENSURGE_VERSION" "$RELEASE_ARCH"
+          (
+            cd "$release_dir"
+            shasum -a 256 "$(basename "$release_pkg")" >SHA256SUMS
+          )
+          echo "pkg=$release_pkg" >>"$GITHUB_OUTPUT"
+          echo "checksums=$release_dir/SHA256SUMS" >>"$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ steps.package.outputs.pkg }}
+
+      - name: Preserve workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenSurge-for-Mac-${{ steps.version.outputs.version }}-${{ env.RELEASE_ARCH }}-unsigned
+          path: |
+            ${{ steps.package.outputs.pkg }}
+            ${{ steps.package.outputs.checksums }}
+          if-no-files-found: error
+
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ steps.package.outputs.pkg }}#Unsigned Apple Silicon installer" \
+            "${{ steps.package.outputs.checksums }}#SHA-256 checksums" \
+            --verify-tag \
+            --prerelease \
+            --latest=false \
+            --title "OpenSurge for Mac $GITHUB_REF_NAME (Unsigned Preview)" \
+            --notes-file packaging/unsigned-release-notes.md

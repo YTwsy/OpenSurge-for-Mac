@@ -182,8 +182,29 @@ security and packaging boundary.
 
 `make gui-installer` builds a macOS package after requiring real mihomo and
 dnsmasq binaries. Developer ID signing and notarization are opt-in through the
-environment variables documented in the architecture notes; an unsigned local
-package is never described as a release artifact.
+environment variables documented in the architecture notes. GitHub prereleases
+may contain an explicitly named `arm64-unsigned.pkg` convenience build for
+advanced users; it is never described as signed, notarized, or Gatekeeper-ready.
+
+### Install an unsigned GitHub preview
+
+The current unsigned preview supports Apple Silicon Macs. Download the
+`arm64-unsigned.pkg` asset and `SHA256SUMS` from the matching GitHub prerelease.
+You can verify its checksum with `shasum -a 256 -c SHA256SUMS` and its GitHub
+build provenance with:
+
+```sh
+gh attestation verify OpenSurge-for-Mac-*-arm64-unsigned.pkg \
+  -R YTwsy/OpenSurge-for-Mac
+```
+
+Double-click the package. If Gatekeeper blocks it, open **System Settings →
+Privacy & Security**, choose **Open Anyway**, authenticate, and open the same
+package again. Do not disable Gatekeeper globally or recursively remove
+quarantine attributes. Finish Installer with an administrator account, then
+open **OpenSurge Menu Bar** from `/Applications`. Installation starts the local
+helper and Control Service, but the gateway remains stopped until you explicitly
+start it from the control plane.
 
 Package upgrades refuse to run while same-LAN DHCP recovery is incomplete.
 Before replacing payload files, preinstall stops the user control service and

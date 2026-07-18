@@ -5,9 +5,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREINSTALL="$ROOT/packaging/pkg-scripts/preinstall"
 POSTINSTALL="$ROOT/packaging/pkg-scripts/postinstall"
 RECOVERY_STATE="$ROOT/packaging/pkg-scripts/recovery-state.sh"
+RELEASE_DEPS="$ROOT/scripts/prepare-gui-release-deps.sh"
+RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
+RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
 
-bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" "$ROOT/scripts/build-gui-installer.sh"
+bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" \
+  "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$RELEASE_VERIFY"
 [[ -x "$PREINSTALL" ]] || { echo "preinstall must be executable" >&2; exit 1; }
+[[ -x "$RELEASE_DEPS" && -x "$RELEASE_VERIFY" ]] || {
+  echo "release preparation and verification scripts must be executable" >&2
+  exit 1
+}
 
 # shellcheck source=packaging/pkg-scripts/recovery-state.sh
 source "$RECOVERY_STATE"
@@ -79,6 +87,18 @@ grep -Fq -- '--arch "$ARCH"' "$ROOT/scripts/build-menubar-app.sh" || {
 }
 grep -Fq 'lipo "$executable" -verify_arch "$OPENSURGE_APP_ARCH"' "$ROOT/scripts/build-gui-installer.sh" || {
   echo "GUI package must verify bundled executable architectures" >&2
+  exit 1
+}
+grep -Fq 'actions/attest@v4' "$RELEASE_WORKFLOW" || {
+  echo "unsigned release workflow must attest the package provenance" >&2
+  exit 1
+}
+grep -Fq -- '--prerelease' "$RELEASE_WORKFLOW" || {
+  echo "unsigned packages must be published as prereleases" >&2
+  exit 1
+}
+grep -Fq 'verify-unsigned-gui-installer.sh' "$RELEASE_WORKFLOW" || {
+  echo "unsigned release workflow must verify the completed package" >&2
   exit 1
 }
 
