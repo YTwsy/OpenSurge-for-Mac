@@ -39,12 +39,14 @@ download_and_verify() {
 download_and_verify "$DNSMASQ_URL" "$CACHE_ROOT/$DNSMASQ_ARCHIVE" "$DNSMASQ_SHA256"
 tar -xzf "$CACHE_ROOT/$DNSMASQ_ARCHIVE" -C "$work_dir"
 build_jobs="$(sysctl -n hw.logicalcpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
-dnsmasq_make_args=()
 if [[ "$(uname -m)" != "$RELEASE_ARCH" ]]; then
-  dnsmasq_make_args+=("CC=clang -arch $RELEASE_ARCH")
+  MACOSX_DEPLOYMENT_TARGET="$MINIMUM_MACOS" \
+    make -C "$work_dir/dnsmasq-$DNSMASQ_VERSION" -j"$build_jobs" \
+      "CC=clang -arch $RELEASE_ARCH"
+else
+  MACOSX_DEPLOYMENT_TARGET="$MINIMUM_MACOS" \
+    make -C "$work_dir/dnsmasq-$DNSMASQ_VERSION" -j"$build_jobs"
 fi
-MACOSX_DEPLOYMENT_TARGET="$MINIMUM_MACOS" \
-  make -C "$work_dir/dnsmasq-$DNSMASQ_VERSION" -j"$build_jobs" "${dnsmasq_make_args[@]}"
 install -m 0755 "$work_dir/dnsmasq-$DNSMASQ_VERSION/src/dnsmasq" "$BIN_ROOT/dnsmasq"
 
 download_and_verify "$MIHOMO_URL" "$CACHE_ROOT/$MIHOMO_ARCHIVE" "$MIHOMO_SHA256"
@@ -52,6 +54,10 @@ gzip -dc "$CACHE_ROOT/$MIHOMO_ARCHIVE" >"$BIN_ROOT/mihomo"
 chmod 0755 "$BIN_ROOT/mihomo"
 
 for executable in "$BIN_ROOT/dnsmasq" "$BIN_ROOT/mihomo"; do
+  if [[ ! -x "$executable" ]]; then
+    echo "release dependency was not prepared: $executable" >&2
+    exit 1
+  fi
   /usr/bin/lipo "$executable" -verify_arch "$RELEASE_ARCH"
 done
 
