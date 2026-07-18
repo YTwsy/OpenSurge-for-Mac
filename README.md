@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App 图标">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>把 Mac 变成可观测、可回滚、可按设备分流的全屋透明代理网关。</strong></p>
+  <p><strong>把 Mac 变成可导入规则、可按设备分流的全屋透明代理网关。</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?include_prereleases&amp;style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
@@ -131,45 +131,6 @@ go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example
 go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.example.yaml
 ```
 
-## 使用
-
-```sh
-go run ./cmd/omg doctor --config examples/config.example.yaml
-go run ./cmd/omg status --config examples/config.example.yaml
-go run ./cmd/omg status --config examples/config.example.yaml --format json
-go run ./cmd/omg logs --config examples/config.example.yaml --tail 50 --format json
-go run ./cmd/omg snapshot --config examples/config.example.yaml --tail 50 --format json
-go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
-go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
-# 配置 device_policy.file 后：
-go run ./cmd/omg devices --config ./config.yaml --format json
-go run ./cmd/omg device-policy-select --config ./config.yaml --device alice-phone --slot default --policy DIRECT
-go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
-go run ./cmd/omg providers --config examples/config.imported-profile.example.yaml --format json
-go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
-go run ./cmd/omg render-mihomo --config examples/config.example.yaml
-sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
-sudo go run ./cmd/omg reload --config examples/config.example.yaml --format json
-sudo go run ./cmd/omg restart-mihomo --config examples/config.example.yaml --format json
-sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
-```
-
-`policy-select` 会先读取 live mihomo 策略组，并在发送切换请求前拒绝未知 group
-或 policy。`provider-update --provider <name>` 会请求 mihomo 刷新一个 proxy
-provider，并返回刷新后的 provider 状态。`logs --tail N --format json` 会包含最近的
-`dnsmasq` 和 `mihomo` 日志行，并为每个日志文件返回存在状态和读取错误字段，方便
-控制面消费。
-`snapshot --format json` 会聚合 status、doctor、leases、日志尾部、策略组、连接
-和 provider 状态；mihomo API 失败会留在 `mihomo` 字段内部，不影响其余 snapshot
-可用。
-`restart-mihomo` 会先验证当前 applied 配置，再只重启代理核心。它不会停止 dnsmasq、
-卸载 PF、恢复 IPv4 forwarding 或修改本机网络设置，并会在重建 TUN 与出站 socket 前
-归档旧 Mihomo 日志。
-`start --format json` 和 `stop --format json` 会在网关动作成功后返回包含
-`command`、`ok` 和 `config_path` 的成功 payload。
-使用 `--format json` 时，命令失败会在 stderr 输出
-`{"command":"...","ok":false,"error":"..."}`，同时保留非零退出码。
-
 ## Web GUI 与菜单栏 App
 
 本地 Control API、React Web GUI 和只读 SwiftUI 菜单栏 launcher 已进入仓库。开发构建：
@@ -213,6 +174,45 @@ pkg 升级会在同一 LAN DHCP 恢复未完成时拒绝执行。替换 payload 
 用户级 Control Service 与菜单栏 App，再使用当前已安装的 `omg stop` 清理网关，最后
 卸载 root helper。升级会保留现有配置、导入源、策略数据和 runtime 历史；只有首次安装
 才会用包内示例生成 `config.yaml`。
+
+## 使用
+
+```sh
+go run ./cmd/omg doctor --config examples/config.example.yaml
+go run ./cmd/omg status --config examples/config.example.yaml
+go run ./cmd/omg status --config examples/config.example.yaml --format json
+go run ./cmd/omg logs --config examples/config.example.yaml --tail 50 --format json
+go run ./cmd/omg snapshot --config examples/config.example.yaml --tail 50 --format json
+go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
+go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
+# 配置 device_policy.file 后：
+go run ./cmd/omg devices --config ./config.yaml --format json
+go run ./cmd/omg device-policy-select --config ./config.yaml --device alice-phone --slot default --policy DIRECT
+go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
+go run ./cmd/omg providers --config examples/config.imported-profile.example.yaml --format json
+go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
+go run ./cmd/omg render-mihomo --config examples/config.example.yaml
+sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg reload --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg restart-mihomo --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
+```
+
+`policy-select` 会先读取 live mihomo 策略组，并在发送切换请求前拒绝未知 group
+或 policy。`provider-update --provider <name>` 会请求 mihomo 刷新一个 proxy
+provider，并返回刷新后的 provider 状态。`logs --tail N --format json` 会包含最近的
+`dnsmasq` 和 `mihomo` 日志行，并为每个日志文件返回存在状态和读取错误字段，方便
+控制面消费。
+`snapshot --format json` 会聚合 status、doctor、leases、日志尾部、策略组、连接
+和 provider 状态；mihomo API 失败会留在 `mihomo` 字段内部，不影响其余 snapshot
+可用。
+`restart-mihomo` 会先验证当前 applied 配置，再只重启代理核心。它不会停止 dnsmasq、
+卸载 PF、恢复 IPv4 forwarding 或修改本机网络设置，并会在重建 TUN 与出站 socket 前
+归档旧 Mihomo 日志。
+`start --format json` 和 `stop --format json` 会在网关动作成功后返回包含
+`command`、`ok` 和 `config_path` 的成功 payload。
+使用 `--format json` 时，命令失败会在 stderr 输出
+`{"command":"...","ok":false,"error":"..."}`，同时保留非零退出码。
 
 ## AI Agent 友好工作区
 
