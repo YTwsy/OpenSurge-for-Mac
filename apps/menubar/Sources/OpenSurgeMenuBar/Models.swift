@@ -58,18 +58,24 @@ struct EndpointDescriptor: Codable {
 }
 
 enum IndicatorState: Equatable {
-    case stopped, running, degraded, recovery, unreachable
+    case connecting, stopped, running, degraded, recovery, unreachable
 
     var usesBrandMenuBarIcon: Bool {
-        self == .stopped || self == .running
+        self == .connecting || self == .stopped || self == .running || self == .unreachable
     }
 
     var menuBarIconOpacity: Double {
-        self == .stopped ? 0.55 : 1
+        switch self {
+        case .connecting: 0.75
+        case .stopped: 0.55
+        case .unreachable: 0.35
+        default: 1
+        }
     }
 
     var systemImage: String {
         switch self {
+        case .connecting: "network"
         case .stopped: "network"
         case .running: "network.badge.shield.half.filled"
         case .degraded: "exclamationmark.circle"
@@ -80,6 +86,7 @@ enum IndicatorState: Equatable {
 
     var accessibilityLabel: String {
         switch self {
+        case .connecting: "正在连接 OpenSurge 控制服务"
         case .stopped: "OpenSurge 网关已停止"
         case .running: "OpenSurge 网关正在运行"
         case .degraded: "OpenSurge 网关运行异常"
@@ -89,9 +96,18 @@ enum IndicatorState: Equatable {
     }
 }
 
+func menuBarIndicator(status: MenuBarStatus?, hasError: Bool) -> IndicatorState {
+    if let status { return status.indicator }
+    return hasError ? .unreachable : .connecting
+}
+
 extension MenuBarStatus {
     var gatewayServicesActive: Bool {
         gateway == "running" || gateway == "degraded" || dhcp == "running" || mihomo == "running" || pfAnchor == "loaded" || forwarding == "enabled"
+    }
+
+    var canQuitOpenSurge: Bool {
+        gateway == "stopped" && !gatewayServicesActive && !recoveryNeedsAttention
     }
 
     var topologyLabel: String {
@@ -156,4 +172,17 @@ func menuBarQuitWarning(for status: MenuBarStatus?) -> String {
         return "退出只会关闭菜单栏图标；正在运行的 DHCP/DNS、mihomo、PF/转发和后台控制服务都不会停止。请先在 Web GUI 中停止网关（如需要）。" + recovery
     }
     return "退出只会关闭菜单栏图标；网关当前未运行，但 OpenSurge 后台控制服务仍会继续运行。"
+}
+
+func openSurgeQuitWarning(for status: MenuBarStatus?) -> String {
+    guard let status else {
+        return "当前无法确认网关服务状态。请先重新连接后台服务，确认网关与网络恢复状态后再退出 OpenSurge。"
+    }
+    guard status.canQuitOpenSurge else {
+        if status.recoveryNeedsAttention {
+            return "网络恢复尚未完成。请先在网络设置中完成恢复，再退出 OpenSurge。"
+        }
+        return "网关数据面仍在运行。请先在网络设置中停止网关，确认 DHCP/DNS、mihomo、PF 与转发均已停止。"
+    }
+    return "网关停止时，DHCP/DNS、mihomo、PF 与转发也应已经停止。此操作会退出菜单栏 App 和用户级 Control Service；由系统 launchd 托管的 root Helper 仍保持空闲加载，下次打开 OpenSurge 不需要再次授权。"
 }

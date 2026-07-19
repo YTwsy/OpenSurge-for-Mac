@@ -204,7 +204,12 @@ make menubar-build
 
 The control service listens only on `127.0.0.1` and prints a one-time Web GUI
 bootstrap link. The menu bar app shows status and recovery warnings and opens
-the Web GUI; it deliberately has no start/stop or policy-selection actions.
+the Web GUI; it deliberately has no gateway start/stop or policy-selection
+actions. It separates quitting only the menu bar app from quitting OpenSurge.
+The latter is available only after the gateway data plane has stopped, and
+quits the menu bar app plus the user-level Control Service. The launchd-managed
+root Helper remains loaded and idle, so reopening OpenSurge needs no new
+administrator authorization.
 The Web GUI includes a native connectivity page for the applied gateway policy
 path and links to Net.Coffee for a separate browser-local check. Neither result
 is presented as proof of a downstream device's DHCP/DNS/TUN path.

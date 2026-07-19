@@ -3,12 +3,13 @@ import Foundation
 enum ControlAPIError: LocalizedError {
     case descriptorUnavailable
     case tokenUnavailable
+    case transportUnavailable
     case invalidResponse
     case http(Int)
 
     var serviceUnavailable: Bool {
         switch self {
-        case .descriptorUnavailable, .tokenUnavailable: true
+        case .descriptorUnavailable, .tokenUnavailable, .transportUnavailable: true
         case .invalidResponse, .http: false
         }
     }
@@ -16,6 +17,7 @@ enum ControlAPIError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .descriptorUnavailable, .tokenUnavailable: "OpenSurge 后台服务尚未准备好"
+        case .transportUnavailable: "无法连接 OpenSurge 后台服务"
         case .invalidResponse: "Control API 返回了无效数据"
         case .http(let status): "Control API 请求失败（HTTP \(status)）"
         }
@@ -68,7 +70,13 @@ struct ControlAPIClient {
         request.timeoutInterval = 5
         request.setValue("Bearer \(try token())", forHTTPHeaderField: "Authorization")
 		if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch is URLError {
+            throw ControlAPIError.transportUnavailable
+        }
         guard let http = response as? HTTPURLResponse else { throw ControlAPIError.invalidResponse }
         guard 200..<300 ~= http.statusCode else { throw ControlAPIError.http(http.statusCode) }
         return data

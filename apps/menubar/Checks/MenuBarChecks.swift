@@ -53,6 +53,10 @@ struct MenuBarChecks {
         do { status = try await client.status() }
         catch { throw CheckFailure.failed("status request failed: \(CheckURLProtocol.lastFailure ?? String(describing: error))") }
         try require(status.indicator == .running, "running indicator mismatch")
+        try require(menuBarIndicator(status: nil, hasError: false) == .connecting, "initial menu bar state must use the brand icon")
+        try require(menuBarIndicator(status: nil, hasError: true) == .unreachable, "confirmed Control Service failure must remain distinguishable")
+        try require(IndicatorState.connecting.usesBrandMenuBarIcon && IndicatorState.connecting.menuBarIconOpacity == 0.75, "connecting indicator must use the brand icon")
+        try require(IndicatorState.unreachable.usesBrandMenuBarIcon && IndicatorState.unreachable.menuBarIconOpacity == 0.35, "initial Control Service delay must not restore the legacy-looking icon")
         try require(status.topologyLabel == "同一 LAN DHCP 接管", "same-LAN topology label mismatch")
         try require(status.gatewayServicesActive && menuBarQuitWarning(for: status).contains("都不会停止"), "active gateway quit warning mismatch")
         try require(status.diagnosticSummary.contains("PF: loaded"), "diagnostic summary omitted PF")
@@ -65,6 +69,14 @@ struct MenuBarChecks {
             return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
         }
         _ = try await fileTokenClient.status()
+
+        CheckURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
+        do {
+            _ = try await client.status()
+            throw CheckFailure.failed("transport failure did not fail")
+        } catch let error as ControlAPIError {
+            try require(error.serviceUnavailable, "transport failure did not trigger Control Service recovery")
+        }
 
         try FileManager.default.removeItem(at: directory.appending(path: "control-token"))
         do {
@@ -95,6 +107,8 @@ struct MenuBarChecks {
         try require(prepared.recoverySnapshotPrepared && !prepared.recoveryNeedsAttention && prepared.indicator == .stopped, "prepared recovery must not present as a network recovery")
         let stopped = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp", lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "disabled", clientCount: 0, drift: true, doctorHealthy: false, recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
         try require(stopped.indicator == .stopped && stopped.indicator.accessibilityLabel == "OpenSurge 网关已停止", "stopped gateway must not be presented as a runtime failure")
+        try require(stopped.canQuitOpenSurge && openSurgeQuitWarning(for: stopped).contains("root Helper 仍保持空闲加载"), "stopped gateway must allow the explicit OpenSurge quit path")
+        try require(!active.canQuitOpenSurge && !recovery.canQuitOpenSurge, "active or recovery state must block the OpenSurge quit path")
 
         var fallbackOpened = false
         let launcher = WebGUIURLLauncher(

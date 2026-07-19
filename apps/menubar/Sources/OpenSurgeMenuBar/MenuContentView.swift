@@ -1,9 +1,9 @@
+import AppKit
 import ServiceManagement
 import SwiftUI
 
 struct MenuContentView: View {
     @ObservedObject var model: StatusModel
-    @State private var showQuitConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -91,18 +91,34 @@ struct MenuContentView: View {
                 }
             )).font(.caption)
 
-            Button("退出菜单栏 App…") { showQuitConfirmation = true }
+            Divider()
+            Button("退出 OpenSurge…") { confirmQuit(.openSurge) }
+                .font(.caption)
+                .disabled(!model.canQuitOpenSurge)
+                .help(fullQuitHelp)
+            Button("只退出菜单栏 App…") { confirmQuit(.menuBarOnly) }
                 .font(.caption).foregroundStyle(.secondary)
+                .disabled(model.isChangingServices)
         }
         .padding(16)
         .frame(width: 330)
         .onAppear { model.startPolling(rapid: true) }
         .onDisappear { model.stopRapidPolling() }
-        .alert("只退出菜单栏 App？", isPresented: $showQuitConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("仍然退出", role: .destructive) { NSApplication.shared.terminate(nil) }
-        } message: {
-            Text(menuBarQuitWarning(for: model.status))
+    }
+
+    private var fullQuitHelp: String {
+        if model.status?.recoveryNeedsAttention == true { return "请先完成网络恢复" }
+        if model.status?.canQuitOpenSurge != true { return "请先在网络设置中停止网关" }
+        return "停止用户级 Control Service，然后退出菜单栏 App；root Helper 保持空闲加载"
+    }
+
+    private func confirmQuit(_ confirmation: QuitConfirmation) {
+        guard confirmation.present(for: model.status) else { return }
+        switch confirmation {
+        case .openSurge:
+            model.quitOpenSurge()
+        case .menuBarOnly:
+            model.quitMenuBarApp()
         }
     }
 
@@ -131,6 +147,36 @@ struct MenuContentView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(11).background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+@MainActor
+private enum QuitConfirmation {
+    case menuBarOnly
+    case openSurge
+
+    var title: String {
+        self == .openSurge ? "退出 OpenSurge？" : "只退出菜单栏 App？"
+    }
+
+    var buttonTitle: String {
+        self == .openSurge ? "退出 OpenSurge" : "仍然退出"
+    }
+
+    func message(for status: MenuBarStatus?) -> String {
+        self == .openSurge
+            ? openSurgeQuitWarning(for: status)
+            : menuBarQuitWarning(for: status)
+    }
+
+    func present(for status: MenuBarStatus?) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message(for: status)
+        alert.addButton(withTitle: buttonTitle).hasDestructiveAction = true
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }
 

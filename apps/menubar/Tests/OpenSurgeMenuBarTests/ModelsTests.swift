@@ -48,12 +48,23 @@ final class ModelsTests: XCTestCase {
     }
 
     func testAlertStatesKeepSystemStatusSymbols() {
-        for state in [IndicatorState.degraded, .recovery, .unreachable] {
+        for state in [IndicatorState.degraded, .recovery] {
             XCTAssertFalse(state.usesBrandMenuBarIcon)
             XCTAssertEqual(state.menuBarIconOpacity, 1)
         }
         XCTAssertEqual(IndicatorState.recovery.systemImage, "exclamationmark.triangle.fill")
-        XCTAssertEqual(IndicatorState.unreachable.systemImage, "network.slash")
+    }
+
+    func testInitialConnectionUsesBrandIconUntilARealFailureIsKnown() {
+        XCTAssertEqual(menuBarIndicator(status: nil, hasError: false), .connecting)
+        XCTAssertTrue(IndicatorState.connecting.usesBrandMenuBarIcon)
+        XCTAssertEqual(IndicatorState.connecting.menuBarIconOpacity, 0.75)
+        XCTAssertEqual(IndicatorState.connecting.accessibilityLabel, "正在连接 OpenSurge 控制服务")
+
+        XCTAssertEqual(menuBarIndicator(status: nil, hasError: true), .unreachable)
+        XCTAssertTrue(IndicatorState.unreachable.usesBrandMenuBarIcon)
+        XCTAssertEqual(IndicatorState.unreachable.menuBarIconOpacity, 0.35)
+        XCTAssertEqual(IndicatorState.unreachable.accessibilityLabel, "无法连接 OpenSurge 控制服务")
     }
 
     func testSkippedClientAcceptanceRemainsAnActiveTakeover() {
@@ -77,6 +88,26 @@ final class ModelsTests: XCTestCase {
         XCTAssertFalse(stopped.gatewayServicesActive)
         XCTAssertTrue(menuBarQuitWarning(for: stopped).contains("后台控制服务仍会继续运行"))
         XCTAssertTrue(menuBarQuitWarning(for: nil).contains("无法确认网关服务状态"))
+    }
+
+    func testFullQuitRequiresStoppedGatewayAndNoPendingRecovery() {
+        let active = fixture(gateway: "running", recovery: false, drift: false)
+        XCTAssertFalse(active.canQuitOpenSurge)
+
+        let stopped = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "isolated_lan",
+                                    lanIp: "192.168.50.1", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded",
+                                    forwarding: "disabled", clientCount: 0, drift: false, doctorHealthy: true,
+                                    recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
+        XCTAssertTrue(stopped.canQuitOpenSurge)
+        XCTAssertTrue(openSurgeQuitWarning(for: stopped).contains("root Helper 仍保持空闲加载"))
+        XCTAssertTrue(openSurgeQuitWarning(for: stopped).contains("不需要再次授权"))
+
+        let recovery = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp",
+                                     lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded",
+                                     forwarding: "disabled", clientCount: 0, drift: false, doctorHealthy: true,
+                                     recoveryRequired: true, recoveryStage: "gateway_stopped_waiting_router_dhcp", warnings: [], errorCode: nil)
+        XCTAssertFalse(recovery.canQuitOpenSurge)
+        XCTAssertTrue(openSurgeQuitWarning(for: recovery).contains("网络恢复尚未完成"))
     }
 
     func testDiagnosticSummaryDoesNotContainWarnings() {

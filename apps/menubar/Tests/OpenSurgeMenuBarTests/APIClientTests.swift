@@ -57,6 +57,18 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+    func testTransportFailureTriggersServiceRecovery() async throws {
+        let client = try makeClient()
+        MockURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
+        do {
+            _ = try await client.status()
+            XCTFail("expected transport failure")
+        } catch let error as ControlAPIError {
+            XCTAssertTrue(error.serviceUnavailable)
+            XCTAssertEqual(error.localizedDescription, "无法连接 OpenSurge 后台服务")
+        }
+    }
+
     private func makeClient(tokenOverride: String? = "test-token", fileToken: String? = nil) throws -> ControlAPIClient {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
