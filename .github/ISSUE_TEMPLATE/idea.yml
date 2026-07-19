@@ -1,0 +1,22 @@
+name: Idea / 想法
+description: 分享一个想法、实验方向或尚未完成的设想
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请简单浏览一下 `docs/`。想法不需要完整，欢迎发挥想象力。
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你的想法
+      description: 它想解决什么问题？希望 OpenSurge 变成什么样？
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 草图、参考项目、使用场景或任何相关内容均可。
