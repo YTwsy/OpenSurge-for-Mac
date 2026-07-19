@@ -2,16 +2,19 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { recoveryLabel } from '../status'
-import type { ControlConfig, GatewayPlan, Overview } from '../types'
+import type { ControlConfig, GatewayPlan, NetworkInterfaceOption, Overview } from '../types'
 
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 
 export function NetworkPage({ overview, onChanged }: { overview: Overview | null; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
   const [plan, setPlan] = useState<GatewayPlan | null>(null)
   const [config, setConfig] = useState<ControlConfig | null>(null)
   const [savedConfig, setSavedConfig] = useState<ControlConfig | null>(null)
+  const [interfaceOptions, setInterfaceOptions] = useState<NetworkInterfaceOption[]>([])
+  const [interfaceDiscoveryError, setInterfaceDiscoveryError] = useState(false)
   const [clientIPv4, setClientIPv4] = useState('')
   const [clientConfirmed, setClientConfirmed] = useState(false)
   const [ipv6Acknowledged, setIPv6Acknowledged] = useState(false)
@@ -22,7 +25,10 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const currentIndex = stages.indexOf(current)
   const recoveryBlocksConfig = Boolean(overview?.recovery.required && current !== 'prepared')
   const configDirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
-  const configurationEditable = !busy && overview?.status.gateway !== 'running' && !recoveryBlocksConfig
+  const gatewayActive = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
+  const gatewayStopped = overview?.status.gateway === 'stopped'
+  const dhcpRuntimeDisabled = config?.gateway.mode === 'same_lan'
+  const configurationEditable = !busy && gatewayStopped && !recoveryBlocksConfig
   const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
   const blockedByPlan = planBlockersApply && (plan?.blockers.length ?? 0) > 0
   const recoverySnapshot = overview?.recovery.network_snapshot
@@ -37,6 +43,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   useEffect(() => {
     let active = true
     void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
+    void api.networkInterfaces().then(value => { if (active) setInterfaceOptions(value.interfaces) }).catch(() => { if (active) setInterfaceDiscoveryError(true) })
     return () => { active = false }
   }, [loadPlan])
 
@@ -48,9 +55,26 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
 
   const save = async () => {
     if (!config) return
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setMessage('')
     try { const updated = await api.saveConfig(config); setConfig(updated); setSavedConfig(updated); await onChanged(); await loadPlan(updated) }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+
+  const controlGateway = async (action: 'start' | 'stop') => {
+    if (!config || config.gateway.mode === 'same_wifi_dhcp') return
+    if (action === 'start' && configDirty) {
+      setError('网络配置尚未保存。请先保存配置，再启动网关。')
+      return
+    }
+    if (!window.confirm(gatewayConfirmation(config.gateway.mode, action))) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const operation = await api.gateway(action)
+      await waitForOperation(operation.id)
+      await onChanged()
+      setMessage(action === 'start' ? `${gatewayModeLabel(config.gateway.mode)}已启动。` : `${gatewayModeLabel(config.gateway.mode)}已停止。`)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
 
@@ -125,6 +149,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   return <>
     <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择 topology 并保存 desired 配置；客户端验收可以明确跳过，停止后也可选择恢复自动 DHCP 或保持静态 IPv4。" />
     {error && <div className="notice warn" role="alert">{error}</div>}
+    {message && <div className="notice ok-notice" role="status">{message}</div>}
     {config && <>
       <div className="mode-grid">
         <Mode title="同一 LAN DHCP 接管" badge="重点场景" active={config.gateway.mode === 'same_wifi_dhcp'} disabled={!configurationEditable} onSelect={() => selectMode('same_wifi_dhcp')} description="Mac 与其他设备位于同一二层 LAN（Wi‑Fi 或以太网）；路由器 DHCP 由用户手动关闭。" />
@@ -135,25 +160,34 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         <SectionTitle title="Desired 网络配置" subtitle={`这是下次启动要使用的目标值；保存本身不会切换网络。revision ${config.revision.slice(0, 12)}`} />
         <fieldset disabled={!configurationEditable} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
           <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方拓扑，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址。保存不会立即改动网络；保存后的配置会在启动网关时应用。恢复资料已准备但网络尚未改动时仍可修正配置，保存后会从第 1 步重新开始。</p></div>
+          <datalist id="network-interface-options">
+            {interfaceOptions.map(option => <option key={`${option.interface}:${option.network_service}`} value={option.interface} label={`${option.network_service} · ${option.interface}`} />)}
+          </datalist>
+          {interfaceDiscoveryError && <div className="notice">无法读取当前 Mac 的网络接口清单；仍可手工填写接口名称。</div>}
           <div className="config-form">
-          <ConfigField label="下游 LAN 接口" setting="gateway.interface" hint="承载客户端流量的 Mac 接口。在同一 LAN DHCP 接管中，它必须和上游接口相同；独立 LAN 通常是 AP、SSID 或 VLAN 的下游接口。">
-            <input aria-label="下游 LAN 接口" value={config.gateway.interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, interface: event.target.value } })} />
+          <ConfigField label="下游 LAN 接口" setting="gateway.interface" hint="可从当前 Mac 网络服务中选择，也可手工输入接口名。在同一 LAN DHCP 接管中，它必须和上游接口相同；独立 LAN 通常是 AP、SSID 或 VLAN 的下游接口。">
+            <input aria-label="下游 LAN 接口" list="network-interface-options" value={config.gateway.interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, interface: event.target.value } })} />
           </ConfigField>
-          <ConfigField label="上游网络接口" setting="gateway.upstream_interface" hint="Mac 访问互联网的出口接口。pf 会从这里做 NAT；同一 LAN DHCP 接管通常与下游 LAN 接口相同。">
-            <input aria-label="上游网络接口" value={config.gateway.upstream_interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, upstream_interface: event.target.value } })} />
+          <ConfigField label="上游网络接口" setting="gateway.upstream_interface" hint="可从当前 Mac 网络服务中选择，也可手工输入接口名。pf 会从这里做 NAT；同一 LAN DHCP 接管通常与下游 LAN 接口相同。">
+            <input aria-label="上游网络接口" list="network-interface-options" value={config.gateway.upstream_interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, upstream_interface: event.target.value } })} />
           </ConfigField>
           <ConfigField label="Mac 网关 IPv4" setting="gateway.lan_ip / dns.listen" hint="分配给 Mac 的下游网关地址，也是 dnsmasq 的 DNS 监听地址。不能放进 DHCP 地址池；同一 LAN 接管时应使用当前网段的固定且未占用地址。">
             <input aria-label="Mac 网关 IPv4" value={config.gateway.lan_ip} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_ip: event.target.value }, dns: { ...config.dns, listen: event.target.value } })} />
           </ConfigField>
-          <ConfigField label="DHCP 地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4。同 LAN 手工网关不使用 DHCP；同一 LAN DHCP 接管时地址池必须在 Mac 网关的同一个 /24。">
-            <input aria-label="DHCP 地址池起点" value={config.dhcp.range_start} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_start: event.target.value } })} />
-          </ConfigField>
-          <ConfigField label="DHCP 地址池终点" setting="dhcp.range_end" hint="dnsmasq 可以动态租给客户端的最后一个 IPv4。请避开 Mac、路由器和需要长期保留的静态地址。">
-            <input aria-label="DHCP 地址池终点" value={config.dhcp.range_end} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_end: event.target.value } })} />
-          </ConfigField>
-          <ConfigField label="DHCP 租约时长" setting="dhcp.lease_time" hint="客户端拿到动态地址后可使用多久，例如 12h。更短会更快回收地址，但会增加续租请求。">
-            <input aria-label="DHCP 租约时长" value={config.dhcp.lease_time} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, lease_time: event.target.value } })} />
-          </ConfigField>
+          <fieldset className={`dhcp-config-group ${dhcpRuntimeDisabled ? 'runtime-inactive' : ''}`} disabled={dhcpRuntimeDisabled}>
+            <legend><strong>DHCP 地址池</strong><small>{dhcpRuntimeDisabled ? '同 LAN 手工网关运行时不使用；当前值仅保留供切换 topology 后复用' : 'dnsmasq 为下游客户端分配 IPv4 时使用'}</small></legend>
+            <div className="dhcp-config-grid">
+              <ConfigField label="地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4；应与 Mac 网关位于同一 /24。">
+                <input aria-label="DHCP 地址池起点" value={config.dhcp.range_start} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_start: event.target.value } })} />
+              </ConfigField>
+              <ConfigField label="地址池终点" setting="dhcp.range_end" hint="dnsmasq 可以动态租给客户端的最后一个 IPv4；请避开 Mac、路由器和静态地址。">
+                <input aria-label="DHCP 地址池终点" value={config.dhcp.range_end} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_end: event.target.value } })} />
+              </ConfigField>
+              <ConfigField label="租约时长" setting="dhcp.lease_time" hint="客户端取得动态地址后可使用多久，例如 12h；更短会增加续租请求。">
+                <input aria-label="DHCP 租约时长" value={config.dhcp.lease_time} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, lease_time: event.target.value } })} />
+              </ConfigField>
+            </div>
+          </fieldset>
           <ConfigField label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
             <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
               <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>
@@ -176,6 +210,19 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         <div className="network-save-bar" aria-live="polite"><span className={configDirty ? 'dirty' : ''}><i aria-hidden="true">{configDirty ? '•' : '✓'}</i>{configDirty ? '有未保存的修改' : '当前配置已保存'}</span><button className="primary" disabled={!configurationEditable} onClick={() => void save()}>{busy ? <><span className="button-spinner" aria-hidden="true" />正在保存…</> : '保存网络配置'}</button></div>
       </section>
     </>}
+    {config && config.gateway.mode !== 'same_wifi_dhcp' && <section className="section gateway-lifecycle-control">
+      <SectionTitle title="网关运行控制" subtitle="使用已保存的网络配置启动或停止；总览页的按钮只负责导航到这里" />
+      <div className="gateway-lifecycle-row">
+        <div>
+          <span className={`pill ${gatewayActive ? 'ok' : ''}`}>{gatewayActive ? '运行中' : gatewayStopped ? '已停止' : '状态未知'}</span>
+          <strong>{gatewayModeLabel(config.gateway.mode)}</strong>
+          <p>{gatewayModeDescription(config)}</p>
+        </div>
+        <button className={gatewayActive ? 'danger' : 'primary'} type="button" disabled={busy || !overview || (!gatewayActive && !gatewayStopped) || (!gatewayActive && configDirty)} onClick={() => void controlGateway(gatewayActive ? 'stop' : 'start')}>{busy ? '正在执行…' : gatewayActive ? `停止${gatewayModeLabel(config.gateway.mode)}` : `启动${gatewayModeLabel(config.gateway.mode)}`}</button>
+      </div>
+      {!gatewayActive && configDirty && <div className="notice warn">网络配置有未保存的修改。保存后才能启动网关。</div>}
+      {!gatewayActive && !gatewayStopped && <div className="notice warn">当前网关状态无法确认；为避免重复启动，运行控制暂时不可用。</div>}
+    </section>}
     {config?.gateway.mode === 'same_wifi_dhcp' && <>
       {plan && <section className="section">
         <SectionTitle title="当前网络快照" subtitle={`${plan.snapshot.network_service} · ${plan.snapshot.interface}`} />
@@ -218,6 +265,27 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
       </section>
     </>}
   </>
+}
+
+function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
+  return mode === 'same_lan' ? '同 LAN 手工网关' : '独立下游 LAN'
+}
+
+function gatewayModeDescription(config: ControlConfig) {
+  if (config.gateway.mode === 'same_lan') return '启动 DNS、mihomo TUN、PF/NAT 与 IPv4 forwarding；路由器 DHCP 保持开启，客户端自行把网关和 DNS 指向 Mac。'
+  const proxyMode = config.transparent.mode === 'tun' ? 'mihomo TUN 透明代理' : '不启用透明代理'
+  return `启动 DHCP/DNS、PF/NAT 与 IPv4 forwarding；当前配置为${proxyMode}。`
+}
+
+function gatewayConfirmation(mode: ControlConfig['gateway']['mode'], action: 'start' | 'stop') {
+  if (mode === 'same_lan') {
+    return action === 'start'
+      ? '将按已保存配置启动同 LAN 手工网关。路由器 DHCP 不会被关闭；客户端需要自行把网关和 DNS 指向 Mac。继续吗？'
+      : '停止后，仍把网关或 DNS 指向 Mac 的客户端可能立即断网。确定停止同 LAN 手工网关吗？'
+  }
+  return action === 'start'
+    ? '将按已保存配置启动独立下游 LAN 的 DHCP/DNS、PF/NAT 与 IPv4 forwarding。继续吗？'
+    : '停止后，独立下游 LAN 客户端将失去 OpenSurge 提供的 DHCP/DNS 和网关连接。确定停止吗？'
 }
 
 function RouterAddress({ router, showHint = false }: { router: string; showHint?: boolean }) {

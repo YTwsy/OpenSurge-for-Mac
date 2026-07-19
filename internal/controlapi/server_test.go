@@ -144,6 +144,24 @@ func TestRecoveryTransitionsPersist(t *testing.T) {
 	}
 }
 
+func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodGet, "/api/v1/network/interfaces", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("interfaces status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload NetworkInterfacesResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.SchemaVersion != SchemaVersion || len(payload.Interfaces) != 2 {
+		t.Fatalf("interfaces response = %#v", payload)
+	}
+	if payload.Interfaces[0].Interface != "en0" || payload.Interfaces[0].NetworkService != "Wi-Fi" {
+		t.Fatalf("first interface = %#v", payload.Interfaces[0])
+	}
+}
+
 func TestPreparedRecoveryCanBeDiscardedBeforeNetworkChanges(t *testing.T) {
 	server := newTestServer(t)
 	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
@@ -1230,7 +1248,9 @@ runtime:
 	discover := func(context.Context, string, string) (macosnetwork.Snapshot, error) {
 		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"192.168.1.1"}}, nil
 	}
-	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
+	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
+		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi"}, {Interface: "en7", NetworkService: "USB LAN"}}, nil
+	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)
 	}

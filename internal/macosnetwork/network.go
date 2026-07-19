@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 )
@@ -28,6 +29,11 @@ type ManualConfig struct {
 	SubnetMask     string   `json:"subnet_mask"`
 	Router         string   `json:"router"`
 	DNS            []string `json:"dns"`
+}
+
+type InterfaceOption struct {
+	Interface      string `json:"interface"`
+	NetworkService string `json:"network_service"`
 }
 
 var runCommand = run
@@ -142,6 +148,31 @@ func NetworkServiceForInterface(ctx context.Context, interfaceName string) (stri
 		}
 	}
 	return "", fmt.Errorf("no network service uses interface %q", interfaceName)
+}
+
+func ListInterfaces(ctx context.Context) ([]InterfaceOption, error) {
+	output, err := runCommand(ctx, "/usr/sbin/networksetup", "-listnetworkserviceorder")
+	if err != nil {
+		return nil, err
+	}
+	return interfaceOptions(parseServiceOrder(output)), nil
+}
+
+func interfaceOptions(services map[string]string) []InterfaceOption {
+	options := make([]InterfaceOption, 0, len(services))
+	for service, device := range services {
+		if strings.TrimSpace(service) == "" || strings.TrimSpace(device) == "" {
+			continue
+		}
+		options = append(options, InterfaceOption{Interface: device, NetworkService: service})
+	}
+	sort.Slice(options, func(i, j int) bool {
+		if options[i].Interface == options[j].Interface {
+			return options[i].NetworkService < options[j].NetworkService
+		}
+		return options[i].Interface < options[j].Interface
+	})
+	return options
 }
 
 func parseServiceInterface(output, networkService string) (string, error) {

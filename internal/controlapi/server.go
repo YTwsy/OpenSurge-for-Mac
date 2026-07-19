@@ -36,6 +36,7 @@ type Options struct {
 	NetworkRunner     NetworkRunner
 	ConfigRunner      ConfigurationRunner
 	DiscoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	PingRouter        func(context.Context, string) error
 	Static            http.Handler
@@ -50,6 +51,7 @@ type Server struct {
 	networkRunner     NetworkRunner
 	configRunner      ConfigurationRunner
 	discoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	listInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	pingRouter        func(context.Context, string) error
 	static            http.Handler
@@ -122,6 +124,9 @@ func New(options Options) (*Server, error) {
 	if options.DiscoverNetwork == nil {
 		options.DiscoverNetwork = macosnetwork.Discover
 	}
+	if options.ListInterfaces == nil {
+		options.ListInterfaces = macosnetwork.ListInterfaces
+	}
 	if options.DiscoverNeighbors == nil {
 		options.DiscoverNeighbors = macosnetwork.DiscoverNeighbors
 	}
@@ -148,6 +153,7 @@ func New(options Options) (*Server, error) {
 		networkRunner:     options.NetworkRunner,
 		configRunner:      options.ConfigRunner,
 		discoverNetwork:   options.DiscoverNetwork,
+		listInterfaces:    options.ListInterfaces,
 		discoverNeighbors: options.DiscoverNeighbors,
 		pingRouter:        options.PingRouter,
 		static:            options.Static,
@@ -202,6 +208,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/recovery/client-validation-skip", s.auth(http.HandlerFunc(s.handleClientValidationSkip)))
 	mux.Handle("POST /api/v1/recovery/keep-static", s.auth(http.HandlerFunc(s.handleKeepStaticFinish)))
 	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
+	mux.Handle("GET /api/v1/network/interfaces", s.auth(http.HandlerFunc(s.handleNetworkInterfaces)))
 	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
 	mux.Handle("POST /api/v1/network/dhcp-probe", s.auth(http.HandlerFunc(s.handleDHCPProbe)))
 	mux.Handle("POST /api/v1/network/restore-dhcp", s.auth(http.HandlerFunc(s.handleRestoreDHCP)))
@@ -898,6 +905,15 @@ func (s *Server) handleNetworkDiscovery(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *Server) handleNetworkInterfaces(w http.ResponseWriter, r *http.Request) {
+	interfaces, err := s.listInterfaces(r.Context())
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "network_interfaces_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkInterfacesResponse{SchemaVersion: SchemaVersion, Interfaces: interfaces})
 }
 
 func (s *Server) handleRecoveryPrepare(w http.ResponseWriter, r *http.Request) {

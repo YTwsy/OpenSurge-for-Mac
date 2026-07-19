@@ -98,6 +98,11 @@ type NetworkActionResponse struct {
 	DHCPServers   []string      `json:"dhcp_servers,omitempty"`
 }
 
+type NetworkInterfacesResponse struct {
+	SchemaVersion int                            `json:"schema_version"`
+	Interfaces    []macosnetwork.InterfaceOption `json:"interfaces"`
+}
+
 type ManualRecoveryFinishRequest struct {
 	RouterDHCPRestoredConfirmed bool `json:"router_dhcp_restored_confirmed"`
 }

@@ -2,10 +2,11 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Overview, Source } from './types'
+import type { ControlConfig, Overview, Source } from './types'
 
 vi.mock('./api', () => ({
   RequestError: class RequestError extends Error { status = 500 },
+  waitForOperation: vi.fn(async () => ({ id: 'gateway-operation', kind: 'start', state: 'succeeded' })),
   api: {
     overview: vi.fn(),
     config: vi.fn(async () => ({
@@ -14,6 +15,13 @@ vi.mock('./api', () => ({
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
       device_policy: { enabled: false, protected_ipv4: [] },
+    })),
+    networkInterfaces: vi.fn(async () => ({
+      schema_version: 1,
+      interfaces: [
+        { interface: 'en0', network_service: 'Wi-Fi' },
+        { interface: 'en7', network_service: 'USB LAN' },
+      ],
     })),
     saveConfig: vi.fn(),
     gateway: vi.fn(),
@@ -61,7 +69,7 @@ vi.mock('./api', () => ({
   },
 }))
 
-import { api } from './api'
+import { api, waitForOperation } from './api'
 import { App } from './App'
 
 const overview: Overview = {
@@ -85,12 +93,32 @@ const overview: Overview = {
   },
 }
 
+function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
+  return {
+    schema_version: 1, revision: 'config-revision',
+    gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
+    dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+    dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+    device_policy: { enabled: false, protected_ipv4: [] },
+  }
+}
+
+function overviewFor(mode: ControlConfig['gateway']['mode'], gateway: string): Overview {
+  return {
+    ...overview,
+    topology: mode,
+    status: { ...overview.status, gateway, dhcp_enabled: mode !== 'same_lan' },
+    recovery: { stage: 'idle', topology: mode, required: false },
+  }
+}
+
 describe('OpenSurge app shell', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/dashboard')
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
     vi.mocked(api.overview).mockResolvedValue(overview)
+    vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks() })
@@ -125,6 +153,76 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
     expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
+  it('starts same-LAN manual gateway from Network Settings and disables the DHCP field group', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'start-same-lan', kind: 'start', state: 'running' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '启动网关' }))
+    expect(await screen.findByRole('heading', { name: '网关运行控制' })).toBeTruthy()
+    expect(screen.getByText(/同 LAN 手工网关运行时不使用/)).toBeTruthy()
+    expect(screen.getByLabelText('DHCP 地址池起点').closest('fieldset')?.hasAttribute('disabled')).toBe(true)
+    const downstream = screen.getByLabelText('下游 LAN 接口') as HTMLInputElement
+    expect(downstream.getAttribute('list')).toBe('network-interface-options')
+    await waitFor(() => expect(document.querySelectorAll('#network-interface-options option')).toHaveLength(2))
+    expect(document.querySelector<HTMLOptionElement>('#network-interface-options option[value="en7"]')?.label).toBe('USB LAN · en7')
+    await userEvent.click(screen.getByRole('button', { name: '启动同 LAN 手工网关' }))
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('路由器 DHCP 不会被关闭'))
+    expect(api.gateway).toHaveBeenCalledWith('start')
+    expect(waitForOperation).toHaveBeenCalledWith('start-same-lan')
+    expect(await screen.findByText('同 LAN 手工网关已启动。')).toBeTruthy()
+  })
+
+  it('starts isolated downstream LAN while keeping DHCP fields editable', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('isolated_lan'))
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'start-isolated', kind: 'start', state: 'running' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '启动网关' }))
+    expect((await screen.findByLabelText('DHCP 地址池起点')).closest('fieldset')?.hasAttribute('disabled')).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: '启动独立下游 LAN' }))
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('独立下游 LAN 的 DHCP/DNS'))
+    expect(api.gateway).toHaveBeenCalledWith('start')
+    expect(waitForOperation).toHaveBeenCalledWith('start-isolated')
+  })
+
+  it('stops a degraded same-LAN gateway and keeps configuration locked while active', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'degraded'))
+    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'stop-same-lan', kind: 'stop', state: 'running' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
+    expect((await screen.findByLabelText('Mac 网关 IPv4')).closest('fieldset')?.hasAttribute('disabled')).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: '停止同 LAN 手工网关' }))
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('客户端可能立即断网'))
+    expect(api.gateway).toHaveBeenCalledWith('stop')
+    expect(waitForOperation).toHaveBeenCalledWith('stop-same-lan')
+  })
+
+  it('blocks direct gateway start until edited network configuration is saved', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('isolated_lan'))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '启动网关' }))
+    const gatewayIPv4 = await screen.findByLabelText('Mac 网关 IPv4')
+    await userEvent.clear(gatewayIPv4)
+    await userEvent.type(gatewayIPv4, '192.168.50.1')
+
+    expect(screen.getByText('网络配置有未保存的修改。保存后才能启动网关。')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '启动独立下游 LAN' }).hasAttribute('disabled')).toBe(true)
     expect(api.gateway).not.toHaveBeenCalled()
   })
 
