@@ -176,8 +176,16 @@ Web GUI 将两类操作持续分开：绿色表示 applied selector 的“即时
 时，GUI 会把解析后的有效配置复制为不再继承 Template 的私有 Profile，只更新这台设备
 的引用。
 
-当前设备身份仅覆盖 MAC 绑定的 IPv4 DHCP 租约和 IPv4 `SRC-IP-CIDR`；尚未提供 IPv6
-设备身份、mihomo 内 MAC 匹配或预置第三方规则内容。
+`same_lan` 手工网关不运行 OpenSurge DHCP。该模式下，设备页从 mihomo 当前连接中提取与
+`gateway.lan_ip` 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补充 MAC，列入“当前经过
+Mac 的设备”供登记。总览设备流量会合并 DHCP lease、applied 静态设备和当前观察到的
+same-LAN 源 IPv4：已登记静态 IPv4 可以获得名称、连接、速率、累计流量与出口归属，未登记
+但正在经过 Mac 的 IPv4 也以临时设备显示。ARP 与流量观察不是 DHCP 身份验证；MAC 未解析
+时仍需用户手工填写，且静态设备必须在主路由侧保持稳定 IPv4。
+
+当前设备策略仍以 IPv4 `SRC-IP-CIDR` 执行。DHCP 模式提供 MAC 绑定租约的精确身份证据；
+`same_lan` 只提供静态登记、当前流量与可选 ARP 邻居观察，不把这些证据冒充 DHCP 验证。
+尚未提供 IPv6 设备身份、mihomo 内 MAC 匹配或预置第三方规则内容。
 
 数据面 gate：
 

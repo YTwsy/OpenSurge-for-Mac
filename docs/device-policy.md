@@ -231,6 +231,17 @@ default. On the first edit of a shared or template-derived profile, the GUI
 copies its resolved effective content into a template-free private profile and
 changes only that device reference.
 
+`same_lan` manual-gateway mode does not run OpenSurge DHCP. In that mode the
+Devices page extracts source IPv4 addresses in the gateway `/24` from current
+mihomo connections and best-effort joins MAC addresses from the macOS ARP cache.
+Those clients appear under "currently passing through Mac" for registration.
+Dashboard device traffic combines DHCP leases, applied static devices, and
+currently observed same-LAN source IPv4 addresses, so registered static devices
+retain names, traffic rates, counters, and egress attribution while active
+unregistered sources appear as temporary devices. Traffic and ARP observations
+are not DHCP identity proof; an unresolved MAC still requires manual input, and
+the main router must keep the registered IPv4 stable.
+
 Dashboard traffic and recent-lease summaries join the registered display name
 by normalized MAC and prefer it over the DHCP hostname. This makes a saved
 device name visible even when the client does not publish a DHCP hostname.
@@ -242,8 +253,10 @@ applied reservation.
 
 ## Validation boundary
 
-The feature currently identifies LAN devices through MAC-backed IPv4 DHCP
-reservations and emits IPv4 `SRC-IP-CIDR` rules. It does not provide IPv6 device
+The feature still enforces device policy through IPv4 `SRC-IP-CIDR` rules. DHCP
+mode provides exact MAC-backed lease evidence; `same_lan` provides separate
+static-registration, active-traffic, and optional ARP-neighbor observations and
+does not present them as DHCP verification. It does not provide IPv6 device
 identity, MAC matching inside mihomo, or curated third-party rule content.
 
 The required data-plane gate is:

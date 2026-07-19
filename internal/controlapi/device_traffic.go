@@ -10,11 +10,18 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
 
 const deviceTrafficScope = "active_sessions"
+
+const (
+	identitySourceDHCPLease        = "dhcp_lease"
+	identitySourceRegisteredStatic = "registered_static"
+	identitySourceObservedTraffic  = "observed_traffic"
+)
 
 const maxTrafficSampleGap = 15 * time.Second
 
@@ -52,7 +59,13 @@ func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 	}
 	connections, connectionErr := s.fetchConnections(r.Context(), cfg)
 	sampledAt := time.Now().UTC()
-	response := aggregateDeviceTraffic(leases, connections)
+	appliedPolicy := device.PolicySet{}
+	gatewayIP := ""
+	if cfg.Gateway.Mode == config.GatewayModeSameLAN {
+		appliedPolicy = loadAppliedDevicePolicy(paths)
+		gatewayIP = cfg.Gateway.LANIP
+	}
+	response := aggregateDeviceTrafficWithPolicy(leases, appliedPolicy, connections, gatewayIP)
 	if connectionErr == nil {
 		s.trafficSampler.annotate(&response, connections, sampledAt)
 	} else {
@@ -172,9 +185,13 @@ func registeredDeviceNames(policy device.PolicySet) map[string]string {
 }
 
 func aggregateDeviceTraffic(leases []device.Client, snapshot mihomo.ConnectionsSnapshot) DeviceTrafficResponse {
+	return aggregateDeviceTrafficWithPolicy(leases, device.PolicySet{}, snapshot, "")
+}
+
+func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.PolicySet, snapshot mihomo.ConnectionsSnapshot, gatewayIP string) DeviceTrafficResponse {
 	selected := selectCurrentLeases(leases)
-	rows := make([]DeviceTraffic, 0, len(selected))
-	byIP := make(map[string]int, len(selected))
+	rows := make([]DeviceTraffic, 0, len(selected)+len(policy.Devices))
+	byIP := make(map[string]int, len(selected)+len(policy.Devices))
 	for _, lease := range selected {
 		ip := normalizeTrafficIP(lease.IP)
 		if ip == "" {
@@ -182,10 +199,45 @@ func aggregateDeviceTraffic(leases []device.Client, snapshot mihomo.ConnectionsS
 		}
 		byIP[ip] = len(rows)
 		rows = append(rows, DeviceTraffic{
-			Hostname: lease.Hostname,
-			IP:       ip,
-			MAC:      strings.ToLower(strings.TrimSpace(lease.MAC)),
-			Online:   lease.Online,
+			Hostname:       lease.Hostname,
+			IP:             ip,
+			MAC:            strings.ToLower(strings.TrimSpace(lease.MAC)),
+			Online:         lease.Online,
+			IdentitySource: identitySourceDHCPLease,
+		})
+	}
+	for _, managed := range policy.Devices {
+		ip := normalizeTrafficIP(managed.IPv4)
+		if ip == "" || (gatewayIP != "" && !sameLANSourceIPv4(ip, gatewayIP)) {
+			continue
+		}
+		if index, exists := byIP[ip]; exists {
+			if strings.EqualFold(rows[index].MAC, managed.MAC) {
+				rows[index].Name = device.DisplayName(managed)
+			}
+			continue
+		}
+		byIP[ip] = len(rows)
+		rows = append(rows, DeviceTraffic{
+			Name:           device.DisplayName(managed),
+			IP:             ip,
+			MAC:            strings.ToLower(strings.TrimSpace(managed.MAC)),
+			IdentitySource: identitySourceRegisteredStatic,
+		})
+	}
+	for _, connection := range snapshot.Connections {
+		sourceIP := normalizeTrafficIP(metadataString(connection.Metadata, "sourceIP"))
+		if !sameLANSourceIPv4(sourceIP, gatewayIP) {
+			continue
+		}
+		if _, exists := byIP[sourceIP]; exists {
+			continue
+		}
+		byIP[sourceIP] = len(rows)
+		rows = append(rows, DeviceTraffic{
+			IP:             sourceIP,
+			Online:         true,
+			IdentitySource: identitySourceObservedTraffic,
 		})
 	}
 
@@ -201,6 +253,7 @@ func aggregateDeviceTraffic(leases []device.Client, snapshot mihomo.ConnectionsS
 		upload := nonnegativeBytes(connection.Upload)
 		download := nonnegativeBytes(connection.Download)
 		rows[index].ActiveConnections++
+		rows[index].Online = true
 		rows[index].Upload += upload
 		rows[index].Download += download
 
@@ -240,6 +293,61 @@ func aggregateDeviceTraffic(leases []device.Client, snapshot mihomo.ConnectionsS
 		totals.Download += row.Download
 	}
 	return DeviceTrafficResponse{Devices: rows, Totals: totals, UnmatchedConnections: unmatched}
+}
+
+func loadAppliedDevicePolicy(paths runtime.Paths) device.PolicySet {
+	state, exists, err := runtime.LoadState(paths.StateFile)
+	if err != nil || !exists || state.DevicePolicyDigest == "" {
+		return device.PolicySet{}
+	}
+	bundle, err := device.LoadPolicyBundleSnapshot(paths.DevicePolicyApplied)
+	if err != nil || bundle.Digest != state.DevicePolicyDigest {
+		return device.PolicySet{}
+	}
+	return bundle.Policy
+}
+
+func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosnetwork.Neighbor, gatewayIP string) []ObservedDevice {
+	neighborByIP := make(map[string]string, len(neighbors))
+	for _, neighbor := range neighbors {
+		if ip := normalizeTrafficIP(neighbor.IP); ip != "" {
+			neighborByIP[ip] = strings.ToLower(strings.TrimSpace(neighbor.MAC))
+		}
+	}
+	byIP := map[string]*ObservedDevice{}
+	for _, connection := range snapshot.Connections {
+		ip := normalizeTrafficIP(metadataString(connection.Metadata, "sourceIP"))
+		if !sameLANSourceIPv4(ip, gatewayIP) {
+			continue
+		}
+		observed := byIP[ip]
+		if observed == nil {
+			mac := neighborByIP[ip]
+			observed = &ObservedDevice{IP: ip, MAC: mac, NeighborObserved: mac != ""}
+			byIP[ip] = observed
+		}
+		observed.ActiveConnections++
+	}
+	result := make([]ObservedDevice, 0, len(byIP))
+	for _, observed := range byIP {
+		result = append(result, *observed)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ActiveConnections != result[j].ActiveConnections {
+			return result[i].ActiveConnections > result[j].ActiveConnections
+		}
+		return result[i].IP < result[j].IP
+	})
+	return result
+}
+
+func sameLANSourceIPv4(value, gatewayIP string) bool {
+	ip := net.ParseIP(strings.TrimSpace(value)).To4()
+	gateway := net.ParseIP(strings.TrimSpace(gatewayIP)).To4()
+	if ip == nil || gateway == nil || ip.Equal(gateway) {
+		return false
+	}
+	return ip[0] == gateway[0] && ip[1] == gateway[1] && ip[2] == gateway[2] && ip[3] != 0 && ip[3] != 255
 }
 
 func selectCurrentLeases(leases []device.Client) []device.Client {

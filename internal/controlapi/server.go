@@ -29,16 +29,17 @@ import (
 )
 
 type Options struct {
-	ConfigPath      string
-	Addr            string
-	StoreDir        string
-	Runner          ActionRunner
-	NetworkRunner   NetworkRunner
-	ConfigRunner    ConfigurationRunner
-	DiscoverNetwork func(context.Context, string, string) (macosnetwork.Snapshot, error)
-	PingRouter      func(context.Context, string) error
-	Static          http.Handler
-	Credentials     SourceCredentialStore
+	ConfigPath        string
+	Addr              string
+	StoreDir          string
+	Runner            ActionRunner
+	NetworkRunner     NetworkRunner
+	ConfigRunner      ConfigurationRunner
+	DiscoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
+	PingRouter        func(context.Context, string) error
+	Static            http.Handler
+	Credentials       SourceCredentialStore
 }
 
 type Server struct {
@@ -49,6 +50,7 @@ type Server struct {
 	networkRunner     NetworkRunner
 	configRunner      ConfigurationRunner
 	discoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	pingRouter        func(context.Context, string) error
 	static            http.Handler
 	credentials       SourceCredentialStore
@@ -120,6 +122,9 @@ func New(options Options) (*Server, error) {
 	if options.DiscoverNetwork == nil {
 		options.DiscoverNetwork = macosnetwork.Discover
 	}
+	if options.DiscoverNeighbors == nil {
+		options.DiscoverNeighbors = macosnetwork.DiscoverNeighbors
+	}
 	if options.PingRouter == nil {
 		options.PingRouter = macosnetwork.PingRouter
 	}
@@ -143,6 +148,7 @@ func New(options Options) (*Server, error) {
 		networkRunner:     options.NetworkRunner,
 		configRunner:      options.ConfigRunner,
 		discoverNetwork:   options.DiscoverNetwork,
+		discoverNeighbors: options.DiscoverNeighbors,
 		pingRouter:        options.PingRouter,
 		static:            options.Static,
 		credentials:       options.Credentials,
@@ -1345,10 +1351,10 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, DevicePolicyResponse{SchemaVersion: SchemaVersion, Revision: newRevision, Policy: policy})
 }
 
-func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil || cfg.DevicePolicy.File == "" {
-		writeJSON(w, http.StatusOK, DevicesResponse{SchemaVersion: SchemaVersion, Devices: []device.CompiledDevice{}, Leases: []device.Client{}})
+		writeJSON(w, http.StatusOK, DevicesResponse{SchemaVersion: SchemaVersion, Devices: []device.CompiledDevice{}, Leases: []device.Client{}, ObservedDevices: []ObservedDevice{}})
 		return
 	}
 	desired, err := device.LoadPolicyBundle(cfg.DevicePolicy.File)
@@ -1368,9 +1374,10 @@ func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {
 		Devices:       desired.Compiled.Devices,
 		DesiredDevices: append([]device.CompiledDevice(nil),
 			desired.Compiled.Devices...),
-		AppliedDevices: []device.CompiledDevice{},
-		ChangedDevices: []string{},
-		Leases:         leases,
+		AppliedDevices:  []device.CompiledDevice{},
+		ChangedDevices:  []string{},
+		Leases:          leases,
+		ObservedDevices: []ObservedDevice{},
 	}
 	if response.Devices == nil {
 		response.Devices = []device.CompiledDevice{}
@@ -1387,6 +1394,19 @@ func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {
 				response.Devices = []device.CompiledDevice{}
 			}
 		}
+	}
+	if cfg.Gateway.Mode == config.GatewayModeSameLAN {
+		connections, connectionErr := s.fetchConnections(r.Context(), cfg)
+		neighbors, neighborErr := s.discoverNeighbors(r.Context(), cfg.Gateway.Interface)
+		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP)
+		observationErrors := []string{}
+		if connectionErr != nil {
+			observationErrors = append(observationErrors, "mihomo connections: "+connectionErr.Error())
+		}
+		if neighborErr != nil {
+			observationErrors = append(observationErrors, "macOS neighbor table: "+neighborErr.Error())
+		}
+		response.ObservationError = strings.Join(observationErrors, "; ")
 	}
 	writeJSON(w, http.StatusOK, response)
 }

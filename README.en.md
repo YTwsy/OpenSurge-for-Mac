@@ -61,14 +61,15 @@ into the next engineering loop.
 - Start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback.
 - Provide explicit proxying through mihomo `mixed-port`.
 - Provide transparent proxying through mihomo TUN on macOS.
-- Generate a MAC-backed fixed IPv4 lease and an independent egress policy for
-  every registered device.
+- Generate a MAC-backed fixed IPv4 lease in DHCP takeover mode, or use a stable
+  main-router IPv4 in same-LAN manual-gateway mode, with an independent egress
+  policy available in either topology.
 
 **Observability**
 
-- Attribute active-session traffic to DHCP devices, showing per-device
-  connection counts, live upload/download rates, cumulative bytes, and the
-  dominant mihomo egress chain.
+- Attribute active-session traffic to DHCP devices or same-LAN registered and
+  currently observed devices, showing per-device connection counts, live
+  upload/download rates, cumulative bytes, and the dominant mihomo egress chain.
 - Test proxy-node reachability and latency in one place, then switch an applied
   Selector from the health view.
 - Probe a fixed catalog of real services through the applied mihomo mixed-port
@@ -89,8 +90,10 @@ into the next engineering loop.
 ## Per-device policies
 
 One mihomo process can apply independent policies to registered LAN devices.
-OpenSurge gives each device a MAC-backed fixed IPv4 DHCP lease, then emits
-per-device mihomo selector groups and `SRC-IP-CIDR` rules. The optional JSON
+DHCP takeover mode gives each device a MAC-backed fixed IPv4 lease. Same-LAN
+manual-gateway mode instead uses an IPv4 kept stable by the main router and can
+assist registration with current traffic plus ARP-neighbor observations. Both
+topologies emit per-device mihomo selector groups and `SRC-IP-CIDR` rules. The optional JSON
 policy file lets each device either follow the Mac/global rules or take a
 dedicated device selector before global rules. It also supports direct
 device-specific actions such as `REJECT` and domain/IP/protocol/port/rule-provider

@@ -244,6 +244,8 @@ button{cursor:pointer}
 .section-toggle small{color:#758a82;font-weight:400}
 .registration-body{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(340px,.9fr);gap:24px;padding:0 24px 24px;border-top:1px solid #1d302a}
 .registration-body .lease-picker{margin:20px 0 0;padding:0;border:0;background:transparent}
+.registration-picker-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.registration-picker-heading .text-link{flex:0 0 auto;margin-top:2px}
 .lease-choice{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:11px 0;border:0;border-bottom:1px solid #1b2c26;background:transparent;color:inherit;text-align:left}
 .lease-choice:hover strong,.lease-choice:hover>span:last-child{color:#9af0c7}
 .lease-choice strong,.lease-choice small{display:block}.lease-choice small{margin-top:3px;color:#71847d}
@@ -277,7 +279,7 @@ button{cursor:pointer}
 .device-card.selected{border-color:#6fcfa6;boxhadow:0 0 0 2px #6fcfa622}
 .device-title{display:grid;gap:4px;border:0;background:transparent;color:inherit;padding:0;text-align:left}
 .device-title strong{font-size:17px}.device-title code{color:#71847d;font-size:10px}.device-title:disabled{cursor:default}
-.identity-state{display:block;margin-top:10px;color:#8ba097;font-size:10px;line-height:1.45}.identity-state.ready{color:#83e9b8}
+.identity-state{display:block;margin-top:10px;color:#8ba097;font-size:10px;line-height:1.45}.identity-state.ready{color:#83e9b8}.identity-state.observed{color:#8fc7ec}.identity-state.conflict{color:#ff9b91}
 .device-routing-mode,.registration-routing{margin:16px 0 0;padding:0;border:0}
 .device-routing-mode legend,.registration-routing legend{width:100%;margin-bottom:8px;color:#9eb2aa;font-size:11px;font-weight:800;letter-spacing:.08em}
 .device-routing-mode legend .effect-badge{float:right;letter-spacing:0}

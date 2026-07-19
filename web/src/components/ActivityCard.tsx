@@ -9,7 +9,7 @@ export function ActivityCard({ traffic }: { traffic: DeviceTraffic | null }) {
     <span className="activity-total-label">活跃连接</span>
     <div className="activity-breakdown">
       <span><strong>{matchedConnections}</strong><small>设备连接</small></span>
-      <span><strong>{traffic?.totals.devices ?? 0}</strong><small>DHCP 设备</small></span>
+      <span><strong>{traffic?.totals.devices ?? 0}</strong><small>已识别设备</small></span>
       <span><strong>{unmatchedConnections}</strong><small>未归属连接</small></span>
     </div>
   </article>

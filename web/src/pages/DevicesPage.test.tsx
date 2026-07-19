@@ -40,7 +40,7 @@ function documentFor(policy: PolicySet, revision = 'policy-r1'): DevicePolicyDoc
 }
 
 function devicesResponse(overrides: Partial<DevicesResponse> = {}): DevicesResponse {
-  return { drift: false, applied: false, devices: [], desired_devices: [], applied_devices: [], changed_devices: [], leases: [], ...overrides }
+  return { drift: false, applied: false, devices: [], desired_devices: [], applied_devices: [], changed_devices: [], leases: [], observed_devices: [], ...overrides }
 }
 
 function renderPage(customOverview = overview) {
@@ -106,7 +106,7 @@ describe('DevicesPage', () => {
     expect(screen.getByText('待更新')).toBeTruthy()
     expect(screen.getByText('待应用')).toBeTruthy()
     expect(screen.getByText('待移除')).toBeTruthy()
-    expect(screen.getByText('身份就绪')).toBeTruthy()
+    expect(screen.getByText('DHCP 身份已验证')).toBeTruthy()
     expect(screen.getAllByText(/身份待确认/).length).toBe(2)
     expect(screen.getByLabelText('ready 独立出口 当前摘要')).toBeTruthy()
     expect(screen.getByText('重载后应用')).toBeTruthy()
@@ -208,6 +208,45 @@ describe('DevicesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
     expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0]).toEqual(expect.objectContaining({ id: 'pixel-living-room', name: 'Pixel Living Room', egress_mode: 'dedicated' }))
+  })
+
+  it('lists a same-LAN source currently passing through Mac and prefills its observed identity', async () => {
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      observed_devices: [
+        { ip: '192.168.1.137', mac: 'aa:bb:cc:dd:ee:37', active_connections: 3, neighbor_observed: true },
+        { ip: '192.168.1.138', active_connections: 1, neighbor_observed: false },
+      ],
+    }))
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+
+    expect(await screen.findByText('当前经过 Mac 的设备')).toBeTruthy()
+    expect(screen.getByText('未登记设备 192.168.1.137')).toBeTruthy()
+    expect(screen.getByText(/3 个活跃连接/)).toBeTruthy()
+    expect(screen.getByText(/MAC 尚未从邻居表解析/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '刷新当前设备' }))
+    await waitFor(() => expect(api.devices).toHaveBeenCalledTimes(2))
+    expect(api.devicePolicy).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: '配置设备 192.168.1.137' }))
+    expect((screen.getByLabelText('设备 MAC') as HTMLInputElement).value).toBe('aa:bb:cc:dd:ee:37')
+    expect((screen.getByLabelText('固定 IPv4') as HTMLInputElement).value).toBe('192.168.1.137')
+  })
+
+  it('shows observation evidence instead of requiring a DHCP lease in same-LAN mode', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.137', profile: 'pixel-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'pixel-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.137', profile: 'pixel-policy', egress_mode: 'inherit_global', groups: {} }],
+      observed_devices: [{ ip: '192.168.1.137', mac: 'aa:bb:cc:dd:ee:37', active_connections: 1, neighbor_observed: true }],
+    }))
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+
+    expect(await screen.findByText('流量与邻居已观察：MAC / IPv4 匹配')).toBeTruthy()
+    expect(screen.queryByText(/需要在线且未过期的精确/)).toBeNull()
   })
 
   it('privatizes a shared template profile before adding a validated flat rule', async () => {

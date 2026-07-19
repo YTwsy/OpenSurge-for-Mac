@@ -55,12 +55,13 @@ forwarding 提供原生网关路径。
 - 启停 DHCP/DNS、mihomo、pf NAT 与 IPv4 forwarding，并带 rollback；
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
-- 为每台登记设备生成 MAC 绑定的固定 IPv4 租约与独立出口策略。
+- DHCP 接管模式为登记设备生成 MAC 绑定的固定 IPv4 租约；同 LAN 手工网关模式
+  使用主路由侧保持稳定的静态 IPv4，两者都可使用独立出口策略。
 
 **可观测性**
 
-- 把活跃会话流量归属到 DHCP 设备，显示每设备连接数、实时上下行速率、累计字节
-  与占主要流量的 mihomo 出口链；
+- 把活跃会话流量归属到 DHCP 设备或同 LAN 的静态登记/当前观察设备，显示每设备
+  连接数、实时上下行速率、累计字节与占主要流量的 mihomo 出口链；
 - 集中检测代理节点可达性/延迟，并从健康视图切换已应用的 Selector；
 - 通过 applied mihomo mixed-port 路径探测固定真实服务目录，展示三轮中位延迟、
   命中规则与实际出口链；
@@ -75,9 +76,10 @@ forwarding 提供原生网关路径。
 
 ## 每设备策略
 
-一个 mihomo 进程可以对已登记的 LAN 设备应用独立策略。OpenSurge 会为每台设备
-配置 MAC 绑定的固定 IPv4 DHCP 租约，并生成每设备的 mihomo selector group 和
-`SRC-IP-CIDR` 规则。可选 JSON 策略文件让每台设备要么跟随 Mac/全局规则，要么在
+一个 mihomo 进程可以对已登记的 LAN 设备应用独立策略。DHCP 接管模式会为每台设备
+配置 MAC 绑定的固定 IPv4 租约；同 LAN 手工网关模式则使用主路由侧保持稳定的静态
+IPv4，并从当前经过 Mac 的流量与 ARP 邻居观察辅助登记。两种模式都会生成每设备的
+mihomo selector group 和 `SRC-IP-CIDR` 规则。可选 JSON 策略文件让每台设备要么跟随 Mac/全局规则，要么在
 全局规则之前走设备专属 selector；它也支持 `REJECT` 这类设备专属动作，以及按
 域名/IP/协议/端口/rule-provider 叠加的规则覆盖。dedicated 模式下，本地/私有目标
 保持直连。

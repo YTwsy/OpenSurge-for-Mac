@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 )
 
@@ -52,6 +53,68 @@ func TestAggregateDeviceTrafficUsesNewestLeaseForMAC(t *testing.T) {
 	}})
 	if len(result.Devices) != 1 || result.Devices[0].Hostname != "current" || result.Devices[0].Upload != 12 {
 		t.Fatalf("devices = %#v", result.Devices)
+	}
+}
+
+func TestAggregateSameLANDeviceTrafficUsesStaticAndObservedIdentities(t *testing.T) {
+	policy := device.PolicySet{Devices: []device.ManagedDevice{{
+		ID: "living-room", Name: "Living Room", MAC: "aa:bb:cc:dd:ee:24", IPv4: "192.168.5.124",
+	}}}
+	snapshot := mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{
+		{Upload: 100, Download: 900, Chains: []string{"Proxy", "edge"}, Metadata: map[string]any{"sourceIP": "192.168.5.124"}},
+		{Upload: 20, Download: 80, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.5.126"}},
+		{Upload: 7, Download: 11, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.6.10"}},
+		{Upload: 1, Download: 2, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.5.123"}},
+	}}
+
+	result := aggregateDeviceTrafficWithPolicy(nil, policy, snapshot, "192.168.5.123")
+	if len(result.Devices) != 2 || result.Totals.ActiveConnections != 2 || result.UnmatchedConnections != 2 {
+		t.Fatalf("same-LAN traffic = %#v", result)
+	}
+	byIP := map[string]DeviceTraffic{}
+	for _, row := range result.Devices {
+		byIP[row.IP] = row
+	}
+	registered := byIP["192.168.5.124"]
+	if registered.Name != "Living Room" || registered.MAC != "aa:bb:cc:dd:ee:24" || registered.IdentitySource != identitySourceRegisteredStatic || registered.PrimaryEgress != "Proxy → edge" {
+		t.Fatalf("registered row = %#v", registered)
+	}
+	observed := byIP["192.168.5.126"]
+	if observed.IdentitySource != identitySourceObservedTraffic || !observed.Online || observed.ActiveConnections != 1 {
+		t.Fatalf("observed row = %#v", observed)
+	}
+}
+
+func TestAggregateSameLANDeviceTrafficDoesNotRenameConflictingLease(t *testing.T) {
+	policy := device.PolicySet{Devices: []device.ManagedDevice{{
+		ID: "registered", Name: "Registered Device", MAC: "aa:bb:cc:dd:ee:24", IPv4: "192.168.5.124",
+	}}}
+	leases := []device.Client{{
+		Hostname: "other-device", IP: "192.168.5.124", MAC: "aa:bb:cc:dd:ee:99", Online: true, ExpiresAt: time.Now().Add(time.Hour),
+	}}
+
+	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.5.123")
+	if len(result.Devices) != 1 || result.Devices[0].Name != "" || result.Devices[0].Hostname != "other-device" || result.Devices[0].IdentitySource != identitySourceDHCPLease {
+		t.Fatalf("conflicting identity row = %#v", result.Devices)
+	}
+}
+
+func TestObservedLANDevicesJoinsActiveSourcesToNeighborMAC(t *testing.T) {
+	snapshot := mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{
+		{Metadata: map[string]any{"sourceIP": "192.168.5.124"}},
+		{Metadata: map[string]any{"sourceIP": "192.168.5.124"}},
+		{Metadata: map[string]any{"sourceIP": "192.168.5.126"}},
+		{Metadata: map[string]any{"sourceIP": "192.168.5.123"}},
+		{Metadata: map[string]any{"sourceIP": "198.18.0.1"}},
+	}}
+	neighbors := []macosnetwork.Neighbor{{IP: "192.168.5.124", MAC: "AA:BB:CC:DD:EE:24", Interface: "en0"}}
+
+	observed := observedLANDevices(snapshot, neighbors, "192.168.5.123")
+	if len(observed) != 2 || observed[0].IP != "192.168.5.124" || observed[0].MAC != "aa:bb:cc:dd:ee:24" || !observed[0].NeighborObserved || observed[0].ActiveConnections != 2 {
+		t.Fatalf("observed devices = %#v", observed)
+	}
+	if observed[1].IP != "192.168.5.126" || observed[1].MAC != "" || observed[1].NeighborObserved {
+		t.Fatalf("unresolved neighbor = %#v", observed[1])
 	}
 }
 

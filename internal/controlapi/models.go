@@ -255,20 +255,33 @@ type SelectionRequest struct {
 }
 
 type DevicesResponse struct {
-	SchemaVersion  int                     `json:"schema_version"`
-	DesiredDigest  string                  `json:"desired_digest,omitempty"`
-	AppliedDigest  string                  `json:"applied_digest,omitempty"`
-	Drift          bool                    `json:"drift"`
-	Applied        bool                    `json:"applied"`
-	Devices        []device.CompiledDevice `json:"devices"` // legacy running view
-	DesiredDevices []device.CompiledDevice `json:"desired_devices"`
-	AppliedDevices []device.CompiledDevice `json:"applied_devices"`
-	ChangedDevices []string                `json:"changed_devices"`
-	Leases         []device.Client         `json:"leases"`
+	SchemaVersion    int                     `json:"schema_version"`
+	DesiredDigest    string                  `json:"desired_digest,omitempty"`
+	AppliedDigest    string                  `json:"applied_digest,omitempty"`
+	Drift            bool                    `json:"drift"`
+	Applied          bool                    `json:"applied"`
+	Devices          []device.CompiledDevice `json:"devices"` // legacy running view
+	DesiredDevices   []device.CompiledDevice `json:"desired_devices"`
+	AppliedDevices   []device.CompiledDevice `json:"applied_devices"`
+	ChangedDevices   []string                `json:"changed_devices"`
+	Leases           []device.Client         `json:"leases"`
+	ObservedDevices  []ObservedDevice        `json:"observed_devices"`
+	ObservationError string                  `json:"observation_error,omitempty"`
+}
+
+// ObservedDevice is a currently active same-LAN source seen by mihomo. A MAC
+// is included only when the macOS ARP cache contains a matching neighbor; this
+// remains observation evidence rather than DHCP-backed identity proof.
+type ObservedDevice struct {
+	IP                string `json:"ip"`
+	MAC               string `json:"mac,omitempty"`
+	ActiveConnections int    `json:"active_connections"`
+	NeighborObserved  bool   `json:"neighbor_observed"`
 }
 
 // DeviceTrafficResponse is a point-in-time aggregation of the currently
-// active mihomo sessions that can be attributed to an OpenSurge DHCP lease.
+// active mihomo sessions that can be attributed to an OpenSurge DHCP lease,
+// an applied static device identity, or an observed same-LAN source IPv4.
 // Counters are session-lifetime counters from mihomo, not persisted history.
 type DeviceTrafficResponse struct {
 	SchemaVersion        int                 `json:"schema_version"`
@@ -294,6 +307,7 @@ type DeviceTraffic struct {
 	UploadRate        int64  `json:"upload_rate"`
 	DownloadRate      int64  `json:"download_rate"`
 	PrimaryEgress     string `json:"primary_egress,omitempty"`
+	IdentitySource    string `json:"identity_source"`
 }
 
 type DeviceTrafficTotals struct {

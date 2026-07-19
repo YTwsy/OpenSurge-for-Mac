@@ -95,6 +95,7 @@ export type Source = {
 export type DeviceEgressMode = 'inherit_global' | 'dedicated'
 export type AppliedDeviceEgressMode = DeviceEgressMode | 'legacy_fallback'
 export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; egress_mode?: AppliedDeviceEgressMode | ''; groups: Record<string, string> }
+export type ObservedDevice = { ip: string; mac?: string; active_connections: number; neighbor_observed: boolean }
 export type DevicesResponse = {
   desired_digest?: string
   applied_digest?: string
@@ -105,6 +106,8 @@ export type DevicesResponse = {
   applied_devices?: CompiledDevice[]
   changed_devices?: string[]
   leases: Lease[]
+  observed_devices: ObservedDevice[]
+  observation_error?: string
 }
 
 export type DeviceTrafficRow = {
@@ -119,6 +122,7 @@ export type DeviceTrafficRow = {
   upload_rate: number
   download_rate: number
   primary_egress?: string
+  identity_source?: 'dhcp_lease' | 'registered_static' | 'observed_traffic'
 }
 
 export type TrafficRates = { upload: number; download: number }

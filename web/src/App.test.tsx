@@ -147,7 +147,7 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByText('累计 412 MB')).toBeTruthy()
     expect(screen.getAllByText('123 kB/s').length).toBeGreaterThan(0)
     expect(screen.getByText(/合计 2 台 · 3 个设备连接/)).toBeTruthy()
-    expect(screen.getByText(/1 个连接无法匹配 DHCP 租约/)).toBeTruthy()
+    expect(screen.getByText(/1 个连接无法匹配当前 LAN 设备身份/)).toBeTruthy()
     expect(screen.getByText('192.168.1.88')).toBeTruthy()
 
     const deviceButton = screen.getByRole('button', { name: '查看 Apple-TV 192.168.1.88 流量趋势' })
@@ -433,7 +433,7 @@ describe('OpenSurge app shell', () => {
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '设备' }))
     expect(await screen.findByText('当前已接管设备')).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: '配置此设备' }))
+    await userEvent.click(screen.getByRole('button', { name: '配置设备 192.168.1.123' }))
     expect((screen.getByLabelText('设备名称') as HTMLInputElement).value).toBe('Pixel-10')
     expect((screen.getByLabelText('设备 MAC') as HTMLInputElement).value).toBe(lease.mac)
     expect((screen.getByLabelText('固定 IPv4') as HTMLInputElement).value).toBe(lease.ip)

@@ -1129,6 +1129,72 @@ func TestDeviceTrafficEndpointAttributesLiveMihomoConnections(t *testing.T) {
 	}
 }
 
+func TestSameLANDevicesEndpointListsSourcesCurrentlyPassingThroughMac(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gateway.Mode = config.GatewayModeSameLAN
+	cfg.DHCP.Enabled = false
+	policy := `{"devices":[{"id":"living-room","name":"Living Room","mac":"aa:bb:cc:dd:ee:37","ipv4":"192.168.1.137","profile":"home","egress_mode":"inherit_global"}],"profiles":[{"id":"home","default_policies":["DIRECT"]}],"templates":[],"rule_sets":[]}`
+	if err := os.WriteFile(cfg.DevicePolicy.File, []byte(policy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(server.configPath, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := device.LoadPolicyBundle(cfg.DevicePolicy.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := device.WritePolicyBundleSnapshot(paths.DevicePolicyApplied, bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{DevicePolicyDigest: bundle.Digest}); err != nil {
+		t.Fatal(err)
+	}
+	server.fetchConnections = func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error) {
+		return mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{
+			{Upload: 100, Download: 900, Chains: []string{"Proxy", "edge"}, Metadata: map[string]any{"sourceIP": "192.168.1.137"}},
+			{Metadata: map[string]any{"sourceIP": "192.168.1.137"}},
+			{Metadata: map[string]any{"sourceIP": "192.168.2.20"}},
+		}}, nil
+	}
+	server.discoverNeighbors = func(context.Context, string) ([]macosnetwork.Neighbor, error) {
+		return []macosnetwork.Neighbor{{IP: "192.168.1.137", MAC: "AA:BB:CC:DD:EE:37", Interface: "en0"}}, nil
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/devices", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("devices status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload DevicesResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ObservationError != "" || len(payload.ObservedDevices) != 1 {
+		t.Fatalf("observed devices response = %#v", payload)
+	}
+	observed := payload.ObservedDevices[0]
+	if observed.IP != "192.168.1.137" || observed.MAC != "aa:bb:cc:dd:ee:37" || !observed.NeighborObserved || observed.ActiveConnections != 2 {
+		t.Fatalf("observed device = %#v", observed)
+	}
+
+	trafficResponse := performAuthorized(server, http.MethodGet, "/api/v1/device-traffic", nil)
+	if trafficResponse.Code != http.StatusOK {
+		t.Fatalf("device traffic status=%d body=%s", trafficResponse.Code, trafficResponse.Body.String())
+	}
+	var traffic DeviceTrafficResponse
+	if err := json.Unmarshal(trafficResponse.Body.Bytes(), &traffic); err != nil {
+		t.Fatal(err)
+	}
+	if len(traffic.Devices) != 1 || traffic.Devices[0].Name != "Living Room" || traffic.Devices[0].MAC != "aa:bb:cc:dd:ee:37" || traffic.Devices[0].IdentitySource != identitySourceRegisteredStatic || traffic.Devices[0].ActiveConnections != 2 || traffic.Devices[0].Upload != 100 || traffic.Devices[0].PrimaryEgress != "Proxy → edge" {
+		t.Fatalf("same-LAN device traffic = %#v", traffic)
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	server, _ := newTestServerWithNetwork(t)
 	return server
@@ -1164,7 +1230,7 @@ runtime:
 	discover := func(context.Context, string, string) (macosnetwork.Snapshot, error) {
 		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"192.168.1.1"}}, nil
 	}
-	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
+	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)
 	}
