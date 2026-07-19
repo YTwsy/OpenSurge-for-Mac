@@ -1,28 +1,50 @@
-> **Unsigned Apple Silicon preview / 未签名 Apple Silicon 预发布**
+> **Unsigned stable release / 未签名正式版本**
 >
-> This package does not use an Apple Developer ID and is not notarized. It installs a
-> root helper and can change DHCP, DNS, PF, IPv4 forwarding, and TUN state. Install it
-> only if you trust this repository and understand the gateway recovery procedure.
+> These packages do not use an Apple Developer ID and are not notarized. They install
+> a root helper and can change DHCP, DNS, PF, IPv4 forwarding, and TUN state. Install
+> them only if you trust this repository and understand the gateway recovery procedure.
 >
-> 此安装包没有 Apple Developer ID 签名，也未经过 notarization。它会安装 root helper，
-> 并能够修改 DHCP、DNS、PF、IPv4 forwarding 与 TUN 状态。请仅在信任本仓库并理解网关
-> 恢复流程时安装。
+> 这些安装包没有 Apple Developer ID 签名，也未经过 notarization。它们会安装 root
+> helper，并能够修改 DHCP、DNS、PF、IPv4 forwarding 与 TUN 状态。请仅在信任本仓库并
+> 理解网关恢复流程时安装。
+
+## Highlights / 主要变化
+
+- Publish one stable GitHub Release with separate Apple Silicon and Intel installers.
+- 为 Apple Silicon 与 Intel Mac 在同一个正式 GitHub Release 中提供独立安装包。
+
+## Choose a package / 选择安装包
+
+| Mac | Package / 安装包 | Minimum system / 最低系统 |
+| --- | --- | --- |
+| Apple Silicon (M1 or newer) | `arm64-unsigned.pkg` | macOS 13+ |
+| Intel | `x86_64-unsigned.pkg` | macOS 13+ |
+
+Both packages pass payload, Mach-O architecture, and minimum-macOS checks in the release
+workflow. The Intel package is cross-built on Apple Silicon; this release does not claim that
+`make lab-test` or `make lab-test-tun` ran on physical Intel hardware.
+
+发布工作流会检查两个 pkg 的 payload、Mach-O 架构与最低 macOS 版本。Intel pkg 在 Apple
+Silicon runner 上交叉构建；本版本不宣称已在实体 Intel Mac 上运行 `make lab-test` 或
+`make lab-test-tun`。
 
 ## Install / 安装
 
-1. Download the `arm64-unsigned.pkg` asset and `SHA256SUMS`.
-2. Optionally verify the checksum with `shasum -a 256 -c SHA256SUMS` and the
-   GitHub build provenance with
-   `gh attestation verify OpenSurge-for-Mac-*-arm64-unsigned.pkg -R YTwsy/OpenSurge-for-Mac`.
+1. Download the package matching your Mac and `SHA256SUMS`.
+2. Optionally verify all downloaded packages with `shasum -a 256 -c SHA256SUMS` and
+   verify the selected package's GitHub build provenance with
+   `gh attestation verify OpenSurge-for-Mac-*-arm64-unsigned.pkg -R YTwsy/OpenSurge-for-Mac`
+   or `gh attestation verify OpenSurge-for-Mac-*-x86_64-unsigned.pkg -R YTwsy/OpenSurge-for-Mac`.
 3. Double-click the package. When Gatekeeper blocks it, open **System Settings →
    Privacy & Security**, choose **Open Anyway**, authenticate, and reopen the package.
 4. Finish Installer with an administrator account, then open
    **OpenSurge Menu Bar** from `/Applications`.
 
-1. 下载 `arm64-unsigned.pkg` 与 `SHA256SUMS`。
-2. 可选：运行 `shasum -a 256 -c SHA256SUMS` 校验文件，并使用
+1. 下载与 Mac 芯片匹配的安装包及 `SHA256SUMS`。
+2. 可选：运行 `shasum -a 256 -c SHA256SUMS` 校验已下载的安装包，并使用
    `gh attestation verify OpenSurge-for-Mac-*-arm64-unsigned.pkg -R YTwsy/OpenSurge-for-Mac`
-   核对 GitHub 构建来源。
+   或 `gh attestation verify OpenSurge-for-Mac-*-x86_64-unsigned.pkg -R YTwsy/OpenSurge-for-Mac`
+   核对所选安装包的 GitHub 构建来源。
 3. 双击安装包；被 Gatekeeper 阻止后，进入**系统设置 → 隐私与安全性**，选择
    **仍要打开**、完成身份验证，然后重新打开安装包。
 4. 使用管理员账户完成 Installer，随后从 `/Applications` 打开

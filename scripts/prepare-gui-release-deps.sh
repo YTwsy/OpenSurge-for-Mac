@@ -14,12 +14,24 @@ DNSMASQ_ARCHIVE="dnsmasq-${DNSMASQ_VERSION}.tar.gz"
 DNSMASQ_URL="https://thekelleys.org.uk/dnsmasq/${DNSMASQ_ARCHIVE}"
 
 MIHOMO_VERSION=1.19.27
-MIHOMO_SHA256=3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1
-MIHOMO_ARCHIVE="mihomo-darwin-arm64-v${MIHOMO_VERSION}.gz"
+case "$RELEASE_ARCH" in
+  arm64)
+    MIHOMO_SHA256=3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1
+    MIHOMO_ARCHIVE="mihomo-darwin-arm64-v${MIHOMO_VERSION}.gz"
+    ;;
+  x86_64)
+    MIHOMO_SHA256=ddfafe6993e0adf97420d126d5ce7868113174630ccbf36d4a1bee2784085172
+    MIHOMO_ARCHIVE="mihomo-darwin-amd64-compatible-v${MIHOMO_VERSION}.gz"
+    ;;
+  *)
+    echo "unsupported macOS release architecture: $RELEASE_ARCH" >&2
+    exit 1
+    ;;
+esac
 MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/${MIHOMO_ARCHIVE}"
 
-if [[ "$(uname -s)" != "Darwin" || "$RELEASE_ARCH" != "arm64" ]]; then
-  echo "unsigned GUI release dependencies currently support Apple Silicon macOS only" >&2
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "GUI release dependencies must be prepared on macOS" >&2
   exit 1
 fi
 
@@ -39,14 +51,9 @@ download_and_verify() {
 download_and_verify "$DNSMASQ_URL" "$CACHE_ROOT/$DNSMASQ_ARCHIVE" "$DNSMASQ_SHA256"
 tar -xzf "$CACHE_ROOT/$DNSMASQ_ARCHIVE" -C "$work_dir"
 build_jobs="$(sysctl -n hw.logicalcpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
-if [[ "$(uname -m)" != "$RELEASE_ARCH" ]]; then
-  MACOSX_DEPLOYMENT_TARGET="$MINIMUM_MACOS" \
-    make -C "$work_dir/dnsmasq-$DNSMASQ_VERSION" -j"$build_jobs" \
-      "CC=clang -arch $RELEASE_ARCH"
-else
-  MACOSX_DEPLOYMENT_TARGET="$MINIMUM_MACOS" \
-    make -C "$work_dir/dnsmasq-$DNSMASQ_VERSION" -j"$build_jobs"
-fi
+MACOSX_DEPLOYMENT_TARGET="$MINIMUM_MACOS" \
+  make -C "$work_dir/dnsmasq-$DNSMASQ_VERSION" -j"$build_jobs" \
+    "CC=clang -arch $RELEASE_ARCH"
 install -m 0755 "$work_dir/dnsmasq-$DNSMASQ_VERSION/src/dnsmasq" "$BIN_ROOT/dnsmasq"
 
 download_and_verify "$MIHOMO_URL" "$CACHE_ROOT/$MIHOMO_ARCHIVE" "$MIHOMO_SHA256"
@@ -61,6 +68,11 @@ for executable in "$BIN_ROOT/dnsmasq" "$BIN_ROOT/mihomo"; do
   /usr/bin/lipo "$executable" -verify_arch "$RELEASE_ARCH"
 done
 
-echo "Prepared: $("$BIN_ROOT/dnsmasq" --version | head -1)"
-echo "Prepared: $("$BIN_ROOT/mihomo" -v | head -1)"
+if [[ "$(uname -m)" == "$RELEASE_ARCH" ]]; then
+  echo "Prepared: $("$BIN_ROOT/dnsmasq" --version | head -1)"
+  echo "Prepared: $("$BIN_ROOT/mihomo" -v | head -1)"
+else
+  echo "Prepared dnsmasq $DNSMASQ_VERSION for $RELEASE_ARCH (cross-compiled)"
+  echo "Prepared mihomo $MIHOMO_VERSION for $RELEASE_ARCH from $MIHOMO_ARCHIVE"
+fi
 echo "Release dependency directory: $BIN_ROOT"

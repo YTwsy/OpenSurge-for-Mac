@@ -9,9 +9,13 @@ places this notice and the referenced license texts under
 
 - Version: `1.19.27`
 - License: `GPL-3.0-only`
-- Distributed form: unmodified upstream `mihomo-darwin-arm64-v1.19.27.gz`
-- Binary SHA-256:
-  `3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1`
+- Distributed forms (each architecture-specific installer contains the matching binary):
+  - Apple Silicon: unmodified upstream `mihomo-darwin-arm64-v1.19.27.gz`
+    - Binary SHA-256:
+      `3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1`
+  - Intel: unmodified upstream `mihomo-darwin-amd64-compatible-v1.19.27.gz`
+    - Binary SHA-256:
+      `ddfafe6993e0adf97420d126d5ce7868113174630ccbf36d4a1bee2784085172`
 - Upstream: <https://github.com/MetaCubeX/mihomo>
 - Corresponding source:
   <https://github.com/MetaCubeX/mihomo/tree/5184081ac327394d9e15fa5d5f9f4a61e723fd94>
@@ -21,8 +25,8 @@ places this notice and the referenced license texts under
 
 - Version: `2.93`
 - License: `GPL-2.0-only OR GPL-3.0-only`, at the recipient's option
-- Distributed form: built from unmodified upstream source for Apple Silicon
-  macOS by [`scripts/prepare-gui-release-deps.sh`](scripts/prepare-gui-release-deps.sh)
+- Distributed form: built from unmodified upstream source for Apple Silicon or
+  Intel macOS by [`scripts/prepare-gui-release-deps.sh`](scripts/prepare-gui-release-deps.sh)
 - Source archive SHA-256:
   `cc967771abdafeb43d10db18932d6b59fd4bed2c69c22acf8cb96aff6920d55f`
 - Corresponding source:

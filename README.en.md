@@ -3,9 +3,9 @@
   <h1>OpenSurge for Mac</h1>
   <p><strong>Turn a Mac into an observable, recoverable whole-home gateway with transparent routing and per-device policies.</strong></p>
   <p>
-    <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?include_prereleases&amp;style=flat-square"></a>
+    <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
-    <img alt="Apple Silicon preview" src="https://img.shields.io/badge/Apple%20Silicon-preview-6f42c1?style=flat-square&amp;logo=apple">
+    <img alt="Apple Silicon and Intel packages" src="https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-packages-6f42c1?style=flat-square&amp;logo=apple">
     <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-2ea44f?style=flat-square"></a>
   </p>
   <p>
@@ -213,19 +213,21 @@ security and packaging boundary.
 
 `make gui-installer` builds a macOS package after requiring real mihomo and
 dnsmasq binaries. Developer ID signing and notarization are opt-in through the
-environment variables documented in the architecture notes. GitHub prereleases
-may contain an explicitly named `arm64-unsigned.pkg` convenience build for
-advanced users; it is never described as signed, notarized, or Gatekeeper-ready.
+environment variables documented in the architecture notes. Stable GitHub releases
+contain explicitly named `arm64-unsigned.pkg` and `x86_64-unsigned.pkg` builds;
+a stable Release is never described as signed, notarized, or Gatekeeper-ready.
 
-### Install an unsigned GitHub preview
+### Install an unsigned stable GitHub release
 
-The current unsigned preview supports Apple Silicon Macs. Download the
-`arm64-unsigned.pkg` asset and `SHA256SUMS` from the matching GitHub prerelease.
-You can verify its checksum with `shasum -a 256 -c SHA256SUMS` and its GitHub
-build provenance with:
+Stable releases provide packages for both Apple Silicon and Intel Macs. Download
+`arm64-unsigned.pkg` for Apple Silicon or `x86_64-unsigned.pkg` for Intel, plus
+`SHA256SUMS`, from the matching GitHub Release. You can verify downloaded files with
+`shasum -a 256 -c SHA256SUMS` and the selected package's GitHub build provenance with:
 
 ```sh
 gh attestation verify OpenSurge-for-Mac-*-arm64-unsigned.pkg \
+  -R YTwsy/OpenSurge-for-Mac
+gh attestation verify OpenSurge-for-Mac-*-x86_64-unsigned.pkg \
   -R YTwsy/OpenSurge-for-Mac
 ```
 

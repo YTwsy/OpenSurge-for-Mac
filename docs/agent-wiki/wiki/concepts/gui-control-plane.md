@@ -162,10 +162,12 @@ Desired 网络配置默认把 `dns.upstream` 显示为 `127.0.0.1#1053`，形成
 Service 只通过 admin 组只读访问 applied 状态，通过 helper 执行固定 privileged 动作。
 打包时 `OPENSURGE_VERSION` 必须同时写入 pkg receipt 与菜单栏 App 的 short version，
 `OPENSURGE_BUILD_NUMBER` 写入 App build number，避免新安装包继续携带旧的 bundle 版本标识。
-没有 Apple Developer 身份的 GitHub 发布只能作为 Apple Silicon unsigned prerelease：文件名
-必须带 `arm64-unsigned.pkg`，发布同时提供 SHA-256 和 GitHub artifact attestation，并明确
-要求用户通过系统设置对单个包执行“仍要打开”。不得把 GitHub attestation 当成 Developer ID，
-也不得指导用户全局关闭 Gatekeeper 或递归移除 quarantine。
+没有 Apple Developer 身份的 GitHub tag workflow 会产生 Apple Silicon 与 Intel 两个
+架构专用的 unsigned 正式 Release 安装包：文件名分别带 `arm64-unsigned.pkg` 与
+`x86_64-unsigned.pkg`，发布同时提供合并的 SHA-256 清单和每个 pkg 的 GitHub artifact
+attestation。正式 Release 只表示 GitHub 发布通道稳定，不得把 GitHub attestation 当成
+Developer ID 签名或 notarization，也不得指导用户全局关闭 Gatekeeper 或递归移除
+quarantine；安装仍使用系统设置针对单个包的“仍要打开”。
 
 pkg 升级必须在覆盖 payload 前执行 recovery 门禁，并按 Control Service/菜单栏退出、
 旧版 `omg stop`、root helper bootout 的顺序清理运行进程。recovery 非 `idle`/`complete`/

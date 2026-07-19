@@ -3,9 +3,9 @@
   <h1>OpenSurge for Mac</h1>
   <p><strong>把 Mac 变成可导入规则、可按设备分流的全屋透明代理网关。</strong></p>
   <p>
-    <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?include_prereleases&amp;style=flat-square"></a>
+    <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
-    <img alt="Apple Silicon 预览版" src="https://img.shields.io/badge/Apple%20Silicon-preview-6f42c1?style=flat-square&amp;logo=apple">
+    <img alt="提供 Apple Silicon 与 Intel 安装包" src="https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-packages-6f42c1?style=flat-square&amp;logo=apple">
     <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-2ea44f?style=flat-square"></a>
   </p>
   <p>
@@ -149,18 +149,21 @@ Web GUI 内置 applied 网关策略路径的连通性页面，并提供 Net.Coff
 检测入口；两者都不会被描述成下游设备 DHCP/DNS/TUN 路径已经验收。
 
 `make gui-installer` 会在取得真实 mihomo、dnsmasq 二进制后构建 macOS 安装包。
-Developer ID 签名和 notarization 必须显式提供发布凭据。GitHub 预发布可以提供文件名中
-明确带有 `arm64-unsigned.pkg` 的高级用户便利构建，但不能把它描述成已经签名、已经
-notarize 或可被 Gatekeeper 直接放行的安装包。
+Developer ID 签名和 notarization 必须显式提供发布凭据。GitHub 正式发布同时提供文件名中
+明确带有 `arm64-unsigned.pkg` 与 `x86_64-unsigned.pkg` 的架构专用构建，但不能把正式
+Release 描述成已经签名、已经 notarize 或可被 Gatekeeper 直接放行的安装包。
 
-### 安装 GitHub 未签名预发布包
+### 安装 GitHub 未签名正式发布包
 
-当前未签名预发布包支持 Apple Silicon Mac。下载对应 GitHub Pre-release 中的
-`arm64-unsigned.pkg` 和 `SHA256SUMS`，可运行 `shasum -a 256 -c SHA256SUMS`
-核对文件，并使用以下命令验证 GitHub 构建来源：
+当前正式发布同时提供 Apple Silicon 与 Intel Mac 安装包。请从对应 GitHub Release 下载
+`arm64-unsigned.pkg`（Apple Silicon）或 `x86_64-unsigned.pkg`（Intel），以及
+`SHA256SUMS`。可运行 `shasum -a 256 -c SHA256SUMS` 核对已下载文件，并使用以下命令
+验证所选安装包的 GitHub 构建来源：
 
 ```sh
 gh attestation verify OpenSurge-for-Mac-*-arm64-unsigned.pkg \
+  -R YTwsy/OpenSurge-for-Mac
+gh attestation verify OpenSurge-for-Mac-*-x86_64-unsigned.pkg \
   -R YTwsy/OpenSurge-for-Mac
 ```
 

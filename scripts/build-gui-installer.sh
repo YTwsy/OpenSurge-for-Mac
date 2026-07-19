@@ -8,6 +8,7 @@ MIHOMO="${OPENSURGE_MIHOMO_BINARY:-$ROOT/bin/mihomo}"
 DNSMASQ="${OPENSURGE_DNSMASQ_BINARY:-$(command -v dnsmasq || true)}"
 VERSION="${OPENSURGE_VERSION:-0.1.0}"
 BUILD_NUMBER="${OPENSURGE_BUILD_NUMBER:-1}"
+APP_ARCH="${OPENSURGE_APP_ARCH:-$(uname -m)}"
 ARTIFACTS="$ROOT/artifacts/gui-installer"
 PAYLOAD="$ARTIFACTS/payload"
 APP_ROOT="$PAYLOAD/Library/Application Support/OpenSurge"
@@ -18,6 +19,12 @@ PNPM_BIN="${PNPM_BIN:-$(command -v pnpm || true)}"
 export GOCACHE="${GOCACHE:-/private/tmp/opensurge-gui-build-cache}"
 export OPENSURGE_VERSION="$VERSION"
 export OPENSURGE_BUILD_NUMBER="$BUILD_NUMBER"
+case "$APP_ARCH" in
+  arm64) GO_ARCH=arm64 ;;
+  x86_64) GO_ARCH=amd64 ;;
+  *) echo "unsupported OpenSurge app architecture: $APP_ARCH" >&2; exit 1 ;;
+esac
+export OPENSURGE_APP_ARCH="$APP_ARCH"
 
 [[ -x "$GO_BIN" ]] || { echo "Go toolchain not found; set GO_BIN" >&2; exit 1; }
 [[ -x "$NODE_BIN" ]] || { echo "Node.js not found; set NODE_BIN" >&2; exit 1; }
@@ -32,16 +39,13 @@ export PATH="$(dirname "$NODE_BIN"):$PATH"
 "$PNPM_BIN" run build
 cd "$ROOT"
 "$GO_BIN" test ./...
+"$GO_BIN" run ./cmd/opensurge-install-config --source "$CONFIG" --validate-package-source
 mkdir -p "$ROOT/bin"
-"$GO_BIN" build -trimpath -o "$ROOT/bin/omg" ./cmd/omg
-"$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-control" ./cmd/opensurge-control
-"$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-helper" ./cmd/opensurge-helper
-"$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-install-config" ./cmd/opensurge-install-config
-"$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-network" ./cmd/opensurge-network
-"$ROOT/bin/opensurge-install-config" --source "$CONFIG" --validate-package-source
-if [[ -z "${OPENSURGE_APP_ARCH:-}" ]]; then
-  export OPENSURGE_APP_ARCH="$(/usr/bin/lipo -archs "$ROOT/bin/omg")"
-fi
+GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/omg" ./cmd/omg
+GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-control" ./cmd/opensurge-control
+GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-helper" ./cmd/opensurge-helper
+GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-install-config" ./cmd/opensurge-install-config
+GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-network" ./cmd/opensurge-network
 "$ROOT/scripts/build-menubar-app.sh"
 
 rm -rf "$ARTIFACTS"

@@ -139,6 +139,14 @@ grep -Fq 'lipo "$executable" -verify_arch "$OPENSURGE_APP_ARCH"' "$ROOT/scripts/
   echo "GUI package must verify bundled executable architectures" >&2
   exit 1
 }
+grep -Fq 'x86_64) GO_ARCH=amd64' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "GUI package must map the Intel Mach-O architecture to Go amd64" >&2
+  exit 1
+}
+grep -Fq 'mihomo-darwin-amd64-compatible' "$RELEASE_DEPS" || {
+  echo "release dependencies must include the compatible Intel mihomo build" >&2
+  exit 1
+}
 grep -Fq 'actions/attest@v4' "$RELEASE_WORKFLOW" || {
   echo "unsigned release workflow must attest the package provenance" >&2
   exit 1
@@ -147,8 +155,20 @@ grep -Fq 'actions/upload-artifact@v7' "$RELEASE_WORKFLOW" || {
   echo "unsigned release workflow must use the Node 24 artifact uploader" >&2
   exit 1
 }
-grep -Fq -- '--prerelease' "$RELEASE_WORKFLOW" || {
-  echo "unsigned packages must be published as prereleases" >&2
+grep -Fq 'arm64' "$RELEASE_WORKFLOW" && grep -Fq 'x86_64' "$RELEASE_WORKFLOW" || {
+  echo "unsigned release workflow must build Apple Silicon and Intel packages" >&2
+  exit 1
+}
+if grep -Fq -- '--prerelease' "$RELEASE_WORKFLOW"; then
+  echo "tagged packages must be published as a stable release" >&2
+  exit 1
+fi
+grep -Fq -- '--latest' "$RELEASE_WORKFLOW" || {
+  echo "stable release workflow must mark the tagged release as latest" >&2
+  exit 1
+}
+grep -Fq 'actions/download-artifact@v8' "$RELEASE_WORKFLOW" || {
+  echo "stable release workflow must aggregate both architecture packages" >&2
   exit 1
 }
 grep -Fq 'verify-unsigned-gui-installer.sh' "$RELEASE_WORKFLOW" || {

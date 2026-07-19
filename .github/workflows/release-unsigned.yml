@@ -1,4 +1,4 @@
-name: Unsigned macOS prerelease
+name: Unsigned macOS release
 
 on:
   push:
@@ -15,14 +15,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-arm64:
-    name: Build and publish Apple Silicon package
+  build:
+    name: Build ${{ matrix.arch }} package
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - arm64
+          - x86_64
     env:
-      OPENSURGE_APP_ARCH: arm64
-      OPENSURGE_RELEASE_ARCH: arm64
+      OPENSURGE_APP_ARCH: ${{ matrix.arch }}
+      OPENSURGE_RELEASE_ARCH: ${{ matrix.arch }}
       OPENSURGE_MINIMUM_MACOS: "13.0"
-      RELEASE_ARCH: arm64
+      RELEASE_ARCH: ${{ matrix.arch }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v6
@@ -87,36 +93,51 @@ jobs:
           mkdir -p "$release_dir"
           mv "$GITHUB_WORKSPACE/artifacts/gui-installer/OpenSurge-for-Mac-${OPENSURGE_VERSION}.pkg" "$release_pkg"
           ./scripts/verify-unsigned-gui-installer.sh "$release_pkg" "$OPENSURGE_VERSION" "$RELEASE_ARCH"
-          (
-            cd "$release_dir"
-            shasum -a 256 "$(basename "$release_pkg")" >SHA256SUMS
-          )
           echo "pkg=$release_pkg" >>"$GITHUB_OUTPUT"
-          echo "checksums=$release_dir/SHA256SUMS" >>"$GITHUB_OUTPUT"
 
       - name: Attest build provenance
         uses: actions/attest@v4
         with:
           subject-path: ${{ steps.package.outputs.pkg }}
 
-      - name: Preserve workflow artifacts
+      - name: Preserve architecture package
         uses: actions/upload-artifact@v7
         with:
           name: OpenSurge-for-Mac-${{ steps.version.outputs.version }}-${{ env.RELEASE_ARCH }}-unsigned
-          path: |
-            ${{ steps.package.outputs.pkg }}
-            ${{ steps.package.outputs.checksums }}
+          path: ${{ steps.package.outputs.pkg }}
           if-no-files-found: error
 
-      - name: Create GitHub prerelease
+  publish:
+    name: Publish stable GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+
+      - name: Download architecture packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: OpenSurge-for-Mac-*-unsigned
+          path: artifacts/release
+          merge-multiple: true
+
+      - name: Create combined checksums
+        shell: bash
+        run: |
+          cd artifacts/release
+          sha256sum OpenSurge-for-Mac-*-unsigned.pkg >SHA256SUMS
+
+      - name: Create stable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          release_dir="$GITHUB_WORKSPACE/artifacts/release"
           gh release create "$GITHUB_REF_NAME" \
-            "${{ steps.package.outputs.pkg }}#Unsigned Apple Silicon installer" \
-            "${{ steps.package.outputs.checksums }}#SHA-256 checksums" \
+            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-arm64-unsigned.pkg#Unsigned Apple Silicon installer" \
+            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-x86_64-unsigned.pkg#Unsigned Intel installer" \
+            "$release_dir/SHA256SUMS#SHA-256 checksums" \
             --verify-tag \
-            --prerelease \
-            --latest=false \
-            --title "OpenSurge for Mac $GITHUB_REF_NAME (Unsigned Preview)" \
+            --latest \
+            --title "OpenSurge for Mac $GITHUB_REF_NAME" \
             --notes-file packaging/unsigned-release-notes.md

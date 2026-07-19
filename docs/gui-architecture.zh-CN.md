@@ -237,10 +237,11 @@ Service 并退出菜单栏 App，调用旧版本
 make gui-notarize PKG=artifacts/gui-installer/OpenSurge-for-Mac-0.1.0.pkg
 ```
 
-缺少 Apple Developer 身份时，GitHub tag workflow 只能发布文件名明确带
-`arm64-unsigned.pkg` 的 Apple Silicon 预发布包，并同时提供 SHA-256 与 GitHub artifact
-attestation；不能宣称已经签名、notarize 或可被 Gatekeeper 直接放行。用户安装说明只使用
-系统设置中针对该包的“仍要打开”，不得要求全局关闭 Gatekeeper 或递归移除 quarantine。
+缺少 Apple Developer 身份时，GitHub tag workflow 会发布文件名明确带
+`arm64-unsigned.pkg` 与 `x86_64-unsigned.pkg` 的正式 Release，并同时提供合并的 SHA-256
+清单与各安装包的 GitHub artifact attestation。GitHub 的正式 Release 状态不等于 Developer
+ID 签名或 notarization，不能宣称安装包可被 Gatekeeper 直接放行。用户安装说明只使用系统
+设置中针对该包的“仍要打开”，不得要求全局关闭 Gatekeeper 或递归移除 quarantine。
 当前安装器 seed 配置必须使用 managed profile 且不引用外部 device-policy；订阅与设备
 策略在安装后经控制面导入，避免 pkg 携带工作区绝对路径。
 
