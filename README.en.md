@@ -13,6 +13,7 @@
   </p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases">Download</a> ·
+    <a href="docs/app-user-guide.md">App guide</a> ·
     <a href="#capabilities">Capabilities</a> ·
     <a href="#per-device-policies">Per-device policies</a> ·
     <a href="#web-gui-and-menu-bar-app">Web GUI</a> ·
@@ -55,6 +56,17 @@ executable proof gates, and virtual-lab plus real-device evidence is fed back
 into the next engineering loop.
 
 ## Capabilities
+
+**Friendly App experience**
+
+- Use the macOS menu bar app to check status, receive recovery warnings, and
+  open the local Web GUI.
+- Import sources, configure the network, route individual devices, check proxy
+  health and connectivity, and inspect diagnostics from one control surface.
+- Follow a recovery state machine through same-LAN DHCP takeover startup,
+  client validation, shutdown, and network restoration.
+
+Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 
 **Gateway and proxying**
 
@@ -104,96 +116,10 @@ lists. Operators supply their own policy content; the empty starter file is
 valid. See [per-device policy overlays](docs/device-policy.md) for the JSON
 model, precedence, CLI commands, and validation boundary.
 
-## Transparent proxying
-
-TUN is the supported transparent proxy path on macOS. Mihomo `redir-port` and
-PF TCP redirection are intentionally unsupported because the current Darwin
-build reports redir as unsupported at runtime. Keep `mihomo.redir_port` and
-`pf.redirect_tcp_to` at `0`; enable transparent proxying with
-`transparent.mode: "tun"`.
-
-## Mihomo profiles
-
-OpenSurge for Mac can render a managed mihomo config or import an existing
-mihomo profile. In imported mode, OpenSurge keeps owning gateway-critical
-fields such as LAN binding, `allow-lan`, the DNS listener/fake-IP range, TUN,
-`external-controller`, and runtime paths. The imported profile contributes
-`proxies`, `proxy-providers`, `proxy-groups`, `rule-providers`, and `rules`, plus
-its non-gateway DNS resolver/filter fields. Preserving fields such as
-`nameserver-policy`, `proxy-server-nameserver`, and `fake-ip-filter` keeps proxy
-server hostnames resolvable without allowing the profile to replace the
-gateway DNS listener or TUN DNS contract.
-
-```yaml
-mihomo:
-  profile_mode: "imported"
-  profile: "./profiles/home.yaml"
-```
-
-Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
-directory. Relative `path:` entries inside imported `proxy-providers` and
-`rule-providers` are resolved from the imported mihomo profile's directory.
-OpenSurge renders `profile.store-selected: true` so mihomo can persist policy
-group choices across restarts.
-
-Preview the final generated mihomo config before starting gateway services:
-
-```sh
-go run ./cmd/omg doctor --config examples/config.imported-profile.example.yaml
-go run ./cmd/omg render-mihomo --config examples/config.example.yaml
-go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example.yaml
-```
-
-Use `validate-mihomo` when `mihomo.binary` points to an installed mihomo binary.
-It renders the final config and runs mihomo's own `-t` validation without
-starting gateway services.
-
-```sh
-go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.example.yaml
-```
-
-## Usage
-
-```sh
-go run ./cmd/omg doctor --config examples/config.example.yaml
-go run ./cmd/omg status --config examples/config.example.yaml
-go run ./cmd/omg status --config examples/config.example.yaml --format json
-go run ./cmd/omg logs --config examples/config.example.yaml --tail 50 --format json
-go run ./cmd/omg snapshot --config examples/config.example.yaml --tail 50 --format json
-go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
-go run ./cmd/omg policy-select --config examples/config.imported-profile.example.yaml --group Proxy --policy DIRECT
-# after configuring device_policy.file:
-go run ./cmd/omg devices --config ./config.yaml --format json
-go run ./cmd/omg device-policy-select --config ./config.yaml --device alice-phone --slot default --policy DIRECT
-go run ./cmd/omg connections --config examples/config.imported-profile.example.yaml --format json
-go run ./cmd/omg providers --config examples/config.imported-profile.example.yaml --format json
-go run ./cmd/omg provider-update --config examples/config.imported-profile.example.yaml --provider demo-provider --format json
-go run ./cmd/omg render-mihomo --config examples/config.example.yaml
-sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
-sudo go run ./cmd/omg reload --config examples/config.example.yaml --format json
-sudo go run ./cmd/omg restart-mihomo --config examples/config.example.yaml --format json
-sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
-```
-
-`policy-select` first reads the live mihomo policy groups and rejects unknown
-groups or policies before sending the selection change.
-`provider-update --provider <name>` asks mihomo to refresh one proxy provider
-and returns the refreshed provider state.
-`logs --tail N --format json` includes recent `dnsmasq` and `mihomo` log lines
-with per-file existence and read-error fields for control surfaces.
-`snapshot --format json` aggregates status, doctor checks, leases, log tails,
-policy groups, connections, and provider status; mihomo API failures are
-reported inside the `mihomo` fields so the rest of the snapshot remains usable.
-`restart-mihomo` validates and restarts only the applied proxy engine process.
-It preserves dnsmasq, PF, IPv4 forwarding, and host network settings, and
-archives the previous Mihomo log before rebuilding TUN and outbound sockets.
-`start --format json` and `stop --format json` return a success payload with
-`command`, `ok`, and `config_path` after the gateway action succeeds.
-When `--format json` is used, command failures are emitted to stderr as
-`{"command":"...","ok":false,"error":"..."}` while preserving the non-zero exit
-code.
-
 ## Web GUI and menu bar app
+
+If you installed OpenSurge from a package, start with the
+[OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 
 The repository now includes the loopback Go Control API, an embedded React Web
 GUI, and a read-only native SwiftUI menu bar launcher. For a development build:
@@ -252,6 +178,136 @@ Before replacing payload files, preinstall stops the user control service and
 menu bar app, runs the installed `omg stop`, and unloads the root helper. The
 existing config, imported sources, policy data, and runtime history are kept;
 only a first installation seeds `config.yaml` from the packaged example.
+
+## Transparent proxying
+
+TUN is the supported transparent proxy path on macOS. Mihomo `redir-port` and
+PF TCP redirection are intentionally unsupported because the current Darwin
+build reports redir as unsupported at runtime. Keep `mihomo.redir_port` and
+`pf.redirect_tcp_to` at `0`; enable transparent proxying with
+`transparent.mode: "tun"`.
+
+## Mihomo profiles
+
+OpenSurge for Mac can render a managed mihomo config or import an existing
+mihomo profile. In imported mode, OpenSurge keeps owning gateway-critical
+fields such as LAN binding, `allow-lan`, the DNS listener/fake-IP range, TUN,
+`external-controller`, and runtime paths. The imported profile contributes
+`proxies`, `proxy-providers`, `proxy-groups`, `rule-providers`, and `rules`, plus
+its non-gateway DNS resolver/filter fields. Preserving fields such as
+`nameserver-policy`, `proxy-server-nameserver`, and `fake-ip-filter` keeps proxy
+server hostnames resolvable without allowing the profile to replace the
+gateway DNS listener or TUN DNS contract.
+
+```yaml
+mihomo:
+  profile_mode: "imported"
+  profile: "./profiles/home.yaml"
+```
+
+Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
+directory. Relative `path:` entries inside imported `proxy-providers` and
+`rule-providers` are resolved from the imported mihomo profile's directory.
+OpenSurge renders `profile.store-selected: true` so mihomo can persist policy
+group choices across restarts.
+
+Preview the final generated mihomo config before starting gateway services:
+
+```sh
+go run ./cmd/omg doctor --config examples/config.imported-profile.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.example.yaml
+go run ./cmd/omg render-mihomo --config examples/config.imported-profile.example.yaml
+```
+
+Use `validate-mihomo` when `mihomo.binary` points to an installed mihomo binary.
+It renders the final config and runs mihomo's own `-t` validation without
+starting gateway services.
+
+```sh
+go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.example.yaml
+```
+
+## CLI usage
+
+These commands are intended for development, automation, and diagnostics.
+Package users can follow the graphical workflow in the
+[App User Guide](docs/app-user-guide.md).
+
+### Status and diagnostics
+
+```sh
+go run ./cmd/omg doctor --config examples/config.example.yaml
+go run ./cmd/omg status --config examples/config.example.yaml
+go run ./cmd/omg status --config examples/config.example.yaml --format json
+go run ./cmd/omg logs --config examples/config.example.yaml --tail 50 --format json
+go run ./cmd/omg snapshot --config examples/config.example.yaml --tail 50 --format json
+```
+
+### Policies, devices, and providers
+
+```sh
+go run ./cmd/omg policies --config examples/config.imported-profile.example.yaml
+go run ./cmd/omg policy-select \
+  --config examples/config.imported-profile.example.yaml \
+  --group Proxy \
+  --policy DIRECT
+
+# After configuring device_policy.file:
+go run ./cmd/omg devices --config ./config.yaml --format json
+go run ./cmd/omg device-policy-select \
+  --config ./config.yaml \
+  --device alice-phone \
+  --slot default \
+  --policy DIRECT
+
+go run ./cmd/omg connections \
+  --config examples/config.imported-profile.example.yaml \
+  --format json
+go run ./cmd/omg providers \
+  --config examples/config.imported-profile.example.yaml \
+  --format json
+go run ./cmd/omg provider-update \
+  --config examples/config.imported-profile.example.yaml \
+  --provider demo-provider \
+  --format json
+```
+
+### Config rendering
+
+```sh
+go run ./cmd/omg render-mihomo --config examples/config.example.yaml
+go run ./cmd/omg validate-mihomo \
+  --config examples/config.imported-profile.example.yaml
+```
+
+### Gateway lifecycle
+
+The following commands modify DHCP, DNS, PF, IPv4 forwarding, or mihomo runtime
+state and require `sudo`:
+
+```sh
+sudo go run ./cmd/omg start --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg reload --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg restart-mihomo --config examples/config.example.yaml --format json
+sudo go run ./cmd/omg stop --config examples/config.example.yaml --format json
+```
+
+Additional behavior:
+
+- `policy-select` reads live mihomo policy groups and rejects unknown groups or
+  policies before sending a selection change.
+- `provider-update --provider <name>` asks mihomo to refresh the selected proxy
+  provider and returns its refreshed state.
+- `logs --tail N --format json` returns recent dnsmasq and mihomo log lines with
+  per-file existence and read-error fields.
+- `snapshot --format json` aggregates status, doctor checks, leases, logs,
+  policy groups, connections, and providers. Mihomo API failures do not prevent
+  the rest of the snapshot from being returned.
+- `restart-mihomo` restarts only the proxy engine. It does not stop dnsmasq,
+  unload PF, restore IPv4 forwarding, or change host network settings.
+- `--format json` preserves non-zero failure exit codes and emits structured
+  errors to stderr. Successful `start` and `stop` operations return `command`,
+  `ok`, and `config_path` in their payloads.
 
 ## An AI-agent-friendly engineering workspace
 
