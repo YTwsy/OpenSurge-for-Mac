@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, RequestError } from './api'
+import { api, authenticationRequiredEvent, RequestError } from './api'
 import { RecoveryBanner, StatusDot } from './components/Common'
 import { DashboardPage } from './pages/DashboardPage'
 import { ConnectivityPage } from './pages/ConnectivityPage'
@@ -39,6 +39,7 @@ export function App() {
   const [page, setPage] = useState<Page>(currentPage)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState('')
+  const [authenticationRequired, setAuthenticationRequired] = useState(false)
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [devicesDirty, setDevicesDirty] = useState(false)
   const pageRef = useRef(page)
@@ -56,13 +57,26 @@ export function App() {
       setOverview(await api.overview())
       setError('')
     } catch (cause) {
-      setError(cause instanceof RequestError && cause.status === 401
-        ? '此页面需要由 OpenSurge App 或控制服务生成的安全链接打开。'
-        : cause instanceof Error ? cause.message : String(cause))
+      if (cause instanceof RequestError && cause.status === 401) {
+        setAuthenticationRequired(true)
+        setError('')
+        return
+      }
+      setError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [])
 
   useEffect(() => {
+    const requireAuthentication = () => {
+      setAuthenticationRequired(true)
+      setError('')
+    }
+    window.addEventListener(authenticationRequiredEvent, requireAuthentication)
+    return () => window.removeEventListener(authenticationRequiredEvent, requireAuthentication)
+  }, [])
+
+  useEffect(() => {
+    if (authenticationRequired) return
     void refresh()
     const timer = window.setInterval(() => void refresh(), 8000)
     const events = typeof EventSource === 'undefined' ? null : new EventSource('/api/v1/events')
@@ -82,7 +96,7 @@ export function App() {
       events?.close()
       window.removeEventListener('popstate', onPop)
     }
-  }, [refresh])
+  }, [authenticationRequired, refresh])
 
   const go = (next: Page) => {
     if (next === page) return
@@ -102,15 +116,17 @@ export function App() {
       <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway)}</strong><small>{overview?.status.lan_ip || 'Control API'}</small></div></div>
     </aside>
     <main className="workspace">
-      {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network')} />}
-      {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
-      {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={() => go('network')} />}
-      {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
-      {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
-      {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
-      {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
-      {page === 'connectivity' && <ConnectivityPage overview={overview} />}
-      {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
+      {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>Web GUI 与 OpenSurge 的安全连接已过期</h1><p>请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge”。</p></div></section> : <>
+        {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network')} />}
+        {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
+        {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={() => go('network')} />}
+        {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
+        {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
+        {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
+        {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
+        {page === 'connectivity' && <ConnectivityPage overview={overview} />}
+        {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
+      </>}
     </main>
   </div>
 }

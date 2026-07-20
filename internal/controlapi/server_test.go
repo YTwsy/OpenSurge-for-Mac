@@ -88,6 +88,61 @@ func TestBootstrapIsOneTimeAndCreatesSession(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedWebSessionSlidesIdleExpiry(t *testing.T) {
+	server := newTestServer(t)
+	const session = "browser-session"
+	server.sessions[session] = time.Now().Add(time.Minute)
+	started := time.Now()
+
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:61767/api/test", nil)
+	request.AddCookie(&http.Cookie{Name: "opensurge_session", Value: session})
+	response := httptest.NewRecorder()
+	server.auth(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("session request status=%d body=%s", response.Code, response.Body.String())
+	}
+	server.mu.Lock()
+	expires := server.sessions[session]
+	server.mu.Unlock()
+	if expires.Before(started.Add(webSessionIdleTimeout - time.Minute)) {
+		t.Fatalf("session expiry was not renewed: %s", expires)
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "opensurge_session" || cookies[0].Value != session {
+		t.Fatalf("renewal cookies=%v", cookies)
+	}
+	if cookies[0].MaxAge != int(webSessionIdleTimeout/time.Second) || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+		t.Fatalf("renewal cookie=%#v", cookies[0])
+	}
+}
+
+func TestExpiredWebSessionIsRejectedWithoutRenewal(t *testing.T) {
+	server := newTestServer(t)
+	called := false
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:61767/api/test", nil)
+	request.AddCookie(&http.Cookie{Name: "opensurge_session", Value: "expired"})
+	response := httptest.NewRecorder()
+	server.auth(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	})).ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized || called {
+		t.Fatalf("expired session status=%d handler_called=%t", response.Code, called)
+	}
+	if cookies := response.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("expired session was renewed: %v", cookies)
+	}
+	server.mu.Lock()
+	_, exists := server.sessions["expired"]
+	server.mu.Unlock()
+	if exists {
+		t.Fatal("expired session was not removed")
+	}
+}
+
 func TestBootstrapAllowsOnlyKnownWebPaths(t *testing.T) {
 	server := newTestServer(t)
 	request := httptest.NewRequest(http.MethodGet, server.bootstrapURLFor("recovery"), nil)

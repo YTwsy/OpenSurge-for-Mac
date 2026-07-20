@@ -49,6 +49,12 @@ Control API 的 bootstrap `expires_at` 来自 Go `time.Time`，可能包含 RFC3
 菜单栏客户端必须同时接受带小数秒和不带小数秒的时间格式，不能把该解码失败误判为浏览器
 打开失败。
 
+Web GUI 从一次性 bootstrap 链接换取的 HttpOnly 会话使用 12 小时闲置期限；每次有效的
+浏览器会话请求都会滑动续期，因此持续打开的控制面不能在固定时间点突然失效。会话仍只
+保存在 Control Service 内存中，不跨服务重启持久化。浏览器收到 401 后必须停止 API 轮询
+与 SSE，并明确引导用户点击 macOS 菜单栏中的 OpenSurge 图标，再选择“打开 OpenSurge”；
+不能继续提供必然再次返回 401 的普通“重试”按钮。
+
 菜单栏的 Control API bearer token 只从用户应用支持目录内权限为 `0600` 的
 `control-token` 读取，不复制到 Keychain，也不回退到可能过期的旧 Keychain 副本。文件
 缺失与 endpoint 尚未生成都表示用户级 Control Service 尚未准备好：先轻量 kickstart 并

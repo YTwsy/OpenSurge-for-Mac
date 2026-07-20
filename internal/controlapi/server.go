@@ -74,6 +74,8 @@ type bootstrapGrant struct {
 	path    string
 }
 
+const webSessionIdleTimeout = 12 * time.Hour
+
 func New(options Options) (*Server, error) {
 	if options.ConfigPath == "" {
 		return nil, fmt.Errorf("config path is required")
@@ -365,14 +367,19 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		bearerOK := secureEqual(bearer, s.token)
 		sessionOK := false
 		if cookie, err := r.Cookie("opensurge_session"); err == nil {
+			now := time.Now()
 			s.mu.Lock()
 			expires, exists := s.sessions[cookie.Value]
-			if exists && time.Now().Before(expires) {
+			if exists && now.Before(expires) {
 				sessionOK = true
+				s.sessions[cookie.Value] = now.Add(webSessionIdleTimeout)
 			} else if exists {
 				delete(s.sessions, cookie.Value)
 			}
 			s.mu.Unlock()
+			if sessionOK {
+				setWebSessionCookie(w, cookie.Value, now)
+			}
 		}
 		if !bearerOK && !sessionOK {
 			writeError(w, http.StatusUnauthorized, "authentication_required", "open the Web GUI using an authenticated launcher link")
@@ -402,11 +409,24 @@ func (s *Server) exchangeBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := randomToken(32)
+	now := time.Now()
 	s.mu.Lock()
-	s.sessions[session] = time.Now().Add(12 * time.Hour)
+	s.sessions[session] = now.Add(webSessionIdleTimeout)
 	s.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: "opensurge_session", Value: session, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: 12 * 60 * 60})
+	setWebSessionCookie(w, session, now)
 	http.Redirect(w, r, "/"+grant.path, http.StatusFound)
+}
+
+func setWebSessionCookie(w http.ResponseWriter, session string, now time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "opensurge_session",
+		Value:    session,
+		Path:     "/",
+		Expires:  now.Add(webSessionIdleTimeout),
+		MaxAge:   int(webSessionIdleTimeout / time.Second),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 }
 
 func (s *Server) handleSessionBootstrap(w http.ResponseWriter, r *http.Request) {

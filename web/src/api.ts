@@ -6,6 +6,8 @@ export class RequestError extends Error {
   }
 }
 
+export const authenticationRequiredEvent = 'opensurge:authentication-required'
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: 'same-origin',
@@ -13,6 +15,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: init?.body instanceof FormData ? init.headers : { 'Content-Type': 'application/json', ...init?.headers },
   })
   if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event(authenticationRequiredEvent))
     let payload: APIError = {}
     try { payload = await response.json() as APIError } catch { /* response was not JSON */ }
     throw new RequestError(response.status, payload.error?.code ?? 'request_failed', payload.error?.message ?? response.statusText)

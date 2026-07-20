@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ControlConfig, Overview, Source } from './types'
 
 vi.mock('./api', () => ({
-  RequestError: class RequestError extends Error { status = 500 },
+  authenticationRequiredEvent: 'opensurge:authentication-required',
+  RequestError: class RequestError extends Error {
+    constructor(public status: number, public code: string, message: string) { super(message) }
+  },
   waitForOperation: vi.fn(async () => ({ id: 'gateway-operation', kind: 'start', state: 'succeeded' })),
   api: {
     overview: vi.fn(),
@@ -69,7 +72,7 @@ vi.mock('./api', () => ({
   },
 }))
 
-import { api, waitForOperation } from './api'
+import { api, RequestError, waitForOperation } from './api'
 import { App } from './App'
 
 const overview: Overview = {
@@ -121,7 +124,25 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })
   })
-  afterEach(() => { cleanup(); vi.clearAllMocks() })
+  afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+
+  it('stops background updates and explains how to reconnect when authentication expires', async () => {
+    const close = vi.fn()
+    class TestEventSource {
+      constructor(_url: string) {}
+      addEventListener() {}
+      close() { close() }
+    }
+    vi.stubGlobal('EventSource', TestEventSource)
+    vi.mocked(api.overview).mockRejectedValueOnce(new RequestError(401, 'authentication_required', 'expired'))
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Web GUI 与 OpenSurge 的安全连接已过期' })).toBeTruthy()
+    expect(screen.getByText('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge”。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
+    await waitFor(() => expect(close).toHaveBeenCalled())
+  })
 
   it('does not present a saved recovery card as an unfinished network recovery', async () => {
     render(<App />)

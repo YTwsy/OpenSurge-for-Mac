@@ -133,6 +133,9 @@ button{cursor:pointer}
 .error-banner span{color:#ffad9f;font-weight:800}
 .error-banner p{flex:1;margin:0}
 .error-banner button,.recovery-banner button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:7px 12px}
+.session-expired{min-height:calc(100vh - 80px);display:flex;align-items:center;justify-content:center;gap:16px;text-align:left;color:#d8e6e0}
+.session-expired>span{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#321a18;border:1px solid #6b3932;color:#ffad9f;font-size:22px;font-weight:800}
+.session-expired h1{margin:0 0 8px;font-size:22px}.session-expired p{margin:0;color:#8fa39b}
 .recovery-banner{display:flex;gap:14px;align-items:center;background:#352b12;border:1px solid #6f5c29;color:#f6dda2;margin-bottom:22px}
 .recovery-banner span{font-size:22px}
 .recovery-banner div{flex:1}
@@ -423,6 +426,7 @@ html[data-theme="light"] .inline-advanced,html[data-theme="light"] .live-group,h
 html[data-theme="light"] .registration-form input,html[data-theme="light"] .registration-form select,html[data-theme="light"] .candidate-picker input,html[data-theme="light"] .candidate-picker select,html[data-theme="light"] .token-input input,html[data-theme="light"] .egress-mode select,html[data-theme="light"] .advanced-policy input,html[data-theme="light"] .advanced-policy select,html[data-theme="light"] .default-slot select,html[data-theme="light"] .rule-slots select,html[data-theme="light"] .live-group select{background:#fff;border-color:#bad1c7;color:#183028}
 html[data-theme="light"] .candidate-add button,html[data-theme="light"] .token-entry button,html[data-theme="light"] .rule-actions button,html[data-theme="light"] .editor-actions button,html[data-theme="light"] .advanced-policy button{background:#edf5f1;border-color:#bed3ca;color:#254c3e}
 html[data-theme="light"] .token{background:#e5f2ec;border-color:#abd0c0;color:#245b46}
+html[data-theme="light"] .session-expired{color:#183028}html[data-theme="light"] .session-expired p{color:#60766d}
 html[data-theme="light"] .live-section{background:#fff;border-color:#87bda6}
 html[data-theme="light"] .device-card.selected{border-color:#54a983}
 html[data-theme="light"] .route-options label,html[data-theme="light"] .registration-routing>label{background:#f8fbfa;border-color:#cbded6;color:#36564a}
