@@ -35,6 +35,14 @@ function initialTheme(): Theme {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
+function focusGatewayControl() {
+  const control = document.getElementById('gateway-control')
+  if (!(control instanceof HTMLButtonElement)) return
+  const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  control.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+  if (!control.disabled) control.focus({ preventScroll: true })
+}
+
 export function App() {
   const [page, setPage] = useState<Page>(currentPage)
   const [overview, setOverview] = useState<Overview | null>(null)
@@ -98,11 +106,17 @@ export function App() {
     }
   }, [authenticationRequired, refresh])
 
-  const go = (next: Page) => {
-    if (next === page) return
+  const go = (next: Page, focusNetworkControl = false) => {
+    if (next === page) {
+      if (focusNetworkControl) {
+        history.replaceState({}, '', `/${next}#gateway-control`)
+        focusGatewayControl()
+      }
+      return
+    }
     if (page === 'devices' && next !== 'devices' && devicesDirty && !window.confirm('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？')) return
     if (page === 'devices' && next !== 'devices') setDevicesDirty(false)
-    history.pushState({}, '', `/${next}`)
+    history.pushState({}, '', `/${next}${focusNetworkControl ? '#gateway-control' : ''}`)
     setPage(next)
   }
 
@@ -117,9 +131,9 @@ export function App() {
     </aside>
     <main className="workspace">
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>Web GUI 与 OpenSurge 的安全连接已过期</h1><p>请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge”。</p></div></section> : <>
-        {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network')} />}
+        {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network', true)} />}
         {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
-        {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={() => go('network')} />}
+        {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={() => go('network', true)} />}
         {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
         {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
         {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}

@@ -116,10 +116,14 @@ function overviewFor(mode: ControlConfig['gateway']['mode'], gateway: string): O
 }
 
 describe('OpenSurge app shell', () => {
+  const scrollIntoView = vi.fn()
+
   beforeEach(() => {
     window.history.replaceState({}, '', '/dashboard')
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    scrollIntoView.mockReset()
     vi.mocked(api.overview).mockResolvedValue(overview)
     vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })
@@ -165,16 +169,42 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(start)
     expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
+    expect(window.location.hash).toBe('#gateway-control')
+    const control = await screen.findByRole('button', { name: '将 Mac 切换为固定 IPv4' })
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }))
+    expect(document.activeElement).toBe(control)
     expect(api.gateway).not.toHaveBeenCalled()
   })
 
   it('routes the dashboard stop button to network settings without stopping the gateway', async () => {
-    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'running'))
+    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
     render(<App />)
     await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
     expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
+    expect(window.location.hash).toBe('#gateway-control')
+    const control = await screen.findByRole('button', { name: '停止手工网关模式' })
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }))
+    expect(document.activeElement).toBe(control)
     expect(api.gateway).not.toHaveBeenCalled()
+  })
+
+  it('scrolls to the recovery action when already on Network Settings', async () => {
+    window.history.replaceState({}, '', '/network')
+    vi.mocked(api.overview).mockResolvedValue({
+      ...overview,
+      recovery: { ...overview.recovery, stage: 'mac_static', required: true },
+    })
+    render(<App />)
+
+    const control = await screen.findByRole('button', { name: '已关闭路由器 DHCP，执行 OFFER 探测' })
+    scrollIntoView.mockReset()
+    await userEvent.click(screen.getByRole('button', { name: '继续恢复' }))
+
+    expect(window.location.hash).toBe('#gateway-control')
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+    expect(document.activeElement).toBe(control)
   })
 
   it('starts same-LAN manual gateway from Network Settings and disables the DHCP field group', async () => {

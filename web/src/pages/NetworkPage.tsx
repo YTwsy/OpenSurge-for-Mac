@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
@@ -17,6 +17,8 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const [savedConfig, setSavedConfig] = useState<ControlConfig | null>(null)
   const [expandedMode, setExpandedMode] = useState<NetworkMode | null>('same_wifi_dhcp')
   const [detailMode, setDetailMode] = useState<NetworkMode>('same_wifi_dhcp')
+  const gatewayControlRef = useRef<HTMLButtonElement>(null)
+  const gatewayControlFocused = useRef(false)
   const [interfaceOptions, setInterfaceOptions] = useState<NetworkInterfaceOption[]>([])
   const [interfaceDiscoveryError, setInterfaceDiscoveryError] = useState(false)
   const [clientIPv4, setClientIPv4] = useState('')
@@ -50,6 +52,19 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     void api.networkInterfaces().then(value => { if (active) setInterfaceOptions(value.interfaces) }).catch(() => { if (active) setInterfaceDiscoveryError(true) })
     return () => { active = false }
   }, [loadPlan])
+
+  useEffect(() => {
+    if (window.location.hash !== '#gateway-control') {
+      gatewayControlFocused.current = false
+      return
+    }
+    if (!config || gatewayControlFocused.current || !gatewayControlRef.current) return
+    gatewayControlFocused.current = true
+    const control = gatewayControlRef.current
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    control.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+    if (!control.disabled) control.focus({ preventScroll: true })
+  }, [config])
 
   const selectMode = (mode: ControlConfig['gateway']['mode']) => setConfig(currentConfig => {
     if (!currentConfig) return currentConfig
@@ -231,7 +246,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
           <strong>{gatewayModeLabel(config.gateway.mode)}</strong>
           <p>{gatewayModeDescription(config)}</p>
         </div>
-        <button className={gatewayActive ? 'danger' : 'primary'} type="button" disabled={busy || !overview || (!gatewayActive && !gatewayStopped) || (!gatewayActive && configDirty)} onClick={() => void controlGateway(gatewayActive ? 'stop' : 'start')}>{busy ? '正在执行…' : gatewayActive ? `停止${gatewayModeLabel(config.gateway.mode)}` : `启动${gatewayModeLabel(config.gateway.mode)}`}</button>
+        <button ref={gatewayControlRef} id="gateway-control" className={gatewayActive ? 'danger' : 'primary'} type="button" disabled={busy || !overview || (!gatewayActive && !gatewayStopped) || (!gatewayActive && configDirty)} onClick={() => void controlGateway(gatewayActive ? 'stop' : 'start')}>{busy ? '正在执行…' : gatewayActive ? `停止${gatewayModeLabel(config.gateway.mode)}` : `启动${gatewayModeLabel(config.gateway.mode)}`}</button>
       </div>
       {!gatewayActive && configDirty && <div className="notice warn">网络配置有未保存的修改。保存后才能启动网关。</div>}
       {!gatewayActive && !gatewayStopped && <div className="notice warn">当前网关状态无法确认；为避免重复启动，运行控制暂时不可用。</div>}
@@ -269,7 +284,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         {current === 'router_dhcp_restored' && <div className="notice">已经检测到 DHCP OFFER。你可以把 Mac 恢复为自动 DHCP，也可以保留当前静态 IPv4 后结束流程。</div>}
         {current === 'complete_static' && <div className="notice">恢复流程已结束，Mac 仍使用静态 IPv4；路由器 DHCP 与其他客户端的自动获取能力没有在这条路径中验证。</div>}
         <div className="recovery-actions">
-          <button className="primary" disabled={busy || configDirty || blockedByPlan || (current === 'gateway_active' && (!clientIPv4 || !clientConfirmed || Boolean(plan?.snapshot.ipv6_default && !ipv6Acknowledged)))} onClick={() => void advance()}>{busy ? '正在验证…' : actionLabel(current)}</button>
+          <button ref={gatewayControlRef} id="gateway-control" className="primary" disabled={busy || configDirty || blockedByPlan || (current === 'gateway_active' && (!clientIPv4 || !clientConfirmed || Boolean(plan?.snapshot.ipv6_default && !ipv6Acknowledged)))} onClick={() => void advance()}>{busy ? '正在验证…' : actionLabel(current)}</button>
           {current === 'prepared' && <button className="danger" disabled={busy} onClick={() => void discardRecovery()}>放弃恢复并销毁资料</button>}
           {current === 'gateway_active' && <button className="danger" disabled={busy} onClick={() => void skipClientValidation()}>跳过客户端验收</button>}
           {current === 'gateway_stopped_waiting_router_dhcp' && <button className="danger" disabled={busy} onClick={() => void finishRecoveryManually()}>跳过 OFFER 探测并恢复 Mac 自动 DHCP</button>}
