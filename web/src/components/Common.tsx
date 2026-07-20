@@ -21,8 +21,8 @@ export function Service({ name, state, detail }: { name: string; state?: string;
   return <article className="service"><StatusDot status={state ?? 'stopped'} /><div><strong>{name}</strong><small>{detail}</small></div><span>{state ?? '—'}</span></article>
 }
 
-export function Mode({ title, description, badge, active, disabled, onSelect }: { title: string; description: string; badge?: string; active?: boolean; disabled?: boolean; onSelect?: () => void }) {
-  return <button type="button" className={`mode ${active ? 'active' : ''}`} aria-pressed={active} disabled={disabled} onClick={onSelect}><span>{badge && <span className="pill ok">{badge}</span>}<h3>{title}</h3><p>{description}</p></span><span className="radio" aria-hidden="true">{active ? '●' : '○'}</span></button>
+export function Mode({ title, description, badge, active, expanded, controls, disabled, onSelect }: { title: string; description: string; badge?: string; active?: boolean; expanded?: boolean; controls?: string; disabled?: boolean; onSelect?: () => void }) {
+  return <button type="button" className={`mode ${active ? 'active' : ''}`} aria-pressed={active} aria-expanded={expanded} aria-controls={controls} disabled={disabled} onClick={onSelect}><span>{badge && <span className="pill ok">{badge}</span>}<h3>{title}</h3><p>{description}</p></span><span className="mode-state" aria-hidden="true"><span className="radio">{active ? '●' : '○'}</span><span className="mode-chevron">⌄</span></span></button>
 }
 
 export function Empty({ text }: { text: string }) { return <div className="empty">{text}</div> }

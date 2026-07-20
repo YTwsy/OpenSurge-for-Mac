@@ -32,8 +32,8 @@ function ServiceState({ label, state = '—' }: { label: string; state?: string 
 }
 
 function topologyLabel(topology?: string) {
-  if (topology === 'same_wifi_dhcp') return '同一 LAN DHCP'
-  if (topology === 'same_lan') return '同一 LAN'
-  if (topology === 'isolated_lan') return '独立 LAN'
+  if (topology === 'same_wifi_dhcp') return '局域网 DHCP 接管'
+  if (topology === 'same_lan') return '手工网关模式'
+  if (topology === 'isolated_lan') return '独立下游 LAN'
   return 'IPv4 网关'
 }

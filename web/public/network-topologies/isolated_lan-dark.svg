@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="9" stdDeviation="11" flood-color="#000" flood-opacity=".28"/></filter>
+    <marker id="traffic" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#63a8ff"/></marker>
+    <marker id="service" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10Z" fill="#f0a75f"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;text-anchor:middle;fill:#dce9e4}
+      .title{font-size:14px;font-weight:700}.small{font-size:11px;font-weight:500;fill:#8fa39b}.micro{font-size:11px;font-weight:600;fill:#82978f}.module{font-size:11px;font-weight:650}.legend{font-size:12px;font-weight:600;fill:#8fa39b}
+    </style>
+  </defs>
+  <rect x="4" y="42" width="226" height="210" rx="24" fill="#0d1d18" stroke="#2d473d" stroke-width="1.5" stroke-dasharray="7 7"/>
+  <text class="micro" x="117" y="66">上游网络</text>
+  <rect x="492" y="42" width="224" height="210" rx="24" fill="#0d1d18" stroke="#2d473d" stroke-width="1.5" stroke-dasharray="7 7"/>
+  <text class="micro" x="604" y="66">独立下游 LAN</text>
+
+  <g filter="url(#shadow)">
+    <rect x="16" y="126" width="76" height="78" rx="17" fill="#0a1713" stroke="#304b40" stroke-width="2"/>
+    <text class="title" x="54" y="158">Internet</text><text class="small" x="54" y="181">公网</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="122" y="104" width="94" height="124" rx="19" fill="#0a1713" stroke="#304b40" stroke-width="2"/>
+    <circle cx="140" cy="127" r="6" fill="#63a8ff"/>
+    <text class="title" x="169" y="136">上游路由</text>
+    <path d="M139 158h60" stroke="#223930"/>
+    <text class="small" x="169" y="181">DHCP 开启</text><text class="small" x="169" y="204">设置不变</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="272" y="78" width="176" height="174" rx="24" fill="#102a21" stroke="#63d5a4" stroke-width="3"/>
+    <circle cx="294" cy="103" r="7" fill="#63d5a4"/>
+    <text class="title" x="360" y="110">Mac / OpenSurge</text>
+    <rect x="288" y="131" width="67" height="53" rx="11" fill="#0d201a" stroke="#4dad83" stroke-width="1.5"/>
+    <text class="module" x="321" y="153">上游接口</text><text class="small" x="321" y="172">连接路由器</text>
+    <rect x="365" y="131" width="67" height="53" rx="11" fill="#0d201a" stroke="#4dad83" stroke-width="1.5"/>
+    <text class="module" x="398" y="153">下游接口</text><text class="small" x="398" y="172">DHCP / DNS</text>
+    <rect x="288" y="196" width="144" height="38" rx="11" fill="#0d201a" stroke="#4dad83" stroke-width="1.5"/>
+    <text class="module" x="360" y="219">TUN · 规则 · NAT / 转发</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="506" y="104" width="86" height="124" rx="19" fill="#0a1713" stroke="#304b40" stroke-width="2"/>
+    <text class="title" x="549" y="139">AP / VLAN</text>
+    <path d="M521 158h56" stroke="#223930"/>
+    <text class="small" x="549" y="181">独立 SSID</text><text class="small" x="549" y="204">独立网段</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="622" y="104" width="80" height="124" rx="19" fill="#251b12" stroke="#e3a163" stroke-width="2.5"/>
+    <text class="title" x="662" y="139">下游设备</text>
+    <text class="small" x="662" y="174">自动获取</text><text class="small" x="662" y="197">全部接入</text>
+  </g>
+
+  <path d="M622 191H594" fill="none" stroke="#63a8ff" stroke-width="4" stroke-linecap="round" marker-end="url(#traffic)"/>
+  <path d="M506 191H450" fill="none" stroke="#63a8ff" stroke-width="4" stroke-linecap="round" marker-end="url(#traffic)"/>
+  <path d="M272 191H218" fill="none" stroke="#63a8ff" stroke-width="4" stroke-linecap="round" marker-end="url(#traffic)"/>
+  <path d="M122 165H94" fill="none" stroke="#63a8ff" stroke-width="4" stroke-linecap="round" marker-end="url(#traffic)"/>
+  <path d="M432 150C466 113 486 113 506 139" fill="none" stroke="#f0a75f" stroke-width="3" stroke-dasharray="7 6" stroke-linecap="round" marker-end="url(#service)"/>
+  <g>
+    <rect x="439" y="73" width="177" height="28" rx="14" fill="#2c2115" stroke="#80552f"/>
+    <circle cx="457" cy="87" r="4" fill="#f0a75f"/><text class="micro" x="532" y="91">仅向下游下发 DHCP / DNS</text>
+  </g>
+
+  <g transform="translate(139 310)"><path d="M0 0h38" stroke="#63a8ff" stroke-width="4"/><text class="legend" x="92" y="5">设备上网路径</text></g>
+  <g transform="translate(386 310)"><path d="M0 0h38" stroke="#f0a75f" stroke-width="3" stroke-dasharray="7 6"/><text class="legend" x="92" y="5">下游 DHCP / DNS</text></g>
+</svg>

@@ -143,9 +143,25 @@ button{cursor:pointer}
 .mode-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .mode{padding:20px;display:flex;justify-content:space-between;min-height:150px;color:inherit;text-align:left;width:100%}
 .mode.active{border-color:#6fcfa6;background:linear-gradient(145deg,#112a21,#0d1b17)}
+.mode>span:first-child{min-width:0}
 .mode h3{margin:12px 0 8px}
 .mode p,.cooperative p,.import-panel p,.source-card p{color:#81958e;font-size:13px;line-height:1.5}
 .radio{color:#77dfb1}
+.mode-state{display:grid;flex:0 0 auto;gap:24px;justify-items:center}
+.mode-chevron{color:#77dfb1;font-size:18px;line-height:1;transform:rotate(0);transition:transform .28s cubic-bezier(.22,1,.36,1)}
+.mode[aria-expanded="true"] .mode-chevron{transform:rotate(180deg)}
+.mode-detail-shell{display:grid;grid-template-rows:0fr;opacity:0;transform:translateY(-10px);visibility:hidden;transition:grid-template-rows .34s cubic-bezier(.22,1,.36,1),opacity .22s ease,transform .34s cubic-bezier(.22,1,.36,1),visibility 0s linear .34s}
+.mode-detail-shell.open{grid-template-rows:1fr;opacity:1;transform:translateY(0);visibility:visible;transition-delay:0s}
+.mode-detail-clip{min-height:0;overflow:hidden}
+.mode-detail{margin-top:14px;animation:mode-detail-content-in .2s ease both}
+.mode-detail-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
+.mode-detail-heading h2{font-size:18px;margin:0}.mode-detail-heading p{color:#758a82;font-size:13px;margin:5px 0 0}
+.mode-detail-layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,.85fr);gap:24px;align-items:center;margin-top:16px}
+.mode-topology-image{width:100%;max-width:720px;aspect-ratio:2/1;margin:0 auto;background-position:center;background-repeat:no-repeat;background-size:contain}
+.mode-topology-image-same_wifi_dhcp{background-image:url('/network-topologies/same_wifi_dhcp-dark.svg')}.mode-topology-image-same_lan{background-image:url('/network-topologies/same_lan-dark.svg')}.mode-topology-image-isolated_lan{background-image:url('/network-topologies/isolated_lan-dark.svg')}
+.mode-detail-copy{display:grid;gap:11px;align-content:center}.mode-facts{display:grid;margin:0}.mode-facts>div{display:grid;grid-template-columns:82px minmax(0,1fr);gap:10px;align-items:baseline;padding:10px 0;border-bottom:1px solid #1d302a}.mode-facts>div:last-child{border-bottom:0}.mode-facts dt,.mode-facts dd{margin:0}.mode-facts dt{color:#71847d;font-size:11px}.mode-facts dd{color:#d9e7e1;font-size:13px;line-height:1.45}
+.mode-guidance{margin:0;border-left:3px solid #6fcfa6;line-height:1.6}
+@keyframes mode-detail-content-in{from{opacity:.18;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
 .pill{display:inline-block;border:1px solid #32463f;border-radius:99px;padding:4px 8px;color:#91a49d;font-size:10px}
 .pill.ok{border-color:#36775e;background:#173a2c;color:#9bf2c9}
 .pill.bad{border-color:#7d4038;background:#351c18;color:#ffb5a8}
@@ -345,6 +361,7 @@ button{cursor:pointer}
 .service-grid{grid-template-columns:repeat(2,1fr)}
 .config-form{grid-template-columns:repeat(2,minmax(0,1fr))}
 .dhcp-config-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.mode-detail-layout{grid-template-columns:1fr}.mode-detail-copy{grid-template-columns:minmax(0,1.4fr) minmax(260px,.8fr);gap:22px}
 .gateway-lifecycle-row{align-items:stretch;flex-direction:column}.gateway-lifecycle-row>button{width:100%}
 .registration-body{grid-template-columns:1fr}.device-layout{grid-template-columns:1fr 1fr}.ruleset-form{grid-template-columns:1fr 1fr 1fr}.ruleset-form .token-input{grid-column:1/-1}.ruleset-form button{grid-column:3}
 }
@@ -387,6 +404,8 @@ html[data-theme="light"] .device-traffic-grid{border-color:#d9e7e1}html[data-the
 html[data-theme="light"] .traffic-ip code{background:#e6f2ed;color:#2d6752}html[data-theme="light"] .traffic-connections,html[data-theme="light"] .traffic-rate strong{color:#26493d}html[data-theme="light"] .traffic-rate small,html[data-theme="light"] .traffic-egress small{color:#6a8077}html[data-theme="light"] .traffic-egress strong{color:#36564a}
 html[data-theme="light"] .device-trend-card{background:#f8fbfa}html[data-theme="light"] .traffic-section-heading button{background:#edf5f1;border-color:#bed3ca;color:#254c3e}
 html[data-theme="light"] .mode.active{border-color:#54a983;background:linear-gradient(145deg,#e2f3eb,#fff)}
+html[data-theme="light"] .mode-topology-image-same_wifi_dhcp{background-image:url('/network-topologies/same_wifi_dhcp-light.svg')}html[data-theme="light"] .mode-topology-image-same_lan{background-image:url('/network-topologies/same_lan-light.svg')}html[data-theme="light"] .mode-topology-image-isolated_lan{background-image:url('/network-topologies/isolated_lan-light.svg')}
+html[data-theme="light"] .mode-detail-heading p,html[data-theme="light"] .mode-facts dt{color:#60776e}html[data-theme="light"] .mode-facts>div{border-color:#d9e7e1}html[data-theme="light"] .mode-facts dd{color:#26493d}
 html[data-theme="light"] .service,html[data-theme="light"] .check,html[data-theme="light"] .row{border-color:#d9e7e1}
 html[data-theme="light"] .traffic-table-wrap,html[data-theme="light"] .traffic-table td{border-color:#d9e7e1}
 html[data-theme="light"] .traffic-table th{background:#f4f9f7;color:#60776e}
@@ -456,7 +475,7 @@ html[data-theme="light"] .reload-dialog p,html[data-theme="light"] .reload-dialo
 @media(max-width:1150px){
 .dashboard-live-grid{grid-template-columns:1fr 1fr}.gateway-health-card{grid-column:1/-1}.dashboard-monitor-grid{grid-template-columns:1fr}.source-import-grid,.source-grid{grid-template-columns:1fr}
 }
-@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button{transition:none!important}.button-spinner{animation:none}}
+@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell{transition:none!important}.mode-detail{animation:none}.button-spinner{animation:none}}
 
 /* Node health, outlet summaries and applied-path connectivity */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

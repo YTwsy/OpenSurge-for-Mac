@@ -186,18 +186,20 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '启动网关' }))
     expect(await screen.findByRole('heading', { name: '网关运行控制' })).toBeTruthy()
-    expect(screen.getByText(/同 LAN 手工网关运行时不使用/)).toBeTruthy()
+    const manualMode = within(document.querySelector('.mode-grid')!).getByRole('button', { name: /手工网关模式/ })
+    expect(manualMode.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(/手工网关模式运行时不使用/)).toBeTruthy()
     expect(screen.getByLabelText('DHCP 地址池起点').closest('fieldset')?.hasAttribute('disabled')).toBe(true)
     const downstream = screen.getByLabelText('下游 LAN 接口') as HTMLInputElement
     expect(downstream.getAttribute('list')).toBe('network-interface-options')
     await waitFor(() => expect(document.querySelectorAll('#network-interface-options option')).toHaveLength(2))
     expect(document.querySelector<HTMLOptionElement>('#network-interface-options option[value="en7"]')?.label).toBe('USB LAN · en7')
-    await userEvent.click(screen.getByRole('button', { name: '启动同 LAN 手工网关' }))
+    await userEvent.click(screen.getByRole('button', { name: '启动手工网关模式' }))
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('路由器 DHCP 不会被关闭'))
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-same-lan')
-    expect(await screen.findByText('同 LAN 手工网关已启动。')).toBeTruthy()
+    expect(await screen.findByText('手工网关模式已启动。')).toBeTruthy()
   })
 
   it('starts isolated downstream LAN while keeping DHCP fields editable', async () => {
@@ -225,9 +227,9 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
     expect((await screen.findByLabelText('Mac 网关 IPv4')).closest('fieldset')?.hasAttribute('disabled')).toBe(true)
-    await userEvent.click(screen.getByRole('button', { name: '停止同 LAN 手工网关' }))
+    await userEvent.click(screen.getByRole('button', { name: '停止手工网关模式' }))
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('客户端可能立即断网'))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('设备可能立即断网'))
     expect(api.gateway).toHaveBeenCalledWith('stop')
     expect(waitForOperation).toHaveBeenCalledWith('stop-same-lan')
   })
@@ -447,14 +449,44 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('button', { name: '将 Mac 切换为固定 IPv4' }).hasAttribute('disabled')).toBe(true)
   })
 
+  it('expands the DHCP takeover explanation by default and switches mode details', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
+
+    const takeover = await screen.findByRole('button', { name: /局域网 DHCP 接管/ })
+    const manual = screen.getByRole('button', { name: /手工网关模式/ })
+    const detail = document.getElementById('network-mode-detail')
+    expect(takeover.getAttribute('aria-expanded')).toBe('true')
+    expect(detail?.getAttribute('aria-hidden')).toBe('false')
+    expect(detail?.classList.contains('open')).toBe(true)
+    expect(within(detail!).getByText('让现有局域网设备自动接入 OpenSurge')).toBeTruthy()
+    expect(within(detail!).getByText('OpenSurge 会通过引导流程，协助你逐步完成网络设置、启动确认和停止后的网络恢复。')).toBeTruthy()
+    expect(within(detail!).getByRole('img', { name: /主路由关闭 DHCP/ })).toBeTruthy()
+
+    await userEvent.click(manual)
+    expect(manual.getAttribute('aria-expanded')).toBe('true')
+    expect(manual.getAttribute('aria-pressed')).toBe('true')
+    expect(takeover.getAttribute('aria-expanded')).toBe('false')
+    expect(within(detail!).getByText('仅让局域网内的部分设备使用 OpenSurge')).toBeTruthy()
+    expect(within(detail!).getByText('手工设置为使用 OpenSurge 的设备')).toBeTruthy()
+
+    await userEvent.click(manual)
+    expect(manual.getAttribute('aria-expanded')).toBe('false')
+    expect(detail?.getAttribute('aria-hidden')).toBe('true')
+    expect(detail?.classList.contains('open')).toBe(false)
+  })
+
   it('selects an isolated topology in the revisioned network editor', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
-    expect(screen.getByRole('button', { name: /同一 LAN DHCP 接管/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /局域网 DHCP 接管/ })).toBeTruthy()
     const isolated = await screen.findByRole('button', { name: /独立下游 LAN/ })
     await userEvent.click(isolated)
     expect(isolated.getAttribute('aria-pressed')).toBe('true')
+    expect(isolated.getAttribute('aria-expanded')).toBe('true')
+    expect(within(document.getElementById('network-mode-detail')!).getByText('通过独立 AP、SSID 或 VLAN 接入 OpenSurge')).toBeTruthy()
     expect(screen.getByLabelText('下游 LAN 接口')).toBeTruthy()
     expect(screen.getByLabelText('上游 DNS')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'mihomo DNS（推荐）' }))

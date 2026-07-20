@@ -1,10 +1,12 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
+import { NetworkModeDetail } from '../components/NetworkModeDetail'
 import { recoveryLabel } from '../status'
 import type { ControlConfig, GatewayPlan, NetworkInterfaceOption, Overview } from '../types'
 
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
+type NetworkMode = ControlConfig['gateway']['mode']
 
 export function NetworkPage({ overview, onChanged }: { overview: Overview | null; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false)
@@ -13,6 +15,8 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const [plan, setPlan] = useState<GatewayPlan | null>(null)
   const [config, setConfig] = useState<ControlConfig | null>(null)
   const [savedConfig, setSavedConfig] = useState<ControlConfig | null>(null)
+  const [expandedMode, setExpandedMode] = useState<NetworkMode | null>('same_wifi_dhcp')
+  const [detailMode, setDetailMode] = useState<NetworkMode>('same_wifi_dhcp')
   const [interfaceOptions, setInterfaceOptions] = useState<NetworkInterfaceOption[]>([])
   const [interfaceDiscoveryError, setInterfaceDiscoveryError] = useState(false)
   const [clientIPv4, setClientIPv4] = useState('')
@@ -42,7 +46,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
 
   useEffect(() => {
     let active = true
-    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
+    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
     void api.networkInterfaces().then(value => { if (active) setInterfaceOptions(value.interfaces) }).catch(() => { if (active) setInterfaceDiscoveryError(true) })
     return () => { active = false }
   }, [loadPlan])
@@ -52,6 +56,12 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     const sameLAN = mode === 'same_lan' || mode === 'same_wifi_dhcp'
     return { ...currentConfig, gateway: { ...currentConfig.gateway, mode }, dhcp: { ...currentConfig.dhcp, enabled: mode !== 'same_lan' }, transparent: { ...currentConfig.transparent, mode: sameLAN ? 'tun' : currentConfig.transparent.mode } }
   })
+
+  const toggleMode = (mode: NetworkMode) => {
+    setDetailMode(mode)
+    setExpandedMode(currentMode => currentMode === mode ? null : mode)
+    if (config?.gateway.mode !== mode) selectMode(mode)
+  }
 
   const save = async () => {
     if (!config) return
@@ -147,35 +157,38 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   }
 
   return <>
-    <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择 topology 并保存 desired 配置；客户端验收可以明确跳过，停止后也可选择恢复自动 DHCP 或保持静态 IPv4。" />
+    <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择设备如何接入 OpenSurge，并保存下次启动时使用的网络配置。使用 DHCP 接管时，OpenSurge 会引导你完成设置、确认和恢复。" />
     {error && <div className="notice warn" role="alert">{error}</div>}
     {message && <div className="notice ok-notice" role="status">{message}</div>}
     {config && <>
       <div className="mode-grid">
-        <Mode title="同一 LAN DHCP 接管" badge="重点场景" active={config.gateway.mode === 'same_wifi_dhcp'} disabled={!configurationEditable} onSelect={() => selectMode('same_wifi_dhcp')} description="Mac 与其他设备位于同一二层 LAN（Wi‑Fi 或以太网）；路由器 DHCP 由用户手动关闭。" />
-        <Mode title="同 LAN 手工网关" active={config.gateway.mode === 'same_lan'} disabled={!configurationEditable} onSelect={() => selectMode('same_lan')} description="路由器继续 DHCP；测试设备手工把网关与 DNS 指向 Mac。" />
-        <Mode title="独立下游 LAN" active={config.gateway.mode === 'isolated_lan'} disabled={!configurationEditable} onSelect={() => selectMode('isolated_lan')} description="独立 AP、SSID 或 VLAN；适合要求更强制策略的部署。" />
+        <Mode title="局域网 DHCP 接管" badge="自动接管" active={config.gateway.mode === 'same_wifi_dhcp'} expanded={expandedMode === 'same_wifi_dhcp'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('same_wifi_dhcp')} description="现有局域网 · 设备自动接入" />
+        <Mode title="手工网关模式" badge="部分设备" active={config.gateway.mode === 'same_lan'} expanded={expandedMode === 'same_lan'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('same_lan')} description="现有局域网 · 部分设备接入" />
+        <Mode title="独立下游 LAN" badge="独立网络" active={config.gateway.mode === 'isolated_lan'} expanded={expandedMode === 'isolated_lan'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('isolated_lan')} description="独立网络 · 下游设备自动接入" />
+      </div>
+      <div className={`mode-detail-shell ${expandedMode ? 'open' : ''}`} id="network-mode-detail" aria-hidden={!expandedMode}>
+        <div className="mode-detail-clip"><NetworkModeDetail key={detailMode} mode={detailMode} /></div>
       </div>
       <section className="section">
         <SectionTitle title="Desired 网络配置" subtitle={`这是下次启动要使用的目标值；保存本身不会切换网络。revision ${config.revision.slice(0, 12)}`} />
         <fieldset disabled={!configurationEditable} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
-          <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方拓扑，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址。保存不会立即改动网络；保存后的配置会在启动网关时应用。恢复资料已准备但网络尚未改动时仍可修正配置，保存后会从第 1 步重新开始。</p></div>
+          <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方网络模式，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址。保存不会立即改动网络；保存后的配置会在启动网关时应用。恢复资料已准备但网络尚未改动时仍可修正配置，保存后会从第 1 步重新开始。</p></div>
           <datalist id="network-interface-options">
             {interfaceOptions.map(option => <option key={`${option.interface}:${option.network_service}`} value={option.interface} label={`${option.network_service} · ${option.interface}`} />)}
           </datalist>
           {interfaceDiscoveryError && <div className="notice">无法读取当前 Mac 的网络接口清单；仍可手工填写接口名称。</div>}
           <div className="config-form">
-          <ConfigField label="下游 LAN 接口" setting="gateway.interface" hint="可从当前 Mac 网络服务中选择，也可手工输入接口名。在同一 LAN DHCP 接管中，它必须和上游接口相同；独立 LAN 通常是 AP、SSID 或 VLAN 的下游接口。">
+          <ConfigField label="下游 LAN 接口" setting="gateway.interface" hint="可从当前 Mac 网络服务中选择，也可手工输入接口名。在局域网 DHCP 接管模式中，它必须和上游接口相同；独立 LAN 通常是 AP、SSID 或 VLAN 的下游接口。">
             <input aria-label="下游 LAN 接口" list="network-interface-options" value={config.gateway.interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, interface: event.target.value } })} />
           </ConfigField>
-          <ConfigField label="上游网络接口" setting="gateway.upstream_interface" hint="可从当前 Mac 网络服务中选择，也可手工输入接口名。pf 会从这里做 NAT；同一 LAN DHCP 接管通常与下游 LAN 接口相同。">
+          <ConfigField label="上游网络接口" setting="gateway.upstream_interface" hint="可从当前 Mac 网络服务中选择，也可手工输入接口名。pf 会从这里做 NAT；局域网 DHCP 接管模式通常与下游 LAN 接口相同。">
             <input aria-label="上游网络接口" list="network-interface-options" value={config.gateway.upstream_interface} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, upstream_interface: event.target.value } })} />
           </ConfigField>
-          <ConfigField label="Mac 网关 IPv4" setting="gateway.lan_ip / dns.listen" hint="分配给 Mac 的下游网关地址，也是 dnsmasq 的 DNS 监听地址。不能放进 DHCP 地址池；同一 LAN 接管时应使用当前网段的固定且未占用地址。">
+          <ConfigField label="Mac 网关 IPv4" setting="gateway.lan_ip / dns.listen" hint="分配给 Mac 的下游网关地址，也是 dnsmasq 的 DNS 监听地址。不能放进 DHCP 地址池；局域网 DHCP 接管时应使用当前网段的固定且未占用地址。">
             <input aria-label="Mac 网关 IPv4" value={config.gateway.lan_ip} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_ip: event.target.value }, dns: { ...config.dns, listen: event.target.value } })} />
           </ConfigField>
           <fieldset className={`dhcp-config-group ${dhcpRuntimeDisabled ? 'runtime-inactive' : ''}`} disabled={dhcpRuntimeDisabled}>
-            <legend><strong>DHCP 地址池</strong><small>{dhcpRuntimeDisabled ? '同 LAN 手工网关运行时不使用；当前值仅保留供切换 topology 后复用' : 'dnsmasq 为下游客户端分配 IPv4 时使用'}</small></legend>
+            <legend><strong>DHCP 地址池</strong><small>{dhcpRuntimeDisabled ? '手工网关模式运行时不使用；当前值仅保留供切换网络模式后复用' : 'dnsmasq 为下游客户端分配 IPv4 时使用'}</small></legend>
             <div className="dhcp-config-grid">
               <ConfigField label="地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4；应与 Mac 网关位于同一 /24。">
                 <input aria-label="DHCP 地址池起点" value={config.dhcp.range_start} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_start: event.target.value } })} />
@@ -196,7 +209,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
             <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
           </ConfigField>
-          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。同 LAN 手工网关与同一 LAN DHCP 接管必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
+          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。手工网关模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
             <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, mode: event.target.value as 'off' | 'tun' } })}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
           </ConfigField>
           <ConfigField label="每设备策略" setting="device_policy.file" hint="启用后可在“设备”页为 MAC 固定租约及独立 mihomo 策略；若尚无策略文件，保存时会创建一个空文件。关闭后不再使用此策略文件。">
@@ -268,11 +281,11 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
 }
 
 function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
-  return mode === 'same_lan' ? '同 LAN 手工网关' : '独立下游 LAN'
+  return mode === 'same_lan' ? '手工网关模式' : '独立下游 LAN'
 }
 
 function gatewayModeDescription(config: ControlConfig) {
-  if (config.gateway.mode === 'same_lan') return '启动 DNS、mihomo TUN、PF/NAT 与 IPv4 forwarding；路由器 DHCP 保持开启，客户端自行把网关和 DNS 指向 Mac。'
+  if (config.gateway.mode === 'same_lan') return '启动 DNS、mihomo TUN、PF/NAT 与 IPv4 forwarding；路由器 DHCP 保持开启，部分设备需手工把网关和 DNS 指向 Mac。'
   const proxyMode = config.transparent.mode === 'tun' ? 'mihomo TUN 透明代理' : '不启用透明代理'
   return `启动 DHCP/DNS、PF/NAT 与 IPv4 forwarding；当前配置为${proxyMode}。`
 }
@@ -280,8 +293,8 @@ function gatewayModeDescription(config: ControlConfig) {
 function gatewayConfirmation(mode: ControlConfig['gateway']['mode'], action: 'start' | 'stop') {
   if (mode === 'same_lan') {
     return action === 'start'
-      ? '将按已保存配置启动同 LAN 手工网关。路由器 DHCP 不会被关闭；客户端需要自行把网关和 DNS 指向 Mac。继续吗？'
-      : '停止后，仍把网关或 DNS 指向 Mac 的客户端可能立即断网。确定停止同 LAN 手工网关吗？'
+      ? '将按已保存配置启动手工网关模式。路由器 DHCP 不会被关闭；部分设备需要自行把网关和 DNS 指向 Mac。继续吗？'
+      : '停止后，仍把网关或 DNS 指向 Mac 的设备可能立即断网。确定停止手工网关模式吗？'
   }
   return action === 'start'
     ? '将按已保存配置启动独立下游 LAN 的 DHCP/DNS、PF/NAT 与 IPv4 forwarding。继续吗？'
