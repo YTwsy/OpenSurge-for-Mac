@@ -994,6 +994,15 @@ func (s *Server) handleApplyStatic(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "set_static_failed", err.Error())
 		return
 	}
+	current, err := s.discoverNetwork(r.Context(), manual.NetworkService, manual.Interface)
+	if err == nil {
+		err = macosnetwork.VerifyManual(current, manual)
+	}
+	if err != nil {
+		message := fmt.Sprintf("Mac 仍未使用预期的固定 IPv4 %s。请打开“系统设置 → 网络 → %s → 详细信息 → TCP/IP”，确认“配置 IPv4”为“手动”且 IPv4 地址正确，然后重试。检查结果：%v", manual.IPv4, manual.NetworkService, err)
+		writeError(w, http.StatusBadGateway, "static_ipv4_not_applied", message)
+		return
+	}
 	if err := s.pingRouter(r.Context(), snapshot.Router); err != nil {
 		writeError(w, http.StatusBadGateway, "upstream_unreachable", err.Error())
 		return

@@ -320,6 +320,28 @@ func TestSameWiFiNetworkRecoveryFlow(t *testing.T) {
 	}
 }
 
+func TestApplyStaticWarnsWhenMacStillUsesDHCP(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
+		t.Fatalf("prepare: %d %s", response.Code, response.Body.String())
+	}
+	server.discoverNetwork = func(context.Context, string, string) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4Mode: macosnetwork.IPv4ModeDHCP, IPv4: "192.168.1.10", SubnetMask: "255.255.255.0", Router: "192.168.1.1"}, nil
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/network/apply-static", nil)
+	if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), "static_ipv4_not_applied") || !strings.Contains(response.Body.String(), "Mac 仍未使用预期的固定 IPv4 192.168.1.20") {
+		t.Fatalf("apply static status=%d body=%s", response.Code, response.Body.String())
+	}
+	if network.manual.IPv4 != "192.168.1.20" {
+		t.Fatalf("manual setup was not attempted: %#v", network.manual)
+	}
+	state, _ := server.store.Recovery()
+	if state.Stage != RecoveryPrepared {
+		t.Fatalf("unverified fixed IPv4 advanced recovery to %s", state.Stage)
+	}
+}
+
 func TestManualRecoveryFinishRequiresExplicitConfirmation(t *testing.T) {
 	server, network := newTestServerWithNetwork(t)
 	state := RecoveryState{
@@ -1301,7 +1323,11 @@ runtime:
 	}
 	network := &fakeNetworkRunner{}
 	discover := func(context.Context, string, string) (macosnetwork.Snapshot, error) {
-		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"192.168.1.1"}}, nil
+		mode := macosnetwork.IPv4ModeDHCP
+		if network.manual.IPv4 != "" {
+			mode = macosnetwork.IPv4ModeManual
+		}
+		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4Mode: mode, IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"192.168.1.1"}}, nil
 	}
 	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
 		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi"}, {Interface: "en7", NetworkService: "USB LAN"}}, nil

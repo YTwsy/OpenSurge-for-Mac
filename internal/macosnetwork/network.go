@@ -14,6 +14,7 @@ import (
 type Snapshot struct {
 	NetworkService string   `json:"network_service"`
 	Interface      string   `json:"interface"`
+	IPv4Mode       string   `json:"-"`
 	HardwareAddr   string   `json:"hardware_address,omitempty"`
 	IPv4           string   `json:"ipv4,omitempty"`
 	SubnetMask     string   `json:"subnet_mask,omitempty"`
@@ -21,6 +22,11 @@ type Snapshot struct {
 	DNS            []string `json:"dns"`
 	IPv6Default    bool     `json:"ipv6_default"`
 }
+
+const (
+	IPv4ModeDHCP   = "dhcp"
+	IPv4ModeManual = "manual"
+)
 
 type ManualConfig struct {
 	NetworkService string   `json:"network_service"`
@@ -118,6 +124,25 @@ func ValidateManual(cfg ManualConfig) error {
 		if net.ParseIP(server) == nil {
 			return fmt.Errorf("invalid DNS server %q", server)
 		}
+	}
+	return nil
+}
+
+func VerifyManual(snapshot Snapshot, expected ManualConfig) error {
+	if snapshot.NetworkService != expected.NetworkService || snapshot.Interface != expected.Interface {
+		return fmt.Errorf("network service or interface changed during fixed IPv4 setup")
+	}
+	if snapshot.IPv4Mode != IPv4ModeManual {
+		if snapshot.IPv4Mode == IPv4ModeDHCP {
+			return fmt.Errorf("network service %q still reports DHCP configuration", expected.NetworkService)
+		}
+		return fmt.Errorf("network service %q did not report manual IPv4 configuration", expected.NetworkService)
+	}
+	if snapshot.IPv4 != expected.IPv4 {
+		return fmt.Errorf("network service %q reports IPv4 %s instead of %s", expected.NetworkService, snapshot.IPv4, expected.IPv4)
+	}
+	if snapshot.SubnetMask != expected.SubnetMask || snapshot.Router != expected.Router {
+		return fmt.Errorf("network service %q reports an unexpected subnet mask or router", expected.NetworkService)
 	}
 	return nil
 }
@@ -230,6 +255,12 @@ func PingRouter(ctx context.Context, router string) error {
 func parseNetworkInfo(output string) Snapshot {
 	result := Snapshot{DNS: []string{}}
 	for _, line := range strings.Split(output, "\n") {
+		switch strings.TrimSpace(line) {
+		case "DHCP Configuration":
+			result.IPv4Mode = IPv4ModeDHCP
+		case "Manual Configuration":
+			result.IPv4Mode = IPv4ModeManual
+		}
 		key, value, ok := strings.Cut(line, ":")
 		if !ok {
 			continue

@@ -89,6 +89,13 @@ client validated 或明确跳过客户端验收的接管阶段执行，且成功
 这是一条显式恢复路径，不是自动 watchdog。只有真实 same-WiFi 链路断开/重连门槛证明
 触发条件不会误判、恢复后本机 DIRECT 和代理出口均重新可用，才应增加自动触发。
 
+## same-WiFi 固定 IPv4 确认
+
+恢复状态机第 2 步不能只以 `networksetup -setmanual` 返回成功作为完成证据。Control API
+随后必须回读目标网络服务，确认其 IPv4 配置方式为手动，且 IPv4、子网掩码和路由器与
+本次目标配置一致；确认失败时返回 `static_ipv4_not_applied`，让 Web GUI 提示操作者检查
+macOS“系统设置 → 网络 → 详细信息 → TCP/IP”，并且不得进入 `mac_static`。
+
 ## 产品不变量
 
 生命周期服务于全屋代理能力。不要把 DHCP、mihomo、pf 或 forwarding 当作互不

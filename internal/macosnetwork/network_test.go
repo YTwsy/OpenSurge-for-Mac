@@ -4,8 +4,12 @@ import "testing"
 
 func TestParseNetworkInfo(t *testing.T) {
 	got := parseNetworkInfo("DHCP Configuration\nIP address: 192.168.1.20\nSubnet mask: 255.255.255.0\nRouter: 192.168.1.1\n")
-	if got.IPv4 != "192.168.1.20" || got.SubnetMask != "255.255.255.0" || got.Router != "192.168.1.1" {
+	if got.IPv4Mode != IPv4ModeDHCP || got.IPv4 != "192.168.1.20" || got.SubnetMask != "255.255.255.0" || got.Router != "192.168.1.1" {
 		t.Fatalf("parseNetworkInfo() = %#v", got)
+	}
+	manual := parseNetworkInfo("Manual Configuration\nIP address: 192.168.1.21\nSubnet mask: 255.255.255.0\nRouter: 192.168.1.1\n")
+	if manual.IPv4Mode != IPv4ModeManual {
+		t.Fatalf("manual IPv4 mode = %q", manual.IPv4Mode)
 	}
 }
 
@@ -71,5 +75,22 @@ func TestValidateManual(t *testing.T) {
 	invalid.Router = "192.168.2.1"
 	if err := ValidateManual(invalid); err == nil {
 		t.Fatal("router outside subnet should fail")
+	}
+}
+
+func TestVerifyManualRequiresManualModeAndExpectedIPv4(t *testing.T) {
+	expected := ManualConfig{NetworkService: "Wi-Fi", Interface: "en0", IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1"}
+	applied := Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4Mode: IPv4ModeManual, IPv4: expected.IPv4, SubnetMask: expected.SubnetMask, Router: expected.Router}
+	if err := VerifyManual(applied, expected); err != nil {
+		t.Fatal(err)
+	}
+	applied.IPv4Mode = IPv4ModeDHCP
+	if err := VerifyManual(applied, expected); err == nil {
+		t.Fatal("DHCP configuration should not verify as fixed IPv4")
+	}
+	applied.IPv4Mode = IPv4ModeManual
+	applied.IPv4 = "192.168.1.99"
+	if err := VerifyManual(applied, expected); err == nil {
+		t.Fatal("unexpected manual IPv4 should not verify")
 	}
 }

@@ -479,6 +479,22 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('button', { name: '将 Mac 切换为固定 IPv4' }).hasAttribute('disabled')).toBe(true)
   })
 
+  it('shows the fixed IPv4 readback warning during recovery step 2', async () => {
+    vi.mocked(api.gatewayPlan).mockResolvedValue({
+      schema_version: 1, revision: 'config-revision', topology: 'same_wifi_dhcp',
+      snapshot: { network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.20', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: ['192.168.1.1'], ipv6_default: false },
+      protected_ipv4: ['192.168.1.1', '192.168.1.20'], dhcp_servers: [], warnings: [], blockers: [],
+    })
+    vi.mocked(api.applyStatic).mockRejectedValue(new RequestError(502, 'static_ipv4_not_applied', 'Mac 仍未使用预期的固定 IPv4 192.168.1.20。请在系统设置中确认“配置 IPv4”为“手动”后重试。'))
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(await screen.findByRole('button', { name: '将 Mac 切换为固定 IPv4' }))
+
+    const warning = await screen.findByRole('alert')
+    expect(warning.textContent).toContain('Mac 仍未使用预期的固定 IPv4 192.168.1.20')
+    expect(api.applyStatic).toHaveBeenCalledOnce()
+  })
+
   it('expands the DHCP takeover explanation by default and switches mode details', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
