@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE="$ROOT/apps/menubar"
-OUTPUT="$ROOT/bin/OpenSurge Menu Bar.app"
+OUTPUT="$ROOT/bin/OpenSurge.app"
 SCRATCH="${OPENSURGE_SWIFT_SCRATCH:-/private/tmp/opensurge-menubar-release}"
 APP_ICON_SOURCE="$PACKAGE/Resources/OpenSurgeAppIcon.png"
 MENU_BAR_ICON_SOURCE="$PACKAGE/Resources/OpenSurgeMenuBarIcon.png"

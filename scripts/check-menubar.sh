@@ -40,3 +40,7 @@ if grep -Fq '.alert(' "$MENU_CONTENT"; then
   echo "menu bar quit action must not depend on SwiftUI alert dismissal state" >&2
   exit 1
 fi
+if grep -Fq 'ProgressView' "$MENU_CONTENT"; then
+  echo "background menu bar polling must not show a periodic loading spinner" >&2
+  exit 1
+fi

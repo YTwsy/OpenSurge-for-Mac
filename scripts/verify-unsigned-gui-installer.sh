@@ -19,10 +19,14 @@ grep -Fq 'Status: no signature' <<<"$signature" || {
 }
 
 payload_files="$(pkgutil --payload-files "$PKG")"
-grep -Fxq './Applications/OpenSurge Menu Bar.app' <<<"$payload_files" || {
-  echo "menu bar app is missing from the installer payload" >&2
+grep -Fxq './Applications/OpenSurge.app' <<<"$payload_files" || {
+  echo "OpenSurge app is missing from the installer payload" >&2
   exit 1
 }
+if grep -Fq './Applications/OpenSurge Menu Bar.app' <<<"$payload_files"; then
+  echo "legacy menu bar app name must not remain in the installer payload" >&2
+  exit 1
+fi
 grep -Fxq './Library/PrivilegedHelperTools/com.opensurge.helper' <<<"$payload_files" || {
   echo "privileged helper is missing from the installer payload" >&2
   exit 1
@@ -56,7 +60,7 @@ mkdir -p "$payload"
 (cd "$payload" && gzip -dc "$expanded/Payload" | cpio -idm --quiet)
 
 executables=(
-  "$payload/Applications/OpenSurge Menu Bar.app/Contents/MacOS/OpenSurgeMenuBar"
+  "$payload/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar"
   "$payload/Library/Application Support/OpenSurge/bin/omg"
   "$payload/Library/Application Support/OpenSurge/bin/mihomo"
   "$payload/Library/Application Support/OpenSurge/bin/opensurge-network"
@@ -65,6 +69,12 @@ executables=(
   "$payload/Library/Application Support/OpenSurge/share/opensurge-control"
   "$payload/Library/PrivilegedHelperTools/com.opensurge.helper"
 )
+for bundle_name_key in CFBundleName CFBundleDisplayName; do
+  [[ "$(/usr/libexec/PlistBuddy -c "Print :$bundle_name_key" "$payload/Applications/OpenSurge.app/Contents/Info.plist")" == "OpenSurge" ]] || {
+    echo "packaged app $bundle_name_key must use the OpenSurge product name" >&2
+    exit 1
+  }
+done
 version_not_newer_than() {
   local actual=$1 maximum=$2
   local actual_major=${actual%%.*} actual_minor=${actual#*.}

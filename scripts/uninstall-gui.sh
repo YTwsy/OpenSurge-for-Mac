@@ -23,7 +23,7 @@ if [[ -x "/Library/Application Support/OpenSurge/bin/omg" && -f "/Library/Applic
 fi
 launchctl bootout system/com.opensurge.helper 2>/dev/null || true
 rm -f "$USER_HOME/Library/LaunchAgents/com.opensurge.control.plist"
-rm -rf "$USER_HOME/Library/Application Support/OpenSurge" "/Applications/OpenSurge Menu Bar.app"
+rm -rf "$USER_HOME/Library/Application Support/OpenSurge" "/Applications/OpenSurge.app" "/Applications/OpenSurge Menu Bar.app"
 rm -f /Library/LaunchDaemons/com.opensurge.helper.plist /Library/PrivilegedHelperTools/com.opensurge.helper
 rm -rf "/Library/Application Support/OpenSurge" /Library/Logs/OpenSurge /var/run/opensurge
 echo "OpenSurge GUI components removed. Network recovery state was complete."

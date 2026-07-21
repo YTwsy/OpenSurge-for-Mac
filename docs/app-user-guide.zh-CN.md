@@ -14,7 +14,7 @@
    `x86_64-unsigned.pkg`。
 2. 双击安装包。如果 macOS 阻止打开，请前往**系统设置 → 隐私与安全性**，对这个安装包
    选择**仍要打开**。不需要全局关闭 Gatekeeper。
-3. 安装完成后，从 `/Applications` 打开 **OpenSurge Menu Bar**。
+3. 安装完成后，从 `/Applications` 打开 **OpenSurge**。
 4. 点击菜单栏图标，再选择**打开 OpenSurge**进入 Web GUI。
 
 菜单栏 App 用于显示状态、恢复提醒和打开 Web GUI；订阅、网络、设备和策略操作都在

@@ -66,11 +66,11 @@ install -m 0644 "$ROOT/third_party/licenses/Apache-2.0.txt" "$LICENSE_ROOT/Apach
 install -m 0644 "$ROOT/third_party/licenses/yaml-v3-LICENSE" "$LICENSE_ROOT/yaml-v3-LICENSE"
 install -m 0644 "$ROOT/third_party/licenses/react-MIT.txt" "$LICENSE_ROOT/react-MIT.txt"
 install -m 0644 "$ROOT/THIRD_PARTY_NOTICES.md" "$LICENSE_ROOT/THIRD_PARTY_NOTICES.md"
-ditto --norsrc --noextattr "$ROOT/bin/OpenSurge Menu Bar.app" "$PAYLOAD/Applications/OpenSurge Menu Bar.app"
+ditto --norsrc --noextattr "$ROOT/bin/OpenSurge.app" "$PAYLOAD/Applications/OpenSurge.app"
 xattr -cr "$PAYLOAD"
 
 for executable in \
-  "$PAYLOAD/Applications/OpenSurge Menu Bar.app/Contents/MacOS/OpenSurgeMenuBar" \
+  "$PAYLOAD/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar" \
   "$APP_ROOT/bin/omg" \
   "$APP_ROOT/bin/opensurge-install-config" \
   "$APP_ROOT/bin/opensurge-network" \
@@ -87,7 +87,7 @@ done
 if [[ -n "${OPENSURGE_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Library/PrivilegedHelperTools/com.opensurge.helper"
   codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$APP_ROOT/bin/omg" "$APP_ROOT/bin/opensurge-install-config" "$APP_ROOT/share/opensurge-control"
-  codesign --force --deep --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Applications/OpenSurge Menu Bar.app"
+  codesign --force --deep --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Applications/OpenSurge.app"
 fi
 
 PKG_ARGS=(

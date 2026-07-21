@@ -16,7 +16,7 @@ CLI and development workflows are intentionally left out.
 2. Double-click the package. If macOS blocks it, open **System Settings →
    Privacy & Security** and choose **Open Anyway** for this package. You do not
    need to disable Gatekeeper globally.
-3. Open **OpenSurge Menu Bar** from `/Applications`.
+3. Open **OpenSurge** from `/Applications`.
 4. Click the menu bar icon and choose **打开 OpenSurge** (Open OpenSurge) to
    launch the Web GUI.
 

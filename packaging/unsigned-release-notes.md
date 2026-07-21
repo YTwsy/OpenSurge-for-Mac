@@ -38,7 +38,7 @@ Silicon runner 上交叉构建；本版本不宣称已在实体 Intel Mac 上运
 3. Double-click the package. When Gatekeeper blocks it, open **System Settings →
    Privacy & Security**, choose **Open Anyway**, authenticate, and reopen the package.
 4. Finish Installer with an administrator account, then open
-   **OpenSurge Menu Bar** from `/Applications`.
+   **OpenSurge** from `/Applications`.
 
 1. 下载与 Mac 芯片匹配的安装包及 `SHA256SUMS`。
 2. 可选：运行 `shasum -a 256 -c SHA256SUMS` 校验已下载的安装包，并使用
@@ -48,7 +48,7 @@ Silicon runner 上交叉构建；本版本不宣称已在实体 Intel Mac 上运
 3. 双击安装包；被 Gatekeeper 阻止后，进入**系统设置 → 隐私与安全性**，选择
    **仍要打开**、完成身份验证，然后重新打开安装包。
 4. 使用管理员账户完成 Installer，随后从 `/Applications` 打开
-   **OpenSurge Menu Bar**。
+   **OpenSurge**。
 
 Do not disable Gatekeeper globally or remove quarantine recursively. The installed
 gateway remains stopped until you explicitly start it from the OpenSurge control plane.

@@ -169,7 +169,7 @@ Double-click the package. If Gatekeeper blocks it, open **System Settings →
 Privacy & Security**, choose **Open Anyway**, authenticate, and open the same
 package again. Do not disable Gatekeeper globally or recursively remove
 quarantine attributes. Finish Installer with an administrator account, then
-open **OpenSurge Menu Bar** from `/Applications`. Installation starts the local
+open **OpenSurge** from `/Applications`. Installation starts the local
 helper and Control Service, but the gateway remains stopped until you explicitly
 start it from the control plane.
 

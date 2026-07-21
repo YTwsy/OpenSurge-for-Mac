@@ -15,7 +15,6 @@ struct MenuContentView: View {
                     Text(model.indicator.accessibilityLabel).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if model.isRefreshing { ProgressView().controlSize(.small) }
             }
 
             if let status = model.status {

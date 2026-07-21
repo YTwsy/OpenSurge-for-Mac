@@ -10,6 +10,7 @@ RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
 MENUBAR_PACKAGE="$ROOT/apps/menubar/Package.swift"
 MENUBAR_INFO="$ROOT/apps/menubar/Resources/Info.plist"
+GUI_COMPONENTS="$ROOT/packaging/gui-components.plist"
 APP_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeAppIcon.png"
 MENU_BAR_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeMenuBarIcon.png"
 WEB_ICON_SOURCE="$ROOT/web/public/opensurge-icon.png"
@@ -73,6 +74,14 @@ grep -Fq 'pkill -TERM -u "$UID_VALUE" -x OpenSurgeMenuBar' "$PREINSTALL" || {
   echo "preinstall must stop the menu bar app" >&2
   exit 1
 }
+grep -Fq 'rm -rf "/Applications/OpenSurge Menu Bar.app"' "$POSTINSTALL" || {
+  echo "postinstall must remove the legacy menu bar app bundle" >&2
+  exit 1
+}
+grep -Fq '"/Applications/OpenSurge.app" "/Applications/OpenSurge Menu Bar.app"' "$ROOT/scripts/uninstall-gui.sh" || {
+  echo "uninstall must remove both current and legacy app bundles" >&2
+  exit 1
+}
 grep -Fq 'if [[ ! -f "$ROOT/config.yaml" ]]' "$POSTINSTALL" || {
   echo "postinstall must preserve an existing config during upgrade" >&2
   exit 1
@@ -103,6 +112,18 @@ for bundle_name_key in CFBundleName CFBundleDisplayName; do
     exit 1
   }
 done
+grep -Fq 'OUTPUT="$ROOT/bin/OpenSurge.app"' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build output must use the OpenSurge product name" >&2
+  exit 1
+}
+grep -Fq '<string>Applications/OpenSurge.app</string>' "$GUI_COMPONENTS" || {
+  echo "GUI component metadata must install OpenSurge.app" >&2
+  exit 1
+}
+grep -Fq '"$PAYLOAD/Applications/OpenSurge.app"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "GUI installer payload must use OpenSurge.app" >&2
+  exit 1
+}
 grep -Fq 'OpenSurgeAppIcon.icns' "$ROOT/scripts/build-menubar-app.sh" || {
   echo "menu bar build must generate the app icon resource" >&2
   exit 1

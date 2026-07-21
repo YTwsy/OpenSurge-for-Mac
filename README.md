@@ -141,7 +141,7 @@ gh attestation verify OpenSurge-for-Mac-*-x86_64-unsigned.pkg \
 双击安装包。如果 Gatekeeper 阻止安装，进入**系统设置 → 隐私与安全性**，选择
 **仍要打开**并完成身份验证，然后再次打开同一个安装包。不要全局关闭 Gatekeeper，
 也不要递归删除 quarantine。使用管理员账户完成 Installer 后，从 `/Applications`
-打开 **OpenSurge Menu Bar**。安装过程会启动本地 helper 与 Control Service，但网关
+打开 **OpenSurge**。安装过程会启动本地 helper 与 Control Service，但网关
 仍保持停止，只有在控制面中明确操作才会启动。
 
 pkg 升级会在同一 LAN DHCP 恢复未完成时拒绝执行。替换 payload 前，preinstall 先停止

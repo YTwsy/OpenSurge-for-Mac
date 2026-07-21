@@ -37,4 +37,9 @@ install -o "$CONSOLE_USER" -g staff -m 0644 "$ROOT/share/com.opensurge.control.p
 /usr/libexec/PlistBuddy -c "Set :StandardErrorPath $USER_ROOT/logs/control-error.log" "$AGENT"
 launchctl bootout "gui/$UID_VALUE/com.opensurge.control" 2>/dev/null || true
 launchctl bootstrap "gui/$UID_VALUE" "$AGENT"
+
+# OpenSurge.app replaces the legacy product-facing bundle name. Remove the old
+# bundle only after the new payload has been installed so upgrades cannot leave
+# two Launchpad entries for the same bundle identifier.
+rm -rf "/Applications/OpenSurge Menu Bar.app"
 exit 0

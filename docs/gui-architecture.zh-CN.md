@@ -228,10 +228,15 @@ make gui-installer
 `CFBundleShortVersionString`，`OPENSURGE_BUILD_NUMBER` 写入 `CFBundleVersion`；不要让新
 pkg 携带仍标成旧版本的 App，否则现场无法可靠区分已安装二进制是否包含最新修复。
 
-安装器显式以 `/` 为 payload 根目录，并将 `OpenSurge Menu Bar.app` 声明为不可
-relocatable bundle，确保它固定安装到 `/Applications/OpenSurge Menu Bar.app`。
+安装器显式以 `/` 为 payload 根目录，并将 `OpenSurge.app` 声明为不可
+relocatable bundle，确保它固定安装到 `/Applications/OpenSurge.app`。
 不要移除 `packaging/gui-components.plist` 或改回让 `pkgbuild` 自动推断安装位置；
 否则 Installer 可能把 App relocate 回构建工作区的 `payload/Applications`。
+
+升级到采用产品名 bundle 的版本时，postinstall 会在新 payload 已落盘后删除旧的
+`/Applications/OpenSurge Menu Bar.app`，避免 Launchpad 同时保留两个相同 bundle ID
+的入口；卸载脚本兼容清理新旧两个路径。内部 Swift executable 仍名为
+`OpenSurgeMenuBar`，launchd label 与 bundle identifier 也不因这个显示名称迁移而改变。
 
 安装包包含 Web 静态资源（嵌入 control binary）、用户级 Control Service、菜单栏 App、
 CLI 和 root helper。postinstall 会创建 root:admin、用户只读的 applied 配置/runtime，

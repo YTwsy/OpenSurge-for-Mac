@@ -4,7 +4,7 @@
 <array>
   <dict>
     <key>RootRelativeBundlePath</key>
-    <string>Applications/OpenSurge Menu Bar.app</string>
+    <string>Applications/OpenSurge.app</string>
     <key>BundleIsRelocatable</key>
     <false/>
     <key>BundleIsVersionChecked</key>
