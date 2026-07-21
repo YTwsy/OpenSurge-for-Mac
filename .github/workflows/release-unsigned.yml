@@ -134,9 +134,9 @@ jobs:
         run: |
           release_dir="$GITHUB_WORKSPACE/artifacts/release"
           gh release create "$GITHUB_REF_NAME" \
-            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-arm64-unsigned.pkg#Unsigned Apple Silicon installer" \
-            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-x86_64-unsigned.pkg#Unsigned Intel installer" \
-            "$release_dir/SHA256SUMS#SHA-256 checksums" \
+            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-arm64-unsigned.pkg#Apple Silicon 安装包 / Apple Silicon installer" \
+            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-x86_64-unsigned.pkg#Intel 安装包 / Intel installer" \
+            "$release_dir/SHA256SUMS#SHA-256 校验文件 / SHA-256 checksums" \
             --verify-tag \
             --latest \
             --title "OpenSurge for Mac $GITHUB_REF_NAME" \
