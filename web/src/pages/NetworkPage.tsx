@@ -178,7 +178,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     {config && <>
       <div className="mode-grid">
         <Mode title="局域网 DHCP 接管" badge="自动接管" active={config.gateway.mode === 'same_wifi_dhcp'} expanded={expandedMode === 'same_wifi_dhcp'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('same_wifi_dhcp')} description="现有局域网 · 设备自动接入" />
-        <Mode title="手工网关模式" badge="部分设备" active={config.gateway.mode === 'same_lan'} expanded={expandedMode === 'same_lan'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('same_lan')} description="现有局域网 · 部分设备接入" />
+        <Mode title="旁路由模式" badge="部分设备" active={config.gateway.mode === 'same_lan'} expanded={expandedMode === 'same_lan'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('same_lan')} description="现有局域网 · 部分设备手动接入" />
         <Mode title="独立下游 LAN" badge="独立网络" active={config.gateway.mode === 'isolated_lan'} expanded={expandedMode === 'isolated_lan'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('isolated_lan')} description="独立网络 · 下游设备自动接入" />
       </div>
       <div className={`mode-detail-shell ${expandedMode ? 'open' : ''}`} id="network-mode-detail" aria-hidden={!expandedMode}>
@@ -203,7 +203,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             <input aria-label="Mac 网关 IPv4" value={config.gateway.lan_ip} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_ip: event.target.value }, dns: { ...config.dns, listen: event.target.value } })} />
           </ConfigField>
           <fieldset className={`dhcp-config-group ${dhcpRuntimeDisabled ? 'runtime-inactive' : ''}`} disabled={dhcpRuntimeDisabled}>
-            <legend><strong>DHCP 地址池</strong><small>{dhcpRuntimeDisabled ? '手工网关模式运行时不使用；当前值仅保留供切换网络模式后复用' : 'dnsmasq 为下游客户端分配 IPv4 时使用'}</small></legend>
+            <legend><strong>DHCP 地址池</strong><small>{dhcpRuntimeDisabled ? '旁路由模式运行时不使用；当前值仅保留供切换网络模式后复用' : 'dnsmasq 为下游客户端分配 IPv4 时使用'}</small></legend>
             <div className="dhcp-config-grid">
               <ConfigField label="地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4；应与 Mac 网关位于同一 /24。">
                 <input aria-label="DHCP 地址池起点" value={config.dhcp.range_start} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_start: event.target.value } })} />
@@ -224,7 +224,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
             <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
           </ConfigField>
-          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。手工网关模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
+          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
             <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, mode: event.target.value as 'off' | 'tun' } })}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
           </ConfigField>
           <ConfigField label="每设备策略" setting="device_policy.file" hint="启用后可在“设备”页为 MAC 固定租约及独立 mihomo 策略；若尚无策略文件，保存时会创建一个空文件。关闭后不再使用此策略文件。">
@@ -296,7 +296,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
 }
 
 function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
-  return mode === 'same_lan' ? '手工网关模式' : '独立下游 LAN'
+  return mode === 'same_lan' ? '旁路由模式' : '独立下游 LAN'
 }
 
 function gatewayModeDescription(config: ControlConfig) {
@@ -308,8 +308,8 @@ function gatewayModeDescription(config: ControlConfig) {
 function gatewayConfirmation(mode: ControlConfig['gateway']['mode'], action: 'start' | 'stop') {
   if (mode === 'same_lan') {
     return action === 'start'
-      ? '将按已保存配置启动手工网关模式。路由器 DHCP 不会被关闭；部分设备需要自行把网关和 DNS 指向 Mac。继续吗？'
-      : '停止后，仍把网关或 DNS 指向 Mac 的设备可能立即断网。确定停止手工网关模式吗？'
+      ? '将按已保存配置启动旁路由模式。路由器 DHCP 不会被关闭；部分设备需要自行把网关和 DNS 指向 Mac。继续吗？'
+      : '停止后，仍把网关或 DNS 指向 Mac 的设备可能立即断网。确定停止旁路由模式吗？'
   }
   return action === 'start'
     ? '将按已保存配置启动独立下游 LAN 的 DHCP/DNS、PF/NAT 与 IPv4 forwarding。继续吗？'

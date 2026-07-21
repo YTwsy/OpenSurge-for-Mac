@@ -27,8 +27,8 @@ const modeDetails = {
     accessibleDescription: '主路由关闭 DHCP，OpenSurge 为现有局域网中的设备提供 DHCP、DNS 和默认网关。',
   },
   same_lan: {
-    title: '手工网关模式',
-    subtitle: '仅让局域网内的部分设备使用 OpenSurge',
+    title: '旁路由模式',
+    subtitle: '仅让局域网内的部分设备通过 OpenSurge 上网',
     badge: '部分设备',
     dhcp: '主路由',
     client: '在部分设备上手工设置网关与 DNS',

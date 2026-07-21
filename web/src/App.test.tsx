@@ -184,7 +184,7 @@ describe('OpenSurge app shell', () => {
     expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
     expect(window.location.hash).toBe('#gateway-control')
-    const control = await screen.findByRole('button', { name: '停止手工网关模式' })
+    const control = await screen.findByRole('button', { name: '停止旁路由模式' })
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }))
     expect(document.activeElement).toBe(control)
     expect(api.gateway).not.toHaveBeenCalled()
@@ -207,7 +207,7 @@ describe('OpenSurge app shell', () => {
     expect(document.activeElement).toBe(control)
   })
 
-  it('starts same-LAN manual gateway from Network Settings and disables the DHCP field group', async () => {
+  it('starts bypass-router mode from Network Settings and disables the DHCP field group', async () => {
     vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
     vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
     vi.mocked(api.gateway).mockResolvedValue({ id: 'start-same-lan', kind: 'start', state: 'running' })
@@ -216,20 +216,20 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '启动网关' }))
     expect(await screen.findByRole('heading', { name: '网关运行控制' })).toBeTruthy()
-    const manualMode = within(document.querySelector('.mode-grid')!).getByRole('button', { name: /手工网关模式/ })
+    const manualMode = within(document.querySelector('.mode-grid')!).getByRole('button', { name: /旁路由模式/ })
     expect(manualMode.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText(/手工网关模式运行时不使用/)).toBeTruthy()
+    expect(screen.getByText(/旁路由模式运行时不使用/)).toBeTruthy()
     expect(screen.getByLabelText('DHCP 地址池起点').closest('fieldset')?.hasAttribute('disabled')).toBe(true)
     const downstream = screen.getByLabelText('下游 LAN 接口') as HTMLInputElement
     expect(downstream.getAttribute('list')).toBe('network-interface-options')
     await waitFor(() => expect(document.querySelectorAll('#network-interface-options option')).toHaveLength(2))
     expect(document.querySelector<HTMLOptionElement>('#network-interface-options option[value="en7"]')?.label).toBe('USB LAN · en7')
-    await userEvent.click(screen.getByRole('button', { name: '启动手工网关模式' }))
+    await userEvent.click(screen.getByRole('button', { name: '启动旁路由模式' }))
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('路由器 DHCP 不会被关闭'))
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-same-lan')
-    expect(await screen.findByText('手工网关模式已启动。')).toBeTruthy()
+    expect(await screen.findByText('旁路由模式已启动。')).toBeTruthy()
   })
 
   it('starts isolated downstream LAN while keeping DHCP fields editable', async () => {
@@ -257,7 +257,7 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
     expect((await screen.findByLabelText('Mac 网关 IPv4')).closest('fieldset')?.hasAttribute('disabled')).toBe(true)
-    await userEvent.click(screen.getByRole('button', { name: '停止手工网关模式' }))
+    await userEvent.click(screen.getByRole('button', { name: '停止旁路由模式' }))
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('设备可能立即断网'))
     expect(api.gateway).toHaveBeenCalledWith('stop')
@@ -501,7 +501,7 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
 
     const takeover = await screen.findByRole('button', { name: /局域网 DHCP 接管/ })
-    const manual = screen.getByRole('button', { name: /手工网关模式/ })
+    const manual = screen.getByRole('button', { name: /旁路由模式/ })
     const detail = document.getElementById('network-mode-detail')
     expect(takeover.getAttribute('aria-expanded')).toBe('true')
     expect(detail?.getAttribute('aria-hidden')).toBe('false')
@@ -514,7 +514,7 @@ describe('OpenSurge app shell', () => {
     expect(manual.getAttribute('aria-expanded')).toBe('true')
     expect(manual.getAttribute('aria-pressed')).toBe('true')
     expect(takeover.getAttribute('aria-expanded')).toBe('false')
-    expect(within(detail!).getByText('仅让局域网内的部分设备使用 OpenSurge')).toBeTruthy()
+    expect(within(detail!).getByText('仅让局域网内的部分设备通过 OpenSurge 上网')).toBeTruthy()
     expect(within(detail!).getByText('手工设置为使用 OpenSurge 的设备')).toBeTruthy()
 
     await userEvent.click(manual)

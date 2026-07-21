@@ -176,7 +176,7 @@ Web GUI 将两类操作持续分开：绿色表示 applied selector 的“即时
 时，GUI 会把解析后的有效配置复制为不再继承 Template 的私有 Profile，只更新这台设备
 的引用。
 
-`same_lan` 手工网关不运行 OpenSurge DHCP。该模式下，设备页从 mihomo 当前连接中提取与
+`same_lan` 旁路由模式不运行 OpenSurge DHCP。该模式下，设备页从 mihomo 当前连接中提取与
 `gateway.lan_ip` 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补充 MAC，列入“当前经过
 Mac 的设备”供登记。总览设备流量会合并 DHCP lease、applied 静态设备和当前观察到的
 same-LAN 源 IPv4：已登记静态 IPv4 可以获得名称、连接、速率、累计流量与出口归属，未登记

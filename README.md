@@ -64,7 +64,7 @@ forwarding 提供原生网关路径。
 - 启停 DHCP/DNS、mihomo、pf NAT 与 IPv4 forwarding，并带 rollback；
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
-- DHCP 接管模式为登记设备生成 MAC 绑定的固定 IPv4 租约；同 LAN 手工网关模式
+- DHCP 接管模式为登记设备生成 MAC 绑定的固定 IPv4 租约；旁路由模式（手工网关）
   使用主路由侧保持稳定的静态 IPv4，两者都可使用独立出口策略。
 
 **可观测性**
@@ -86,7 +86,7 @@ forwarding 提供原生网关路径。
 ## 每设备策略
 
 一个 mihomo 进程可以对已登记的 LAN 设备应用独立策略。DHCP 接管模式会为每台设备
-配置 MAC 绑定的固定 IPv4 租约；同 LAN 手工网关模式则使用主路由侧保持稳定的静态
+配置 MAC 绑定的固定 IPv4 租约；旁路由模式则使用主路由侧保持稳定的静态
 IPv4，并从当前经过 Mac 的流量与 ARP 邻居观察辅助登记。两种模式都会生成每设备的
 mihomo selector group 和 `SRC-IP-CIDR` 规则。可选 JSON 策略文件让每台设备要么跟随 Mac/全局规则，要么在
 全局规则之前走设备专属 selector；它也支持 `REJECT` 这类设备专属动作，以及按
