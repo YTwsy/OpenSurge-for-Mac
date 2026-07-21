@@ -13,6 +13,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [plan, setPlan] = useState<GatewayPlan | null>(null)
+  const [planSettled, setPlanSettled] = useState(false)
   const [config, setConfig] = useState<ControlConfig | null>(null)
   const [savedConfig, setSavedConfig] = useState<ControlConfig | null>(null)
   const [expandedMode, setExpandedMode] = useState<NetworkMode | null>('same_wifi_dhcp')
@@ -42,8 +43,13 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const networkService = plan?.snapshot.network_service || recoverySnapshot?.network_service || 'Wi-Fi'
 
   const loadPlan = useCallback(async (next: ControlConfig) => {
-    if (next.gateway.mode !== 'same_wifi_dhcp') { setPlan(null); return }
-    setPlan(await api.gatewayPlan(false))
+    setPlanSettled(false)
+    try {
+      if (next.gateway.mode !== 'same_wifi_dhcp') { setPlan(null); return }
+      setPlan(await api.gatewayPlan(false))
+    } finally {
+      setPlanSettled(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -54,17 +60,22 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   }, [loadPlan])
 
   useEffect(() => {
-    if (window.location.hash !== '#gateway-control') {
+    const navigationTarget = window.location.hash
+    if (navigationTarget !== '#gateway-control' && navigationTarget !== '#gateway-control-bottom') {
       gatewayControlFocused.current = false
       return
     }
-    if (!config || gatewayControlFocused.current || !gatewayControlRef.current) return
+    if (!config || !planSettled || gatewayControlFocused.current || !gatewayControlRef.current) return
     gatewayControlFocused.current = true
     const control = gatewayControlRef.current
     const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    control.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+    if (navigationTarget === '#gateway-control-bottom') {
+      window.scrollTo?.({ top: document.documentElement.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
+    } else {
+      control.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center' })
+    }
     if (!control.disabled) control.focus({ preventScroll: true })
-  }, [config])
+  }, [config, planSettled])
 
   const selectMode = (mode: ControlConfig['gateway']['mode']) => setConfig(currentConfig => {
     if (!currentConfig) return currentConfig

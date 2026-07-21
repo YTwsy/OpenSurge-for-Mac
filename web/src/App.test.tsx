@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ControlConfig, Overview, Source } from './types'
+import type { ControlConfig, GatewayPlan, Overview, Source } from './types'
 
 vi.mock('./api', () => ({
   authenticationRequiredEvent: 'opensurge:authentication-required',
@@ -115,15 +115,33 @@ function overviewFor(mode: ControlConfig['gateway']['mode'], gateway: string): O
   }
 }
 
+function gatewayPlanForTest(): GatewayPlan {
+  return {
+    schema_version: 1,
+    revision: 'config-revision',
+    topology: 'same_wifi_dhcp',
+    snapshot: {
+      network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.20',
+      subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: ['192.168.1.1'], ipv6_default: false,
+    },
+    protected_ipv4: ['192.168.1.1', '192.168.1.20'],
+    dhcp_servers: [], warnings: [], blockers: [],
+  }
+}
+
 describe('OpenSurge app shell', () => {
   const scrollIntoView = vi.fn()
+  const scrollTo = vi.fn()
 
   beforeEach(() => {
     window.history.replaceState({}, '', '/dashboard')
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
+    Object.defineProperty(window, 'scrollTo', { configurable: true, value: scrollTo })
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 2400 })
     scrollIntoView.mockReset()
+    scrollTo.mockReset()
     vi.mocked(api.overview).mockResolvedValue(overview)
     vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })
@@ -169,23 +187,30 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(start)
     expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
-    expect(window.location.hash).toBe('#gateway-control')
-    const control = await screen.findByRole('button', { name: '将 Mac 切换为固定 IPv4' })
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }))
-    expect(document.activeElement).toBe(control)
+    expect(window.location.hash).toBe('')
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(scrollTo).not.toHaveBeenCalled()
     expect(api.gateway).not.toHaveBeenCalled()
   })
 
-  it('routes the dashboard stop button to network settings without stopping the gateway', async () => {
-    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'running'))
-    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
+  it('routes the dashboard stop button to the bottom of network settings without stopping the gateway', async () => {
+    let resolvePlan!: (value: GatewayPlan) => void
+    vi.mocked(api.gatewayPlan).mockImplementationOnce(() => new Promise(resolve => { resolvePlan = resolve }))
+    vi.mocked(api.overview).mockResolvedValue({
+      ...overviewFor('same_wifi_dhcp', 'running'),
+      recovery: { ...overview.recovery, stage: 'client_validated', required: true },
+    })
     render(<App />)
     await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
     expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
     expect(window.location.pathname).toBe('/network')
-    expect(window.location.hash).toBe('#gateway-control')
-    const control = await screen.findByRole('button', { name: '停止旁路由模式' })
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }))
+    expect(window.location.hash).toBe('#gateway-control-bottom')
+    const control = await screen.findByRole('button', { name: '停止 OpenSurge' })
+    await waitFor(() => expect(api.gatewayPlan).toHaveBeenCalled())
+    expect(scrollTo).not.toHaveBeenCalled()
+    await act(async () => resolvePlan(gatewayPlanForTest()))
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 2400, behavior: 'smooth' }))
+    expect(scrollIntoView).not.toHaveBeenCalled()
     expect(document.activeElement).toBe(control)
     expect(api.gateway).not.toHaveBeenCalled()
   })

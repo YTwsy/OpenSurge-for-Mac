@@ -11,7 +11,8 @@ mihomo 和 runtime 包中。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP
-接管与恢复状态在用户确认前保持可见。
+接管与恢复状态在用户确认前保持可见。“启动网关”只切换页面，不改变当前滚动位置；
+“停止网关”切换页面后滚动到页面底部，完整露出恢复状态机的当前操作按钮。
 
 网络页对 `same_wifi_dhcp` 保留带恢复证据的完整状态机；`same_lan` 与 `isolated_lan`
 使用独立“网关运行控制”卡片直接调用 start/stop operation。未保存配置必须阻止启动，
