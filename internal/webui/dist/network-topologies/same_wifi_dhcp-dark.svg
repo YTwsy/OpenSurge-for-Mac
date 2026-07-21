@@ -12,27 +12,25 @@
   <text class="micro" x="270" y="62">现有局域网 · Wi-Fi 或以太网</text>
 
   <g filter="url(#shadow)">
-    <rect x="14" y="126" width="94" height="82" rx="18" fill="#0a1713" stroke="#304b40" stroke-width="2"/>
+    <rect x="14" y="126" width="94" height="82" rx="18" fill="#0a1713" stroke="#304b40" stroke-width="1.25"/>
     <text class="title" x="61" y="160">Internet</text><text class="small" x="61" y="184">公网</text>
   </g>
   <g filter="url(#shadow)">
-    <rect x="154" y="105" width="132" height="124" rx="20" fill="#0a1713" stroke="#304b40" stroke-width="2"/>
-    <circle cx="176" cy="128" r="6" fill="#71867e"/>
+    <rect x="154" y="105" width="132" height="124" rx="20" fill="#0a1713" stroke="#304b40" stroke-width="1.25"/>
     <text class="title" x="220" y="135">主路由 / AP</text>
     <path d="M184 159h72" stroke="#223930"/>
     <text class="small" x="220" y="181">DHCP 关闭</text><text class="small" x="220" y="204">LAN 地址保留</text>
   </g>
   <g filter="url(#shadow)">
-    <rect x="326" y="78" width="190" height="176" rx="24" fill="#102a21" stroke="#63d5a4" stroke-width="3"/>
-    <circle cx="350" cy="103" r="7" fill="#63d5a4"/>
+    <rect x="326" y="78" width="190" height="176" rx="24" fill="#102a21" stroke="#63d5a4" stroke-width="1.75"/>
     <text class="title" x="421" y="110">Mac / OpenSurge</text>
-    <rect x="346" y="132" width="150" height="47" rx="12" fill="#0d201a" stroke="#4dad83" stroke-width="1.5"/>
+    <rect x="346" y="132" width="150" height="47" rx="12" fill="#0d201a" stroke="#4dad83" stroke-width="1"/>
     <text class="module" x="421" y="160">DHCP + DNS</text>
-    <rect x="346" y="190" width="150" height="47" rx="12" fill="#0d201a" stroke="#4dad83" stroke-width="1.5"/>
+    <rect x="346" y="190" width="150" height="47" rx="12" fill="#0d201a" stroke="#4dad83" stroke-width="1"/>
     <text class="module" x="421" y="211">TUN + 规则</text><text class="small" x="421" y="228">NAT / 转发</text>
   </g>
   <g filter="url(#shadow)">
-    <rect x="558" y="94" width="136" height="144" rx="22" fill="#251b12" stroke="#e3a163" stroke-width="2.5"/>
+    <rect x="558" y="94" width="136" height="144" rx="22" fill="#251b12" stroke="#e3a163" stroke-width="1.5"/>
     <text class="title" x="626" y="128">局域网设备</text>
     <text class="small" x="626" y="156">手机 · 电视</text><text class="small" x="626" y="178">游戏机 · IoT</text>
     <rect x="577" y="195" width="98" height="26" rx="13" fill="#1a1713" stroke="#704b2d"/>
@@ -45,7 +43,7 @@
   <path d="M496 151C526 119 544 119 558 137" fill="none" stroke="#f0a75f" stroke-width="3" stroke-dasharray="7 6" stroke-linecap="round" marker-end="url(#service)"/>
   <g>
     <rect x="488" y="77" width="151" height="28" rx="14" fill="#2c2115" stroke="#80552f"/>
-    <circle cx="505" cy="91" r="4" fill="#f0a75f"/><text class="micro" x="566" y="95">自动下发 DHCP / DNS</text>
+    <circle cx="502" cy="91" r="3" fill="#f0a75f"/><text class="micro" x="516" y="95" style="text-anchor:start">自动下发 DHCP / DNS</text>
   </g>
 
   <g transform="translate(152 310)"><path d="M0 0h38" stroke="#63a8ff" stroke-width="4"/><text class="legend" x="92" y="5">设备上网路径</text></g>
