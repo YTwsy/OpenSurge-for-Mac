@@ -21,7 +21,7 @@ export function TrafficTrendCard({ title, subtitle, history, deviceKey, classNam
   const maximum = Math.max(...upload, ...download, 1)
   const uploadChart = buildSmoothChart(upload, maximum, 8, 46)
   const downloadChart = buildSmoothChart(download, maximum, 8, 46)
-  const current = samples.at(-1) ?? zeroRates
+  const current = target.at(-1) ?? zeroRates
   const firstTime = history[0]?.sampled_at
   const lastTime = history.at(-1)?.sampled_at
 

@@ -18,10 +18,10 @@ export function LiveRateCard({ direction, history, value }: LiveRateCardProps) {
   target[target.length - 1] = { ...target[target.length - 1], [direction]: value }
   const animated = useAnimatedTrafficSeries(target, `${direction}:${history.at(-1)?.sampled_at ?? 'empty'}:${value}`)
   const values = animated.map(point => point[direction])
-  const current = values.at(-1) ?? value
-  const peak = Math.max(...values, current, 0)
-  const { amount, unit } = rateParts(current)
-  const chart = buildSmoothChart(values, peak, 7, 35)
+  const chartMaximum = Math.max(...values, 0)
+  const peak = Math.max(...target.map(point => point[direction]), value, 0)
+  const { amount, unit } = rateParts(value)
+  const chart = buildSmoothChart(values, chartMaximum, 7, 35)
   return <article className={`live-rate-card ${direction}`} aria-label={`${label}当前速度 ${formatRate(value)}`}>
     <header><span className="rate-direction" aria-hidden="true">{direction === 'upload' ? '↑' : '↓'}</span><span><small>{direction.toUpperCase()}</small><b>{label}</b></span><em><i />LIVE</em></header>
     <div className="rate-reading"><strong>{amount}</strong><span>{unit}</span></div>
