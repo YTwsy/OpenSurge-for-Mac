@@ -70,6 +70,38 @@ describe('DevicesPage', () => {
 
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
+  it('keeps device cards in their own column and only floats save controls while dirty', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [
+        { id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' },
+        { id: 'bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'bob-policy', egress_mode: 'inherit_global' },
+      ],
+      profiles: [
+        { id: 'alice-policy', default_policies: ['DIRECT'], rules: [] },
+        { id: 'bob-policy', default_policies: ['DIRECT'], rules: [] },
+      ],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    renderPage()
+
+    await screen.findByText('alice')
+    const layout = document.querySelector('.device-layout') as HTMLElement
+    const stack = layout.querySelector('.device-stack') as HTMLElement
+    expect(layout.children[0].classList.contains('this-mac')).toBe(true)
+    expect(stack.querySelectorAll('.device-card')).toHaveLength(2)
+
+    const saveBar = document.querySelector('.sticky-save') as HTMLElement
+    expect(saveBar.classList.contains('is-saved')).toBe(true)
+    expect(saveBar.classList.contains('has-changes')).toBe(false)
+    const firstCard = stack.querySelector('.device-card') as HTMLElement
+    const secondCard = stack.querySelectorAll('.device-card')[1] as HTMLElement
+    expect(within(firstCard).getByRole('button', { name: '正在编辑此设备规则' })).toBeTruthy()
+    expect(within(secondCard).getByRole('button', { name: '编辑此设备规则' })).toBeTruthy()
+    await userEvent.click(within(firstCard).getByRole('radio', { name: /独立设备出口/ }))
+    expect(saveBar.classList.contains('has-changes')).toBe(true)
+  })
+
   it('shows only global groups on THIS MAC and switches them immediately', async () => {
     renderPage()
     const selector = await screen.findByLabelText('Main 当前出口 DIRECT')
