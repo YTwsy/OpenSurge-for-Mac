@@ -285,19 +285,23 @@ type ObservedDevice struct {
 }
 
 // DeviceTrafficResponse is a point-in-time aggregation of the currently
-// active mihomo sessions that can be attributed to an OpenSurge DHCP lease,
-// an applied static device identity, or an observed same-LAN source IPv4.
-// Counters are session-lifetime counters from mihomo, not persisted history.
+// active mihomo sessions. GatewayLocal is kept separate from Devices so the
+// Mac can be shown alongside downstream traffic without becoming part of the
+// LAN device inventory or policy identity model. Counters are session-lifetime
+// counters from mihomo, not persisted history.
 type DeviceTrafficResponse struct {
-	SchemaVersion        int                 `json:"schema_version"`
-	Revision             string              `json:"revision"`
-	SampledAt            time.Time           `json:"sampled_at"`
-	Scope                string              `json:"scope"`
-	Devices              []DeviceTraffic     `json:"devices"`
-	Totals               DeviceTrafficTotals `json:"totals"`
-	GatewayRates         TrafficRates        `json:"gateway_rates"`
-	UnmatchedConnections int                 `json:"unmatched_connections"`
-	ConnectionError      string              `json:"connection_error,omitempty"`
+	SchemaVersion                 int                 `json:"schema_version"`
+	Revision                      string              `json:"revision"`
+	SampledAt                     time.Time           `json:"sampled_at"`
+	Scope                         string              `json:"scope"`
+	GatewayLocal                  DeviceTraffic       `json:"gateway_local"`
+	Devices                       []DeviceTraffic     `json:"devices"`
+	Totals                        DeviceTrafficTotals `json:"totals"`
+	GatewayRates                  TrafficRates        `json:"gateway_rates"`
+	UnidentifiedDeviceConnections int                 `json:"unidentified_device_connections"`
+	UnclassifiedConnections       int                 `json:"unclassified_connections"`
+	UnmatchedConnections          int                 `json:"unmatched_connections"`
+	ConnectionError               string              `json:"connection_error,omitempty"`
 }
 
 type DeviceTraffic struct {
@@ -313,6 +317,7 @@ type DeviceTraffic struct {
 	DownloadRate      int64  `json:"download_rate"`
 	PrimaryEgress     string `json:"primary_egress,omitempty"`
 	IdentitySource    string `json:"identity_source"`
+	Transport         string `json:"transport,omitempty"`
 }
 
 type DeviceTrafficTotals struct {

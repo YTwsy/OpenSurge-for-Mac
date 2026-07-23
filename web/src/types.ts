@@ -124,7 +124,8 @@ export type DeviceTrafficRow = {
   upload_rate: number
   download_rate: number
   primary_egress?: string
-  identity_source?: 'dhcp_lease' | 'registered_static' | 'observed_traffic'
+  identity_source?: 'dhcp_lease' | 'registered_static' | 'observed_traffic' | 'gateway_local'
+  transport?: 'none' | 'tun' | 'explicit_proxy' | 'tun_and_explicit_proxy' | 'other'
 }
 
 export type TrafficRates = { upload: number; download: number }
@@ -134,9 +135,13 @@ export type DeviceTraffic = {
   revision: string
   sampled_at: string
   scope: 'active_sessions'
+  gateway_local: DeviceTrafficRow
   devices: DeviceTrafficRow[]
   totals: { devices: number; active_connections: number; upload: number; download: number; upload_rate: number; download_rate: number }
   gateway_rates: TrafficRates
+  unidentified_device_connections: number
+  unclassified_connections: number
+  /** Legacy count of gateway-local plus unclassified connections. */
   unmatched_connections: number
   connection_error?: string
 }

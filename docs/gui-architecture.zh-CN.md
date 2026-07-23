@@ -61,7 +61,9 @@ topology 与 desired/applied 状态都在卡内展示，不另设重复的信息
 总览页标题区的“启动网关”或“停止网关”只是进入“网络设置”的上下文入口，不直接调用
 gateway start/stop API；实际动作必须留在网络页，让用户先看到 topology、计划 blocker、
 DHCP 接管与恢复状态后再确认。
-上传、下载和总趋势都使用平滑曲线；网关总趋势采用较矮的紧凑卡片和单条低对比参考线，
+上传、下载和总趋势都使用平滑曲线；新采样会在约 700 ms 内对速率数字和曲线点做缓出
+插值，60 秒窗口滚动时不会整条折线瞬间跳变；系统启用“减少动态效果”时直接采用新值。
+网关总趋势采用较矮的紧凑卡片和单条低对比参考线，
 避免把 60 秒内存样本误做成大面积历史报表。
 
 同一 source 的刷新保留旧版本 metadata、digest、inventory 和 applied 标记，新内容保持
@@ -135,15 +137,23 @@ connections 与最多 80 行近期日志；已知 mihomo/upstream 凭据在 API 
 `GET /api/v1/operations` 返回最近 50 条，便于审计幂等 operation ID、失败和完成时间。
 
 总览的设备流量面板每 2 秒读取受认证的 `GET /api/v1/device-traffic`。Control Service
-用 DHCP lease 的 IPv4/MAC/hostname 与 mihomo connection 的 `metadata.sourceIP` join，
-只累计能归属到租约设备的当前活跃会话 `upload`/`download`。主出口选择当前会话累计
-字节最多的完整 `chains`，相同字节时再按连接数和名称稳定决胜。无法归属的连接单列计数，
-不混入设备合计；该 DTO 明确标记 `scope=active_sessions`，不表示重启后仍保留的历史流量。
-若 mihomo 不可用，接口仍返回 DHCP 设备清单和 `connection_error`，GUI 不把零流量误报
-为持久化统计。Control Service 还在内存中按 connection ID 比较相邻计数器，生成网关整体
+用 DHCP lease、applied 静态设备和当前观察到的网关 LAN IPv4 建立下游设备清单，再按
+mihomo connection 的 `metadata.sourceIP` 归属当前活跃会话 `upload`/`download`。带有
+本机 process/processPath 证据、来自回环/网关地址或与这些证据共享源地址的连接单独聚合
+到 `gateway_local`，不混入 `devices` 或下游设备合计；GUI 始终把“本机 Mac”固定为
+“活跃设备”的第一行，并按实际 connection type 显示 TUN、显式代理或两者。没有 DHCP/
+静态身份、但能确认网关 LAN 源 IPv4 的会话进入 `observed_traffic` 行并计入
+`unidentified_device_connections`；地址缺失、网段外且没有本机证据等剩余连接进入
+`unclassified_connections`，只作为诊断提示。`unmatched_connections` 仅作为旧客户端
+兼容字段保留，当前 GUI 不再用它解释来源身份。
+
+主出口选择当前会话累计字节最多的完整 `chains`，相同字节时再按连接数和名称稳定决胜。
+该 DTO 明确标记 `scope=active_sessions`，不表示重启后仍保留的历史流量。若 mihomo 不可用，
+接口仍返回本机行、DHCP/静态设备清单和 `connection_error`，GUI 不把零流量误报为持久化
+统计。Control Service 还在内存中按 connection ID 比较相邻计数器，生成网关整体、本机
 和每设备的 bytes/s；首次采样、新连接、采样间隔超过 15 秒或 mihomo 读取失败后先重建
 基线，避免把会话累计值误算成瞬时速度。总览只保留最近 60 秒内存趋势，不冒充今日或
-月度持久化历史。点击设备行时，设备列表收拢并在右侧显示使用同一图表组件的设备趋势；
+月度持久化历史。点击本机或设备行时，设备列表收拢并在右侧显示使用同一图表组件的趋势；
 设备 IPv4 列在展开状态仍然保留。宽屏右侧趋势卡绝对定位在由设备列表决定的网格行内，
 不参与行高计算，因此展开和收起不会改变页面总高度或触发底部滚动跳动；窄屏才改为带
 高度过渡的纵向展开。

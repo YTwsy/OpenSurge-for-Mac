@@ -67,7 +67,7 @@ func TestAggregateSameLANDeviceTrafficUsesStaticAndObservedIdentities(t *testing
 		{Upload: 1, Download: 2, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.5.123"}},
 	}}
 
-	result := aggregateDeviceTrafficWithPolicy(nil, policy, snapshot, "192.168.5.123")
+	result := aggregateDeviceTrafficWithPolicy(nil, policy, snapshot, "192.168.5.123", true)
 	if len(result.Devices) != 2 || result.Totals.ActiveConnections != 2 || result.UnmatchedConnections != 2 {
 		t.Fatalf("same-LAN traffic = %#v", result)
 	}
@@ -83,6 +83,41 @@ func TestAggregateSameLANDeviceTrafficUsesStaticAndObservedIdentities(t *testing
 	if observed.IdentitySource != identitySourceObservedTraffic || !observed.Online || observed.ActiveConnections != 1 {
 		t.Fatalf("observed row = %#v", observed)
 	}
+	if result.UnidentifiedDeviceConnections != 1 {
+		t.Fatalf("unidentified connections = %d", result.UnidentifiedDeviceConnections)
+	}
+	if result.GatewayLocal.ActiveConnections != 1 || result.GatewayLocal.IP != "192.168.5.123" || result.GatewayLocal.IdentitySource != identitySourceGatewayLocal {
+		t.Fatalf("gateway local = %#v", result.GatewayLocal)
+	}
+}
+
+func TestAggregateDeviceTrafficSeparatesGatewayLocalAndUnclassifiedConnections(t *testing.T) {
+	leases := []device.Client{{
+		Hostname: "Apple-TV", IP: "192.168.5.88", MAC: "aa:bb:cc:dd:ee:88", Online: true, ExpiresAt: time.Now().Add(time.Hour),
+	}}
+	snapshot := mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{
+		{Upload: 100, Download: 900, Chains: []string{"Proxy", "edge"}, Metadata: map[string]any{"sourceIP": "198.18.0.1", "type": "Tun", "process": "Safari"}},
+		{Upload: 20, Download: 80, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "198.18.0.1", "type": "Tun"}},
+		{Upload: 10, Download: 40, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "127.0.0.1", "type": "HTTP"}},
+		{Upload: 5, Download: 50, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.5.88"}},
+		{Upload: 7, Download: 70, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.5.126"}},
+		{Upload: 1, Download: 2, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.6.10"}},
+		{Upload: 1, Download: 2, Chains: []string{"DIRECT"}, Metadata: map[string]any{}},
+	}}
+
+	result := aggregateDeviceTrafficWithPolicy(leases, device.PolicySet{}, snapshot, "192.168.5.123", true)
+	if result.GatewayLocal.ActiveConnections != 3 || result.GatewayLocal.Upload != 130 || result.GatewayLocal.Download != 1020 {
+		t.Fatalf("gateway local counters = %#v", result.GatewayLocal)
+	}
+	if result.GatewayLocal.Transport != localTransportTUNAndExplicitProxy || result.GatewayLocal.PrimaryEgress != "Proxy → edge" {
+		t.Fatalf("gateway local route = %#v", result.GatewayLocal)
+	}
+	if result.Totals.Devices != 2 || result.Totals.ActiveConnections != 2 || result.UnidentifiedDeviceConnections != 1 {
+		t.Fatalf("device totals = %#v / unidentified=%d", result.Totals, result.UnidentifiedDeviceConnections)
+	}
+	if result.UnclassifiedConnections != 2 || result.UnmatchedConnections != 5 {
+		t.Fatalf("unclassified=%d unmatched=%d", result.UnclassifiedConnections, result.UnmatchedConnections)
+	}
 }
 
 func TestAggregateSameLANDeviceTrafficDoesNotRenameConflictingLease(t *testing.T) {
@@ -93,7 +128,7 @@ func TestAggregateSameLANDeviceTrafficDoesNotRenameConflictingLease(t *testing.T
 		Hostname: "other-device", IP: "192.168.5.124", MAC: "aa:bb:cc:dd:ee:99", Online: true, ExpiresAt: time.Now().Add(time.Hour),
 	}}
 
-	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.5.123")
+	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.5.123", true)
 	if len(result.Devices) != 1 || result.Devices[0].Name != "" || result.Devices[0].Hostname != "other-device" || result.Devices[0].IdentitySource != identitySourceDHCPLease {
 		t.Fatalf("conflicting identity row = %#v", result.Devices)
 	}
@@ -144,6 +179,9 @@ func TestTrafficRateSamplerUsesConnectionDeltasForGatewayAndDevices(t *testing.T
 
 	if secondResponse.GatewayRates.Upload != 1500 || secondResponse.GatewayRates.Download != 4000 {
 		t.Fatalf("gateway rates = %#v", secondResponse.GatewayRates)
+	}
+	if secondResponse.GatewayLocal.UploadRate != 500 || secondResponse.GatewayLocal.DownloadRate != 1000 {
+		t.Fatalf("gateway local rates = %#v", secondResponse.GatewayLocal)
 	}
 	deviceTraffic := secondResponse.Devices[0]
 	if deviceTraffic.UploadRate != 1000 || deviceTraffic.DownloadRate != 3000 {

@@ -57,7 +57,7 @@ vi.mock('./api', () => ({
     refreshSource: vi.fn(),
     applySource: vi.fn(),
     devices: vi.fn(async () => ({ devices: [], leases: [], drift: false, applied: false })),
-    deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })),
+    deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })),
     policies: vi.fn(async () => ({ groups: [] })),
     selectPolicy: vi.fn(),
     devicePolicy: vi.fn(async () => null),
@@ -144,7 +144,7 @@ describe('OpenSurge app shell', () => {
     scrollTo.mockReset()
     vi.mocked(api.overview).mockResolvedValue(overview)
     vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
-    vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unmatched_connections: 0 })
+    vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 
@@ -305,31 +305,59 @@ describe('OpenSurge app shell', () => {
   })
 
   it('joins managed DHCP devices with active mihomo session traffic', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
     vi.mocked(api.deviceTraffic).mockResolvedValue({
-      schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', unmatched_connections: 1,
+      schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions',
+      gateway_local: { ip: '192.168.1.20', mac: '', online: true, active_connections: 4, upload: 2048, download: 4096, upload_rate: 1000, download_rate: 2000, primary_egress: '代理组 → 日本-01', identity_source: 'gateway_local', transport: 'tun' },
       devices: [
-        { hostname: 'Apple-TV', ip: '192.168.1.88', mac: 'aa:bb:cc:dd:ee:88', online: true, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024, upload_rate: 123_000, download_rate: 2_400_000, primary_egress: '流媒体组 → 美国-02' },
-        { ip: '192.168.1.110', mac: 'a4:5e:60:00:00:01', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 },
+        { hostname: 'Apple-TV', ip: '192.168.1.88', mac: 'aa:bb:cc:dd:ee:88', online: true, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024, upload_rate: 123_000, download_rate: 2_400_000, primary_egress: '流媒体组 → 美国-02', identity_source: 'dhcp_lease' },
+        { ip: '192.168.1.110', mac: '', online: true, active_connections: 1, upload: 100, download: 200, upload_rate: 10, download_rate: 20, identity_source: 'observed_traffic' },
       ],
-      totals: { devices: 2, active_connections: 3, upload: 96 * 1024, download: 412 * 1024 * 1024, upload_rate: 123_000, download_rate: 2_400_000 },
+      totals: { devices: 2, active_connections: 4, upload: 96 * 1024 + 100, download: 412 * 1024 * 1024 + 200, upload_rate: 123_010, download_rate: 2_400_020 },
       gateway_rates: { upload: 125_000, download: 2_500_000 },
+      unidentified_device_connections: 1, unclassified_connections: 1, unmatched_connections: 5,
     })
     render(<App />)
     expect(await screen.findByRole('heading', { name: '活跃设备' })).toBeTruthy()
+    expect(screen.getByText('本机 Mac')).toBeTruthy()
+    expect(screen.getByText('网关本机 · TUN')).toBeTruthy()
     expect(await screen.findByText('Apple-TV')).toBeTruthy()
     expect(screen.getAllByText('流媒体组 → 美国-02').length).toBeGreaterThan(0)
-    expect(screen.getByText('未知设备 a4:5e:60:…')).toBeTruthy()
+    expect(screen.getByText('当前设备 192.168.1.110')).toBeTruthy()
     expect(screen.getByText('累计 96 KB')).toBeTruthy()
     expect(screen.getByText('累计 412 MB')).toBeTruthy()
     expect(screen.getAllByText('123 kB/s').length).toBeGreaterThan(0)
-    expect(screen.getByText(/合计 2 台 · 3 个设备连接/)).toBeTruthy()
-    expect(screen.getByText(/1 个连接无法匹配当前 LAN 设备身份/)).toBeTruthy()
+    expect(screen.getByText(/合计 2 台设备接入 · 4 个连接/)).toBeTruthy()
+    expect(screen.getByText(/1 个待识别设备连接/)).toBeTruthy()
+    expect(screen.getByText(/1 个连接无法判断来源/)).toBeTruthy()
+    expect(screen.getByText('本机连接')).toBeTruthy()
+    expect(screen.getByText('已归属设备连接')).toBeTruthy()
+    expect(screen.getByText('待识别设备连接')).toBeTruthy()
     expect(screen.getByText('192.168.1.88')).toBeTruthy()
+    const trafficRows = screen.getAllByRole('button', { name: /流量趋势/ })
+    expect(trafficRows[0].getAttribute('aria-label')).toContain('本机 Mac 192.168.1.20')
 
     const deviceButton = screen.getByRole('button', { name: '查看 Apple-TV 192.168.1.88 流量趋势' })
     await userEvent.click(deviceButton)
     expect(deviceButton.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByRole('heading', { name: 'Apple-TV 流量趋势' })).toBeTruthy()
+  })
+
+  it('describes gateway-local traffic without assuming TUN', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
+    vi.mocked(api.deviceTraffic).mockResolvedValue({
+      schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions',
+      gateway_local: { ip: '192.168.1.20', mac: '', online: true, active_connections: 1, upload: 1, download: 2, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'explicit_proxy' },
+      devices: [],
+      totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 },
+      gateway_rates: { upload: 0, download: 0 },
+      unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 1,
+    })
+
+    render(<App />)
+
+    expect(await screen.findByText('本机 Mac')).toBeTruthy()
+    expect(screen.getByText('网关本机 · 显式代理')).toBeTruthy()
   })
 
   it('prefers registered device names in traffic and recent lease summaries', async () => {
@@ -338,10 +366,12 @@ describe('OpenSurge app shell', () => {
       leases: [{ ip: '192.168.1.190', mac: '90:47:48:c8:f9:1b', registered_name: 'PlayStation 5', expires_at: '2099-01-01T00:00:00Z', online: true }],
     })
     vi.mocked(api.deviceTraffic).mockResolvedValue({
-      schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', unmatched_connections: 0,
+      schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions',
+      gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' },
       devices: [{ name: 'PlayStation 5', ip: '192.168.1.190', mac: '90:47:48:c8:f9:1b', online: true, active_connections: 1, upload: 1, download: 2, upload_rate: 0, download_rate: 0 }],
       totals: { devices: 1, active_connections: 1, upload: 1, download: 2, upload_rate: 0, download_rate: 0 },
       gateway_rates: { upload: 0, download: 0 },
+      unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0,
     })
     render(<App />)
     expect((await screen.findAllByText('PlayStation 5')).length).toBe(1)

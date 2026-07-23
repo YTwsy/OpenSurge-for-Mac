@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type { TrafficHistoryPoint, TrafficRates } from '../types'
 import { formatRate } from '../trafficFormat'
 import { buildSmoothChart } from '../trafficChart'
+import { useAnimatedTrafficSeries } from '../hooks/useAnimatedTrafficSeries'
 
 type TrafficTrendCardProps = {
   title: string
@@ -13,7 +14,8 @@ type TrafficTrendCardProps = {
 
 export function TrafficTrendCard({ title, subtitle, history, deviceKey, className = '' }: TrafficTrendCardProps) {
   const gradientID = useId().replace(/:/g, '')
-  const samples = history.map(point => deviceKey ? point.devices[deviceKey] ?? zeroRates : point)
+  const target = history.map(point => deviceKey ? point.devices[deviceKey] ?? zeroRates : point)
+  const samples = useAnimatedTrafficSeries(target, `${deviceKey ?? 'gateway'}:${history.at(-1)?.sampled_at ?? 'empty'}`)
   const upload = samples.map(point => point.upload)
   const download = samples.map(point => point.download)
   const maximum = Math.max(...upload, ...download, 1)

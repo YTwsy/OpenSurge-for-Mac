@@ -56,7 +56,7 @@ button{cursor:pointer}
 .traffic-device strong,.traffic-device small{display:block}
 .traffic-device small{margin-top:3px;color:#71847d;font-size:10px}
 .traffic-egress{max-width:260px;overflow:hidden;text-overflow:ellipsis;color:#b8cac3}
-.traffic-summary{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:14px;color:#9eb2aa;font-size:12px}
+.traffic-summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 18px;margin-top:14px;color:#9eb2aa;font-size:12px}
 .traffic-summary small,.traffic-refresh-error{color:#71847d}
 .traffic-refresh-error{display:block;margin-top:9px;font-size:11px}
 .dashboard-warning-stack{margin:-8px 0 18px}
@@ -78,7 +78,7 @@ button{cursor:pointer}
 .live-rate-card{position:relative;display:flex;flex-direction:column;min-height:218px;padding:17px 18px 0;overflow:hidden;isolation:isolate}
 .live-rate-card:before{content:"";position:absolute;z-index:-1;top:-55px;right:-48px;width:145px;height:145px;border-radius:50%;opacity:.22;filter:blur(2px)}.live-rate-card.upload:before{background:radial-gradient(circle,#8c7cf5 0,transparent 67%)}.live-rate-card.download:before{background:radial-gradient(circle,#58bce8 0,transparent 67%)}
 .live-rate-card header{display:flex;align-items:center;gap:9px}.rate-direction{display:grid;place-items:center;width:30px;height:30px;border:1px solid currentColor;border-radius:9px;background:#0a171396;font-size:15px;font-weight:900}.live-rate-card.upload .rate-direction{color:#a69bff}.live-rate-card.download .rate-direction{color:#6dcef4}
-.live-rate-card header>span:nth-child(2){display:grid;gap:1px}.live-rate-card header small{font-size:7px;letter-spacing:.12em}.live-rate-card header b{font-size:12px}.live-rate-card header em{display:flex;align-items:center;gap:5px;margin-left:auto;color:#6f857c;font-size:7px;font-style:normal;font-weight:850;letter-spacing:.1em}.live-rate-card header em i{width:5px;height:5px;border-radius:50%;background:#69dfa7;box-shadow:0 0 0 3px #69dfa712}
+.live-rate-card header>span:nth-child(2){display:grid;gap:1px}.live-rate-card header small{font-size:7px;letter-spacing:.12em}.live-rate-card header b{font-size:12px}.live-rate-card header em{display:flex;align-items:center;gap:5px;margin-left:auto;color:#6f857c;font-size:7px;font-style:normal;font-weight:850;letter-spacing:.1em}.live-rate-card header em i{width:5px;height:5px;border-radius:50%;background:#69dfa7;box-shadow:0 0 0 3px #69dfa712;animation:traffic-live-pulse 1.8s ease-out infinite}
 .rate-reading{display:flex;align-items:baseline;gap:6px;margin-top:14px}.rate-reading strong{font-size:37px;line-height:1;letter-spacing:-.055em}.rate-reading span{color:#748a81;font-size:12px;font-weight:750}
 .rate-meta{display:flex;justify-content:space-between;gap:8px;margin-top:7px;color:#60766d;font-size:8px}.rate-meta span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rate-mini-chart{position:relative;margin:auto -18px 0;padding:0 18px;background:linear-gradient(180deg,transparent,#0915105c)}.rate-mini-chart svg{display:block;width:100%;height:78px;color:inherit}.rate-mini-chart line{stroke:#263b33;stroke-width:.32;opacity:.55}.rate-line{fill:none;stroke:currentColor;stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}.live-rate-card.upload .rate-mini-chart{color:#8c7cf5}.live-rate-card.download .rate-mini-chart{color:#58bce8}
@@ -91,10 +91,11 @@ button{cursor:pointer}
 .traffic-trend-card{min-height:284px;padding:22px;overflow:hidden}
 .gateway-trend-card{min-height:248px}
 .trend-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.trend-card-header h2{margin:4px 0 3px;font-size:18px}.trend-card-header p{max-width:520px;margin:0;color:#6d827a;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.trend-live-dot{display:flex;align-items:center;gap:6px;color:#799087;font-size:9px;font-weight:800;text-transform:uppercase}.trend-live-dot span{width:7px;height:7px;border-radius:50%;background:#6be0a7;box-shadow:0 0 0 4px #6be0a715}
+.trend-live-dot{display:flex;align-items:center;gap:6px;color:#799087;font-size:9px;font-weight:800;text-transform:uppercase}.trend-live-dot span{width:7px;height:7px;border-radius:50%;background:#6be0a7;box-shadow:0 0 0 4px #6be0a715;animation:traffic-live-pulse 1.8s ease-out infinite}
 .trend-current{display:flex;gap:20px;margin-top:15px}.trend-current span{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:750}.trend-current i{width:8px;height:3px;border-radius:3px}.trend-current .upload{color:#a79dff}.trend-current .upload i{background:#8c7cf5}.trend-current .download{color:#75cef1}.trend-current .download i{background:#58bce8}
 .trend-chart{margin-top:5px}.trend-chart svg{display:block;width:100%;height:150px;overflow:visible}.gateway-trend-card .trend-chart svg{height:112px}.chart-grid-line{stroke:#375047;stroke-width:.28;opacity:.38}.trend-line{fill:none;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}.trend-line.upload{stroke:#8c7cf5}.trend-line.download{stroke:#58bce8}
 .trend-axis{display:flex;justify-content:space-between;margin-top:-5px;color:#586d65;font-size:8px}
+@keyframes traffic-live-pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 3px #69dfa712}50%{transform:scale(1.18);box-shadow:0 0 0 6px #69dfa706}}
 .traffic-section{overflow:hidden;overflow-anchor:none}
 .traffic-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}.traffic-section-heading h2{margin:0;font-size:18px}.traffic-section-heading p{margin:5px 0 0;color:#758a82;font-size:12px}.traffic-section-heading button{border:1px solid #2b493e;border-radius:8px;background:#132720;color:#a7bab2;padding:7px 10px;font-size:10px;font-weight:750}
 .device-traffic-layout{display:grid;grid-template-columns:minmax(0,1fr) 0fr;gap:0;align-items:stretch;transition:grid-template-columns .46s cubic-bezier(.22,1,.36,1),gap .46s cubic-bezier(.22,1,.36,1)}
@@ -475,7 +476,7 @@ html[data-theme="light"] .reload-dialog p,html[data-theme="light"] .reload-dialo
 @media(max-width:1150px){
 .dashboard-live-grid{grid-template-columns:1fr 1fr}.gateway-health-card{grid-column:1/-1}.dashboard-monitor-grid{grid-template-columns:1fr}.source-import-grid,.source-grid{grid-template-columns:1fr}
 }
-@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell{transition:none!important}.mode-detail{animation:none}.button-spinner{animation:none}}
+@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell{transition:none!important}.mode-detail{animation:none}.button-spinner,.live-rate-card header em i,.trend-live-dot span{animation:none}}
 
 /* Node health, outlet summaries and applied-path connectivity */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

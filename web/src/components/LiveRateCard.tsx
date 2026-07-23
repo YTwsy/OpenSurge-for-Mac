@@ -2,6 +2,7 @@ import { useId } from 'react'
 import type { TrafficHistoryPoint } from '../types'
 import { formatRate } from '../trafficFormat'
 import { buildSmoothChart } from '../trafficChart'
+import { useAnimatedTrafficSeries } from '../hooks/useAnimatedTrafficSeries'
 
 type LiveRateCardProps = {
   direction: 'upload' | 'download'
@@ -12,9 +13,14 @@ type LiveRateCardProps = {
 export function LiveRateCard({ direction, history, value }: LiveRateCardProps) {
   const gradientID = useId().replace(/:/g, '')
   const label = direction === 'upload' ? '上传' : '下载'
-  const values = history.map(point => point[direction])
-  const peak = Math.max(...values, value, 0)
-  const { amount, unit } = rateParts(value)
+  const target = history.map(point => ({ upload: point.upload, download: point.download }))
+  if (target.length === 0) target.push({ upload: 0, download: 0 })
+  target[target.length - 1] = { ...target[target.length - 1], [direction]: value }
+  const animated = useAnimatedTrafficSeries(target, `${direction}:${history.at(-1)?.sampled_at ?? 'empty'}:${value}`)
+  const values = animated.map(point => point[direction])
+  const current = values.at(-1) ?? value
+  const peak = Math.max(...values, current, 0)
+  const { amount, unit } = rateParts(current)
   const chart = buildSmoothChart(values, peak, 7, 35)
   return <article className={`live-rate-card ${direction}`} aria-label={`${label}当前速度 ${formatRate(value)}`}>
     <header><span className="rate-direction" aria-hidden="true">{direction === 'upload' ? '↑' : '↓'}</span><span><small>{direction.toUpperCase()}</small><b>{label}</b></span><em><i />LIVE</em></header>

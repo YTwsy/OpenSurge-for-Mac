@@ -1185,6 +1185,9 @@ func TestDeviceTrafficKeepsLeaseInventoryWhenMihomoIsUnavailable(t *testing.T) {
 	if payload.ConnectionError == "" || payload.Totals.Devices != 1 || payload.Totals.ActiveConnections != 0 {
 		t.Fatalf("unavailable mihomo response = %#v", payload)
 	}
+	if payload.GatewayLocal.IP != "192.168.1.20" || payload.GatewayLocal.IdentitySource != identitySourceGatewayLocal || payload.GatewayLocal.Transport != localTransportTUN {
+		t.Fatalf("gateway local fallback = %#v", payload.GatewayLocal)
+	}
 }
 
 func TestDeviceTrafficEndpointAttributesLiveMihomoConnections(t *testing.T) {
@@ -1196,6 +1199,8 @@ func TestDeviceTrafficEndpointAttributesLiveMihomoConnections(t *testing.T) {
 	server.fetchConnections = func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error) {
 		return mihomo.ConnectionsSnapshot{UploadTotal: 100, DownloadTotal: 900, Connections: []mihomo.Connection{
 			{ID: "one", Upload: 100, Download: 900, Chains: []string{"流媒体组", "美国-02"}, Metadata: map[string]any{"sourceIP": "192.168.1.188"}},
+			{ID: "local", Upload: 20, Download: 80, Chains: []string{"Proxy", "edge"}, Metadata: map[string]any{"sourceIP": "198.18.0.1", "type": "Tun", "process": "Safari"}},
+			{ID: "observed", Upload: 10, Download: 40, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.1.189"}},
 		}}, nil
 	}
 	paths := runtime.NewPaths(cfg)
@@ -1215,12 +1220,24 @@ func TestDeviceTrafficEndpointAttributesLiveMihomoConnections(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.ConnectionError != "" || len(payload.Devices) != 1 {
+	if payload.ConnectionError != "" || len(payload.Devices) != 2 {
 		t.Fatalf("device traffic = %#v", payload)
 	}
-	device := payload.Devices[0]
+	var device DeviceTraffic
+	for _, candidate := range payload.Devices {
+		if candidate.IP == "192.168.1.188" {
+			device = candidate
+			break
+		}
+	}
 	if device.ActiveConnections != 1 || device.Upload != 100 || device.Download != 900 || device.PrimaryEgress != "流媒体组 → 美国-02" {
 		t.Fatalf("attributed device = %#v", device)
+	}
+	if payload.GatewayLocal.IP != "192.168.1.20" || payload.GatewayLocal.ActiveConnections != 1 || payload.GatewayLocal.Transport != localTransportTUN {
+		t.Fatalf("gateway local = %#v", payload.GatewayLocal)
+	}
+	if payload.UnidentifiedDeviceConnections != 1 || payload.UnclassifiedConnections != 0 || payload.UnmatchedConnections != 1 {
+		t.Fatalf("connection categories = %#v", payload)
 	}
 }
 

@@ -4,6 +4,7 @@ import type { DeviceTraffic, TrafficHistoryPoint } from '../types'
 
 const refreshIntervalMs = 2_000
 const historyLimit = 30
+export const gatewayLocalDeviceKey = 'gateway-local'
 
 export function useDeviceTraffic(gateway?: string) {
   const [traffic, setTraffic] = useState<DeviceTraffic | null>(null)
@@ -45,6 +46,10 @@ function appendTrafficPoint(history: TrafficHistoryPoint[], traffic: DeviceTraff
     upload: device.upload_rate ?? 0,
     download: device.download_rate ?? 0,
   }]))
+  devices[gatewayLocalDeviceKey] = {
+    upload: traffic.gateway_local.upload_rate ?? 0,
+    download: traffic.gateway_local.download_rate ?? 0,
+  }
   const point: TrafficHistoryPoint = {
     sampled_at: traffic.sampled_at,
     upload: traffic.gateway_rates?.upload ?? traffic.totals.upload_rate ?? 0,
