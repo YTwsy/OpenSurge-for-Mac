@@ -115,8 +115,18 @@ final class ModelsTests: XCTestCase {
         XCTAssertFalse(status.diagnosticSummary.contains("secret-value"))
     }
 
-    func testSameWiFiTechnicalModeUsesSameLANProductLabel() {
-        XCTAssertEqual(fixture(gateway: "stopped", recovery: false, drift: false).topologyLabel, "同一 LAN DHCP 接管")
+    func testSameWiFiTechnicalModeUsesDHCPTakeoverProductLabel() {
+        XCTAssertEqual(fixture(gateway: "stopped", recovery: false, drift: false).topologyLabel, "局域网 DHCP 接管")
+    }
+
+    @MainActor
+    func testReopeningAppShowsMenuBarPanel() {
+        let presenter = RecordingMenuBarPresenter()
+        let delegate = OpenSurgeAppDelegate(presenter: presenter)
+
+        XCTAssertFalse(delegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false))
+        let presentationCount = presenter.presentationCount
+        XCTAssertEqual(presentationCount, 1)
     }
 
     private func fixture(gateway: String, recovery: Bool, drift: Bool) -> MenuBarStatus {
@@ -126,4 +136,10 @@ final class ModelsTests: XCTestCase {
                       recoveryRequired: recovery, recoveryStage: recovery ? "gateway_active" : nil,
                       warnings: ["secret-value"], errorCode: nil)
     }
+}
+
+@MainActor
+private final class RecordingMenuBarPresenter: MenuBarPresenting {
+    var presentationCount = 0
+    func showPanel() { presentationCount += 1 }
 }

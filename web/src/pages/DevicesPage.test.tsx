@@ -229,6 +229,10 @@ describe('DevicesPage', () => {
   it('defaults newly registered devices to following global rules and reveals candidates only for dedicated routing', async () => {
     renderPage()
     const follow = await screen.findByRole('radio', { name: /跟随本机/ })
+    const registration = follow.closest('.registration') as HTMLElement
+    expect(registration.classList.contains('device-tools-section')).toBe(true)
+    expect(within(registration).getByRole('heading', { name: '设备身份与路由' })).toBeTruthy()
+    expect(within(registration).getByText(/确认设备名称、固定身份和路由方式/)).toBeTruthy()
     expect((follow as HTMLInputElement).checked).toBe(true)
     expect(screen.queryByLabelText('独立出口候选')).toBeNull()
     await userEvent.click(screen.getByRole('radio', { name: /独立设备出口/ }))
@@ -361,6 +365,15 @@ describe('DevicesPage', () => {
     await userEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     const advanced = toggle.closest('.advanced-policy') as HTMLElement
+    expect(advanced.classList.contains('device-tools-section')).toBe(true)
+    expect(within(advanced).getByText(/设备实际关联的策略入口/)).toBeTruthy()
+    expect(within(advanced).getByText(/可由多个 Profile 继承的基础策略/)).toBeTruthy()
+    expect(within(advanced).getByText(/可复用的域名、IP CIDR 或经典匹配列表/)).toBeTruthy()
+    const ruleSetPrimaryRow = advanced.querySelector('.ruleset-primary-row') as HTMLElement
+    expect(within(ruleSetPrimaryRow).getByLabelText('Rule set ID')).toBeTruthy()
+    expect(within(ruleSetPrimaryRow).getByLabelText('Rule set type')).toBeTruthy()
+    expect(within(ruleSetPrimaryRow).getByLabelText('Rule set behavior')).toBeTruthy()
+    expect(within(ruleSetPrimaryRow).getByRole('button', { name: '添加 Rule Set' })).toBeTruthy()
     for (const label of ['home', 'template: base', 'rule-set: streaming']) {
       const row = within(advanced).getByText(label).closest('.editor-item') as HTMLElement
       expect((within(row).getByRole('button', { name: '移除' }) as HTMLButtonElement).disabled).toBe(true)

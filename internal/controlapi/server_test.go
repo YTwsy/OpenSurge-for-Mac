@@ -18,10 +18,26 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
+
+func TestDoctorChecksForControlHidesRootPrivileges(t *testing.T) {
+	checks := []doctor.Check{
+		{Name: "root privileges", OK: false, Message: "start/stop require sudo"},
+		{Name: "dnsmasq", OK: true},
+	}
+
+	visible := doctorChecksForControl(checks)
+	if len(visible) != 1 || visible[0].Name != "dnsmasq" {
+		t.Fatalf("doctorChecksForControl() = %#v", visible)
+	}
+	if !doctorHealthyForControl(visible) {
+		t.Fatal("root privileges must not make the GUI control-plane health check fail")
+	}
+}
 
 func TestInspectSourceInventory(t *testing.T) {
 	data := []byte(`proxies:

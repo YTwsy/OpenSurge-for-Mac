@@ -267,18 +267,18 @@ button{cursor:pointer}
 .effect-badge{display:inline-flex;align-items:center;width:max-content;border-radius:99px;padding:4px 8px;font-size:10px;font-weight:800;letter-spacing:.04em;white-space:nowrap}
 .effect-badge.live{border:1px solid #32765a;background:#153b2c;color:#a3f1ca}
 .effect-badge.restart{border:1px solid #76612f;background:#3a3018;color:#f7dc9d}
-.registration{padding:0;overflow:hidden}
+.device-tools-section{padding:0;overflow:hidden;border-color:#2a5c48;background:linear-gradient(180deg,#0f211b,#0d1b17)}
 .section-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border:0;background:transparent;color:inherit;text-align:left;list-style:none;transition:background .15s}
 .section-toggle:hover{background:#11231d}
-.registration>.section-toggle,.advanced-policy>.section-toggle{border-radius:15px}
-.registration>.section-toggle[aria-expanded="true"],.advanced-policy>.section-toggle[aria-expanded="true"]{border-radius:15px 15px 0 0}
+.device-tools-section>.section-toggle{border-radius:15px}
+.device-tools-section>.section-toggle[aria-expanded="true"]{border-radius:15px 15px 0 0;border-bottom:1px solid #244138;background:#10221c}
 .section-toggle:focus-visible{outline:none}
 .section-toggle:focus-visible>span:last-child{outline:2px solid #72e1b0;outline-offset:2px}
 .section-toggle span:first-child{display:grid;gap:5px;min-width:0}
 .section-toggle small{color:#758a82;font-weight:400}
-.section-toggle>span:last-child{flex:0 0 auto;min-width:54px;padding:5px 9px;border:1px solid #2a443a;border-radius:99px;background:#12261f;color:#8eddb9;text-align:center;font-size:10px;font-weight:800}
-.registration-body{display:grid;grid-template-columns:minmax(0,.92fr) minmax(400px,1.08fr);align-items:stretch;gap:16px;padding:18px 20px 20px;border-top:1px solid #1d302a;background:#09151266}
-.registration-body .lease-picker{min-width:0;margin:0;padding:16px;border:1px solid #20382f;border-radius:12px;background:#0a1713}
+.section-toggle>span:last-child{flex:0 0 auto;min-width:54px;padding:5px 9px;border:1px solid #32765a;border-radius:99px;background:#153b2c;color:#a3f1ca;text-align:center;font-size:10px;font-weight:800}
+.registration-body{display:grid;grid-template-columns:minmax(0,.92fr) minmax(400px,1.08fr);align-items:start;gap:14px;padding:14px;background:transparent}
+.registration-body .lease-picker{min-width:0;margin:0;padding:16px;border:1px solid #213a31;border-radius:14px;background:linear-gradient(150deg,#0e1e19,#0b1714)}
 .registration-picker-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
 .registration-picker-heading .text-link{flex:0 0 auto;margin-top:2px}
 .lease-choice{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"state identity action" "state address action";gap:4px 10px;align-items:center;margin-top:8px;padding:11px 12px;border:1px solid #233a31;border-radius:10px;background:#0d1b17;color:inherit;text-align:left;transition:border-color .15s,background .15s}
@@ -286,7 +286,9 @@ button{cursor:pointer}
 .lease-choice>span:first-child{grid-area:state}.lease-choice>span:nth-child(2){grid-area:identity;min-width:0}.lease-choice>code{grid-area:address}.lease-choice>span:last-child{grid-area:action}
 .lease-choice strong,.lease-choice small{display:block}.lease-choice small{margin-top:3px;color:#71847d}
 .lease-choice strong,.lease-choice small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lease-choice code{color:#a6d8c4;font-size:11px}.lease-choice>span:last-child{font-size:10px;color:#7c9189;white-space:nowrap}
-.registration-form{display:grid;gap:12px;align-content:start;min-width:0;padding:16px;border:1px solid #20382f;border-radius:12px;background:#0a1713}
+.registration-form{display:grid;gap:12px;align-content:start;min-width:0;padding:16px;border:1px solid #213a31;border-radius:14px;background:linear-gradient(150deg,#0e1e19,#0b1714)}
+.utility-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
+.utility-card-heading>span:first-child{display:grid;gap:4px;min-width:0}.utility-card-heading small{color:#62bf97;font-size:8px;font-weight:800;letter-spacing:.12em}.utility-card-heading h3{margin:0;font-size:16px}.utility-card-heading>.effect-badge{flex:0 0 auto}
 .registration-form>label,.candidate-picker>label,.token-input{display:grid;gap:7px;color:#9eb2aa;font-size:12px;font-weight:700}
 .registration-id-hint{margin-top:-6px;color:#71847d;font-size:10px}.registration-id-hint code{color:#9eb2aa}
 .registration-form input,.registration-form select,.candidate-picker input,.candidate-picker select,.token-input input,.egress-mode select,.advanced-policy input,.advanced-policy select,.default-slot select,.rule-slots select{width:100%;min-width:0;border:1px solid #2a4038;border-radius:9px;background:#091512;color:#e4eee9;padding:10px}
@@ -363,11 +365,12 @@ button{cursor:pointer}
 .egress-mode legend{padding:0 6px;font-size:12px;font-weight:700}.egress-mode label{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px}.egress-mode .candidate-picker{grid-column:1/-1}
 .rule-technical code{display:block;margin-top:7px;color:#8fdab8}.editor-actions{display:flex;justify-content:flex-end;gap:8px}
 .editor-actions .primary{background:#9af0c7;color:#092019;border:0}
-.advanced-policy{padding:0;overflow:hidden}.advanced-policy>.section-toggle[aria-expanded="true"]{border-bottom:1px solid #1d302a;background:#0a171380}
-.advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:16px;padding:18px 20px 20px;background:#09151266}.advanced-grid>div{display:grid;gap:10px;align-content:start;min-width:0;padding:16px;border:1px solid #20382f;border-radius:12px;background:#0a1713;box-shadow:0 10px 28px #0209071f}.advanced-grid h3{margin:0 0 2px;font-size:15px}.advanced-grid .wide{grid-column:1/-1}
-.advanced-grid>div:not(.wide):not(:has(.editor-item))::after{content:"暂无可复用项目";display:grid;place-items:center;min-height:58px;border:1px dashed #29443a;border-radius:9px;color:#657b72;font-size:10px}
-.advanced-grid>div>button{min-height:40px;border-color:#3b755d;background:#15382b;color:#a8eccb;font-weight:800}
-.ruleset-form{display:grid;grid-template-columns:minmax(160px,1fr) minmax(130px,.68fr) minmax(130px,.68fr);gap:8px;align-items:start;padding:12px;border:1px solid #20382f;border-radius:10px;background:#0d1b17}.ruleset-form .token-input{grid-column:1/span 2}.ruleset-form>button{grid-column:3;align-self:end;min-height:39px;border-color:#3b755d;background:#15382b;color:#a8eccb;font-weight:800}
+.advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:14px;padding:14px;background:transparent}.advanced-tool-card{display:grid;gap:10px;align-content:start;min-width:0;padding:16px;border:1px solid #213a31;border-radius:14px;background:linear-gradient(150deg,#0e1e19,#0b1714)}.advanced-grid .wide{grid-column:1/-1}
+.advanced-tool-card:not(.wide):not(:has(.editor-item))::after{content:"暂无可复用项目";display:grid;place-items:center;min-height:58px;border:1px dashed #29443a;border-radius:9px;color:#657b72;font-size:10px}
+.advanced-tool-card>button{min-height:40px;border-color:#3b755d;background:#15382b;color:#a8eccb;font-weight:800}
+.ruleset-form{display:grid;gap:10px;padding:12px;border:1px solid #20382f;border-radius:10px;background:#0d1b17}
+.ruleset-primary-row{display:grid;grid-template-columns:minmax(180px,1fr) minmax(130px,.55fr) minmax(130px,.55fr) minmax(145px,auto);gap:8px;align-items:stretch}.ruleset-primary-row>button{min-height:40px;border-color:#3b755d;background:#15382b;color:#a8eccb;font-weight:800;white-space:nowrap}
+.ruleset-source-row{min-width:0}.ruleset-source-row.http{display:grid;grid-template-columns:minmax(0,1fr) minmax(110px,.22fr);gap:8px}.ruleset-source-row .token-input{width:100%}
 .advanced-policy .editor-item{grid-template-columns:minmax(100px,.8fr) minmax(0,1.4fr) auto;padding:10px 11px;border:1px solid #233a31;border-radius:9px;background:#0d1b17}.advanced-policy .editor-item strong,.advanced-policy .editor-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.advanced-policy .editor-item button{min-width:54px}.advanced-policy button:disabled{opacity:.4;cursor:not-allowed}
 .sticky-save{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-top:18px;padding:14px 16px;border:1px solid #38564b;border-radius:13px;background:#0b1a16e8;backdrop-filter:blur(18px);box-shadow:0 16px 45px #0008}
 .sticky-save.has-changes{position:sticky;z-index:5;bottom:18px}
@@ -457,18 +460,19 @@ html[data-theme="light"] .drift-banner{background:#fff5dc;border-color:#dabd70;c
 html[data-theme="light"] .drift-banner p{color:#806b3a}
 html[data-theme="light"] .effect-badge.live{background:#dcf1e7;border-color:#68ad8c;color:#215e46}
 html[data-theme="light"] .effect-badge.restart{background:#fff0ca;border-color:#cfae5c;color:#6b4f12}
-html[data-theme="light"] .registration-body,html[data-theme="light"] .advanced-policy>.section-toggle[aria-expanded="true"],html[data-theme="light"] .lease-choice{border-color:#d8e6e0}
-html[data-theme="light"] .section-toggle:hover,html[data-theme="light"] .advanced-policy>.section-toggle[aria-expanded="true"]{background:#f2f8f5}
+html[data-theme="light"] .device-tools-section{background:#fff;border-color:#87bda6}
+html[data-theme="light"] .device-tools-section>.section-toggle[aria-expanded="true"],html[data-theme="light"] .lease-choice{border-color:#d8e6e0}
+html[data-theme="light"] .section-toggle:hover,html[data-theme="light"] .device-tools-section>.section-toggle[aria-expanded="true"]{background:#f2f8f5}
 html[data-theme="light"] .section-toggle>span:last-child{background:#edf6f2;border-color:#bfd6cc;color:#286c51}
-html[data-theme="light"] .registration-body,html[data-theme="light"] .advanced-grid{background:#f4f9f7}
-html[data-theme="light"] .registration-body .lease-picker,html[data-theme="light"] .registration-form,html[data-theme="light"] .advanced-grid>div{background:#fff;border-color:#d2e2db}
+html[data-theme="light"] .registration-body,html[data-theme="light"] .advanced-grid{background:transparent}
+html[data-theme="light"] .registration-body .lease-picker,html[data-theme="light"] .registration-form,html[data-theme="light"] .advanced-tool-card{background:linear-gradient(145deg,#fff,#f6faf8);border-color:#cbded6}
 html[data-theme="light"] .lease-choice,html[data-theme="light"] .advanced-policy .editor-item{background:#f8fbfa;border-color:#d2e2db}
 html[data-theme="light"] .lease-choice:hover{background:#edf7f2;border-color:#77b99d}
 html[data-theme="light"] .inline-advanced,html[data-theme="light"] .live-group,html[data-theme="light"] .flat-rule{background:#f8fbfa;border-color:#cbded6}
 html[data-theme="light"] .registration-form input,html[data-theme="light"] .registration-form select,html[data-theme="light"] .candidate-picker input,html[data-theme="light"] .candidate-picker select,html[data-theme="light"] .token-input input,html[data-theme="light"] .egress-mode select,html[data-theme="light"] .advanced-policy input,html[data-theme="light"] .advanced-policy select,html[data-theme="light"] .default-slot select,html[data-theme="light"] .rule-slots select,html[data-theme="light"] .live-group select{background:#fff;border-color:#bad1c7;color:#183028}
 html[data-theme="light"] .candidate-add button,html[data-theme="light"] .token-entry button,html[data-theme="light"] .rule-actions button,html[data-theme="light"] .editor-actions button,html[data-theme="light"] .advanced-policy button{background:#edf5f1;border-color:#bed3ca;color:#254c3e}
-html[data-theme="light"] .advanced-grid>div:not(.wide):not(:has(.editor-item))::after{border-color:#c2d8ce;color:#6b8178}
-html[data-theme="light"] .advanced-grid>div>button,html[data-theme="light"] .ruleset-form>button{background:#e1f1ea;border-color:#9bcab5;color:#245c45}
+html[data-theme="light"] .advanced-tool-card:not(.wide):not(:has(.editor-item))::after{border-color:#c2d8ce;color:#6b8178}
+html[data-theme="light"] .advanced-tool-card>button,html[data-theme="light"] .ruleset-primary-row>button{background:#e1f1ea;border-color:#9bcab5;color:#245c45}
 html[data-theme="light"] .ruleset-form{background:#f8fbfa;border-color:#d2e2db}
 html[data-theme="light"] .token{background:#e5f2ec;border-color:#abd0c0;color:#245b46}
 html[data-theme="light"] .session-expired{color:#183028}html[data-theme="light"] .session-expired p{color:#60766d}

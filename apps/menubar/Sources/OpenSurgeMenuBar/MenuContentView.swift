@@ -64,7 +64,7 @@ struct MenuContentView: View {
 
             Divider()
             Button { Task { await model.openWebGUI() } } label: {
-                Label("打开 OpenSurge", systemImage: "arrow.up.forward.app")
+                Label("打开 OpenSurge 控制面板", systemImage: "arrow.up.forward.app")
                     .frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent)
 
@@ -194,8 +194,8 @@ private func recoveryStageLabel(_ stage: String) -> String {
 
 private func takeoverStatusLabel(_ stage: String?) -> String {
     switch stage {
-    case "client_validated": "同一 LAN DHCP 接管已验收"
-    case "client_validation_skipped": "同一 LAN DHCP 接管运行中，客户端验收已跳过"
-    default: "同一 LAN DHCP 接管运行中，等待客户端验收"
+    case "client_validated": "局域网 DHCP 接管已验收"
+    case "client_validation_skipped": "局域网 DHCP 接管运行中，客户端验收已跳过"
+    default: "局域网 DHCP 接管运行中，等待客户端验收"
     }
 }

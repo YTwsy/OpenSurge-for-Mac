@@ -3,15 +3,11 @@ import SwiftUI
 @main
 @MainActor
 struct OpenSurgeMenuBarApp: App {
-    @StateObject private var model = StatusModel()
+    @NSApplicationDelegateAdaptor(OpenSurgeAppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuContentView(model: model)
-        } label: {
-            OpenSurgeMenuBarLabel(indicator: model.indicator)
-                .accessibilityLabel(model.indicator.accessibilityLabel)
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
     }
 }

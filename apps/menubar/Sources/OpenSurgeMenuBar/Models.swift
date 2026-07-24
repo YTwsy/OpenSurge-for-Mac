@@ -112,7 +112,7 @@ extension MenuBarStatus {
 
     var topologyLabel: String {
         switch topology {
-        case "same_wifi_dhcp": "同一 LAN DHCP 接管"
+        case "same_wifi_dhcp": "局域网 DHCP 接管"
         case "same_lan": "旁路由模式"
         case "isolated_lan": "独立下游 LAN"
         default: topology

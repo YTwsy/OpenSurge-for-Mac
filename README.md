@@ -53,9 +53,10 @@ forwarding 提供原生网关路径。
 
 **友好的 App 体验**
 
-- 通过 macOS 菜单栏 App 随时查看状态、接收网络恢复提醒并打开本地 Web GUI；
+- 通过 macOS 菜单栏 App 随时查看状态、接收网络恢复提醒并打开本地 Web GUI；再次打开
+  `/Applications/OpenSurge.app` 会直接展开与菜单栏图标相同的状态面板；
 - 在一个控制面中完成订阅导入、网络设置、设备分流、节点健康、连通性检查与诊断；
-- 使用恢复状态机引导同一 LAN DHCP 接管的启动、客户端验收、停止和网络恢复。
+- 使用恢复状态机引导局域网 DHCP 接管的启动、客户端验收、停止和网络恢复。
 
 第一次使用请参阅 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)。
 

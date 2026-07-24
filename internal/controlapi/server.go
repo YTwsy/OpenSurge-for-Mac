@@ -476,6 +476,7 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	manager := gateway.New(cfg)
 	status, statusErr := manager.Status(ctx)
 	report := doctor.Run(cfg)
+	controlDoctorChecks := doctorChecksForControl(report.Checks)
 	paths := runtime.NewPaths(cfg)
 	leases, _ := device.LoadLeases(paths.LeaseFile)
 	if leases == nil {
@@ -532,8 +533,8 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		Warnings:             warnings,
 		Status:               status,
 		StatusError:          errorString(statusErr),
-		Doctor:               report.Checks,
-		DoctorHealthy:        doctorHealthyForControl(report.Checks),
+		Doctor:               controlDoctorChecks,
+		DoctorHealthy:        doctorHealthyForControl(controlDoctorChecks),
 		Leases:               leases,
 		Policies:             groups,
 		Providers:            providers,
@@ -1744,14 +1745,21 @@ func validSelection(groups []mihomo.ProxyGroup, group, policy string) bool {
 
 func doctorHealthyForControl(checks []doctor.Check) bool {
 	for _, check := range checks {
-		if check.Name == "root privileges" {
-			continue
-		}
 		if !check.OK {
 			return false
 		}
 	}
 	return true
+}
+
+func doctorChecksForControl(checks []doctor.Check) []doctor.Check {
+	result := make([]doctor.Check, 0, len(checks))
+	for _, check := range checks {
+		if check.Name != "root privileges" {
+			result = append(result, check)
+		}
+	}
+	return result
 }
 
 func fileDigest(path string) string {

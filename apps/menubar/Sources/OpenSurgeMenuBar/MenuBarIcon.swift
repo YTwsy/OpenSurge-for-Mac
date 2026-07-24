@@ -39,19 +39,28 @@ struct OpenSurgeAppIconView: View {
 struct OpenSurgeMenuBarLabel: View {
     let indicator: IndicatorState
 
-    @ViewBuilder
     var body: some View {
-        if indicator.usesBrandMenuBarIcon {
-            Image(nsImage: OpenSurgeMenuBarIconAsset.image)
-                .renderingMode(.template)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: 18, height: 18)
-                .foregroundStyle(.primary)
-                .opacity(indicator.menuBarIconOpacity)
-        } else {
-            Image(systemName: indicator.systemImage)
-                .symbolRenderingMode(.monochrome)
-        }
+        Image(nsImage: openSurgeMenuBarImage(for: indicator))
+            .renderingMode(.template)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: 18, height: 18)
+            .foregroundStyle(.primary)
+            .opacity(indicator.menuBarIconOpacity)
     }
+}
+
+@MainActor
+func openSurgeMenuBarImage(for indicator: IndicatorState) -> NSImage {
+    let source: NSImage
+    if indicator.usesBrandMenuBarIcon {
+        source = OpenSurgeMenuBarIconAsset.image
+    } else {
+        source = NSImage(systemSymbolName: indicator.systemImage, accessibilityDescription: indicator.accessibilityLabel)
+            ?? OpenSurgeMenuBarIconAsset.image
+    }
+    let image = source.copy() as? NSImage ?? source
+    image.isTemplate = true
+    image.size = NSSize(width: 18, height: 18)
+    return image
 }

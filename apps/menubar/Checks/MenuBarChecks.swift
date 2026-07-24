@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Darwin
 
@@ -57,7 +58,7 @@ struct MenuBarChecks {
         try require(menuBarIndicator(status: nil, hasError: true) == .unreachable, "confirmed Control Service failure must remain distinguishable")
         try require(IndicatorState.connecting.usesBrandMenuBarIcon && IndicatorState.connecting.menuBarIconOpacity == 0.75, "connecting indicator must use the brand icon")
         try require(IndicatorState.unreachable.usesBrandMenuBarIcon && IndicatorState.unreachable.menuBarIconOpacity == 0.35, "initial Control Service delay must not restore the legacy-looking icon")
-        try require(status.topologyLabel == "同一 LAN DHCP 接管", "same-LAN topology label mismatch")
+        try require(status.topologyLabel == "局域网 DHCP 接管", "DHCP takeover topology label mismatch")
         try require(status.gatewayServicesActive && menuBarQuitWarning(for: status).contains("都不会停止"), "active gateway quit warning mismatch")
         try require(status.diagnosticSummary.contains("PF: loaded"), "diagnostic summary omitted PF")
 
@@ -110,6 +111,14 @@ struct MenuBarChecks {
         try require(stopped.canQuitOpenSurge && openSurgeQuitWarning(for: stopped).contains("root Helper 仍保持空闲加载"), "stopped gateway must allow the explicit OpenSurge quit path")
         try require(!active.canQuitOpenSurge && !recovery.canQuitOpenSurge, "active or recovery state must block the OpenSurge quit path")
 
+        let (useDefaultReopen, presentationCount) = await MainActor.run {
+            let panelPresenter = CheckMenuBarPresenter()
+            let appDelegate = OpenSurgeAppDelegate(presenter: panelPresenter)
+            let useDefaultReopen = appDelegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false)
+            return (useDefaultReopen, panelPresenter.presentationCount)
+        }
+        try require(!useDefaultReopen && presentationCount == 1, "opening OpenSurge again must show the menu bar panel")
+
         var fallbackOpened = false
         let launcher = WebGUIURLLauncher(
             workspaceOpen: { _ in false },
@@ -131,6 +140,12 @@ struct MenuBarChecks {
 
         print("OpenSurge menu bar checks passed")
     }
+}
+
+@MainActor
+private final class CheckMenuBarPresenter: MenuBarPresenting {
+    var presentationCount = 0
+    func showPanel() { presentationCount += 1 }
 }
 
 private func requestBody(_ request: URLRequest) -> Data {
