@@ -12,8 +12,8 @@ mihomo 和 runtime 包中。
 菜单栏状态面板使用 AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI
 `MenuContentView`。状态栏图标点击与用户从 Finder/Launchpad 再次打开
 `/Applications/OpenSurge.app` 进入同一个 presenter；后者只确保面板展开，不触发网关
-或 Control Service 生命周期动作。首次主动启动仅在 App 已 active 时展开，避免登录项
-静默启动时主动弹窗。
+或 Control Service 生命周期动作。每次菜单栏 App 进程启动完成都会主动展开面板，包括
+通过“登录时显示”启动；Finder/Launchpad 的 reopen 事件同样确保面板展开。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP
@@ -59,7 +59,7 @@ Control API 的 bootstrap `expires_at` 来自 Go `time.Time`，可能包含 RFC3
 Web GUI 从一次性 bootstrap 链接换取的 HttpOnly 会话使用 12 小时闲置期限；每次有效的
 浏览器会话请求都会滑动续期，因此持续打开的控制面不能在固定时间点突然失效。会话仍只
 保存在 Control Service 内存中，不跨服务重启持久化。浏览器收到 401 后必须停止 API 轮询
-与 SSE，并明确引导用户点击 macOS 菜单栏中的 OpenSurge 图标，再选择“打开 OpenSurge 控制面板”；
+与 SSE，并明确引导用户点击 macOS 菜单栏中的 OpenSurge 图标，再选择“打开 OpenSurge 面板”；
 不能继续提供必然再次返回 401 的普通“重试”按钮。
 
 菜单栏的 Control API bearer token 只从用户应用支持目录内权限为 `0600` 的

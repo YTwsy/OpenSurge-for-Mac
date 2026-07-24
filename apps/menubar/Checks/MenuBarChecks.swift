@@ -119,6 +119,9 @@ struct MenuBarChecks {
         }
         try require(!useDefaultReopen && presentationCount == 1, "opening OpenSurge again must show the menu bar panel")
 
+        let launchPresentationCount = await presentationCountAfterLaunch()
+        try require(launchPresentationCount == 1, "launching OpenSurge must show the menu bar panel")
+
         var fallbackOpened = false
         let launcher = WebGUIURLLauncher(
             workspaceOpen: { _ in false },
@@ -140,6 +143,22 @@ struct MenuBarChecks {
 
         print("OpenSurge menu bar checks passed")
     }
+}
+
+@MainActor
+private func presentationCountAfterLaunch() async -> Int {
+    let panelPresenter = CheckMenuBarPresenter()
+    let appDelegate = OpenSurgeAppDelegate(presenter: panelPresenter)
+    appDelegate.applicationDidFinishLaunching(
+        Notification(name: NSApplication.didFinishLaunchingNotification)
+    )
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        DispatchQueue.main.async {
+            continuation.resume()
+        }
+    }
+    withExtendedLifetime(appDelegate) {}
+    return panelPresenter.presentationCount
 }
 
 @MainActor

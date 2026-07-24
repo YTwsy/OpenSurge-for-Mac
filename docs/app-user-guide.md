@@ -19,8 +19,8 @@ CLI and development workflows are intentionally left out.
 3. Open **OpenSurge** from `/Applications`; the app opens its menu bar status
    panel directly.
 4. Later, either open **OpenSurge** again or click its menu bar icon to show the
-   same panel, then choose **打开 OpenSurge 控制面板** (Open the OpenSurge
-   control panel) to launch the Web GUI.
+   same panel, then choose **打开 OpenSurge 面板** (Open the OpenSurge panel)
+   to launch the Web GUI.
 
 The menu bar app shows status and recovery warnings and opens the Web GUI.
 Sources, network settings, devices, and policies are managed in the Web GUI.

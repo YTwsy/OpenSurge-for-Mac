@@ -64,7 +64,7 @@ struct MenuContentView: View {
 
             Divider()
             Button { Task { await model.openWebGUI() } } label: {
-                Label("打开 OpenSurge 控制面板", systemImage: "arrow.up.forward.app")
+                Label("打开 OpenSurge 面板", systemImage: "arrow.up.forward.app")
                     .frame(maxWidth: .infinity)
             }.buttonStyle(.borderedProminent)
 

@@ -25,11 +25,10 @@ final class OpenSurgeAppDelegate: NSObject, NSApplicationDelegate {
             presenter = MenuBarController(model: StatusModel())
         }
 
-        // A user launch activates this LSUIElement app, while a login-item
-        // launch normally remains inactive. Only the former should open the
-        // panel automatically.
+        // Every process launch opens the same panel as the menu bar icon.
+        // This also makes the "登录时显示" setting literal: login-item
+        // launches present the panel instead of starting silently.
         DispatchQueue.main.async { [weak self] in
-            guard NSApplication.shared.isActive else { return }
             self?.presenter?.showPanel()
         }
     }
