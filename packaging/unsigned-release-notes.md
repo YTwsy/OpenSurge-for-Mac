@@ -6,11 +6,9 @@
 
 <!-- 发布前请更新为当前版本的主要变化，并同步维护 English / Highlights。 -->
 
-- 大幅改进网络设置的操作流程和引导：新增网关模式说明与拓扑图，统一网关启动、停止和恢复入口，并自动定位到接下来的操作位置。
-- 更清楚地区分旁路由（手工网关）、局域网 DHCP 接管和独立下游 LAN 三种模式，帮助用户选择适合自己的网络拓扑。
-- 增强局域网 DHCP 接管流程的可靠性：切换 Mac 固定 IPv4 后会回读并确认网络配置，避免在设置尚未生效时继续操作。
-- 活跃使用 Web GUI 时自动续期会话；会话过期后会明确提示从菜单栏重新打开 OpenSurge。
-- 优化菜单栏图标和应用名称显示，并补充中英文 App 使用指南。
+- 修复“代理与规则源”页面在无效或不完整的订阅数据中包含空字段时可能出现整页白屏的问题。
+- 无效来源现在仍会显示结构校验结果和安全的空统计信息；在修正来源前，OpenSurge 会阻止将其设为下次启动版本。
+- 新增页面级故障隔离与重试引导：单个页面渲染失败时仍可使用左侧导航，并可前往诊断页查看运行信息。
 
 ### 选择安装包
 
@@ -58,11 +56,9 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ### Highlights
 
-- Significantly improved the Network Settings workflow and guidance with clearer gateway-mode descriptions, topology diagrams, unified gateway controls, and automatic navigation to the next action.
-- More clearly distinguishes between Bypass Router (Manual Gateway), LAN DHCP Takeover, and Separate Downstream LAN modes.
-- Improved the reliability of LAN DHCP Takeover by confirming that the Mac's fixed IPv4 configuration has actually been applied before continuing.
-- Active Web GUI sessions now renew automatically. When a session expires, OpenSurge clearly explains how to reopen the Web GUI from the menu bar.
-- Refined the menu bar icon and application naming, and added App guides in both Chinese and English.
+- Fixed a blank Sources page that could occur when invalid or incomplete subscription data contained empty fields.
+- Invalid sources now remain visible with their validation result and safe empty statistics. OpenSurge prevents them from becoming the next-start version until they are corrected.
+- Added page-level failure isolation and retry guidance, keeping the sidebar available and pointing users to Diagnostics when a page cannot render.
 
 ### Choose a package
 
