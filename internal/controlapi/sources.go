@@ -229,6 +229,35 @@ func emptySourceDiff() SourceDiff {
 	return SourceDiff{ProxiesAdded: []string{}, ProxiesRemoved: []string{}, GroupsAdded: []string{}, GroupsRemoved: []string{}, ProxyProvidersAdded: []string{}, ProxyProvidersRemoved: []string{}, RuleProvidersAdded: []string{}, RuleProvidersRemoved: []string{}}
 }
 
+func emptyInventory() Inventory {
+	return Inventory{
+		Proxies:        []string{},
+		ProxyProviders: []string{},
+		ProxyGroups:    []string{},
+		RuleProviders:  []string{},
+		Warnings:       []string{},
+	}
+}
+
+func normalizeInventory(inventory Inventory) Inventory {
+	if inventory.Proxies == nil {
+		inventory.Proxies = []string{}
+	}
+	if inventory.ProxyProviders == nil {
+		inventory.ProxyProviders = []string{}
+	}
+	if inventory.ProxyGroups == nil {
+		inventory.ProxyGroups = []string{}
+	}
+	if inventory.RuleProviders == nil {
+		inventory.RuleProviders = []string{}
+	}
+	if inventory.Warnings == nil {
+		inventory.Warnings = []string{}
+	}
+	return inventory
+}
+
 func diffInventory(previousDigest string, before, after Inventory) SourceDiff {
 	diff := emptySourceDiff()
 	diff.PreviousDigest = previousDigest
@@ -270,28 +299,27 @@ func diffNames(before, after []string) (added, removed []string) {
 }
 
 func inspectSource(data []byte, kind string) (Inventory, error) {
+	inv := emptyInventory()
 	var document yaml.Node
 	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&document); err != nil {
-		return Inventory{}, fmt.Errorf("parse YAML: %w", err)
+		return inv, fmt.Errorf("parse YAML: %w", err)
 	}
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return Inventory{}, fmt.Errorf("top-level YAML must be a mapping")
+		return inv, fmt.Errorf("top-level YAML must be a mapping")
 	}
 	root := document.Content[0]
 	sections := map[string]*yaml.Node{}
 	for i := 0; i < len(root.Content); i += 2 {
 		key := root.Content[i]
 		if _, exists := sections[key.Value]; exists {
-			return Inventory{}, fmt.Errorf("duplicate top-level section %q", key.Value)
+			return inv, fmt.Errorf("duplicate top-level section %q", key.Value)
 		}
 		sections[key.Value] = root.Content[i+1]
 	}
-	inv := Inventory{
-		Proxies:        sequenceNames(sections["proxies"]),
-		ProxyGroups:    sequenceNames(sections["proxy-groups"]),
-		ProxyProviders: mappingKeys(sections["proxy-providers"]),
-		RuleProviders:  mappingKeys(sections["rule-providers"]),
-	}
+	inv.Proxies = sequenceNames(sections["proxies"])
+	inv.ProxyGroups = sequenceNames(sections["proxy-groups"])
+	inv.ProxyProviders = mappingKeys(sections["proxy-providers"])
+	inv.RuleProviders = mappingKeys(sections["rule-providers"])
 	if kind == "mihomo_profile" {
 		rules := sections["rules"]
 		if rules == nil || rules.Kind != yaml.SequenceNode {

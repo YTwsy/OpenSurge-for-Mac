@@ -612,6 +612,28 @@ describe('OpenSurge app shell', () => {
     expect(await screen.findByRole('button', { name: '正在导入并校验…' })).toBeTruthy()
   })
 
+  it('renders an invalid Base64 source draft when API collections are null', async () => {
+    const source = {
+      id: 'base64', name: 'Base64 nodes', kind: 'mihomo_profile', origin: 'https://example.com/subscription', digest: 'invalid', size: 24,
+      valid: false, validation: 'top-level YAML must be a mapping', desired: false, applied: false, versions: null, imported_at: '2026-07-26T00:00:00Z',
+      diff: { previous_digest: 'previous', proxies_added: null, proxies_removed: null, groups_added: null, groups_removed: null, proxy_providers_added: null, proxy_providers_removed: null, rule_providers_added: null, rule_providers_removed: null, rule_count_delta: 0 },
+      inventory: { proxies: null, proxy_providers: null, proxy_groups: null, rule_providers: null, rule_count: 0, terminal_match: false, warnings: null },
+    } as unknown as Source
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
+
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+
+    const heading = await screen.findByRole('heading', { name: 'Base64 nodes' })
+    const card = heading.closest('article')
+    expect(card).toBeTruthy()
+    expect(within(card!).getByText('结构校验失败')).toBeTruthy()
+    expect(within(card!).getByText('top-level YAML must be a mapping')).toBeTruthy()
+    expect(within(card!).getByText('proxy +0/-0')).toBeTruthy()
+    expect((within(card!).getByRole('button', { name: '设为下次启动版本' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('shows explicit feedback after refreshing a source draft', async () => {
     const source: Source = {
       id: 'remote', name: 'Home', kind: 'mihomo_profile', origin: 'https://example.com/profile', digest: 'next', size: 100,

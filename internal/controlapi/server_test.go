@@ -64,6 +64,16 @@ rules:
 	}
 }
 
+func TestInspectSourceInvalidTopLevelReturnsEmptyCollections(t *testing.T) {
+	inventory, err := inspectSource([]byte("c3M6Ly9leGFtcGxlLmNvbQo="), "mihomo_profile")
+	if err == nil || !strings.Contains(err.Error(), "top-level YAML must be a mapping") {
+		t.Fatalf("inspectSource() error = %v", err)
+	}
+	if inventory.Proxies == nil || inventory.ProxyProviders == nil || inventory.ProxyGroups == nil || inventory.RuleProviders == nil || inventory.Warnings == nil {
+		t.Fatalf("invalid source inventory contains nil collections: %#v", inventory)
+	}
+}
+
 func TestInspectSourceRejectsReservedNamespace(t *testing.T) {
 	_, err := inspectSource([]byte(`proxy-groups:
   - name: device/phone/default
@@ -642,6 +652,22 @@ func TestTrustedPathRejectsEscapesAndUserOwnedFiles(t *testing.T) {
 func TestPublicSourcesKeepsEmptyArray(t *testing.T) {
 	if sources := publicSources([]Source{}); sources == nil {
 		t.Fatal("publicSources returned nil for an empty collection")
+	}
+}
+
+func TestPublicSourcesNormalizesCurrentAndHistoricalInventory(t *testing.T) {
+	public := publicSources([]Source{{
+		Inventory: Inventory{},
+		Versions:  []SourceVersion{{Inventory: Inventory{}}},
+	}})
+	data, err := json.Marshal(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"proxies", "proxy_providers", "proxy_groups", "rule_providers", "warnings"} {
+		if strings.Contains(string(data), `"`+field+`":null`) {
+			t.Fatalf("public source contains null %s: %s", field, data)
+		}
 	}
 }
 

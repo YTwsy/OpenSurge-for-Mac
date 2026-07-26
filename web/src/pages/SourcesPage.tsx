@@ -107,25 +107,31 @@ export function SourcesPage({ overview, onChanged }: { overview: Overview | null
     <section className="section source-library">
       <SectionTitle title="已导入快照" subtitle="刷新只产生新草稿；应用到运行中的网关需要再次完整校验。" />
       {sources.length ? <div className="source-grid">{sources.map(source => {
-        const previousApplied = source.versions.some(version => version.applied)
-        const changed = source.diff.previous_digest && source.diff.previous_digest !== source.digest
+        const versions = source.versions ?? []
+        const inventory = source.inventory
+        const proxyGroups = inventory?.proxy_groups ?? []
+        const proxyProviders = inventory?.proxy_providers ?? []
+        const diff = source.diff
+        const origin = source.origin ?? ''
+        const previousApplied = versions.some(version => version.applied)
+        const changed = diff?.previous_digest && diff.previous_digest !== source.digest
         const state = source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid ? '结构有效' : '无效'
         const action = source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本'
         const refreshing = activeAction?.kind === 'refresh' && activeAction.sourceID === source.id
         return <article className="source-card" key={source.id}>
           <div className="source-head"><div><small>{source.kind}</small><h3>{source.name}</h3></div><span className={source.applied ? 'pill ok' : source.desired ? 'pill' : source.valid ? 'pill ok' : 'pill bad'}>{state}</span></div>
-          <p className="source-origin" title={source.origin}><span aria-hidden="true">⌁</span>{source.origin}</p>
+          <p className="source-origin" title={origin}><span aria-hidden="true">⌁</span>{origin}</p>
           <div className="source-inventory">
-            <SourceMetric value={source.inventory.proxy_groups.length} label="策略组" />
-            <SourceMetric value={source.inventory.proxy_providers.length} label="Provider" />
-            <SourceMetric value={source.inventory.rule_count} label="规则" />
-            <SourceMetric value={source.versions.length + 1} label="版本" />
+            <SourceMetric value={proxyGroups.length} label="策略组" />
+            <SourceMetric value={proxyProviders.length} label="Provider" />
+            <SourceMetric value={inventory?.rule_count ?? 0} label="规则" />
+            <SourceMetric value={versions.length + 1} label="版本" />
           </div>
-          {changed && <div className="source-diff"><strong>本次变化</strong><span>proxy +{source.diff.proxies_added.length}/-{source.diff.proxies_removed.length}</span><span>group +{source.diff.groups_added.length}/-{source.diff.groups_removed.length}</span><span>rules {source.diff.rule_count_delta >= 0 ? '+' : ''}{source.diff.rule_count_delta}</span></div>}
+          {changed && <div className="source-diff"><strong>本次变化</strong><span>proxy +{diff?.proxies_added?.length ?? 0}/-{diff?.proxies_removed?.length ?? 0}</span><span>group +{diff?.groups_added?.length ?? 0}/-{diff?.groups_removed?.length ?? 0}</span><span>rules {(diff?.rule_count_delta ?? 0) >= 0 ? '+' : ''}{diff?.rule_count_delta ?? 0}</span></div>}
           <div className={`source-validation ${source.valid ? 'valid' : 'invalid'}`}><span aria-hidden="true">{source.valid ? '✓' : '!'}</span><div><strong>{source.valid ? '结构校验通过' : '结构校验失败'}</strong><small>{source.validation || (source.valid ? '可以进入完整候选配置校验' : '请修正来源后重新导入')}</small></div></div>
-          {source.versions.length > 0 && <small className="source-history">历史：{source.versions.slice(-3).map(version => `${version.digest.slice(0, 8)}${version.applied ? ' (运行)' : version.desired ? ' (待应用)' : ''}`).join(' · ')}</small>}
+          {versions.length > 0 && <small className="source-history">历史：{versions.slice(-3).map(version => `${version.digest.slice(0, 8)}${version.applied ? ' (运行)' : version.desired ? ' (待应用)' : ''}`).join(' · ')}</small>}
           <div className="source-actions">
-            {source.origin.startsWith('https://') && <button type="button" disabled={busy} onClick={() => void run({ kind: 'refresh', sourceID: source.id }, () => api.refreshSource(source.id), `${source.name} 已刷新；新内容已保存为草稿。`)}><ActionLabel active={refreshing} idle="刷新草稿" pending="正在刷新…" /></button>}
+            {origin.startsWith('https://') && <button type="button" disabled={busy} onClick={() => void run({ kind: 'refresh', sourceID: source.id }, () => api.refreshSource(source.id), `${source.name} 已刷新；新内容已保存为草稿。`)}><ActionLabel active={refreshing} idle="刷新草稿" pending="正在刷新…" /></button>}
             <button className="primary" type="button" disabled={busy || !revision || !source.valid || source.applied || (source.desired && !running)} onClick={() => openApply(source)}>{action}</button>
           </div>
         </article>

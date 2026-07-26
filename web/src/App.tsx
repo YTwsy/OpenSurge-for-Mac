@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
+import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { RecoveryBanner, StatusDot } from './components/Common'
 import { DashboardPage } from './pages/DashboardPage'
 import { ConnectivityPage } from './pages/ConnectivityPage'
@@ -144,13 +145,15 @@ export function App() {
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>Web GUI 与 OpenSurge 的安全连接已过期</h1><p>请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。</p></div></section> : <>
         {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network', 'control')} />}
         {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
-        {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={action => go('network', action === 'stop' ? 'bottom' : 'none')} />}
-        {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
-        {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
-        {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
-        {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
-        {page === 'connectivity' && <ConnectivityPage overview={overview} />}
-        {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
+        <PageErrorBoundary key={page}>
+          {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={action => go('network', action === 'stop' ? 'bottom' : 'none')} />}
+          {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} />}
+          {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
+          {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
+          {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
+          {page === 'connectivity' && <ConnectivityPage overview={overview} />}
+          {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
+        </PageErrorBoundary>
       </>}
     </main>
   </div>

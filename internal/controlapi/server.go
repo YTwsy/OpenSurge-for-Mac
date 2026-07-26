@@ -1714,6 +1714,7 @@ func (s *Server) sourceByID(id string) (Source, error) {
 func publicSources(sources []Source) []Source {
 	result := append([]Source{}, sources...)
 	for i := range result {
+		result[i].Inventory = normalizeInventory(result[i].Inventory)
 		if result[i].Versions == nil {
 			result[i].Versions = []SourceVersion{}
 		}
@@ -1723,6 +1724,7 @@ func publicSources(sources []Source) []Source {
 		result[i].SnapshotPath = ""
 		result[i].FetchURL = ""
 		for version := range result[i].Versions {
+			result[i].Versions[version].Inventory = normalizeInventory(result[i].Versions[version].Inventory)
 			result[i].Versions[version].SnapshotPath = ""
 		}
 	}
