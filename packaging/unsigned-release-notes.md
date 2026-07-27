@@ -6,9 +6,10 @@
 
 <!-- 发布前请更新为当前版本的主要变化，并同步维护 English / Highlights。 -->
 
-- 修复“代理与规则源”页面在无效或不完整的订阅数据中包含空字段时可能出现整页白屏的问题。
-- 无效来源现在仍会显示结构校验结果和安全的空统计信息；在修正来源前，OpenSurge 会阻止将其设为下次启动版本。
-- 新增页面级故障隔离与重试引导：单个页面渲染失败时仍可使用左侧导航，并可前往诊断页查看运行信息。
+- 菜单栏新增原生“卸载 OpenSurge”流程：网关停止后可通过 macOS 管理员授权移除 App、Control Service 与 root Helper，并选择保留配置数据或彻底删除。
+- 菜单栏 App 改用纯 AppKit 生命周期，避免系统创建或恢复无用的空设置窗口，并提升应用启动与状态面板行为的稳定性。
+- 修复 Issue #7：导入的 mihomo profile 现在兼容 flow/block 风格的 `rules`、策略组与 rule providers，以及带引号键、注释和相对 Provider 路径。
+- 来源预览与实际应用现在复用同一套 YAML 结构验证；无效候选配置会在写入或重载前失败，保持当前网关和已应用配置不变。
 
 ### 选择安装包
 
@@ -56,9 +57,10 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ### Highlights
 
-- Fixed a blank Sources page that could occur when invalid or incomplete subscription data contained empty fields.
-- Invalid sources now remain visible with their validation result and safe empty statistics. OpenSurge prevents them from becoming the next-start version until they are corrected.
-- Added page-level failure isolation and retry guidance, keeping the sidebar available and pointing users to Diagnostics when a page cannot render.
+- Added a native Uninstall OpenSurge flow to the menu bar. Once the gateway is stopped, administrator authorization can remove the app, Control Service, and root Helper while either preserving configuration data or deleting everything.
+- Moved the menu bar app to a pure AppKit lifecycle, preventing macOS from creating or restoring an unused empty Settings window and improving launch and panel stability.
+- Fixed Issue #7: imported mihomo profiles now support flow- and block-style `rules`, proxy groups, and rule providers, including quoted keys, comments, and relative provider paths.
+- Source preview and final application now share the same YAML structural validation. Invalid candidates fail before write or reload, leaving the current gateway and applied configuration unchanged.
 
 ### Choose a package
 
