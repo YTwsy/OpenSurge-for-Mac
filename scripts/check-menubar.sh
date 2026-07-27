@@ -53,3 +53,21 @@ if grep -Fq 'NSApplication.shared.isActive' "$MENU_BAR_CONTROLLER"; then
   echo "menu bar panel must open for every app launch, including login-item launches" >&2
   exit 1
 fi
+
+APP_ENTRYPOINT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/OpenSurgeMenuBarApp.swift"
+if grep -Eq 'Settings[[:space:]]*\{|EmptyView[[:space:]]*\(' "$APP_ENTRYPOINT"; then
+  echo "menu bar app must not declare an empty, restorable SwiftUI Settings scene" >&2
+  exit 1
+fi
+grep -Fq 'let application = NSApplication.shared' "$APP_ENTRYPOINT" || {
+  echo "menu bar app must use the AppKit application lifecycle" >&2
+  exit 1
+}
+grep -Fq 'application.delegate = delegate' "$APP_ENTRYPOINT" || {
+  echo "menu bar AppKit lifecycle must install the OpenSurge application delegate" >&2
+  exit 1
+}
+grep -Fq 'application.run()' "$APP_ENTRYPOINT" || {
+  echo "menu bar AppKit lifecycle must start the application event loop" >&2
+  exit 1
+}

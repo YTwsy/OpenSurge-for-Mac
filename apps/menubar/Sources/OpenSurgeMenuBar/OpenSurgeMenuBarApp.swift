@@ -1,13 +1,15 @@
-import SwiftUI
+import AppKit
 
 @main
 @MainActor
-struct OpenSurgeMenuBarApp: App {
-    @NSApplicationDelegateAdaptor(OpenSurgeAppDelegate.self) private var appDelegate
+enum OpenSurgeMenuBarApp {
+    private static var appDelegate: OpenSurgeAppDelegate?
 
-    var body: some Scene {
-        Settings {
-            EmptyView()
-        }
+    static func main() {
+        let application = NSApplication.shared
+        let delegate = OpenSurgeAppDelegate()
+        appDelegate = delegate
+        application.delegate = delegate
+        application.run()
     }
 }

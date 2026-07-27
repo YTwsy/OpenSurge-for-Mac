@@ -26,8 +26,10 @@ App 使用应用支持目录内权限为 `0600` 的本地 token 请求一个新�
 才显示“OpenSurge 后台服务尚未准备好”和显式“重新连接”。用户点击重新连接只会重启
 用户级 Control Service，不会停止正在运行的网关数据面。
 
-菜单栏状态面板由 AppKit `NSStatusItem` 与锚定的 `NSPopover` 承载，内部继续复用
-SwiftUI `MenuContentView`。点击菜单栏图标会切换面板；用户首次主动打开或再次打开
+菜单栏 App 入口使用纯 AppKit `NSApplication` 生命周期，不声明仅含 `EmptyView` 的
+SwiftUI `Settings` Scene，避免系统管理和恢复一个产品并不需要的空设置窗口。状态面板由
+AppKit `NSStatusItem` 与锚定的 `NSPopover` 承载，内部继续复用 SwiftUI
+`MenuContentView`。点击菜单栏图标会切换面板；用户首次主动打开或再次打开
 `/Applications/OpenSurge.app` 时，`NSApplicationDelegate` 会要求同一个控制器确保
 面板已经展开。每次菜单栏 App 进程启动完成都会主动展开面板，因此通过“登录时显示”
 启动时也会弹出。

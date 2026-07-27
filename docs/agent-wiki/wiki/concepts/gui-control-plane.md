@@ -1,16 +1,18 @@
 # GUI 控制面
 
 OpenSurge 的完整 GUI 是 `web/` 中的 React 应用，菜单栏 App 是
-`apps/menubar/` 中的只读 SwiftUI launcher。两者都只访问
-`cmd/opensurge-control` 提供的 loopback API；业务规则继续位于 Go gateway、device、
-mihomo 和 runtime 包中。
+`apps/menubar/` 中由 AppKit 管理生命周期和状态项、由 SwiftUI 渲染状态面板的只读
+launcher。两者都只访问 `cmd/opensurge-control` 提供的 loopback API；业务规则继续位于
+Go gateway、device、mihomo 和 runtime 包中。
 
 菜单栏 App 不提供 start/stop 或策略切换。它只消费 `/api/v1/menubar`，显示网关、
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
 演变成第二控制面。
 
-菜单栏状态面板使用 AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI
-`MenuContentView`。状态栏图标点击与用户从 Finder/Launchpad 再次打开
+菜单栏 App 使用纯 AppKit `NSApplication` 生命周期，不声明占位的 SwiftUI `Settings`
+Scene；否则这个由系统管理、可恢复的空窗口可能在部分 macOS 环境中被显示。状态面板使用
+AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状态栏图标点击
+与用户从 Finder/Launchpad 再次打开
 `/Applications/OpenSurge.app` 进入同一个 presenter；后者只确保面板展开，不触发网关
 或 Control Service 生命周期动作。每次菜单栏 App 进程启动完成都会主动展开面板，包括
 通过“登录时显示”启动；Finder/Launchpad 的 reopen 事件同样确保面板展开。
