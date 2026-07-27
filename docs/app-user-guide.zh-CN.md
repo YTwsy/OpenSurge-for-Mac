@@ -18,6 +18,8 @@
 4. 之后既可以再次打开 **OpenSurge**，也可以点击菜单栏图标展开同一面板；选择
    **打开 OpenSurge 面板**进入 Web GUI。
 
+<img width="402" height="612" alt="截屏2026-07-27 23 21 08" src="https://github.com/user-attachments/assets/53ec001c-6755-4a67-8482-fb1fa50b072a" />
+
 菜单栏 App 用于显示状态、恢复提醒和打开 Web GUI；订阅、网络、设备和策略操作都在
 Web GUI 中完成。
 
