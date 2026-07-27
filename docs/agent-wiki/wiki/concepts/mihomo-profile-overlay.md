@@ -23,6 +23,12 @@ provider files:
 - `rule-providers`
 - `rules`
 
+These sections are parsed and composed as YAML nodes rather than line-oriented
+text. Both block and flow collections are supported, including compact
+`rules: ['MATCH,DIRECT']`, quoted top-level keys, and inline provider mappings.
+OpenSurge does not rewrite the imported source snapshot; only the generated
+runtime mihomo config may normalize collection style or indentation.
+
 The profile's top-level `dns` section is merged at field level. OpenSurge
 rejects the imported values for `enable`, `listen`, `ipv6`, `enhanced-mode`,
 and `fake-ip-range`, but preserves the remaining resolver and filtering fields.

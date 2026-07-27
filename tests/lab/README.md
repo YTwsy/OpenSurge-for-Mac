@@ -87,7 +87,9 @@ fixture. `lab-test-tun-imported-egress` extends that path with a local HTTP
 provider and controlled HTTP CONNECT proxy, then switches `TunEgress` from
 `DIRECT` to the controlled proxy through `omg policy-select`. It proves
 provider-backed policy selection changes the transparent TUN egress path; it
-does not prove a real subscription node or remote exit IP.
+does not prove a real subscription node or remote exit IP. The controlled
+proxy binds both upstream DNS and TCP dialing to the physical upstream
+interface so its own traffic cannot re-enter the TUN or use a fake IP.
 
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
 devices. It assigns them fixed `.101` and `.102` DHCP leases, proves one

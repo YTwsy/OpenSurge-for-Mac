@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 
 	"gopkg.in/yaml.v3"
@@ -300,6 +301,26 @@ func diffNames(before, after []string) (added, removed []string) {
 
 func inspectSource(data []byte, kind string) (Inventory, error) {
 	inv := emptyInventory()
+	if kind == "mihomo_profile" {
+		inspection, err := mihomo.InspectImportedProfile(data)
+		if err != nil {
+			return inv, fmt.Errorf("parse mihomo profile: %w", err)
+		}
+		inv.Proxies = inspection.Proxies
+		inv.ProxyProviders = inspection.ProxyProviders
+		inv.ProxyGroups = inspection.ProxyGroups
+		inv.RuleProviders = inspection.RuleProviders
+		inv.RuleCount = inspection.RuleCount
+		inv.TerminalMatch = inspection.TerminalMatch
+		inv.Warnings = inspection.Warnings
+		for _, name := range append(append([]string{}, inv.ProxyGroups...), inv.RuleProviders...) {
+			if strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") {
+				return inv, fmt.Errorf("imported source uses reserved OpenSurge name %q", name)
+			}
+		}
+		return inv, nil
+	}
+
 	var document yaml.Node
 	if err := yaml.NewDecoder(bytes.NewReader(data)).Decode(&document); err != nil {
 		return inv, fmt.Errorf("parse YAML: %w", err)
@@ -320,20 +341,6 @@ func inspectSource(data []byte, kind string) (Inventory, error) {
 	inv.ProxyGroups = sequenceNames(sections["proxy-groups"])
 	inv.ProxyProviders = mappingKeys(sections["proxy-providers"])
 	inv.RuleProviders = mappingKeys(sections["rule-providers"])
-	if kind == "mihomo_profile" {
-		rules := sections["rules"]
-		if rules == nil || rules.Kind != yaml.SequenceNode {
-			return inv, fmt.Errorf("mihomo profile requires a top-level rules sequence")
-		}
-		inv.RuleCount = len(rules.Content)
-		if inv.RuleCount > 0 {
-			last := rules.Content[inv.RuleCount-1]
-			inv.TerminalMatch = last.Kind == yaml.ScalarNode && strings.HasPrefix(strings.ToUpper(strings.TrimSpace(last.Value)), "MATCH,")
-		}
-		if !inv.TerminalMatch {
-			inv.Warnings = append(inv.Warnings, "rules do not end in terminal MATCH")
-		}
-	}
 	for _, name := range append(append([]string{}, inv.ProxyGroups...), inv.RuleProviders...) {
 		if strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") {
 			return inv, fmt.Errorf("imported source uses reserved OpenSurge name %q", name)

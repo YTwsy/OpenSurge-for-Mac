@@ -261,6 +261,10 @@ proxy 日志出现 `CONNECT <host>:443`。它证明 imported provider-backed 策
 改变透明 TUN egress path；它不证明真实订阅节点、真实远端出口 IP、same-LAN 或真实
 设备兼容性。
 
+Lab 中的受控 CONNECT proxy 必须把上游 DNS 查询和 TCP socket 都绑定到真实 upstream
+interface。否则 proxy 自己的连接会再次进入正在测试的 TUN，或者把 mihomo fake-IP
+错误地发到物理接口，产生递归或 TLS timeout，而不是有效的出口切换证据。
+
 ## 每设备策略门槛
 
 运行：

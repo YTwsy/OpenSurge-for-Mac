@@ -76,7 +76,8 @@ artifact 会写入 `artifacts/lab`。managed mihomo DNS 在 TUN 关闭时仍会�
 `lab-test-tun-imported-egress` 会在这条路径上加入本地 HTTP provider 和受控 HTTP
 CONNECT proxy，然后通过 `omg policy-select` 把 `TunEgress` 从 `DIRECT` 切到受控
 代理。它证明 provider-backed 策略选择会改变透明 TUN 出口路径；它不证明真实订阅
-节点或远端出口 IP。
+节点或远端出口 IP。受控代理会把上游 DNS 和 TCP 拨号都绑定到物理 upstream
+interface，避免代理自身流量重新进入 TUN 或使用 fake IP。
 
 `lab-test-tun-device-policy` 会把两个客户端作为独立识别的 LAN 设备，给它们分配
 固定 `.101`/`.102` DHCP 租约，先证明 `dedicated` 设备在全局 `MATCH` 前使用 selector，

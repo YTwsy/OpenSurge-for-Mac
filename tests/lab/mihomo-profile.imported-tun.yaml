@@ -4,5 +4,4 @@
 
 proxies: []
 
-rules:
-  - MATCH,DIRECT
+rules: ['MATCH,DIRECT']

@@ -21,6 +21,8 @@ func main() {
 	originAddr := flag.String("origin", "", "origin HTTP listen address")
 	proxyAddr := flag.String("proxy", "", "HTTP CONNECT proxy listen address")
 	upstreamHTTPProxy := flag.String("upstream-http-proxy", "", "optional HTTP CONNECT proxy used by the controlled proxy for upstream dialing")
+	upstreamInterface := flag.String("upstream-interface", "", "optional interface used for direct upstream dialing")
+	upstreamResolver := flag.String("upstream-resolver", "", "optional DNS resolver used for direct upstream dialing")
 	logDir := flag.String("log-dir", "", "directory for origin.log and proxy.log")
 	providerFile := flag.String("provider-file", "", "optional provider YAML file served by the origin")
 	providerPath := flag.String("provider-path", "/remote-provider.yaml", "origin path for provider YAML")
@@ -57,6 +59,8 @@ func main() {
 	proxyServer := &http.Server{Handler: &connectProxyHandler{
 		logPath:           proxyLog,
 		upstreamHTTPProxy: *upstreamHTTPProxy,
+		upstreamInterface: *upstreamInterface,
+		upstreamResolver:  *upstreamResolver,
 	}}
 
 	var serverWG sync.WaitGroup
@@ -117,6 +121,8 @@ func (h *originHandler) appendLog(line string) {
 type connectProxyHandler struct {
 	logPath           string
 	upstreamHTTPProxy string
+	upstreamInterface string
+	upstreamResolver  string
 	mu                sync.Mutex
 }
 
@@ -174,7 +180,7 @@ func (h *connectProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 
 func (h *connectProxyHandler) dialUpstream(target string) (net.Conn, error) {
 	if h.upstreamHTTPProxy == "" {
-		return net.DialTimeout("tcp", target, 5*time.Second)
+		return dialDirect(target, h.upstreamInterface, h.upstreamResolver, 5*time.Second)
 	}
 
 	conn, err := net.DialTimeout("tcp", h.upstreamHTTPProxy, 5*time.Second)

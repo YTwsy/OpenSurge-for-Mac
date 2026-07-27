@@ -439,6 +439,8 @@ start_egress_probe() {
   "$EGRESS_PROBE_BINARY" \
     --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
     --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
+    --upstream-interface "$(upstream_interface)" \
+    --upstream-resolver "1.1.1.1:53" \
     --provider-file "$EGRESS_PROVIDER" \
     --provider-path "/tun-egress-provider.yaml" \
     --log-dir "$STATE_DIR/egress" >"$log_file" 2>&1 &
@@ -575,8 +577,7 @@ proxies:
     type: http
     server: 127.0.0.1
     port: $EGRESS_PROXY_PORT
-rules:
-  - MATCH,DIRECT
+rules: ['MATCH,DIRECT']
 EOF
   cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
 {

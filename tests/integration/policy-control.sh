@@ -73,25 +73,9 @@ proxy-providers:
     health-check:
       enable: false
 
-proxy-groups:
-  - name: "Proxy"
-    type: select
-    use:
-      - demo-provider
-      - remote-provider
-    proxies:
-      - "demo-proxy"
-      - DIRECT
-  - name: "EgressSwitch"
-    type: select
-    proxies:
-      - DIRECT
-      - "egress-proxy"
+proxy-groups: [{name: "Proxy", type: select, use: [demo-provider, remote-provider], proxies: ["demo-proxy", DIRECT]}, {name: "EgressSwitch", type: select, proxies: [DIRECT, "egress-proxy"]}]
 
-rules:
-  - IP-CIDR,127.0.0.1/32,EgressSwitch,no-resolve
-  - DOMAIN,example.com,Proxy
-  - MATCH,DIRECT
+rules: ['IP-CIDR,127.0.0.1/32,EgressSwitch,no-resolve', 'DOMAIN,example.com,Proxy', 'MATCH,DIRECT']
 EOF
 
   cat >"$PROVIDER" <<'EOF'
@@ -264,7 +248,7 @@ printf 'proxy: 127.0.0.1:%s\n' "$EGRESS_PROXY_PORT"
 section "validate mihomo config"
 "$OMG_BIN" validate-mihomo --config "$CONFIG" --format json
 assert_file_contains "$MIHOMO_CONFIG" "store-selected: true"
-assert_file_contains "$MIHOMO_CONFIG" "- DIRECT"
+assert_file_contains "$MIHOMO_CONFIG" 'proxies: ["demo-proxy", DIRECT]'
 assert_file_contains "$MIHOMO_CONFIG" "name: device/integration-dedicated/default"
 assert_file_contains "$MIHOMO_CONFIG" "AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,192.168.0.0/16)),DIRECT"
 assert_file_contains "$MIHOMO_CONFIG" "SRC-IP-CIDR,192.168.50.101/32,device/integration-dedicated/default"

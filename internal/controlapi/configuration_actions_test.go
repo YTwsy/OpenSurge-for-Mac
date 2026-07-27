@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/mihomo"
 )
 
 func TestApplyProfileReloadsRunningGateway(t *testing.T) {
@@ -115,6 +116,90 @@ func TestApplyProfileLeavesStoppedGatewayPendingForNextStart(t *testing.T) {
 	}
 	if result.Reloaded || result.Revision == "" {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestApplyProfileFlowStyleUsesAuthoritativeRenderer(t *testing.T) {
+	configPath, _ := writeProfileApplyTestConfig(t)
+	payload := []byte(`proxies: [{name: edge, type: http, server: 127.0.0.1, port: 8080}]
+proxy-groups: [{name: Main, type: select, proxies: [edge, DIRECT]}]
+rules: ['DOMAIN,example.com,Main', 'MATCH,DIRECT']
+`)
+	deps := profileApplyDeps{
+		geteuid: func() int { return 0 },
+		validate: func(candidate config.Config) error {
+			rendered, err := mihomo.RenderConfig(candidate)
+			if err != nil {
+				return err
+			}
+			if !strings.Contains(rendered, "DOMAIN,example.com,Main") {
+				t.Fatalf("rendered candidate missing flow-style rule:\n%s", rendered)
+			}
+			return nil
+		},
+		stateExists: func(config.Config) (bool, error) { return false, nil },
+		reload: func(context.Context, config.Config) error {
+			t.Fatal("reload called for stopped gateway")
+			return nil
+		},
+		start: func(context.Context, config.Config) error {
+			t.Fatal("start called while saving pending profile")
+			return nil
+		},
+	}
+	result, err := applyProfile(t.Context(), configPath, fileDigest(configPath), payload, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Reloaded || result.Revision == "" {
+		t.Fatalf("result = %#v", result)
+	}
+	cfg, err := config.LoadRuntime(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Mihomo.ProfileMode != config.MihomoProfileModeImported {
+		t.Fatalf("profile mode = %q", cfg.Mihomo.ProfileMode)
+	}
+	stored, err := os.ReadFile(cfg.Mihomo.Profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stored, payload) {
+		t.Fatal("applied source snapshot was rewritten")
+	}
+}
+
+func TestApplyProfileValidationFailureCleansCandidateAndPreservesConfig(t *testing.T) {
+	configPath, original := writeProfileApplyTestConfig(t)
+	payload := []byte(`rules: ['MATCH,DIRECT']
+`)
+	deps := profileApplyDeps{
+		geteuid:     func() int { return 0 },
+		validate:    func(config.Config) error { return errors.New("candidate render failed") },
+		stateExists: func(config.Config) (bool, error) { return true, nil },
+		reload: func(context.Context, config.Config) error {
+			t.Fatal("reload called after validation failure")
+			return nil
+		},
+		start: func(context.Context, config.Config) error {
+			t.Fatal("start called after validation failure")
+			return nil
+		},
+	}
+	if _, err := applyProfile(t.Context(), configPath, fileDigest(configPath), payload, deps); err == nil || !strings.Contains(err.Error(), "candidate render failed") {
+		t.Fatalf("applyProfile() error = %v", err)
+	}
+	current, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(current, original) {
+		t.Fatal("validation failure changed the main config")
+	}
+	profilePath := filepath.Join(filepath.Dir(configPath), "data", "imported-profile-"+fileDigestBytes(payload)[:16]+".yaml")
+	if _, err := os.Stat(profilePath); !os.IsNotExist(err) {
+		t.Fatalf("failed candidate profile remains: %v", err)
 	}
 }
 

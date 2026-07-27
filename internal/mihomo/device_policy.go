@@ -31,7 +31,7 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 		if err := validateImportedPolicySections(imported.inventory, sections); err != nil {
 			return "", err
 		}
-		return composeImportedPolicySections(imported.blocks, sections)
+		return composeImportedPolicySections(imported, sections)
 	}
 	if err := validateManagedPolicySections(cfg, sections); err != nil {
 		return "", err
@@ -104,34 +104,118 @@ func composeManagedPolicySections(cfg config.Config, policy policySections) stri
 	return out.String()
 }
 
-func composeImportedPolicySections(blocks []importedProfileBlock, policy policySections) (string, error) {
-	byKey := map[string]string{}
-	for _, block := range blocks {
-		if _, exists := byKey[block.key]; exists {
-			return "", fmt.Errorf("imported mihomo profile contains duplicate top-level %s section", block.key)
-		}
-		byKey[block.key] = strings.TrimRight(block.text, "\n")
-	}
+func composeImportedPolicySections(imported *importedProfile, policy policySections) (string, error) {
 	if len(policy.groups) > 0 {
-		byKey["proxy-groups"] = appendYAMLBlock(byKey["proxy-groups"], "proxy-groups:", renderSelectorGroupItems(policy.groups))
+		appendImportedSelectorGroups(imported, policy.groups)
 	}
 	if len(policy.providers) > 0 {
-		byKey["rule-providers"] = appendYAMLBlock(byKey["rule-providers"], "rule-providers:", renderRuleProviderItems(policy.providers))
+		appendImportedRuleProviders(imported, policy.providers)
 	}
-	rules, err := renderRules(byKey["rules"], orderedDevicePreRules(policy), policy.defaults)
-	if err != nil {
+	if err := composeImportedRules(imported.sections["rules"], orderedDevicePreRules(policy), policy.defaults); err != nil {
 		return "", err
 	}
-	byKey["rules"] = strings.TrimRight(rules, "\n")
+	return renderImportedProfileSections(imported)
+}
 
-	var out strings.Builder
-	for _, key := range []string{"proxies", "proxy-providers", "proxy-groups", "rule-providers", "rules"} {
-		if block := strings.TrimSpace(byKey[key]); block != "" {
-			out.WriteString(block)
-			out.WriteString("\n\n")
+func appendImportedSelectorGroups(imported *importedProfile, groups []device.SelectorGroup) {
+	section := ensureImportedSection(imported, "proxy-groups", yaml.SequenceNode, "!!seq")
+	section.Style &^= yaml.FlowStyle
+	for _, group := range groups {
+		policies := make([]*yaml.Node, 0, len(group.Policies))
+		for _, policy := range group.Policies {
+			policies = append(policies, quotedStringNode(policy))
+		}
+		section.Content = append(section.Content, mappingNode(
+			stringNode("name"), stringNode(group.Name),
+			stringNode("type"), stringNode("select"),
+			stringNode("proxies"), sequenceNode(policies...),
+		))
+	}
+}
+
+func appendImportedRuleProviders(imported *importedProfile, providers []device.RuleProvider) {
+	section := ensureImportedSection(imported, "rule-providers", yaml.MappingNode, "!!map")
+	section.Style &^= yaml.FlowStyle
+	for _, provider := range providers {
+		body := mappingNode(
+			stringNode("type"), stringNode(provider.Type),
+			stringNode("behavior"), stringNode(provider.Behavior),
+		)
+		if provider.Type == "http" {
+			body.Content = append(body.Content,
+				stringNode("url"), quotedStringNode(provider.URL),
+				stringNode("format"), stringNode(provider.Format),
+			)
+			if provider.Interval > 0 {
+				body.Content = append(body.Content, stringNode("interval"), intNode(provider.Interval))
+			}
+		} else {
+			payload := make([]*yaml.Node, 0, len(provider.Payload))
+			for _, value := range provider.Payload {
+				payload = append(payload, quotedStringNode(value))
+			}
+			body.Content = append(body.Content, stringNode("payload"), sequenceNode(payload...))
+		}
+		section.Content = append(section.Content, stringNode(provider.Name), body)
+	}
+}
+
+func ensureImportedSection(imported *importedProfile, name string, kind yaml.Kind, tag string) *yaml.Node {
+	if existing := imported.sections[name]; existing != nil {
+		return existing
+	}
+	section := &yaml.Node{Kind: kind, Tag: tag}
+	imported.sections[name] = section
+	imported.sectionKeys[name] = stringNode(name)
+	insertAt := len(imported.sectionOrder)
+	for i, sectionName := range imported.sectionOrder {
+		if sectionName == "rules" {
+			insertAt = i
+			break
 		}
 	}
-	return strings.TrimRight(out.String(), "\n") + "\n", nil
+	imported.sectionOrder = append(imported.sectionOrder, "")
+	copy(imported.sectionOrder[insertAt+1:], imported.sectionOrder[insertAt:])
+	imported.sectionOrder[insertAt] = name
+	return section
+}
+
+// composeImportedRules inserts system and device override rules before global
+// rules. Legacy device defaults remain immediately before a terminal MATCH.
+func composeImportedRules(rules *yaml.Node, preRules, defaultRules []string) error {
+	if err := validateImportedRules(rules); err != nil {
+		return err
+	}
+	terminalIndex := -1
+	if len(rules.Content) > 0 {
+		if value, ok := scalarStringValue(rules.Content[len(rules.Content)-1]); ok && isTerminalMatchValue(value) {
+			terminalIndex = len(rules.Content) - 1
+		}
+	}
+	before := rules.Content
+	var terminal []*yaml.Node
+	if terminalIndex >= 0 {
+		before = rules.Content[:terminalIndex]
+		terminal = rules.Content[terminalIndex:]
+	}
+	content := make([]*yaml.Node, 0, len(preRules)+len(before)+len(defaultRules)+len(terminal))
+	content = append(content, ruleNodes(preRules)...)
+	content = append(content, before...)
+	content = append(content, ruleNodes(defaultRules)...)
+	content = append(content, terminal...)
+	rules.Content = content
+	if len(preRules) > 0 || len(defaultRules) > 0 {
+		rules.Style &^= yaml.FlowStyle
+	}
+	return nil
+}
+
+func ruleNodes(rules []string) []*yaml.Node {
+	nodes := make([]*yaml.Node, 0, len(rules))
+	for _, rule := range rules {
+		nodes = append(nodes, stringNode(rule))
+	}
+	return nodes
 }
 
 var dedicatedLocalCIDRs = []string{
@@ -227,50 +311,6 @@ func builtinPolicyTarget(target string) bool {
 	}
 }
 
-func appendYAMLBlock(existing, header, items string) string {
-	if strings.TrimSpace(items) == "" {
-		return strings.TrimRight(existing, "\n")
-	}
-	if strings.TrimSpace(existing) == "" {
-		return header + "\n" + strings.TrimRight(items, "\n")
-	}
-	items = reindentYAMLBlockItems(items, importedYAMLBlockItemIndent(existing))
-	return strings.TrimRight(existing, "\n") + "\n" + strings.TrimRight(items, "\n")
-}
-
-// Imported sections are preserved as source text, including their indentation.
-// Generated items therefore need to match the section's existing top-level item
-// indentation instead of assuming the two spaces used by OpenSurge fixtures.
-func importedYAMLBlockItemIndent(block string) int {
-	lines := strings.Split(strings.TrimRight(block, "\n"), "\n")
-	for _, line := range lines[1:] {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-		if indent >= 2 {
-			return indent
-		}
-	}
-	return 2
-}
-
-func reindentYAMLBlockItems(items string, indent int) string {
-	const generatedIndent = 2
-	if indent <= generatedIndent {
-		return items
-	}
-	prefix := strings.Repeat(" ", indent-generatedIndent)
-	lines := strings.Split(items, "\n")
-	for i, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			lines[i] = prefix + line
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
 func renderSelectorGroups(groups []device.SelectorGroup) string {
 	return "proxy-groups:\n" + renderSelectorGroupItems(groups)
 }
@@ -314,83 +354,12 @@ func renderRuleProviderItems(providers []device.RuleProvider) string {
 	return strings.TrimRight(out.String(), "\n")
 }
 
-// renderRules inserts system, device override, and dedicated-egress rules
-// before global rules. Legacy device defaults remain after global rules but
-// before an imported terminal MATCH so old policy documents keep their exact
-// fallback behavior until the operator selects an explicit mode.
-func renderRules(existing string, preRules, defaultRules []string) (string, error) {
-	if strings.TrimSpace(existing) == "" {
-		return renderRules("rules:\n", append(preRules, defaultRules...), []string{"MATCH,DIRECT"})
-	}
-	lines := strings.Split(strings.TrimRight(existing, "\n"), "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "rules:" {
-		return "", fmt.Errorf("imported mihomo profile rules section is malformed")
-	}
-	body := lines[1:]
-	terminalIndex := -1
-	for i, line := range body {
-		if isTerminalMatch(line) {
-			if terminalIndex >= 0 {
-				return "", fmt.Errorf("imported mihomo profile rules section has multiple MATCH rules")
-			}
-			terminalIndex = i
-		}
-	}
-	var before, terminal []string
-	if terminalIndex >= 0 {
-		for _, line := range body[terminalIndex+1:] {
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
-				return "", fmt.Errorf("imported mihomo profile MATCH rule must be terminal")
-			}
-		}
-		before = body[:terminalIndex]
-		terminal = body[terminalIndex:]
-	} else {
-		before = body
-	}
-
-	var out strings.Builder
-	out.WriteString("rules:\n")
-	ruleIndent := importedYAMLBlockItemIndent(existing)
-	writeRuleLinesWithIndent(&out, preRules, ruleIndent)
-	for _, line := range before {
-		out.WriteString(line)
-		out.WriteString("\n")
-	}
-	writeRuleLinesWithIndent(&out, defaultRules, ruleIndent)
-	for _, line := range terminal {
-		out.WriteString(line)
-		out.WriteString("\n")
-	}
-	return out.String(), nil
-}
-
 func writeRuleLines(out *strings.Builder, rules []string) {
-	writeRuleLinesWithIndent(out, rules, 2)
-}
-
-func writeRuleLinesWithIndent(out *strings.Builder, rules []string, indent int) {
-	prefix := strings.Repeat(" ", indent) + "- "
 	for _, rule := range rules {
-		out.WriteString(prefix)
+		out.WriteString("  - ")
 		out.WriteString(rule)
 		out.WriteString("\n")
 	}
-}
-
-func isTerminalMatch(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	if !strings.HasPrefix(trimmed, "-") {
-		return false
-	}
-	value := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
-	var decoded string
-	if err := yaml.Unmarshal([]byte(value), &decoded); err == nil {
-		value = decoded
-	}
-	value = strings.ToUpper(value)
-	return strings.HasPrefix(value, "MATCH,") || value == "MATCH"
 }
 
 func yamlQuote(value string) string {

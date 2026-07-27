@@ -64,6 +64,23 @@ rules:
 	}
 }
 
+func TestInspectSourceFlowStyleInventoryMatchesRendererValidation(t *testing.T) {
+	data := []byte(`'proxy-groups': [{name: Zeta, type: select, proxies: [DIRECT]}, {name: Alpha, type: select, proxies: [DIRECT]}]
+'rule-providers': {zeta: {type: inline, behavior: domain, payload: [zeta.example]}, alpha: {type: inline, behavior: domain, payload: [alpha.example]}}
+'rules': ['RULE-SET,zeta,Zeta', 'MATCH,Zeta']
+`)
+	inv, err := inspectSource(data, "mihomo_profile")
+	if err != nil {
+		t.Fatalf("inspectSource() error = %v", err)
+	}
+	if !inv.TerminalMatch || inv.RuleCount != 2 ||
+		!reflect.DeepEqual(inv.ProxyGroups, []string{"Zeta", "Alpha"}) ||
+		!reflect.DeepEqual(inv.RuleProviders, []string{"zeta", "alpha"}) ||
+		len(inv.Warnings) != 0 {
+		t.Fatalf("inventory = %#v", inv)
+	}
+}
+
 func TestInspectSourceInvalidTopLevelReturnsEmptyCollections(t *testing.T) {
 	inventory, err := inspectSource([]byte("c3M6Ly9leGFtcGxlLmNvbQo="), "mihomo_profile")
 	if err == nil || !strings.Contains(err.Error(), "top-level YAML must be a mapping") {

@@ -30,6 +30,12 @@ directory. Relative `path:` entries inside imported `proxy-providers` and
 When starting or validating mihomo for an imported profile, OpenSurge passes
 `-d <profile-dir>` so mihomo SAFE_PATHS accepts those provider files.
 
+Importable sections are composed from parsed YAML nodes, not line-oriented
+source fragments. Flow and block collections, quoted top-level keys, and inline
+provider mappings therefore have the same semantics. The imported source
+snapshot remains byte-for-byte unchanged; only the generated runtime config may
+normalize YAML presentation.
+
 OpenSurge continues to render and own gateway-critical fields, including:
 
 - `mixed-port`

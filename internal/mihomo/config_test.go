@@ -414,7 +414,7 @@ func TestRenderManagedConfigPlacesDedicatedEgressBeforeGlobalMatch(t *testing.T)
 	)
 }
 
-func TestRenderConfigWithDevicePolicyOverlayMatchesImportedSectionIndentation(t *testing.T) {
+func TestRenderConfigWithDevicePolicyOverlayNormalizesImportedSectionIndentation(t *testing.T) {
 	dir := t.TempDir()
 	profilePath := filepath.Join(dir, "profile.yaml")
 	policyPath := filepath.Join(dir, "devices.json")
@@ -462,13 +462,13 @@ rules:
 		t.Fatalf("rendered config is invalid YAML: %v\n%s", err, rendered)
 	}
 	for _, want := range []string{
-		"    - name: device/phone/default",
-		"    - name: device/phone/streaming",
-		"    open-surge-ruleset-streaming:",
-		"    - SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+		"  - name: device/phone/default",
+		"  - name: device/phone/streaming",
+		"  open-surge-ruleset-streaming:",
+		"  - SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
 	} {
 		if !strings.Contains(rendered, want) {
-			t.Fatalf("rendered config missing imported indentation %q:\n%s", want, rendered)
+			t.Fatalf("rendered config missing normalized indentation %q:\n%s", want, rendered)
 		}
 	}
 	assertOrdered(t, rendered,
@@ -476,6 +476,111 @@ rules:
 		"RULE-SET,imported,Global",
 		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
 		"'MATCH,DIRECT'",
+	)
+}
+
+func TestRenderConfigSupportsIssue7FlowStyleRules(t *testing.T) {
+	dir := t.TempDir()
+	want := []string{
+		"DOMAIN-SUFFIX,deeplx.org,DIRECT",
+		"DOMAIN-SUFFIX,derp.tailscale.com,DIRECT",
+		"DOMAIN,example.com,Proxy",
+		"GEOIP,CN,DIRECT",
+		"MATCH,Proxy",
+	}
+	profiles := map[string]string{
+		"flow":  `rules: ['DOMAIN-SUFFIX,deeplx.org,DIRECT', 'DOMAIN-SUFFIX,derp.tailscale.com,DIRECT', 'DOMAIN,example.com,Proxy', 'GEOIP,CN,DIRECT', 'MATCH,Proxy']`,
+		"block": "rules:\n  - DOMAIN-SUFFIX,deeplx.org,DIRECT\n  - DOMAIN-SUFFIX,derp.tailscale.com,DIRECT\n  - DOMAIN,example.com,Proxy\n  - GEOIP,CN,DIRECT\n  - MATCH,Proxy",
+	}
+	decodedRules := map[string][]string{}
+	for style, profile := range profiles {
+		profilePath := filepath.Join(dir, style+".yaml")
+		if err := os.WriteFile(profilePath, []byte(profile+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cfg := config.Default()
+		cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+		cfg.Mihomo.Profile = profilePath
+		rendered, err := RenderConfig(cfg)
+		if err != nil {
+			t.Fatalf("RenderConfig(%s) error = %v", style, err)
+		}
+		var decoded struct {
+			Rules []string `yaml:"rules"`
+		}
+		if err := yaml.Unmarshal([]byte(rendered), &decoded); err != nil {
+			t.Fatalf("rendered %s config is invalid YAML: %v\n%s", style, err, rendered)
+		}
+		decodedRules[style] = decoded.Rules
+		if strings.Join(decoded.Rules, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("%s rules = %#v, want %#v", style, decoded.Rules, want)
+		}
+	}
+	if strings.Join(decodedRules["flow"], "\n") != strings.Join(decodedRules["block"], "\n") {
+		t.Fatalf("flow rules = %#v, block rules = %#v", decodedRules["flow"], decodedRules["block"])
+	}
+}
+
+func TestRenderConfigComposesDevicePolicyIntoFlowStyleSections(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	policyPath := filepath.Join(dir, "devices.json")
+	profile := `proxies: []
+proxy-groups: [{name: Global, type: select, proxies: [DIRECT]}]
+rule-providers: {imported: {type: inline, behavior: domain, payload: [imported.example]}}
+rules: ['RULE-SET,imported,Global', 'MATCH,DIRECT']
+`
+	policy := `{
+  "rule_sets": [{"id":"streaming","behavior":"domain","payload":["netflix.com"]}],
+  "profiles": [{
+    "id":"home",
+    "default_policies":["DIRECT","Global"],
+    "rules":[{"id":"streaming","match":{"rule_sets":["streaming"]},"policies":["Global","DIRECT"]}]
+  }],
+  "devices": [{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home"}]
+}`
+	if err := os.WriteFile(profilePath, []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	cfg.DevicePolicy.File = policyPath
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	var decoded struct {
+		ProxyGroups []struct {
+			Name    string   `yaml:"name"`
+			Proxies []string `yaml:"proxies"`
+		} `yaml:"proxy-groups"`
+		RuleProviders map[string]any `yaml:"rule-providers"`
+		Rules         []string       `yaml:"rules"`
+	}
+	if err := yaml.Unmarshal([]byte(rendered), &decoded); err != nil {
+		t.Fatalf("rendered config is invalid YAML: %v\n%s", err, rendered)
+	}
+	if len(decoded.ProxyGroups) != 3 {
+		t.Fatalf("proxy groups = %#v", decoded.ProxyGroups)
+	}
+	if decoded.ProxyGroups[0].Name != "Global" ||
+		len(decoded.ProxyGroups[0].Proxies) != 1 ||
+		decoded.ProxyGroups[0].Proxies[0] != "DIRECT" {
+		t.Fatalf("imported flow-style proxy group changed: %#v", decoded.ProxyGroups[0])
+	}
+	if decoded.RuleProviders["imported"] == nil || decoded.RuleProviders["open-surge-ruleset-streaming"] == nil {
+		t.Fatalf("rule providers = %#v", decoded.RuleProviders)
+	}
+	assertOrdered(t, strings.Join(decoded.Rules, "\n"),
+		"RULE-SET,open-surge-ruleset-streaming",
+		"RULE-SET,imported,Global",
+		"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+		"MATCH,DIRECT",
 	)
 }
 
