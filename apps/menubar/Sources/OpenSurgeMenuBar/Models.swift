@@ -103,11 +103,15 @@ func menuBarIndicator(status: MenuBarStatus?, hasError: Bool) -> IndicatorState 
 
 extension MenuBarStatus {
     var gatewayServicesActive: Bool {
-        gateway == "running" || gateway == "degraded" || dhcp == "running" || mihomo == "running" || pfAnchor == "loaded" || forwarding == "enabled"
+        gateway == "running" || gateway == "degraded" || dhcp == "running" || mihomo == "running" || pfAnchor == "loaded"
     }
 
     var canQuitOpenSurge: Bool {
         gateway == "stopped" && !gatewayServicesActive && !recoveryNeedsAttention
+    }
+
+    var canUninstall: Bool {
+        gateway == "stopped"
     }
 
     var topologyLabel: String {
@@ -182,7 +186,17 @@ func openSurgeQuitWarning(for status: MenuBarStatus?) -> String {
         if status.recoveryNeedsAttention {
             return "网络恢复尚未完成。请先在网络设置中完成恢复，再退出 OpenSurge。"
         }
-        return "网关数据面仍在运行。请先在网络设置中停止网关，确认 DHCP/DNS、mihomo、PF 与转发均已停止。"
+        return "网关数据面仍在运行。请先在网络设置中停止网关，确认 DHCP/DNS、mihomo 与 PF 已停止。"
     }
-    return "网关停止时，DHCP/DNS、mihomo、PF 与转发也应已经停止。此操作会退出菜单栏 App 和用户级 Control Service；由系统 launchd 托管的 root Helper 仍保持空闲加载，下次打开 OpenSurge 不需要再次授权。"
+    return "网关数据面已经停止。此操作会退出菜单栏 App 和用户级 Control Service；由系统 launchd 托管的 root Helper 仍保持空闲加载，下次打开 OpenSurge 不需要再次授权。"
+}
+
+func uninstallWarning(for status: MenuBarStatus?) -> String {
+    guard let status else {
+        return "当前无法确认网关状态。请先重新连接后台服务，再卸载 OpenSurge。"
+    }
+    guard status.canUninstall else {
+        return "网关仍在运行。请先在网络设置中停止网关，再卸载 OpenSurge。"
+    }
+    return "网关已经停止。卸载不会修改当前系统的 IPv4 forwarding 状态。"
 }

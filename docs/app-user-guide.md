@@ -116,6 +116,25 @@ The menu bar provides two different quit actions:
   stopped and no recovery action remains. It quits the menu bar app and user
   Control Service.
 
+## Uninstall
+
+Select **卸载 OpenSurge…** (Uninstall OpenSurge) at the bottom of the menu bar
+panel. It becomes available whenever the gateway state is **stopped**. A DHCP
+takeover recovery reminder or a system IPv4-forwarding setting that was
+already enabled does not block uninstall and is not changed by the uninstaller.
+
+The confirmation offers two choices:
+
+- **保留数据并卸载** (Uninstall and Keep Data) removes the app, Control Service,
+  and root Helper while preserving configuration, subscription credentials,
+  and policy data for reinstallation.
+- **彻底卸载** (Uninstall Everything) also deletes configuration, credentials,
+  runtime records, and logs.
+
+macOS asks for administrator authorization. If the gateway is running, first
+stop it in **网络设置** (Network Settings). Upgrades do not require uninstall;
+installing a newer package directly preserves existing data.
+
 ## Common issues
 
 **The Web GUI does not open**

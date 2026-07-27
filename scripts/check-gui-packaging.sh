@@ -17,6 +17,7 @@ WEB_ICON_SOURCE="$ROOT/web/public/opensurge-icon.png"
 WEB_INDEX="$ROOT/web/index.html"
 WEB_APP="$ROOT/web/src/App.tsx"
 MENUBAR_CONTENT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuContentView.swift"
+UNINSTALLER="$ROOT/scripts/uninstall-gui.sh"
 
 bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" \
   "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$RELEASE_VERIFY"
@@ -30,13 +31,13 @@ bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-
 source "$RECOVERY_STATE"
 for stage in idle complete complete_static; do
   opensurge_recovery_stage_is_terminal "$stage" || {
-    echo "terminal recovery stage must allow upgrade and uninstall: $stage" >&2
+    echo "terminal recovery stage must allow upgrade: $stage" >&2
     exit 1
   }
 done
 for stage in "" prepared mac_static router_dhcp_disabled_confirmed gateway_active client_validated client_validation_skipped gateway_stopped_waiting_router_dhcp router_dhcp_restored unknown; do
   if opensurge_recovery_stage_is_terminal "$stage"; then
-    echo "incomplete recovery stage must block upgrade and uninstall: ${stage:-<empty>}" >&2
+    echo "incomplete recovery stage must block upgrade: ${stage:-<empty>}" >&2
     exit 1
   fi
 done
@@ -45,8 +46,20 @@ grep -Fq 'source "$SCRIPT_DIR/recovery-state.sh"' "$PREINSTALL" || {
   echo "preinstall must use the shared recovery terminal-state guard" >&2
   exit 1
 }
-grep -Fq 'source "$REPO_ROOT/packaging/pkg-scripts/recovery-state.sh"' "$ROOT/scripts/uninstall-gui.sh" || {
-  echo "uninstall must use the shared recovery terminal-state guard" >&2
+if grep -Eq 'recovery-state|RECOVERY_STAGE|recovery\.json' "$UNINSTALLER"; then
+  echo "uninstall must not be blocked by the DHCP recovery state" >&2
+  exit 1
+fi
+grep -Fq 'GATEWAY_STATE=' "$UNINSTALLER" || {
+  echo "uninstall must independently read the current gateway state" >&2
+  exit 1
+}
+grep -Fq '[[ "$GATEWAY_STATE" == "stopped" ]]' "$UNINSTALLER" || {
+  echo "uninstall must require a stopped gateway" >&2
+  exit 1
+}
+grep -Fq -- '--keep-data|--remove-all' "$UNINSTALLER" || {
+  echo "uninstall must support preserving data or removing everything" >&2
   exit 1
 }
 
@@ -80,6 +93,10 @@ grep -Fq 'rm -rf "/Applications/OpenSurge Menu Bar.app"' "$POSTINSTALL" || {
 }
 grep -Fq '"/Applications/OpenSurge.app" "/Applications/OpenSurge Menu Bar.app"' "$ROOT/scripts/uninstall-gui.sh" || {
   echo "uninstall must remove both current and legacy app bundles" >&2
+  exit 1
+}
+grep -Fq 'install -m 0755 "$ROOT/scripts/uninstall-gui.sh" "$APP_ROOT/share/uninstall-gui.sh"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "GUI package must install the fixed root-owned uninstall script" >&2
   exit 1
 }
 grep -Fq 'if [[ ! -f "$ROOT/config.yaml" ]]' "$POSTINSTALL" || {

@@ -116,6 +116,8 @@ make menubar-build
 状态、恢复警报并打开 Web GUI，不提供网关 start/stop 或策略切换。它区分“只退出菜单栏
 App”和“退出 OpenSurge”：后者只在网关数据面已经停止时退出菜单栏 App 与用户级
 Control Service；系统 launchd 托管的 root Helper 保持空闲加载，下次打开无需再次授权。
+菜单栏还提供独立的“卸载 OpenSurge”入口：只要网关已经停止即可通过 macOS 管理员授权
+移除 App、Control Service 与 root Helper，并可选择保留配置数据供以后重新安装或彻底删除。
 架构、安全边界与构建说明见 [Web GUI 与菜单栏 App](docs/gui-architecture.zh-CN.md)。
 Web GUI 内置 applied 网关策略路径的连通性页面，并提供 Net.Coffee 的独立浏览器本机
 检测入口；两者都不会被描述成下游设备 DHCP/DNS/TUN 路径已经验收。

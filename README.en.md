@@ -139,6 +139,10 @@ The latter is available only after the gateway data plane has stopped, and
 quits the menu bar app plus the user-level Control Service. The launchd-managed
 root Helper remains loaded and idle, so reopening OpenSurge needs no new
 administrator authorization.
+The menu bar also provides a separate Uninstall OpenSurge action. Once the
+gateway is stopped, macOS administrator authorization can remove the app,
+Control Service, and root Helper while either preserving configuration data
+for reinstallation or deleting everything.
 The Web GUI includes a native connectivity page for the applied gateway policy
 path and links to Net.Coffee for a separate browser-local check. Neither result
 is presented as proof of a downstream device's DHCP/DNS/TUN path.

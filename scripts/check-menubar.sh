@@ -13,6 +13,7 @@ swiftc -parse-as-library -sdk "$SDKROOT" -module-cache-path "$MODULE_CACHE" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuBarIcon.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuContentView.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/Models.swift" \
+  "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/OpenSurgeUninstaller.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/StatusModel.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/WebGUIURLLauncher.swift" \
   "$ROOT/apps/menubar/Checks/MenuBarChecks.swift" \
@@ -47,6 +48,32 @@ if grep -Fq 'ProgressView' "$MENU_CONTENT"; then
   echo "background menu bar polling must not show a periodic loading spinner" >&2
   exit 1
 fi
+grep -Fq 'Button(model.isUninstalling ? "正在卸载…" : "卸载 OpenSurge…")' "$MENU_CONTENT" || {
+  echo "menu bar must expose the native OpenSurge uninstall entry" >&2
+  exit 1
+}
+grep -Fq 'alert.addButton(withTitle: "保留数据并卸载")' "$MENU_CONTENT" || {
+  echo "uninstall confirmation must offer a data-preserving choice" >&2
+  exit 1
+}
+grep -Fq 'alert.addButton(withTitle: "彻底卸载")' "$MENU_CONTENT" || {
+  echo "uninstall confirmation must offer a full-removal choice" >&2
+  exit 1
+}
+
+UNINSTALLER="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/OpenSurgeUninstaller.swift"
+grep -Fq '"/usr/bin/osascript"' "$UNINSTALLER" || {
+  echo "native uninstall must use the macOS administrator authorization flow" >&2
+  exit 1
+}
+grep -Fq 'with administrator privileges' "$UNINSTALLER" || {
+  echo "native uninstall must explicitly request administrator privileges" >&2
+  exit 1
+}
+grep -Fq '"/Library/Application Support/OpenSurge/share/uninstall-gui.sh"' "$UNINSTALLER" || {
+  echo "native uninstall must call the fixed root-owned packaged script" >&2
+  exit 1
+}
 
 MENU_BAR_CONTROLLER="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuBarController.swift"
 if grep -Fq 'NSApplication.shared.isActive' "$MENU_BAR_CONTROLLER"; then

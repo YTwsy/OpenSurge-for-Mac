@@ -98,6 +98,14 @@ struct MenuContentView: View {
             Button("只退出菜单栏 App…") { confirmQuit(.menuBarOnly) }
                 .font(.caption).foregroundStyle(.secondary)
                 .disabled(model.isChangingServices)
+            Divider()
+            Button(model.isUninstalling ? "正在卸载…" : "卸载 OpenSurge…") {
+                confirmUninstall()
+            }
+                .font(.caption)
+                .foregroundStyle(.red)
+                .disabled(!model.canUninstall)
+                .help(uninstallHelp)
         }
         .padding(16)
         .frame(width: 330)
@@ -111,6 +119,12 @@ struct MenuContentView: View {
         return "停止用户级 Control Service，然后退出菜单栏 App；root Helper 保持空闲加载"
     }
 
+    private var uninstallHelp: String {
+        if model.status == nil { return "请先重新连接后台服务" }
+        if model.status?.canUninstall != true { return "请先在网络设置中停止网关" }
+        return "移除 OpenSurge App、后台服务与 root Helper"
+    }
+
     private func confirmQuit(_ confirmation: QuitConfirmation) {
         guard confirmation.present(for: model.status) else { return }
         switch confirmation {
@@ -119,6 +133,11 @@ struct MenuContentView: View {
         case .menuBarOnly:
             model.quitMenuBarApp()
         }
+    }
+
+    private func confirmUninstall() {
+        guard let mode = UninstallConfirmation.present(for: model.status) else { return }
+        model.uninstall(mode)
     }
 
     private func statusGrid(_ status: MenuBarStatus) -> some View {
@@ -146,6 +165,31 @@ struct MenuContentView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(11).background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+@MainActor
+private enum UninstallConfirmation {
+    static func present(for status: MenuBarStatus?) -> UninstallMode? {
+        guard status?.canUninstall == true else { return nil }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "卸载 OpenSurge？"
+        alert.informativeText = """
+        OpenSurge App、用户级 Control Service 与 root Helper 都会被移除。
+
+        “保留数据并卸载”会保留配置、订阅和策略数据，便于重新安装；“彻底卸载”还会删除凭据、运行记录和日志。当前系统的 IPv4 forwarding 状态不会被修改。
+        """
+        alert.addButton(withTitle: "保留数据并卸载")
+        alert.addButton(withTitle: "彻底卸载").hasDestructiveAction = true
+        alert.addButton(withTitle: "取消")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn: return .keepData
+        case .alertSecondButtonReturn: return .removeEverything
+        default: return nil
+        }
     }
 }
 

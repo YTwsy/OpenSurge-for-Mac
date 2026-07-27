@@ -108,6 +108,25 @@ final class ModelsTests: XCTestCase {
                                      recoveryRequired: true, recoveryStage: "gateway_stopped_waiting_router_dhcp", warnings: [], errorCode: nil)
         XCTAssertFalse(recovery.canQuitOpenSurge)
         XCTAssertTrue(openSurgeQuitWarning(for: recovery).contains("网络恢复尚未完成"))
+        XCTAssertTrue(recovery.canUninstall)
+        XCTAssertTrue(uninstallWarning(for: recovery).contains("IPv4 forwarding"))
+    }
+
+    func testHostForwardingDoesNotKeepOpenSurgeActive() {
+        let stopped = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "isolated_lan",
+                                    lanIp: "192.168.50.1", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded",
+                                    forwarding: "enabled", clientCount: 0, drift: false, doctorHealthy: true,
+                                    recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
+
+        XCTAssertFalse(stopped.gatewayServicesActive)
+        XCTAssertTrue(stopped.canQuitOpenSurge)
+        XCTAssertTrue(stopped.canUninstall)
+    }
+
+    func testUninstallOnlyDependsOnGatewayBeingStopped() {
+        XCTAssertFalse(fixture(gateway: "running", recovery: false, drift: false).canUninstall)
+        XCTAssertFalse(fixture(gateway: "degraded", recovery: false, drift: false).canUninstall)
+        XCTAssertTrue(uninstallWarning(for: fixture(gateway: "running", recovery: false, drift: false)).contains("停止网关"))
     }
 
     func testDiagnosticSummaryDoesNotContainWarnings() {

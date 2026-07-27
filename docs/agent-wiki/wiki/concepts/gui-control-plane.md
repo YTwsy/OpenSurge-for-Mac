@@ -44,6 +44,16 @@ root Helper；Helper 保持空闲加载，因此重新打开 App 或重启电脑
 重新打开时必须能从已安装的 LaunchAgent plist bootstrap 此前被 bootout 的 Control
 Service。只有卸载、重新安装或修改系统级 Helper 才进入需要管理员授权的边界。
 
+宿主 `net.inet.ip.forwarding` 是全局状态；用户可能在 OpenSurge 启动前已经启用它。
+因此 raw `forwarding == enabled` 不能单独算作 OpenSurge 服务仍活跃，也不能阻止完整退出
+或卸载。gateway manager 仍必须记录并恢复启动前 forwarding 值。
+
+菜单栏提供独立“卸载 OpenSurge”入口。卸载只以 `gateway == stopped` 为门禁，不受
+recovery 阶段影响；确认窗口允许保留配置/订阅/策略数据或彻底删除全部数据。管理员授权
+后只调用 pkg 安装到固定系统目录、root 拥有的卸载脚本；脚本必须自行再次确认 gateway
+stopped，再移除用户 Control Service、系统 Helper、App 和 receipt。升级继续使用 pkg
+preinstall 的严格 recovery 与 stop 顺序，不能与产品卸载门禁混为一谈。
+
 菜单栏退出确认使用同步的 AppKit `NSAlert.runModal()`，并直接根据返回值执行退出动作。
 不要把这个关键进程动作依赖于 SwiftUI alert 的 `isPresented` / item 清理时序；早期
 `MenuBarExtra` window 中已经实际观察到确认按钮关闭 alert 后没有进入退出动作的情况。

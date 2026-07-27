@@ -60,6 +60,7 @@ install -m 0755 "$ROOT/bin/opensurge-helper" "$PAYLOAD/Library/PrivilegedHelperT
 install -m 0644 "$CONFIG" "$APP_ROOT/share/config.yaml"
 install -m 0644 "$ROOT/packaging/launchd/com.opensurge.control.plist" "$APP_ROOT/share/com.opensurge.control.plist"
 install -m 0644 "$ROOT/packaging/launchd/com.opensurge.helper.plist" "$APP_ROOT/share/com.opensurge.helper.plist"
+install -m 0755 "$ROOT/scripts/uninstall-gui.sh" "$APP_ROOT/share/uninstall-gui.sh"
 install -m 0644 "$ROOT/LICENSE" "$LICENSE_ROOT/GPL-3.0.txt"
 install -m 0644 "$ROOT/third_party/licenses/dnsmasq-COPYING" "$LICENSE_ROOT/GPL-2.0.txt"
 install -m 0644 "$ROOT/third_party/licenses/Apache-2.0.txt" "$LICENSE_ROOT/Apache-2.0.txt"

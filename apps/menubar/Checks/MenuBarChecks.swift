@@ -110,6 +110,9 @@ struct MenuBarChecks {
         try require(stopped.indicator == .stopped && stopped.indicator.accessibilityLabel == "OpenSurge 网关已停止", "stopped gateway must not be presented as a runtime failure")
         try require(stopped.canQuitOpenSurge && openSurgeQuitWarning(for: stopped).contains("root Helper 仍保持空闲加载"), "stopped gateway must allow the explicit OpenSurge quit path")
         try require(!active.canQuitOpenSurge && !recovery.canQuitOpenSurge, "active or recovery state must block the OpenSurge quit path")
+        try require(!active.canUninstall && recovery.canUninstall, "uninstall must depend only on whether the gateway is stopped")
+        let forwardingAlreadyEnabled = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "isolated_lan", lanIp: "192.168.50.1", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "enabled", clientCount: 0, drift: false, doctorHealthy: true, recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
+        try require(!forwardingAlreadyEnabled.gatewayServicesActive && forwardingAlreadyEnabled.canQuitOpenSurge && forwardingAlreadyEnabled.canUninstall, "host forwarding must not block quit or uninstall")
 
         let (useDefaultReopen, presentationCount) = await MainActor.run {
             let panelPresenter = CheckMenuBarPresenter()

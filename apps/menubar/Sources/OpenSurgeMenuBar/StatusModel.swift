@@ -9,6 +9,7 @@ final class StatusModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var serviceNeedsReconnect = false
     @Published private(set) var isChangingServices = false
+    @Published private(set) var isUninstalling = false
     @Published var openAtLogin = false
 
     private let client: ControlAPIClient
@@ -29,6 +30,7 @@ final class StatusModel: ObservableObject {
 
     var indicator: IndicatorState { menuBarIndicator(status: status, hasError: error != nil) }
     var canQuitOpenSurge: Bool { status?.canQuitOpenSurge == true && !isChangingServices }
+    var canUninstall: Bool { status?.canUninstall == true && !isChangingServices }
 
     func startPolling(rapid: Bool = false) {
         guard !isQuitting else { return }
@@ -109,6 +111,51 @@ final class StatusModel: ObservableObject {
                 scheduleNextRefresh()
             }
         }
+    }
+
+    func uninstall(_ mode: UninstallMode) {
+        guard canUninstall else {
+            error = uninstallWarning(for: status)
+            return
+        }
+        timer?.invalidate()
+        isQuitting = true
+        isChangingServices = true
+        isUninstalling = true
+        error = nil
+        let restoreLoginItemOnFailure = openAtLogin
+        if restoreLoginItemOnFailure {
+            try? SMAppService.mainApp.unregister()
+            openAtLogin = false
+        }
+        Task {
+            do {
+                try await OpenSurgeUninstaller.run(mode: mode)
+                ControlServiceLauncher.terminateMenuBarApp()
+            } catch OpenSurgeUninstallError.authorizationCancelled {
+                restoreAfterUninstallFailure(
+                    error: nil,
+                    restoreLoginItem: restoreLoginItemOnFailure
+                )
+            } catch {
+                restoreAfterUninstallFailure(
+                    error: error.localizedDescription,
+                    restoreLoginItem: restoreLoginItemOnFailure
+                )
+            }
+        }
+    }
+
+    private func restoreAfterUninstallFailure(error: String?, restoreLoginItem: Bool) {
+        if restoreLoginItem {
+            try? SMAppService.mainApp.register()
+            openAtLogin = true
+        }
+        isQuitting = false
+        isChangingServices = false
+        isUninstalling = false
+        self.error = error
+        scheduleNextRefresh()
     }
 
     private func recordFailure(_ error: Error) {

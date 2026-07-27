@@ -36,11 +36,23 @@ AppKit `NSStatusItem` 与锚定的 `NSPopover` 承载，内部继续复用 Swift
 
 菜单栏提供两个不同的退出层级。“只退出菜单栏 App”在二次确认后直接结束菜单栏进程，
 不会改变用户级 Control Service、网关数据面或 root Helper。“退出 OpenSurge”只有在
-Gateway、DHCP/DNS、mihomo、PF 与 IPv4 forwarding 已确认停止，并且没有待处理网络恢复时
+Gateway、DHCP/DNS、mihomo 与 PF 已确认停止，并且没有待处理网络恢复时
 才可执行；它会 bootout 用户级 `com.opensurge.control` 并退出菜单栏 App。已安装的
 `com.opensurge.helper` 继续由系统 launchd 托管并保持空闲加载，不卸载、不要求下次打开
 再次授权。重新打开菜单栏 App 时，如果用户级 Control Service 已被 bootout，App 会从
 现有 LaunchAgent plist 重新 bootstrap 并连接它。
+
+系统 `net.inet.ip.forwarding` 是宿主机全局观测值，不是 OpenSurge 运行所有权证据。退出
+门禁不因该值单独为 enabled 而阻止操作；网关生命周期仍按 runtime state 恢复 OpenSurge
+启动前的值。
+
+“卸载 OpenSurge”是独立的管理员操作，只以 `gateway == stopped` 作为状态门禁，不读取
+DHCP 接管 recovery，也不要求全局 IPv4 forwarding 为 disabled。菜单栏使用同步
+`NSAlert` 选择保留数据或彻底删除，再通过 macOS 管理员授权调用 pkg 内固定安装、root
+拥有的卸载脚本。脚本会再次读取 CLI gateway 状态，随后 bootout Control Service 与
+root Helper、移除 App 和 pkg receipt；保留模式留下配置、订阅凭据和策略数据，彻底模式
+同时删除用户与系统数据、runtime 和日志。
+
 退出确认使用同步的 AppKit `NSAlert.runModal()` 并直接消费返回值，不再把进程退出动作
 依赖于 SwiftUI alert 的状态写回/关闭时序。早期 `MenuBarExtra` 的 SwiftUI alert 曾在两个退出
 入口中都只关闭确认框而没有进入动作回调，因此这里保留显式的 AppKit 边界。
@@ -223,7 +235,7 @@ connecting 从第一帧就使用半透明 OpenSurge 品牌图标；只有真实�
 的 `network.slash`。恢复警报优先于其他状态。
 网关明确处于 `stopped` 时显示“OpenSurge 网关已停止”；此时 runtime-oriented doctor
 未通过或存在待应用配置都不能把“未启动”误报成“运行异常”。
-退出按钮只终止菜单栏 App；点击后会先提示后台 Control Service 仍会继续，若网关正在
+“只退出菜单栏 App”只终止菜单栏 App；点击后会先提示后台 Control Service 仍会继续，若网关正在
 运行，还会明确 DHCP/DNS、mihomo、PF/转发不会随菜单栏退出。停止网关仍须进入 Web GUI。
 
 构建：
@@ -259,9 +271,11 @@ relocatable bundle，确保它固定安装到 `/Applications/OpenSurge.app`。
 
 安装包包含 Web 静态资源（嵌入 control binary）、用户级 Control Service、菜单栏 App、
 CLI 和 root helper。postinstall 会创建 root:admin、用户只读的 applied 配置/runtime，
-安装固定 launchd 服务；卸载脚本在 recovery 未完成时拒绝删除，并先停止网关。
+安装固定 launchd 服务，并把固定卸载脚本安装到系统支持目录。卸载脚本只在 gateway
+明确为 stopped 时继续，不尝试代替用户停止网关，也不因 recovery 或宿主 forwarding
+状态拒绝删除。
 
-升级采用与安全卸载一致的前置顺序：preinstall 先检查 recovery 只能处于 `idle`、
+升级仍采用更严格的网络安全前置顺序：preinstall 先检查 recovery 只能处于 `idle`、
 `complete` 或明确保留静态 IPv4 的终态 `complete_static`，再 bootout 用户级 Control
 Service 并退出菜单栏 App，调用旧版本
 `omg stop` 清理 DHCP/DNS/mihomo/pf/forwarding，最后 bootout root helper。任何一步
