@@ -80,8 +80,8 @@ grep -Fq 'button?.window?.isVisible == true' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar panel must wait until its status-item anchor is actually visible" >&2
   exit 1
 }
-grep -Fq 'panelWindow?.makeKey()' "$MENU_BAR_CONTROLLER" || {
-  echo "menu bar popover must become key so prominent controls retain focused tint" >&2
+grep -Fq 'panelWindow.makeKey()' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar popover should request key status after activation" >&2
   exit 1
 }
 grep -Fq 'NSApplication.shared.activate()' "$MENU_BAR_CONTROLLER" || {
@@ -93,7 +93,39 @@ grep -Fq 'activate(ignoringOtherApps: true)' "$MENU_BAR_CONTROLLER" || {
   exit 1
 }
 grep -Fq 'func applicationDidBecomeActive' "$MENU_BAR_CONTROLLER" || {
-  echo "menu bar presentation must resume from AppKit activation events" >&2
+  echo "menu bar presentation must enhance focus from AppKit activation events" >&2
+  exit 1
+}
+if grep -Fq 'func applicationDidUpdate' "$MENU_BAR_CONTROLLER"; then
+  echo "menu bar presentation must not churn retries from every AppKit update event" >&2
+  exit 1
+fi
+if grep -Eq 'guard[[:space:]]+applicationActive|guard[[:space:]]+panelWindowKey' "$MENU_BAR_CONTROLLER"; then
+  echo "application activation and key-window status must not block popover visibility" >&2
+  exit 1
+fi
+grep -Fq 'candidate.behavior = .applicationDefined' "$MENU_BAR_CONTROLLER" || {
+  echo "an inactive menu bar app must retain responsibility for its visible popover" >&2
+  exit 1
+}
+grep -Fq 'NSEvent.addGlobalMonitorForEvents' "$MENU_BAR_CONTROLLER" || {
+  echo "application-defined popovers must close on outside mouse interaction" >&2
+  exit 1
+}
+grep -Fq 'button.state = panelPresented ? .on : .off' "$MENU_BAR_CONTROLLER" || {
+  echo "the status item must retain persistent presented state" >&2
+  exit 1
+}
+grep -Fq 'menuBarStatusItemNeedsRefresh(' "$MENU_BAR_CONTROLLER" || {
+  echo "status polling must not redraw an unchanged status-item icon" >&2
+  exit 1
+}
+grep -Fq '.environment(\.controlActiveState, .key)' "$MENU_BAR_CONTROLLER" || {
+  echo "the menu panel must retain active control appearance when activation is declined" >&2
+  exit 1
+}
+grep -Fq 'finishTimedOutPanelPresentation()' "$MENU_BAR_CONTROLLER" || {
+  echo "bounded presentation retries must end in a non-pending fallback" >&2
   exit 1
 }
 grep -Fq 'inModes: [.common]' "$MENU_BAR_CONTROLLER" || {

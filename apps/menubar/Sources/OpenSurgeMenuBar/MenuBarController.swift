@@ -5,28 +5,25 @@ import SwiftUI
 @MainActor
 protocol MenuBarPresenting: AnyObject {
     func showPanel()
-    func applicationStateDidChange()
+    func applicationDidBecomeActive()
 }
 
 extension MenuBarPresenting {
-    func applicationStateDidChange() {}
+    func applicationDidBecomeActive() {}
 }
 
 enum MenuBarPanelPresentationAction: Equatable {
     case none
-    case activateApplication
     case waitForAnchor
     case showPopover
     case waitForPanelWindow
-    case resetPopover
-    case makePanelKey
+    case replacePopover
     case complete
 }
 
 enum MenuBarPanelRetryPolicy {
     static let presentationWindow: TimeInterval = 8
     static let popoverWindowGrace: TimeInterval = 1
-    static let popoverResetGrace: TimeInterval = 0.25
 
     static func delay(after attempt: Int) -> TimeInterval {
         switch attempt {
@@ -42,23 +39,29 @@ enum MenuBarPanelRetryPolicy {
 
 func menuBarPanelPresentationAction(
     presentationPending: Bool,
-    popoverResetInProgress: Bool,
-    applicationActive: Bool,
     anchorVisible: Bool,
     popoverShown: Bool,
     panelWindowAvailable: Bool,
-    popoverWindowWaitExpired: Bool,
-    panelWindowKey: Bool
+    popoverWindowWaitExpired: Bool
 ) -> MenuBarPanelPresentationAction {
-    guard presentationPending, !popoverResetInProgress else { return .none }
-    guard applicationActive else { return .activateApplication }
+    guard presentationPending else { return .none }
     guard anchorVisible else { return .waitForAnchor }
     guard popoverShown else { return .showPopover }
     guard panelWindowAvailable else {
-        return popoverWindowWaitExpired ? .resetPopover : .waitForPanelWindow
+        return popoverWindowWaitExpired ? .replacePopover : .waitForPanelWindow
     }
-    guard panelWindowKey else { return .makePanelKey }
     return .complete
+}
+
+func menuBarPopoverBehavior(applicationActive: Bool) -> NSPopover.Behavior {
+    applicationActive ? .transient : .applicationDefined
+}
+
+func menuBarStatusItemNeedsRefresh(
+    renderedIndicator: IndicatorState?,
+    nextIndicator: IndicatorState
+) -> Bool {
+    renderedIndicator != nextIndicator
 }
 
 @MainActor
@@ -86,11 +89,7 @@ final class OpenSurgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        presenter?.applicationStateDidChange()
-    }
-
-    func applicationDidUpdate(_ notification: Notification) {
-        presenter?.applicationStateDidChange()
+        presenter?.applicationDidBecomeActive()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -106,12 +105,15 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     private var popover = NSPopover()
     private var modelObservation: AnyCancellable?
     private var presentationPending = false
-    private var isResettingFailedPopover = false
     private var presentationRetryDeadline: Date?
     private var presentationRetryAttempt = 0
     private var presentationRetryScheduled = false
     private var popoverWindowDeadline: Date?
-    private var popoverResetFallbackScheduled = false
+    private var panelPresented = false
+    private var renderedIndicator: IndicatorState?
+    private var outsideClickMonitor: Any?
+    private var escapeKeyMonitor: Any?
+    private var finalPresentationVerificationScheduled = false
 
     init(model: StatusModel) {
         self.model = model
@@ -127,6 +129,9 @@ final class MenuBarController: NSObject, MenuBarPresenting {
             button.target = self
             button.action = #selector(togglePanel(_:))
             button.sendAction(on: [.leftMouseUp])
+            // NSChangeBackgroundCellMask is imported without a Swift member
+            // name in the macOS 14 SDK used by this project.
+            (button.cell as? NSButtonCell)?.showsStateBy = NSCell.StyleMask(rawValue: 1 << 3)
         }
         updateStatusItem()
         modelObservation = model.objectWillChange.sink { [weak self] _ in
@@ -137,16 +142,19 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     func showPanel() {
+        cancelFinalPresentationVerification()
         presentationPending = true
         presentationRetryDeadline = Date().addingTimeInterval(
             MenuBarPanelRetryPolicy.presentationWindow
         )
         presentationRetryAttempt = 0
+        requestApplicationActivation()
         advancePanelPresentation()
     }
 
-    func applicationStateDidChange() {
+    func applicationDidBecomeActive() {
         advancePanelPresentation()
+        promoteVisiblePanelForActiveApplication()
     }
 
     @objc
@@ -168,16 +176,13 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         let panelWindow = popover.contentViewController?.view.window
         let action = menuBarPanelPresentationAction(
             presentationPending: presentationPending,
-            popoverResetInProgress: isResettingFailedPopover,
-            applicationActive: NSApplication.shared.isActive,
             anchorVisible: statusItem.isVisible
                 && button?.window?.isVisible == true
                 && button?.window?.screen != nil
                 && button?.isHiddenOrHasHiddenAncestor == false,
             popoverShown: popover.isShown,
             panelWindowAvailable: panelWindow != nil,
-            popoverWindowWaitExpired: popoverWindowDeadline.map { now >= $0 } ?? true,
-            panelWindowKey: panelWindow?.isKeyWindow == true
+            popoverWindowWaitExpired: popoverWindowDeadline.map { now >= $0 } ?? true
         )
 
         switch action {
@@ -185,14 +190,12 @@ final class MenuBarController: NSObject, MenuBarPresenting {
             return
         case .waitForAnchor:
             schedulePresentationRetry()
-        case .activateApplication:
-            requestApplicationActivation()
-            schedulePresentationRetry()
         case .showPopover:
             guard let button else {
                 schedulePresentationRetry()
                 return
             }
+            preparePopoverForCurrentActivationState()
             let windowDeadline = Date().addingTimeInterval(
                 MenuBarPanelRetryPolicy.popoverWindowGrace
             )
@@ -201,24 +204,17 @@ final class MenuBarController: NSObject, MenuBarPresenting {
             schedulePresentationRetry(notBefore: windowDeadline)
         case .waitForPanelWindow:
             schedulePresentationRetry(notBefore: popoverWindowDeadline)
-        case .resetPopover:
-            recoverFromMissingPopoverWindow()
-        case .makePanelKey:
-            panelWindow?.makeKey()
-            if panelWindow?.isKeyWindow == true {
-                completePanelPresentation()
-            } else {
-                schedulePresentationRetry()
-            }
+        case .replacePopover:
+            replaceFailedPopover()
+            schedulePresentationRetry()
         case .complete:
             completePanelPresentation()
         }
     }
 
     private func requestApplicationActivation() {
-        // Opening the app and clicking its status item are explicit requests
-        // to focus this LSUIElement panel. macOS 14 replaced forced activation
-        // with cooperative activation, whose result can arrive later.
+        // Activation is a best-effort enhancement. Presentation never waits
+        // for this request because cooperative activation may be declined.
         if #available(macOS 14.0, *) {
             NSApplication.shared.activate()
         } else {
@@ -226,10 +222,10 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         }
     }
 
-    private func recoverFromMissingPopoverWindow() {
-        guard !isResettingFailedPopover else { return }
-        isResettingFailedPopover = true
+    private func replaceFailedPopover() {
         popoverWindowDeadline = nil
+        setPanelPresented(false)
+        removeApplicationDefinedDismissMonitors()
 
         // A failed show can leave NSPopover logically shown without ever
         // creating a window. Replace that invalid presentation object instead
@@ -243,12 +239,12 @@ final class MenuBarController: NSObject, MenuBarPresenting {
             contentController: makePanelContentController()
         )
         popover = replacement
-        schedulePopoverResetFallback()
     }
 
-    private func makePanelContentController() -> NSHostingController<MenuContentView> {
+    private func makePanelContentController() -> NSViewController {
         let contentController = NSHostingController(
             rootView: MenuContentView(model: model)
+                .environment(\.controlActiveState, .key)
         )
         contentController.sizingOptions = [.preferredContentSize]
         return contentController
@@ -259,14 +255,65 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         contentController: NSViewController
     ) {
         candidate.contentViewController = contentController
-        candidate.behavior = .transient
+        candidate.behavior = .applicationDefined
         candidate.animates = true
         candidate.delegate = self
     }
 
+    private func preparePopoverForCurrentActivationState() {
+        popover.behavior = menuBarPopoverBehavior(
+            applicationActive: NSApplication.shared.isActive
+        )
+        if popover.behavior == .transient {
+            removeApplicationDefinedDismissMonitors()
+        } else {
+            installApplicationDefinedDismissMonitors()
+        }
+    }
+
+    private func installApplicationDefinedDismissMonitors() {
+        if outsideClickMonitor == nil {
+            outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+            ) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.closePanel()
+                }
+            }
+        }
+        if escapeKeyMonitor == nil {
+            escapeKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+                [weak self] event in
+                guard event.keyCode == 53 else { return event }
+                self?.closePanel()
+                return nil
+            }
+        }
+    }
+
+    private func removeApplicationDefinedDismissMonitors() {
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+            self.outsideClickMonitor = nil
+        }
+        if let escapeKeyMonitor {
+            NSEvent.removeMonitor(escapeKeyMonitor)
+            self.escapeKeyMonitor = nil
+        }
+    }
+
+    private func promoteVisiblePanelForActiveApplication() {
+        guard NSApplication.shared.isActive,
+              let panelWindow = popover.contentViewController?.view.window else {
+            return
+        }
+        panelWindow.makeKey()
+        popover.behavior = .transient
+        removeApplicationDefinedDismissMonitors()
+    }
+
     private func schedulePresentationRetry(notBefore: Date? = nil) {
         guard presentationPending,
-              !isResettingFailedPopover,
               !presentationRetryScheduled,
               let retryDeadline = presentationRetryDeadline else {
             return
@@ -274,7 +321,10 @@ final class MenuBarController: NSObject, MenuBarPresenting {
 
         let now = Date()
         let remaining = retryDeadline.timeIntervalSince(now)
-        guard remaining > 0 else { return }
+        guard remaining > 0 else {
+            finishTimedOutPanelPresentation()
+            return
+        }
 
         var delay = MenuBarPanelRetryPolicy.delay(after: presentationRetryAttempt)
         if let notBefore {
@@ -308,81 +358,145 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         presentationRetryScheduled = false
     }
 
-    private func schedulePopoverResetFallback() {
-        cancelScheduledPopoverResetFallback()
-        popoverResetFallbackScheduled = true
+    private func finishTimedOutPanelPresentation() {
+        let button = statusItem.button
+        let anchorVisible = statusItem.isVisible
+            && button?.window?.isVisible == true
+            && button?.window?.screen != nil
+            && button?.isHiddenOrHasHiddenAncestor == false
+
+        if popover.contentViewController?.view.window != nil {
+            completePanelPresentation()
+            return
+        }
+        if popover.isShown {
+            replaceFailedPopover()
+        }
+
+        clearPendingPresentation()
+        guard anchorVisible, let button else {
+            setPanelPresented(false)
+            return
+        }
+
+        // One final non-blocking attempt avoids leaving a pending state behind.
+        // If AppKit still declines it, the next explicit click starts fresh.
+        preparePopoverForCurrentActivationState()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        if popover.contentViewController?.view.window != nil {
+            completePanelPresentation()
+        } else {
+            scheduleFinalPresentationVerification()
+        }
+    }
+
+    private func completePanelPresentation() {
+        cancelFinalPresentationVerification()
+        clearPendingPresentation()
+        popoverWindowDeadline = nil
+        setPanelPresented(true)
+        promoteVisiblePanelForActiveApplication()
+    }
+
+    private func cancelPendingPresentation() {
+        cancelFinalPresentationVerification()
+        clearPendingPresentation()
+        popoverWindowDeadline = nil
+        setPanelPresented(false)
+        removeApplicationDefinedDismissMonitors()
+    }
+
+    private func scheduleFinalPresentationVerification() {
+        cancelFinalPresentationVerification()
+        finalPresentationVerificationScheduled = true
         perform(
-            #selector(finishPopoverResetAfterTimeout),
+            #selector(verifyFinalPanelPresentation),
             with: nil,
-            afterDelay: MenuBarPanelRetryPolicy.popoverResetGrace,
+            afterDelay: MenuBarPanelRetryPolicy.popoverWindowGrace,
             inModes: [.common]
         )
     }
 
     @objc
-    private func finishPopoverResetAfterTimeout() {
-        popoverResetFallbackScheduled = false
-        finishPopoverReset()
+    private func verifyFinalPanelPresentation() {
+        finalPresentationVerificationScheduled = false
+        if popover.contentViewController?.view.window != nil {
+            completePanelPresentation()
+            return
+        }
+        if popover.isShown {
+            replaceFailedPopover()
+        }
+        setPanelPresented(false)
+        removeApplicationDefinedDismissMonitors()
     }
 
-    private func cancelScheduledPopoverResetFallback() {
-        guard popoverResetFallbackScheduled else { return }
+    private func cancelFinalPresentationVerification() {
+        guard finalPresentationVerificationScheduled else { return }
         NSObject.cancelPreviousPerformRequests(
             withTarget: self,
-            selector: #selector(finishPopoverResetAfterTimeout),
+            selector: #selector(verifyFinalPanelPresentation),
             object: nil
         )
-        popoverResetFallbackScheduled = false
+        finalPresentationVerificationScheduled = false
     }
 
-    private func finishPopoverReset() {
-        guard isResettingFailedPopover else { return }
-        cancelScheduledPopoverResetFallback()
-        isResettingFailedPopover = false
-        statusItem.button?.highlight(false)
-        schedulePresentationRetry()
-    }
-
-    private func completePanelPresentation() {
+    private func clearPendingPresentation() {
         presentationPending = false
         presentationRetryDeadline = nil
         presentationRetryAttempt = 0
-        popoverWindowDeadline = nil
         cancelScheduledPresentationRetry()
-        statusItem.button?.highlight(true)
     }
 
-    private func cancelPendingPresentation() {
-        presentationPending = false
-        presentationRetryDeadline = nil
-        presentationRetryAttempt = 0
-        popoverWindowDeadline = nil
-        cancelScheduledPresentationRetry()
-        statusItem.button?.highlight(false)
+    private func closePanel() {
+        cancelPendingPresentation()
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+    }
+
+    private func setPanelPresented(_ presented: Bool) {
+        panelPresented = presented
+        applyStatusItemPresentedState()
+    }
+
+    private func applyStatusItemPresentedState() {
+        guard let button = statusItem.button else { return }
+        button.state = panelPresented ? .on : .off
+        button.highlight(panelPresented)
     }
 
     private func updateStatusItem() {
         guard let button = statusItem.button else { return }
         let indicator = model.indicator
+        guard menuBarStatusItemNeedsRefresh(
+            renderedIndicator: renderedIndicator,
+            nextIndicator: indicator
+        ) else {
+            applyStatusItemPresentedState()
+            return
+        }
+        renderedIndicator = indicator
         button.image = openSurgeMenuBarImage(for: indicator)
         button.imagePosition = .imageOnly
         button.alphaValue = indicator.menuBarIconOpacity
         button.toolTip = indicator.accessibilityLabel
         button.setAccessibilityLabel(indicator.accessibilityLabel)
+        applyStatusItemPresentedState()
     }
 }
 
 extension MenuBarController: NSPopoverDelegate {
     func popoverDidShow(_ notification: Notification) {
         popoverWindowDeadline = nil
-        advancePanelPresentation()
+        if popover.contentViewController?.view.window != nil {
+            completePanelPresentation()
+        } else {
+            advancePanelPresentation()
+        }
     }
 
     func popoverDidClose(_ notification: Notification) {
-        if isResettingFailedPopover {
-            finishPopoverReset()
-            return
-        }
         cancelPendingPresentation()
     }
 }
