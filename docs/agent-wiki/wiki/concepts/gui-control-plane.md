@@ -21,8 +21,12 @@ AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状
 popover window 创建后显式令它成为 key window。后者确保 macOS 26 等较新系统把
 “打开 OpenSurge 面板”的 prominent button 绘制为有焦点的强调色，而不是非活跃窗口样式。
 该流程由 `applicationDidBecomeActive`、`applicationDidUpdate` 与 popover delegate 事件
-推进，不依赖固定延迟；`NSPopover.isShown` 只表示调用过 `show`，还必须确认真实 popover
-window 存在，否则关闭这次无效展示后重试。
+推进，并以 common run loop 上的短时、有界退避重试覆盖 macOS 26 首次启动时状态项挂载或
+activation 事件晚到的情况；重试期限耗尽后不得继续轮询，但后续 AppKit 事件和用户再次点击
+仍可恢复，不能留下“重试次数耗尽后永久卡住”的状态。`NSPopover.isShown` 只表示调用过
+`show`，还必须给动画留出 window 创建宽限期并确认真实 popover window 存在；超时后才关闭
+这次无效展示并重试。macOS 14 及以上使用 cooperative `NSApplication.activate()`，
+macOS 13 仅保留兼容的旧 activation fallback。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP

@@ -167,7 +167,20 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(panelPresentationAction(applicationActive: false), .activateApplication)
         XCTAssertEqual(panelPresentationAction(anchorVisible: false), .waitForAnchor)
         XCTAssertEqual(panelPresentationAction(popoverShown: false), .showPopover)
-        XCTAssertEqual(panelPresentationAction(panelWindowAvailable: false), .resetPopover)
+        XCTAssertEqual(
+            panelPresentationAction(
+                panelWindowAvailable: false,
+                popoverWindowWaitExpired: false
+            ),
+            .waitForPanelWindow
+        )
+        XCTAssertEqual(
+            panelPresentationAction(
+                panelWindowAvailable: false,
+                popoverWindowWaitExpired: true
+            ),
+            .resetPopover
+        )
         XCTAssertEqual(panelPresentationAction(panelWindowKey: false), .makePanelKey)
         XCTAssertEqual(panelPresentationAction(), .complete)
         XCTAssertEqual(
@@ -178,6 +191,7 @@ final class ModelsTests: XCTestCase {
                 anchorVisible: true,
                 popoverShown: true,
                 panelWindowAvailable: true,
+                popoverWindowWaitExpired: true,
                 panelWindowKey: true
             ),
             .none
@@ -190,9 +204,22 @@ final class ModelsTests: XCTestCase {
                 anchorVisible: true,
                 popoverShown: true,
                 panelWindowAvailable: false,
+                popoverWindowWaitExpired: true,
                 panelWindowKey: false
             ),
             .none
+        )
+    }
+
+    func testPanelPresentationRetriesAreBoundedAndBackOff() {
+        XCTAssertEqual(MenuBarPanelRetryPolicy.delay(after: 0), 0.05)
+        XCTAssertEqual(MenuBarPanelRetryPolicy.delay(after: 4), 0.05)
+        XCTAssertEqual(MenuBarPanelRetryPolicy.delay(after: 5), 0.1)
+        XCTAssertEqual(MenuBarPanelRetryPolicy.delay(after: 9), 0.1)
+        XCTAssertEqual(MenuBarPanelRetryPolicy.delay(after: 10), 0.25)
+        XCTAssertGreaterThan(
+            MenuBarPanelRetryPolicy.presentationWindow,
+            MenuBarPanelRetryPolicy.popoverWindowGrace
         )
     }
 
@@ -218,6 +245,7 @@ private func panelPresentationAction(
     anchorVisible: Bool = true,
     popoverShown: Bool = true,
     panelWindowAvailable: Bool = true,
+    popoverWindowWaitExpired: Bool = true,
     panelWindowKey: Bool = true
 ) -> MenuBarPanelPresentationAction {
     menuBarPanelPresentationAction(
@@ -227,6 +255,7 @@ private func panelPresentationAction(
         anchorVisible: anchorVisible,
         popoverShown: popoverShown,
         panelWindowAvailable: panelWindowAvailable,
+        popoverWindowWaitExpired: popoverWindowWaitExpired,
         panelWindowKey: panelWindowKey
     )
 }

@@ -84,14 +84,26 @@ grep -Fq 'panelWindow?.makeKey()' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar popover must become key so prominent controls retain focused tint" >&2
   exit 1
 }
+grep -Fq 'NSApplication.shared.activate()' "$MENU_BAR_CONTROLLER" || {
+  echo "macOS 14 and newer must use cooperative application activation" >&2
+  exit 1
+}
 grep -Fq 'activate(ignoringOtherApps: true)' "$MENU_BAR_CONTROLLER" || {
-  echo "explicit OpenSurge panel requests must activate the LSUIElement app" >&2
+  echo "macOS 13 must retain its compatible application activation fallback" >&2
   exit 1
 }
 grep -Fq 'func applicationDidBecomeActive' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar presentation must resume from AppKit activation events" >&2
   exit 1
 }
+grep -Fq 'inModes: [.common]' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar presentation fallback must run in common run-loop modes" >&2
+  exit 1
+}
+if grep -Fq 'failedPopoverRecoveryCount' "$MENU_BAR_CONTROLLER"; then
+  echo "menu bar popover recovery must not become permanently exhausted" >&2
+  exit 1
+fi
 
 APP_ENTRYPOINT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/OpenSurgeMenuBarApp.swift"
 if grep -Eq 'Settings[[:space:]]*\{|EmptyView[[:space:]]*\(' "$APP_ENTRYPOINT"; then
