@@ -77,7 +77,7 @@ type gatewayDeps struct {
 	interfaceByName    func(string) (*net.Interface, error)
 	interfaceAddrs     func(*net.Interface) ([]net.Addr, error)
 	probeReservationIP func(ip string, expectedMAC string) error
-	detectGlobalTUN    func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error)
+	detectGlobalTUN    func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error)
 	now                func() time.Time
 }
 
@@ -253,7 +253,7 @@ func (m Manager) preflightGlobalTUN(ctx context.Context, deps gatewayDeps) error
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	conflict, found, err := deps.detectGlobalTUN(probeCtx)
+	conflict, found, err := deps.detectGlobalTUN(probeCtx, m.cfg.Transparent.TUNDevice)
 	if err != nil || !found {
 		// Route inspection improves diagnostics but is not the correctness
 		// gate. Startup readiness will still fail closed if TUN creation fails.

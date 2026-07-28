@@ -41,7 +41,9 @@ func TestDoctorChecksForControlHidesRootPrivileges(t *testing.T) {
 
 func TestGatewayPlanBlocksHighConfidenceGlobalTUNRoute(t *testing.T) {
 	server := newTestServer(t)
-	server.detectGlobalTUN = func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+	var ignoredInterface string
+	server.detectGlobalTUN = func(_ context.Context, ignored string) (macosnetwork.GlobalTUNRoute, bool, error) {
+		ignoredInterface = ignored
 		return macosnetwork.GlobalTUNRoute{Interface: "utun42"}, true, nil
 	}
 	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
@@ -55,11 +57,14 @@ func TestGatewayPlanBlocksHighConfidenceGlobalTUNRoute(t *testing.T) {
 	if len(plan.Blockers) == 0 || !strings.Contains(strings.Join(plan.Blockers, "\n"), "utun42") {
 		t.Fatalf("blockers = %#v", plan.Blockers)
 	}
+	if ignoredInterface != config.Default().Transparent.TUNDevice {
+		t.Fatalf("ignored interface = %q", ignoredInterface)
+	}
 }
 
 func TestGatewayPlanWarnsWhenGlobalTUNInspectionIsUnavailable(t *testing.T) {
 	server := newTestServer(t)
-	server.detectGlobalTUN = func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+	server.detectGlobalTUN = func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error) {
 		return macosnetwork.GlobalTUNRoute{}, false, errors.New("route inspection unavailable")
 	}
 	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
@@ -1528,7 +1533,7 @@ runtime:
 	}
 	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
 		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi"}, {Interface: "en7", NetworkService: "USB LAN"}}, nil
-	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, DetectGlobalTUN: func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, DetectGlobalTUN: func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error) {
 		return macosnetwork.GlobalTUNRoute{}, false, nil
 	}, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {

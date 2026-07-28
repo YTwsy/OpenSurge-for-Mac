@@ -18,11 +18,16 @@ import (
 )
 
 type Manager struct {
-	cfg   config.Config
-	paths runtime.Paths
+	cfg     config.Config
+	paths   runtime.Paths
+	stopPID func(int, time.Duration) error
 }
 
-const configValidationTimeout = 90 * time.Second
+const (
+	configValidationTimeout   = 90 * time.Second
+	tunStartupTimeout         = 10 * time.Second
+	startupProcessStopTimeout = 3 * time.Second
+)
 
 func New(cfg config.Config, paths runtime.Paths) Manager {
 	return Manager{cfg: cfg, paths: paths}
@@ -74,20 +79,28 @@ func (m Manager) Start() (int, error) {
 		return 0, err
 	}
 	if err := process.RequireAlive(pid, 300*time.Millisecond); err != nil {
-		_ = process.StopPID(pid, 0)
+		m.stopStartedProcess(pid)
 		return 0, err
 	}
 	if err := m.waitForAPI(pid, 2*time.Second); err != nil {
-		_ = process.StopPID(pid, 0)
+		m.stopStartedProcess(pid)
 		return 0, err
 	}
 	if m.cfg.Transparent.TUNEnabled() {
-		if err := m.waitForTUN(pid, 3*time.Second); err != nil {
-			_ = process.StopPID(pid, 0)
+		if err := m.waitForTUN(pid, tunStartupTimeout); err != nil {
+			m.stopStartedProcess(pid)
 			return 0, err
 		}
 	}
 	return pid, nil
+}
+
+func (m Manager) stopStartedProcess(pid int) {
+	stopPID := m.stopPID
+	if stopPID == nil {
+		stopPID = process.StopPID
+	}
+	_ = stopPID(pid, startupProcessStopTimeout)
 }
 
 func (m Manager) Check() error {

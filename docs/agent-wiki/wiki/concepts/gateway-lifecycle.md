@@ -26,7 +26,8 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtim
 7. 在修改 host network 前保存 runtime state；
 8. 启用 IPv4 forwarding；
 9. 启动 mihomo；
-10. 等待 mihomo 运行时确认 TUN ready；若失败则立即 rollback；
+10. 最多等待 10 秒让 mihomo 运行时确认 TUN ready；若失败，先给 mihomo 3 秒
+    SIGTERM 清理窗口，再按需 SIGKILL 并 rollback；
 11. 启动 dnsmasq；
 12. 加载 PF anchor。
 

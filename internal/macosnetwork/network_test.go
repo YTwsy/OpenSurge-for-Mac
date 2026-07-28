@@ -108,7 +108,7 @@ func TestDetectGlobalTUNRouteRequiresSameUTUNForAllDestinations(t *testing.T) {
 		return "   gateway: 198.18.0.1\n interface: utun42\n", nil
 	}
 
-	conflict, found, err := DetectGlobalTUNRoute(t.Context())
+	conflict, found, err := DetectGlobalTUNRoute(t.Context(), "utun123")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,19 @@ func TestDetectGlobalTUNRouteIgnoresSplitRouteAndOrdinaryUTUN(t *testing.T) {
 		return "gateway: 192.168.1.1\ninterface: en0\n", nil
 	}
 
-	if conflict, found, err := DetectGlobalTUNRoute(t.Context()); err != nil || found {
+	if conflict, found, err := DetectGlobalTUNRoute(t.Context(), "utun123"); err != nil || found {
+		t.Fatalf("conflict = %#v found=%v err=%v", conflict, found, err)
+	}
+}
+
+func TestDetectGlobalTUNRouteIgnoresConfiguredTUNDevice(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	runCommand = func(_ context.Context, _ string, _ ...string) (string, error) {
+		return "gateway: 198.18.0.1\ninterface: utun123\n", nil
+	}
+
+	if conflict, found, err := DetectGlobalTUNRoute(t.Context(), " utun123 "); err != nil || found {
 		t.Fatalf("conflict = %#v found=%v err=%v", conflict, found, err)
 	}
 }

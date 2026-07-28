@@ -39,7 +39,7 @@ type Options struct {
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	PingRouter        func(context.Context, string) error
-	DetectGlobalTUN   func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error)
+	DetectGlobalTUN   func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error)
 	Static            http.Handler
 	Credentials       SourceCredentialStore
 }
@@ -55,7 +55,7 @@ type Server struct {
 	listInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	pingRouter        func(context.Context, string) error
-	detectGlobalTUN   func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error)
+	detectGlobalTUN   func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error)
 	static            http.Handler
 	credentials       SourceCredentialStore
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
@@ -601,7 +601,7 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 		}
 		if cfg.Transparent.TUNEnabled() && cfg.Transparent.TUNAutoRoute && s.detectGlobalTUN != nil {
 			probeCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-			conflict, found, err := s.detectGlobalTUN(probeCtx)
+			conflict, found, err := s.detectGlobalTUN(probeCtx, cfg.Transparent.TUNDevice)
 			cancel()
 			if err != nil {
 				plan.Warnings = append(plan.Warnings, "could not inspect global TUN routing; startup readiness will still verify mihomo TUN: "+err.Error())

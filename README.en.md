@@ -193,9 +193,11 @@ build reports redir as unsupported at runtime. Keep `mihomo.redir_port` and
 
 OpenSurge does not reject an ordinary or split-route utun interface. A
 high-confidence existing full-route TUN blocks DHCP takeover before network
-changes begin, and startup still waits for mihomo to report the TUN runtime as
-ready. Failure rolls back the gateway runtime and reports the concrete
-route/TUN error. Two full-route TUNs are not supported by default.
+changes begin. Because macOS cannot reliably prove which process owns a utun,
+preflight ignores a candidate whose name matches `transparent.tun_device`;
+startup still waits for mihomo to report the TUN runtime as ready. Failure gives
+the process a short cleanup window, rolls back the gateway runtime, and reports
+the concrete route/TUN error. Two full-route TUNs are not supported by default.
 
 ## Mihomo profiles
 

@@ -102,6 +102,24 @@ func TestWaitForTUNReturnsLoggedStartupFailure(t *testing.T) {
 	}
 }
 
+func TestStopStartedProcessAllowsGracefulTUNCleanup(t *testing.T) {
+	var gotPID int
+	var gotTimeout time.Duration
+	manager := Manager{
+		stopPID: func(pid int, timeout time.Duration) error {
+			gotPID = pid
+			gotTimeout = timeout
+			return nil
+		},
+	}
+
+	manager.stopStartedProcess(1234)
+
+	if gotPID != 1234 || gotTimeout != 3*time.Second {
+		t.Fatalf("stopStartedProcess() called with pid=%d timeout=%s", gotPID, gotTimeout)
+	}
+}
+
 func TestEnrichTUNRouteErrorIgnoresUnrelatedErrors(t *testing.T) {
 	const detail = "configure tun interface: permission denied"
 	if got := enrichTUNRouteError(detail); got != detail {

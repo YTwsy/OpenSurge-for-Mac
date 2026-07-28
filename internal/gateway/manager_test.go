@@ -122,8 +122,10 @@ func TestGlobalTUNPreflightRejectsFullRouteButNotOrdinaryUTUN(t *testing.T) {
 	cfg.Transparent.Mode = config.TransparentModeTUN
 	cfg.Transparent.TUNAutoRoute = true
 	manager := Manager{cfg: cfg}
+	var ignoredInterface string
 	deps := gatewayDeps{
-		detectGlobalTUN: func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+		detectGlobalTUN: func(_ context.Context, ignored string) (macosnetwork.GlobalTUNRoute, bool, error) {
+			ignoredInterface = ignored
 			return macosnetwork.GlobalTUNRoute{Interface: "utun42"}, true, nil
 		},
 	}
@@ -131,8 +133,11 @@ func TestGlobalTUNPreflightRejectsFullRouteButNotOrdinaryUTUN(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "utun42") {
 		t.Fatalf("preflightGlobalTUN() error = %v", err)
 	}
+	if ignoredInterface != cfg.Transparent.TUNDevice {
+		t.Fatalf("ignored interface = %q, want %q", ignoredInterface, cfg.Transparent.TUNDevice)
+	}
 
-	deps.detectGlobalTUN = func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+	deps.detectGlobalTUN = func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error) {
 		return macosnetwork.GlobalTUNRoute{}, false, nil
 	}
 	if err := manager.preflightGlobalTUN(t.Context(), deps); err != nil {

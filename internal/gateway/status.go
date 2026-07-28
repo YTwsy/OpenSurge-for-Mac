@@ -80,7 +80,10 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 			dhcpRunning = true
 			dhcpStatus = "running"
 		}
-		tunReady := !m.cfg.Transparent.TUNEnabled() || tunStatus == "ready"
+		// A failed runtime read is an observability warning, not evidence that
+		// the already-running TUN data plane stopped. An explicit disabled
+		// response remains a real degraded condition.
+		tunReady := !m.cfg.Transparent.TUNEnabled() || tunStatus == "ready" || tunStatus == "unknown"
 		if dhcpRunning && mihomoRunning && tunReady {
 			gatewayStatus = "running"
 		} else {

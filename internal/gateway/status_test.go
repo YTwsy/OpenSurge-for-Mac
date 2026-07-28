@@ -92,3 +92,39 @@ func TestStatusDegradesWhenRunningMihomoReportsTUNDisabled(t *testing.T) {
 		t.Fatalf("status = %#v", status)
 	}
 }
+
+func TestStatusKeepsGatewayRunningWhenTUNRuntimeStateIsTemporarilyUnavailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/version":
+			_ = json.NewEncoder(w).Encode(map[string]any{"version": "v1.19.27", "meta": true})
+		case "/configs":
+			<-r.Context().Done()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	cfg.Mihomo.APIAddr = server.URL
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.DHCP.Enabled = true
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), PIDDNSMasq: os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := New(cfg).Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Gateway != "running" || status.TUN != "unknown" || status.TUNError == "" {
+		t.Fatalf("status = %#v", status)
+	}
+}
