@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREINSTALL="$ROOT/packaging/pkg-scripts/preinstall"
 POSTINSTALL="$ROOT/packaging/pkg-scripts/postinstall"
 RECOVERY_STATE="$ROOT/packaging/pkg-scripts/recovery-state.sh"
+INSTALLED_PROCESSES="$ROOT/packaging/pkg-scripts/installed-processes.sh"
 RELEASE_DEPS="$ROOT/scripts/prepare-gui-release-deps.sh"
 RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
@@ -19,7 +20,7 @@ WEB_APP="$ROOT/web/src/App.tsx"
 MENUBAR_CONTENT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuContentView.swift"
 UNINSTALLER="$ROOT/scripts/uninstall-gui.sh"
 
-bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$ROOT/scripts/uninstall-gui.sh" \
+bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$INSTALLED_PROCESSES" "$ROOT/scripts/uninstall-gui.sh" \
   "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$RELEASE_VERIFY"
 [[ -x "$PREINSTALL" ]] || { echo "preinstall must be executable" >&2; exit 1; }
 [[ -x "$RELEASE_DEPS" && -x "$RELEASE_VERIFY" ]] || {
@@ -46,6 +47,33 @@ grep -Fq 'source "$SCRIPT_DIR/recovery-state.sh"' "$PREINSTALL" || {
   echo "preinstall must use the shared recovery terminal-state guard" >&2
   exit 1
 }
+grep -Fq 'source "$SCRIPT_DIR/installed-processes.sh"' "$PREINSTALL" || {
+  echo "preinstall must scope GUI process handling to installed executables" >&2
+  exit 1
+}
+# shellcheck source=packaging/pkg-scripts/installed-processes.sh
+source "$INSTALLED_PROCESSES"
+opensurge_is_installed_gui_command \
+  "/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar" "/Users/tester" || {
+  echo "current installed menu bar path must be recognized" >&2
+  exit 1
+}
+opensurge_is_installed_gui_command \
+  "/Applications/OpenSurge Menu Bar.app/Contents/MacOS/OpenSurgeMenuBar" "/Users/tester" || {
+  echo "legacy installed menu bar path must be recognized" >&2
+  exit 1
+}
+opensurge_is_installed_gui_command \
+  "/Users/tester/Library/Application Support/OpenSurge/bin/opensurge-control --config /tmp/config.yaml" \
+  "/Users/tester" || {
+  echo "installed per-user control service path must be recognized" >&2
+  exit 1
+}
+if opensurge_is_installed_gui_command \
+  "/Users/tester/project/bin/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar" "/Users/tester"; then
+  echo "a developer menu bar build must not block package installation" >&2
+  exit 1
+fi
 if grep -Eq 'recovery-state|RECOVERY_STAGE|recovery\.json' "$UNINSTALLER"; then
   echo "uninstall must not be blocked by the DHCP recovery state" >&2
   exit 1
@@ -83,10 +111,14 @@ helper_line="$(line_of 'bootout system/com.opensurge.helper' "$PREINSTALL")"
   exit 1
 }
 
-grep -Fq 'pkill -TERM -u "$UID_VALUE" -x OpenSurgeMenuBar' "$PREINSTALL" || {
-  echo "preinstall must stop the menu bar app" >&2
+grep -Fq 'opensurge_installed_gui_pids "$UID_VALUE" "$USER_HOME"' "$PREINSTALL" || {
+  echo "preinstall must stop installed OpenSurge GUI processes" >&2
   exit 1
 }
+if grep -Eq 'p(kill|grep).*-x (opensurge-control|OpenSurgeMenuBar)' "$PREINSTALL"; then
+  echo "preinstall must not block on unrelated same-name developer processes" >&2
+  exit 1
+fi
 grep -Fq 'rm -rf "/Applications/OpenSurge Menu Bar.app"' "$POSTINSTALL" || {
   echo "postinstall must remove the legacy menu bar app bundle" >&2
   exit 1
