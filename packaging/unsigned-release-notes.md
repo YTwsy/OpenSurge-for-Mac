@@ -6,10 +6,10 @@
 
 <!-- 发布前请更新为当前版本的主要变化，并同步维护 English / Highlights。 -->
 
-- 菜单栏新增原生“卸载 OpenSurge”流程：网关停止后可通过 macOS 管理员授权移除 App、Control Service 与 root Helper，并选择保留配置数据或彻底删除。
-- 菜单栏 App 改用纯 AppKit 生命周期，避免系统创建或恢复无用的空设置窗口，并提升应用启动与状态面板行为的稳定性。
-- 修复 Issue #7：导入的 mihomo profile 现在兼容 flow/block 风格的 `rules`、策略组与 rule providers，以及带引号键、注释和相对 Provider 路径。
-- 来源预览与实际应用现在复用同一套 YAML 结构验证；无效候选配置会在写入或重载前失败，保持当前网关和已应用配置不变。
+- 菜单栏状态面板不再把 App 激活或 key window 当作显示前置条件；首次启动会等待状态栏锚点真正上屏，并在协作式激活被系统拒绝时仍继续展示。
+- 面板打开期间会自行管理关闭行为，并保持“打开 OpenSurge 面板”按钮与状态栏图标的系统强调状态；快速状态轮询不会再清除选中外观。
+- 修复失败的 `NSPopover` 逻辑状态与重试兜底，避免启动后必须再次点击 App 或状态栏图标才能展开面板。
+- 升级安装器只停止已安装路径中的 OpenSurge App 与 Control Service，不再因仓库或临时目录中的同名开发进程而错误拒绝安装。
 
 ### 选择安装包
 
@@ -57,10 +57,10 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ### Highlights
 
-- Added a native Uninstall OpenSurge flow to the menu bar. Once the gateway is stopped, administrator authorization can remove the app, Control Service, and root Helper while either preserving configuration data or deleting everything.
-- Moved the menu bar app to a pure AppKit lifecycle, preventing macOS from creating or restoring an unused empty Settings window and improving launch and panel stability.
-- Fixed Issue #7: imported mihomo profiles now support flow- and block-style `rules`, proxy groups, and rule providers, including quoted keys, comments, and relative provider paths.
-- Source preview and final application now share the same YAML structural validation. Invalid candidates fail before write or reload, leaving the current gateway and applied configuration unchanged.
+- The menu-bar panel no longer treats application activation or key-window status as visibility prerequisites. First launch waits for a real status-item anchor and continues presenting even when cooperative activation is declined.
+- While visible, the panel manages its own dismissal and preserves the system accent appearance of both the primary OpenSurge action and the status item across rapid status polling.
+- Failed logical `NSPopover` states now recover through bounded retries and a final fallback, avoiding the need to click the app or status item again after launch.
+- Installer upgrades now stop only OpenSurge processes from installed paths, so same-name development builds in repositories or temporary directories no longer cause false installation failures.
 
 ### Choose a package
 
