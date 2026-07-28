@@ -16,6 +16,13 @@ AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状
 `/Applications/OpenSurge.app` 进入同一个 presenter；后者只确保面板展开，不触发网关
 或 Control Service 生命周期动作。每次菜单栏 App 进程启动完成都会主动展开面板，包括
 通过“登录时显示”启动；Finder/Launchpad 的 reopen 事件同样确保面板展开。
+首次启动时，`NSStatusItem` 的按钮可能尚未附着到可见窗口；此时 AppKit 会忽略
+`NSPopover.show`。菜单栏 presenter 必须在状态栏按钮拥有 window 且可见后再展开，并在
+popover window 创建后显式令它成为 key window。后者确保 macOS 26 等较新系统把
+“打开 OpenSurge 面板”的 prominent button 绘制为有焦点的强调色，而不是非活跃窗口样式。
+该流程由 `applicationDidBecomeActive`、`applicationDidUpdate` 与 popover delegate 事件
+推进，不依赖固定延迟；`NSPopover.isShown` 只表示调用过 `show`，还必须确认真实 popover
+window 存在，否则关闭这次无效展示后重试。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP

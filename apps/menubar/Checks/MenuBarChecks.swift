@@ -125,6 +125,49 @@ struct MenuBarChecks {
         let launchPresentationCount = await presentationCountAfterLaunch()
         try require(launchPresentationCount == 1, "launching OpenSurge must show the menu bar panel")
 
+        let applicationStateChangeCount = await stateChangeCountAfterLifecycleEvents()
+        try require(
+            applicationStateChangeCount == 2,
+            "AppKit activation and update events must resume pending panel presentation"
+        )
+
+        try require(
+            panelPresentationAction(applicationActive: false) == .activateApplication,
+            "panel presentation must wait for real application activation"
+        )
+        try require(
+            panelPresentationAction(anchorVisible: false) == .waitForAnchor,
+            "panel presentation must wait for a visible status-item anchor"
+        )
+        try require(
+            panelPresentationAction(popoverShown: false) == .showPopover,
+            "ready panel presentation must show the popover"
+        )
+        try require(
+            panelPresentationAction(panelWindowAvailable: false) == .resetPopover,
+            "a logical popover without a real window must be reset"
+        )
+        try require(
+            panelPresentationAction(panelWindowKey: false) == .makePanelKey,
+            "the popover window must become key before presentation completes"
+        )
+        try require(
+            panelPresentationAction() == .complete,
+            "panel presentation must complete only with an active key window"
+        )
+        try require(
+            menuBarPanelPresentationAction(
+                presentationPending: true,
+                popoverResetInProgress: true,
+                applicationActive: true,
+                anchorVisible: true,
+                popoverShown: true,
+                panelWindowAvailable: false,
+                panelWindowKey: false
+            ) == .none,
+            "popover close recovery must not be re-entered while its animation is pending"
+        )
+
         var fallbackOpened = false
         let launcher = WebGUIURLLauncher(
             workspaceOpen: { _ in false },
@@ -165,9 +208,42 @@ private func presentationCountAfterLaunch() async -> Int {
 }
 
 @MainActor
+private func stateChangeCountAfterLifecycleEvents() -> Int {
+    let panelPresenter = CheckMenuBarPresenter()
+    let appDelegate = OpenSurgeAppDelegate(presenter: panelPresenter)
+    appDelegate.applicationDidBecomeActive(
+        Notification(name: NSApplication.didBecomeActiveNotification)
+    )
+    appDelegate.applicationDidUpdate(
+        Notification(name: NSApplication.didUpdateNotification)
+    )
+    return panelPresenter.stateChangeCount
+}
+
+@MainActor
 private final class CheckMenuBarPresenter: MenuBarPresenting {
     var presentationCount = 0
+    var stateChangeCount = 0
     func showPanel() { presentationCount += 1 }
+    func applicationStateDidChange() { stateChangeCount += 1 }
+}
+
+private func panelPresentationAction(
+    applicationActive: Bool = true,
+    anchorVisible: Bool = true,
+    popoverShown: Bool = true,
+    panelWindowAvailable: Bool = true,
+    panelWindowKey: Bool = true
+) -> MenuBarPanelPresentationAction {
+    menuBarPanelPresentationAction(
+        presentationPending: true,
+        popoverResetInProgress: false,
+        applicationActive: applicationActive,
+        anchorVisible: anchorVisible,
+        popoverShown: popoverShown,
+        panelWindowAvailable: panelWindowAvailable,
+        panelWindowKey: panelWindowKey
+    )
 }
 
 private func requestBody(_ request: URLRequest) -> Data {

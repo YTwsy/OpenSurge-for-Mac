@@ -32,7 +32,10 @@ AppKit `NSStatusItem` 与锚定的 `NSPopover` 承载，内部继续复用 Swift
 `MenuContentView`。点击菜单栏图标会切换面板；用户首次主动打开或再次打开
 `/Applications/OpenSurge.app` 时，`NSApplicationDelegate` 会要求同一个控制器确保
 面板已经展开。每次菜单栏 App 进程启动完成都会主动展开面板，因此通过“登录时显示”
-启动时也会弹出。
+启动时也会弹出。首次启动会等待状态栏按钮实际附着到可见窗口后再调用
+`NSPopover.show`；popover window 创建后会成为 key window，使 macOS 26 等较新系统中的
+prominent action 保持有焦点的强调色。展示过程由 App 激活、App 更新与 popover delegate
+事件推进，不依赖固定延迟，也不会把 `NSPopover.isShown` 当成窗口已经真实出现的充分证据。
 
 菜单栏提供两个不同的退出层级。“只退出菜单栏 App”在二次确认后直接结束菜单栏进程，
 不会改变用户级 Control Service、网关数据面或 root Helper。“退出 OpenSurge”只有在
