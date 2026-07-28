@@ -51,6 +51,9 @@ type MenuBarStatus struct {
 	LANIP         string   `json:"lan_ip"`
 	DHCP          string   `json:"dhcp"`
 	Mihomo        string   `json:"mihomo"`
+	TUN           string   `json:"tun"`
+	TUNInterface  string   `json:"tun_interface,omitempty"`
+	TUNError      string   `json:"tun_error,omitempty"`
 	PFAnchor      string   `json:"pf_anchor"`
 	Forwarding    string   `json:"forwarding"`
 	ClientCount   int      `json:"client_count"`

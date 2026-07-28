@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/process"
 	"open-mihomo-gateway/internal/runtime"
 )
@@ -79,6 +81,12 @@ func (m Manager) Start() (int, error) {
 		_ = process.StopPID(pid, 0)
 		return 0, err
 	}
+	if m.cfg.Transparent.TUNEnabled() {
+		if err := m.waitForTUN(pid, 3*time.Second); err != nil {
+			_ = process.StopPID(pid, 0)
+			return 0, err
+		}
+	}
 	return pid, nil
 }
 
@@ -126,6 +134,77 @@ func (m Manager) waitForAPI(pid int, timeout time.Duration) error {
 		return fmt.Errorf("mihomo API not ready after %s: %w", timeout, lastErr)
 	}
 	return fmt.Errorf("mihomo API not ready after %s", timeout)
+}
+
+func (m Manager) waitForTUN(pid int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if !process.IsAlive(pid) {
+			return fmt.Errorf("mihomo pid %d exited while TUN was starting", pid)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		state, err := FetchTUNRuntimeState(ctx, m.cfg)
+		cancel()
+		if err == nil && state.Enabled {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		if detail := tunStartupError(m.paths.MihomoLog); detail != "" {
+			detail = enrichTUNRouteError(detail)
+			return fmt.Errorf("mihomo TUN failed to start: %s", detail)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("mihomo TUN not ready after %s: %w", timeout, lastErr)
+	}
+	return fmt.Errorf("mihomo TUN not ready after %s: runtime config still reports disabled", timeout)
+}
+
+func enrichTUNRouteError(detail string) string {
+	const marker = "add route:"
+	index := strings.Index(detail, marker)
+	if index < 0 {
+		return detail
+	}
+	value := strings.TrimSpace(detail[index+len(marker):])
+	prefix, _, ok := strings.Cut(value, ":")
+	if !ok {
+		return detail
+	}
+	prefix = strings.TrimSpace(prefix)
+	ip, _, err := net.ParseCIDR(prefix)
+	if err != nil {
+		return detail
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	route, err := macosnetwork.LookupRoute(ctx, ip.String())
+	if err != nil || route.Interface == "" {
+		return detail
+	}
+	if route.Gateway != "" {
+		return fmt.Sprintf("%s; existing route selects %s via %s", detail, route.Interface, route.Gateway)
+	}
+	return fmt.Sprintf("%s; existing route selects %s", detail, route.Interface)
+}
+
+func tunStartupError(logPath string) string {
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return ""
+	}
+	const marker = "Start TUN listening error:"
+	var detail string
+	for _, line := range strings.Split(string(data), "\n") {
+		if index := strings.Index(line, marker); index >= 0 {
+			detail = strings.TrimSpace(line[index+len(marker):])
+		}
+	}
+	return detail
 }
 
 func (m Manager) Stop(pid int) error {

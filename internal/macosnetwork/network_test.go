@@ -1,6 +1,9 @@
 package macosnetwork
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestParseNetworkInfo(t *testing.T) {
 	got := parseNetworkInfo("DHCP Configuration\nIP address: 192.168.1.20\nSubnet mask: 255.255.255.0\nRouter: 192.168.1.1\n")
@@ -92,5 +95,51 @@ func TestVerifyManualRequiresManualModeAndExpectedIPv4(t *testing.T) {
 	applied.IPv4 = "192.168.1.99"
 	if err := VerifyManual(applied, expected); err == nil {
 		t.Fatal("unexpected manual IPv4 should not verify")
+	}
+}
+
+func TestDetectGlobalTUNRouteRequiresSameUTUNForAllDestinations(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	runCommand = func(_ context.Context, binary string, args ...string) (string, error) {
+		if binary != "/sbin/route" || len(args) != 3 {
+			t.Fatalf("command = %s %#v", binary, args)
+		}
+		return "   gateway: 198.18.0.1\n interface: utun42\n", nil
+	}
+
+	conflict, found, err := DetectGlobalTUNRoute(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || conflict.Interface != "utun42" || conflict.Gateway != "198.18.0.1" {
+		t.Fatalf("conflict = %#v found=%v", conflict, found)
+	}
+	if len(conflict.Destinations) != len(globalTUNProbeDestinations) {
+		t.Fatalf("destinations = %#v", conflict.Destinations)
+	}
+}
+
+func TestDetectGlobalTUNRouteIgnoresSplitRouteAndOrdinaryUTUN(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	calls := 0
+	runCommand = func(_ context.Context, _ string, _ ...string) (string, error) {
+		calls++
+		if calls == 1 {
+			return "gateway: 100.64.0.1\ninterface: utun8\n", nil
+		}
+		return "gateway: 192.168.1.1\ninterface: en0\n", nil
+	}
+
+	if conflict, found, err := DetectGlobalTUNRoute(t.Context()); err != nil || found {
+		t.Fatalf("conflict = %#v found=%v err=%v", conflict, found, err)
+	}
+}
+
+func TestParseRouteGet(t *testing.T) {
+	got := parseRouteGet("   route to: 1.1.1.1\n    gateway: 198.18.0.1\n  interface: utun123\n")
+	if got.Interface != "utun123" || got.Gateway != "198.18.0.1" {
+		t.Fatalf("parseRouteGet() = %#v", got)
 	}
 }

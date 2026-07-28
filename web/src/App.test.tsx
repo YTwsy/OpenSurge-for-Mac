@@ -43,6 +43,7 @@ vi.mock('./api', () => ({
     recovery: vi.fn(),
     prepareRecovery: vi.fn(),
     discardRecovery: vi.fn(),
+    abandonTakeover: vi.fn(),
     applyStatic: vi.fn(),
     probeDHCP: vi.fn(),
     confirmRouterRestored: vi.fn(),
@@ -255,6 +256,23 @@ describe('OpenSurge app shell', () => {
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-same-lan')
     expect(await screen.findByText('旁路由模式已启动。')).toBeTruthy()
+  })
+
+  it('offers DHCP takeover abandonment after the Mac becomes static', async () => {
+    window.history.replaceState({}, '', '/network')
+    vi.mocked(api.overview).mockResolvedValue({
+      ...overview,
+      recovery: { ...overview.recovery, stage: 'mac_static', required: true },
+    })
+    vi.mocked(api.abandonTakeover).mockResolvedValue({} as never)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '放弃 DHCP 接管' }))
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('放弃本次局域网 DHCP 接管'))
+    expect(api.abandonTakeover).toHaveBeenCalledOnce()
+    expect(await screen.findByText(/已放弃 DHCP 接管/)).toBeTruthy()
   })
 
   it('starts isolated downstream LAN while keeping DHCP fields editable', async () => {

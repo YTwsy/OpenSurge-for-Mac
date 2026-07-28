@@ -39,6 +39,42 @@ func TestDoctorChecksForControlHidesRootPrivileges(t *testing.T) {
 	}
 }
 
+func TestGatewayPlanBlocksHighConfidenceGlobalTUNRoute(t *testing.T) {
+	server := newTestServer(t)
+	server.detectGlobalTUN = func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+		return macosnetwork.GlobalTUNRoute{Interface: "utun42"}, true, nil
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("gateway plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	var plan GatewayPlan
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Blockers) == 0 || !strings.Contains(strings.Join(plan.Blockers, "\n"), "utun42") {
+		t.Fatalf("blockers = %#v", plan.Blockers)
+	}
+}
+
+func TestGatewayPlanWarnsWhenGlobalTUNInspectionIsUnavailable(t *testing.T) {
+	server := newTestServer(t)
+	server.detectGlobalTUN = func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+		return macosnetwork.GlobalTUNRoute{}, false, errors.New("route inspection unavailable")
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("gateway plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	var plan GatewayPlan
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Blockers) != 0 || !strings.Contains(strings.Join(plan.Warnings, "\n"), "route inspection unavailable") {
+		t.Fatalf("blockers=%#v warnings=%#v", plan.Blockers, plan.Warnings)
+	}
+}
+
 func TestInspectSourceInventory(t *testing.T) {
 	data := []byte(`proxies:
   - name: edge
@@ -360,6 +396,88 @@ func TestSameWiFiNetworkRecoveryFlow(t *testing.T) {
 	state, _ = server.store.Recovery()
 	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
 		t.Fatalf("final state=%#v network=%#v", state, network)
+	}
+}
+
+func TestAbandonTakeoverRestoresMacDHCPWhenServerAnswers(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryMacStatic,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	network.servers = []string{"192.168.1.1"}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/abandon-takeover", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("abandon status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
+		t.Fatalf("state=%#v network=%#v", state, network)
+	}
+	if !strings.Contains(state.RecoveryNotes, "takeover abandoned") {
+		t.Fatalf("notes=%q", state.RecoveryNotes)
+	}
+}
+
+func TestAbandonTakeoverFinishesStaticWhenNoServerAnswers(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryRouterDHCPDisabledConfirmed,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	network.servers = []string{}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/abandon-takeover", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("abandon status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryCompleteStatic || state.Required || network.dhcpRestored {
+		t.Fatalf("state=%#v network=%#v", state, network)
+	}
+	if !strings.Contains(state.RecoveryNotes, "remains on fixed IPv4") {
+		t.Fatalf("notes=%q", state.RecoveryNotes)
+	}
+}
+
+func TestFailedSameWiFiStartPreservesRetryOrAbandonRecovery(t *testing.T) {
+	server := newTestServer(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryRouterDHCPDisabledConfirmed,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	server.recordStartRecoveryFailure(config.GatewayModeSameWiFiDHCP, state, errors.New("TUN route conflict via utun42"))
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryRouterDHCPDisabledConfirmed || !state.Required || !strings.Contains(state.RecoveryNotes, "retry") || !strings.Contains(state.RecoveryNotes, "utun42") {
+		t.Fatalf("state=%#v", state)
 	}
 }
 
@@ -1407,7 +1525,9 @@ runtime:
 	}
 	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
 		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi"}, {Interface: "en7", NetworkService: "USB LAN"}}, nil
-	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
+	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, DetectGlobalTUN: func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+		return macosnetwork.GlobalTUNRoute{}, false, nil
+	}, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/pf"
 	"open-mihomo-gateway/internal/runtime"
@@ -76,6 +77,7 @@ type gatewayDeps struct {
 	interfaceByName    func(string) (*net.Interface, error)
 	interfaceAddrs     func(*net.Interface) ([]net.Addr, error)
 	probeReservationIP func(ip string, expectedMAC string) error
+	detectGlobalTUN    func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error)
 	now                func() time.Time
 }
 
@@ -104,6 +106,7 @@ func defaultGatewayDeps() gatewayDeps {
 			return iface.Addrs()
 		},
 		probeReservationIP: probeReservationIPConflict,
+		detectGlobalTUN:    macosnetwork.DetectGlobalTUNRoute,
 		now:                time.Now,
 	}
 }
@@ -115,7 +118,7 @@ func (m Manager) gatewayDeps() gatewayDeps {
 	return m.deps
 }
 
-func (m Manager) Start(_ context.Context) error {
+func (m Manager) Start(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("start requires sudo/root privileges")
@@ -140,6 +143,9 @@ func (m Manager) Start(_ context.Context) error {
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
 	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
+		return err
+	}
+	if err := m.preflightGlobalTUN(ctx, deps); err != nil {
 		return err
 	}
 	if err := m.checkReservationConflicts(deps); err != nil {
@@ -239,6 +245,21 @@ func (m Manager) Start(_ context.Context) error {
 	}
 	fmt.Printf("pf anchor %s loaded\n", m.cfg.PF.AnchorName)
 	return nil
+}
+
+func (m Manager) preflightGlobalTUN(ctx context.Context, deps gatewayDeps) error {
+	if !m.cfg.Transparent.TUNEnabled() || !m.cfg.Transparent.TUNAutoRoute || deps.detectGlobalTUN == nil {
+		return nil
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	conflict, found, err := deps.detectGlobalTUN(probeCtx)
+	if err != nil || !found {
+		// Route inspection improves diagnostics but is not the correctness
+		// gate. Startup readiness will still fail closed if TUN creation fails.
+		return nil
+	}
+	return fmt.Errorf("global TUN routing is already active via %s; stop its exit-node/global-routing mode before starting OpenSurge", conflict.Interface)
 }
 
 // Reload validates a complete desired candidate before touching the running

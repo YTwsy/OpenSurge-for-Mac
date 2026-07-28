@@ -34,6 +34,23 @@ pf:
 - `internal/pf/template.go` 不应重新引入 `rdr pass` TCP redirect 规则。
 - 文档应把 TUN 描述为受支持路径，不要描述成候选或实验路线。
 
+## 启动 readiness 与其他 TUN
+
+存在 `utun` 接口本身不是冲突证据。普通 split-route VPN、Tailscale 非 Exit Node
+路径和系统组件都可能保留或创建 utun。只读预检仅在多个分散的公网 IPv4 目标全部
+选择同一个 utun 时，把它视为高置信度全局路由接管候选；预检用于提前阻止 DHCP
+接管或改善错误信息，不能代替启动结果。
+
+mihomo REST API 可以先于 TUN 初始化对外响应，因此 `/version` 成功不代表透明
+路径已经就绪。启动流程必须在有限时间内等待运行时 `/configs` 报告
+`tun.enable: true`，同时识别 `Start TUN listening error`。失败必须停止新进程并
+进入 gateway rollback。运行中的 status/overview 每次只读取一次轻量运行时状态，
+不在后台增加独立 watchdog，也不在状态热路径反复执行 route/scutil 扫描。
+
+当前默认不支持与另一个全局 TUN 同时占有公网路由。DNS resolver 状态与 TUN 路由
+所有权是不同信号；不要因为出现 utun scoped/supplemental resolver 就判定 TUN
+冲突。
+
 ## 验证
 
 透明代理相关变更使用 `make lab-test-tun`。

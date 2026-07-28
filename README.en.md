@@ -191,6 +191,12 @@ build reports redir as unsupported at runtime. Keep `mihomo.redir_port` and
 `pf.redirect_tcp_to` at `0`; enable transparent proxying with
 `transparent.mode: "tun"`.
 
+OpenSurge does not reject an ordinary or split-route utun interface. A
+high-confidence existing full-route TUN blocks DHCP takeover before network
+changes begin, and startup still waits for mihomo to report the TUN runtime as
+ready. Failure rolls back the gateway runtime and reports the concrete
+route/TUN error. Two full-route TUNs are not supported by default.
+
 ## Mihomo profiles
 
 OpenSurge for Mac can render a managed mihomo config or import an existing

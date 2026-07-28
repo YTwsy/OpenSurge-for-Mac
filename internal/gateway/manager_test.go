@@ -12,6 +12,7 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -113,6 +114,29 @@ func TestPreflightRejectsSameGatewayAndUpstreamInterface(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "must differ") {
 		t.Fatalf("preflight() error = %q", err)
+	}
+}
+
+func TestGlobalTUNPreflightRejectsFullRouteButNotOrdinaryUTUN(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNAutoRoute = true
+	manager := Manager{cfg: cfg}
+	deps := gatewayDeps{
+		detectGlobalTUN: func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+			return macosnetwork.GlobalTUNRoute{Interface: "utun42"}, true, nil
+		},
+	}
+	err := manager.preflightGlobalTUN(t.Context(), deps)
+	if err == nil || !strings.Contains(err.Error(), "utun42") {
+		t.Fatalf("preflightGlobalTUN() error = %v", err)
+	}
+
+	deps.detectGlobalTUN = func(context.Context) (macosnetwork.GlobalTUNRoute, bool, error) {
+		return macosnetwork.GlobalTUNRoute{}, false, nil
+	}
+	if err := manager.preflightGlobalTUN(t.Context(), deps); err != nil {
+		t.Fatalf("ordinary/split TUN should not block: %v", err)
 	}
 }
 

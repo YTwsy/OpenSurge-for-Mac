@@ -71,7 +71,7 @@ button{cursor:pointer}
 .gateway-health-meta{display:grid;grid-template-columns:repeat(2,minmax(108px,1fr));gap:7px;flex:0 1 250px}
 .gateway-meta{display:grid;gap:4px;padding:9px 10px;border:1px solid #263d35;border-radius:10px;background:#0a17138f;min-width:0}
 .gateway-meta small{color:#647970;font-size:7px;letter-spacing:.09em}.gateway-meta strong{overflow:hidden;text-overflow:ellipsis;font-size:10px;white-space:nowrap}.gateway-meta.ok{border-color:#28543f}.gateway-meta.ok strong{color:#8be7b8}.gateway-meta.warn{border-color:#675024;background:#2b2413}.gateway-meta.warn strong{color:#ffc76e}
-.gateway-service-strip{align-self:end;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid #1c3029}
+.gateway-service-strip{align-self:end;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid #1c3029}
 .gateway-service-state{display:flex;align-items:center;gap:8px;min-width:0}
 .gateway-service-state>span:last-child{min-width:0}.gateway-service-state strong,.gateway-service-state small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gateway-service-state strong{font-size:10px}.gateway-service-state small{margin-top:3px;color:#657a72;font-size:8px;letter-spacing:0}
