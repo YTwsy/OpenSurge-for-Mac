@@ -144,8 +144,18 @@ struct MenuBarChecks {
             "ready panel presentation must show the popover"
         )
         try require(
-            panelPresentationAction(panelWindowAvailable: false) == .resetPopover,
-            "a logical popover without a real window must be reset"
+            panelPresentationAction(
+                panelWindowAvailable: false,
+                popoverWindowWaitExpired: false
+            ) == .waitForPanelWindow,
+            "popover animation must receive a grace interval before recovery"
+        )
+        try require(
+            panelPresentationAction(
+                panelWindowAvailable: false,
+                popoverWindowWaitExpired: true
+            ) == .resetPopover,
+            "a logical popover still missing its window after the grace interval must be reset"
         )
         try require(
             panelPresentationAction(panelWindowKey: false) == .makePanelKey,
@@ -163,9 +173,21 @@ struct MenuBarChecks {
                 anchorVisible: true,
                 popoverShown: true,
                 panelWindowAvailable: false,
+                popoverWindowWaitExpired: true,
                 panelWindowKey: false
             ) == .none,
             "popover close recovery must not be re-entered while its animation is pending"
+        )
+        try require(
+            MenuBarPanelRetryPolicy.delay(after: 0) == 0.05
+                && MenuBarPanelRetryPolicy.delay(after: 5) == 0.1
+                && MenuBarPanelRetryPolicy.delay(after: 10) == 0.25,
+            "panel presentation retry policy must back off instead of spinning"
+        )
+        try require(
+            MenuBarPanelRetryPolicy.presentationWindow
+                > MenuBarPanelRetryPolicy.popoverWindowGrace,
+            "the bounded startup retry window must allow at least one failed popover recovery"
         )
 
         var fallbackOpened = false
@@ -233,6 +255,7 @@ private func panelPresentationAction(
     anchorVisible: Bool = true,
     popoverShown: Bool = true,
     panelWindowAvailable: Bool = true,
+    popoverWindowWaitExpired: Bool = true,
     panelWindowKey: Bool = true
 ) -> MenuBarPanelPresentationAction {
     menuBarPanelPresentationAction(
@@ -242,6 +265,7 @@ private func panelPresentationAction(
         anchorVisible: anchorVisible,
         popoverShown: popoverShown,
         panelWindowAvailable: panelWindowAvailable,
+        popoverWindowWaitExpired: popoverWindowWaitExpired,
         panelWindowKey: panelWindowKey
     )
 }
