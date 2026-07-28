@@ -148,6 +148,54 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(presentationCount, 1)
     }
 
+    @MainActor
+    func testApplicationLifecycleEventsResumePanelPresentation() {
+        let presenter = RecordingMenuBarPresenter()
+        let delegate = OpenSurgeAppDelegate(presenter: presenter)
+
+        delegate.applicationDidBecomeActive(
+            Notification(name: NSApplication.didBecomeActiveNotification)
+        )
+        delegate.applicationDidUpdate(
+            Notification(name: NSApplication.didUpdateNotification)
+        )
+
+        XCTAssertEqual(presenter.stateChangeCount, 2)
+    }
+
+    func testPanelPresentationRequiresActiveApplicationVisibleAnchorAndKeyWindow() {
+        XCTAssertEqual(panelPresentationAction(applicationActive: false), .activateApplication)
+        XCTAssertEqual(panelPresentationAction(anchorVisible: false), .waitForAnchor)
+        XCTAssertEqual(panelPresentationAction(popoverShown: false), .showPopover)
+        XCTAssertEqual(panelPresentationAction(panelWindowAvailable: false), .resetPopover)
+        XCTAssertEqual(panelPresentationAction(panelWindowKey: false), .makePanelKey)
+        XCTAssertEqual(panelPresentationAction(), .complete)
+        XCTAssertEqual(
+            menuBarPanelPresentationAction(
+                presentationPending: false,
+                popoverResetInProgress: false,
+                applicationActive: true,
+                anchorVisible: true,
+                popoverShown: true,
+                panelWindowAvailable: true,
+                panelWindowKey: true
+            ),
+            .none
+        )
+        XCTAssertEqual(
+            menuBarPanelPresentationAction(
+                presentationPending: true,
+                popoverResetInProgress: true,
+                applicationActive: true,
+                anchorVisible: true,
+                popoverShown: true,
+                panelWindowAvailable: false,
+                panelWindowKey: false
+            ),
+            .none
+        )
+    }
+
     private func fixture(gateway: String, recovery: Bool, drift: Bool) -> MenuBarStatus {
         MenuBarStatus(schemaVersion: 1, revision: "r", gateway: gateway, topology: "same_wifi_dhcp",
                       lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded",
@@ -160,5 +208,25 @@ final class ModelsTests: XCTestCase {
 @MainActor
 private final class RecordingMenuBarPresenter: MenuBarPresenting {
     var presentationCount = 0
+    var stateChangeCount = 0
     func showPanel() { presentationCount += 1 }
+    func applicationStateDidChange() { stateChangeCount += 1 }
+}
+
+private func panelPresentationAction(
+    applicationActive: Bool = true,
+    anchorVisible: Bool = true,
+    popoverShown: Bool = true,
+    panelWindowAvailable: Bool = true,
+    panelWindowKey: Bool = true
+) -> MenuBarPanelPresentationAction {
+    menuBarPanelPresentationAction(
+        presentationPending: true,
+        popoverResetInProgress: false,
+        applicationActive: applicationActive,
+        anchorVisible: anchorVisible,
+        popoverShown: popoverShown,
+        panelWindowAvailable: panelWindowAvailable,
+        panelWindowKey: panelWindowKey
+    )
 }

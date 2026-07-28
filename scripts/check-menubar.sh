@@ -76,10 +76,22 @@ grep -Fq '"/Library/Application Support/OpenSurge/share/uninstall-gui.sh"' "$UNI
 }
 
 MENU_BAR_CONTROLLER="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuBarController.swift"
-if grep -Fq 'NSApplication.shared.isActive' "$MENU_BAR_CONTROLLER"; then
-  echo "menu bar panel must open for every app launch, including login-item launches" >&2
+grep -Fq 'button?.window?.isVisible == true' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar panel must wait until its status-item anchor is actually visible" >&2
   exit 1
-fi
+}
+grep -Fq 'panelWindow?.makeKey()' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar popover must become key so prominent controls retain focused tint" >&2
+  exit 1
+}
+grep -Fq 'activate(ignoringOtherApps: true)' "$MENU_BAR_CONTROLLER" || {
+  echo "explicit OpenSurge panel requests must activate the LSUIElement app" >&2
+  exit 1
+}
+grep -Fq 'func applicationDidBecomeActive' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar presentation must resume from AppKit activation events" >&2
+  exit 1
+}
 
 APP_ENTRYPOINT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/OpenSurgeMenuBarApp.swift"
 if grep -Eq 'Settings[[:space:]]*\{|EmptyView[[:space:]]*\(' "$APP_ENTRYPOINT"; then
