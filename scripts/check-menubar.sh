@@ -116,6 +116,10 @@ grep -Fq 'button.state = panelPresented ? .on : .off' "$MENU_BAR_CONTROLLER" || 
   echo "the status item must retain persistent presented state" >&2
   exit 1
 }
+if grep -Fq 'button.highlight(panelPresented)' "$MENU_BAR_CONTROLLER"; then
+  echo "the status item must not stack momentary highlight over its persistent presented state" >&2
+  exit 1
+fi
 grep -Fq 'menuBarStatusItemNeedsRefresh(' "$MENU_BAR_CONTROLLER" || {
   echo "status polling must not redraw an unchanged status-item icon" >&2
   exit 1
