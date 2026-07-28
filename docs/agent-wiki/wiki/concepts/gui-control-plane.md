@@ -17,16 +17,19 @@ AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状
 或 Control Service 生命周期动作。每次菜单栏 App 进程启动完成都会主动展开面板，包括
 通过“登录时显示”启动；Finder/Launchpad 的 reopen 事件同样确保面板展开。
 首次启动时，`NSStatusItem` 的按钮可能尚未附着到可见窗口；此时 AppKit 会忽略
-`NSPopover.show`。菜单栏 presenter 必须在状态栏按钮拥有 window 且可见后再展开，并在
-popover window 创建后显式令它成为 key window。后者确保 macOS 26 等较新系统把
-“打开 OpenSurge 面板”的 prominent button 绘制为有焦点的强调色，而不是非活跃窗口样式。
-该流程由 `applicationDidBecomeActive`、`applicationDidUpdate` 与 popover delegate 事件
-推进，并以 common run loop 上的短时、有界退避重试覆盖 macOS 26 首次启动时状态项挂载或
-activation 事件晚到的情况；重试期限耗尽后不得继续轮询，但后续 AppKit 事件和用户再次点击
-仍可恢复，不能留下“重试次数耗尽后永久卡住”的状态。`NSPopover.isShown` 只表示调用过
-`show`，还必须给动画留出 window 创建宽限期并确认真实 popover window 存在；超时后才关闭
-这次无效展示并重试。macOS 14 及以上使用 cooperative `NSApplication.activate()`，
-macOS 13 仅保留兼容的旧 activation fallback。
+`NSPopover.show`。菜单栏 presenter 必须在状态栏按钮拥有 window 且可见后展开，但不能把
+`NSApplication.isActive` 或 popover window 的 `isKeyWindow` 当作展示前置条件：macOS 14
+及以上的 cooperative `NSApplication.activate()` 可能拒绝 LSUIElement App 的请求，激活与
+`makeKey()` 都只能是展示后的 best-effort 增强。
+
+App 未 active 时，popover 临时使用 `.applicationDefined`，由状态栏按钮、Escape 与全局鼠标
+监听负责关闭；App 获得 active 后再切为 `.transient` 并尝试令真实 window 成为 key。
+SwiftUI 面板显式使用 active control appearance，状态栏按钮以持久 `state` 表示面板已展示；
+状态轮询仅在 indicator 改变时重绘图标，不能抹掉展示状态。流程由
+`applicationDidBecomeActive`、popover delegate 与 common run loop 上短时、有界的退避重试
+推进，不接入高频 `applicationDidUpdate`。`NSPopover.isShown` 只表示调用过 `show`，还必须
+给动画留出 window 创建宽限期并确认真实 window；超时后执行一次非阻塞兜底展示并清除
+pending，不能留下永久卡住状态。macOS 13 仅保留兼容的旧 activation fallback。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP

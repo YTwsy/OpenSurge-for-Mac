@@ -33,12 +33,15 @@ AppKit `NSStatusItem` 与锚定的 `NSPopover` 承载，内部继续复用 Swift
 `/Applications/OpenSurge.app` 时，`NSApplicationDelegate` 会要求同一个控制器确保
 面板已经展开。每次菜单栏 App 进程启动完成都会主动展开面板，因此通过“登录时显示”
 启动时也会弹出。首次启动会等待状态栏按钮实际附着到可见窗口后再调用
-`NSPopover.show`；popover window 创建后会成为 key window，使 macOS 26 等较新系统中的
-prominent action 保持有焦点的强调色。展示过程以 App 激活、App 更新与 popover delegate
-事件为主，并以 common run loop 上短时、有界的退避重试覆盖 macOS 26 首启时 activation
-或状态栏按钮挂载事件晚到的情况。它会给 popover 动画留出 window 创建宽限期，不会把
-`NSPopover.isShown` 当成窗口已经真实出现的充分证据；重试期限到达后停止轮询，但后续
-AppKit 事件或用户再次点击仍可重新进入展示流程。
+`NSPopover.show`，但不会等待 App active 或 popover window 成为 key；cooperative
+activation 和 `makeKey()` 都只是展示后的 best-effort 增强。App 未 active 时 popover 使用
+`.applicationDefined` 并自行处理状态栏按钮、Escape 与外部鼠标点击关闭，获得 active 后再
+切回 `.transient`。SwiftUI 面板显式保持 active control appearance，状态栏按钮用持久 state
+记录面板展示状态；状态轮询只有 indicator 改变才重绘图标。展示过程由 App 激活、popover
+delegate 与 common run loop 上短时、有界的退避重试推进，不使用高频
+`applicationDidUpdate`。它会给 popover 动画留出 window 创建宽限期，不把
+`NSPopover.isShown` 当成窗口已经真实出现的充分证据；重试期限到达时执行一次非阻塞兜底并
+清除 pending，后续用户点击仍可重新进入展示流程。
 
 菜单栏提供两个不同的退出层级。“只退出菜单栏 App”在二次确认后直接结束菜单栏进程，
 不会改变用户级 Control Service、网关数据面或 root Helper。“退出 OpenSurge”只有在

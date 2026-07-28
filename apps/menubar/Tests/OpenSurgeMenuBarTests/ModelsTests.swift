@@ -156,15 +156,11 @@ final class ModelsTests: XCTestCase {
         delegate.applicationDidBecomeActive(
             Notification(name: NSApplication.didBecomeActiveNotification)
         )
-        delegate.applicationDidUpdate(
-            Notification(name: NSApplication.didUpdateNotification)
-        )
 
-        XCTAssertEqual(presenter.stateChangeCount, 2)
+        XCTAssertEqual(presenter.stateChangeCount, 1)
     }
 
-    func testPanelPresentationRequiresActiveApplicationVisibleAnchorAndKeyWindow() {
-        XCTAssertEqual(panelPresentationAction(applicationActive: false), .activateApplication)
+    func testPanelPresentationRequiresVisibleAnchorAndRealWindowButNotActivationOrKeyWindow() {
         XCTAssertEqual(panelPresentationAction(anchorVisible: false), .waitForAnchor)
         XCTAssertEqual(panelPresentationAction(popoverShown: false), .showPopover)
         XCTAssertEqual(
@@ -179,33 +175,16 @@ final class ModelsTests: XCTestCase {
                 panelWindowAvailable: false,
                 popoverWindowWaitExpired: true
             ),
-            .resetPopover
+            .replacePopover
         )
-        XCTAssertEqual(panelPresentationAction(panelWindowKey: false), .makePanelKey)
         XCTAssertEqual(panelPresentationAction(), .complete)
         XCTAssertEqual(
             menuBarPanelPresentationAction(
                 presentationPending: false,
-                popoverResetInProgress: false,
-                applicationActive: true,
                 anchorVisible: true,
                 popoverShown: true,
                 panelWindowAvailable: true,
-                popoverWindowWaitExpired: true,
-                panelWindowKey: true
-            ),
-            .none
-        )
-        XCTAssertEqual(
-            menuBarPanelPresentationAction(
-                presentationPending: true,
-                popoverResetInProgress: true,
-                applicationActive: true,
-                anchorVisible: true,
-                popoverShown: true,
-                panelWindowAvailable: false,
-                popoverWindowWaitExpired: true,
-                panelWindowKey: false
+                popoverWindowWaitExpired: true
             ),
             .none
         )
@@ -223,6 +202,29 @@ final class ModelsTests: XCTestCase {
         )
     }
 
+    func testInactivePopoverOwnsDismissalAndStatusRefreshIsDiffed() {
+        XCTAssertEqual(
+            menuBarPopoverBehavior(applicationActive: false),
+            .applicationDefined
+        )
+        XCTAssertEqual(
+            menuBarPopoverBehavior(applicationActive: true),
+            .transient
+        )
+        XCTAssertFalse(
+            menuBarStatusItemNeedsRefresh(
+                renderedIndicator: .running,
+                nextIndicator: .running
+            )
+        )
+        XCTAssertTrue(
+            menuBarStatusItemNeedsRefresh(
+                renderedIndicator: .running,
+                nextIndicator: .degraded
+            )
+        )
+    }
+
     private func fixture(gateway: String, recovery: Bool, drift: Bool) -> MenuBarStatus {
         MenuBarStatus(schemaVersion: 1, revision: "r", gateway: gateway, topology: "same_wifi_dhcp",
                       lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded",
@@ -237,25 +239,20 @@ private final class RecordingMenuBarPresenter: MenuBarPresenting {
     var presentationCount = 0
     var stateChangeCount = 0
     func showPanel() { presentationCount += 1 }
-    func applicationStateDidChange() { stateChangeCount += 1 }
+    func applicationDidBecomeActive() { stateChangeCount += 1 }
 }
 
 private func panelPresentationAction(
-    applicationActive: Bool = true,
     anchorVisible: Bool = true,
     popoverShown: Bool = true,
     panelWindowAvailable: Bool = true,
-    popoverWindowWaitExpired: Bool = true,
-    panelWindowKey: Bool = true
+    popoverWindowWaitExpired: Bool = true
 ) -> MenuBarPanelPresentationAction {
     menuBarPanelPresentationAction(
         presentationPending: true,
-        popoverResetInProgress: false,
-        applicationActive: applicationActive,
         anchorVisible: anchorVisible,
         popoverShown: popoverShown,
         panelWindowAvailable: panelWindowAvailable,
-        popoverWindowWaitExpired: popoverWindowWaitExpired,
-        panelWindowKey: panelWindowKey
+        popoverWindowWaitExpired: popoverWindowWaitExpired
     )
 }

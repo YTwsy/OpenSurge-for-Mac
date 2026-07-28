@@ -127,13 +127,8 @@ struct MenuBarChecks {
 
         let applicationStateChangeCount = await stateChangeCountAfterLifecycleEvents()
         try require(
-            applicationStateChangeCount == 2,
-            "AppKit activation and update events must resume pending panel presentation"
-        )
-
-        try require(
-            panelPresentationAction(applicationActive: false) == .activateApplication,
-            "panel presentation must wait for real application activation"
+            applicationStateChangeCount == 1,
+            "AppKit activation must enhance a visible panel without update-event churn"
         )
         try require(
             panelPresentationAction(anchorVisible: false) == .waitForAnchor,
@@ -154,29 +149,22 @@ struct MenuBarChecks {
             panelPresentationAction(
                 panelWindowAvailable: false,
                 popoverWindowWaitExpired: true
-            ) == .resetPopover,
-            "a logical popover still missing its window after the grace interval must be reset"
-        )
-        try require(
-            panelPresentationAction(panelWindowKey: false) == .makePanelKey,
-            "the popover window must become key before presentation completes"
+            ) == .replacePopover,
+            "a logical popover still missing its window after the grace interval must be replaced"
         )
         try require(
             panelPresentationAction() == .complete,
-            "panel presentation must complete only with an active key window"
+            "a real popover window must complete presentation without waiting for activation or key status"
         )
         try require(
             menuBarPanelPresentationAction(
-                presentationPending: true,
-                popoverResetInProgress: true,
-                applicationActive: true,
+                presentationPending: false,
                 anchorVisible: true,
                 popoverShown: true,
                 panelWindowAvailable: false,
-                popoverWindowWaitExpired: true,
-                panelWindowKey: false
+                popoverWindowWaitExpired: true
             ) == .none,
-            "popover close recovery must not be re-entered while its animation is pending"
+            "a completed or abandoned presentation must not keep advancing"
         )
         try require(
             MenuBarPanelRetryPolicy.delay(after: 0) == 0.05
@@ -188,6 +176,21 @@ struct MenuBarChecks {
             MenuBarPanelRetryPolicy.presentationWindow
                 > MenuBarPanelRetryPolicy.popoverWindowGrace,
             "the bounded startup retry window must allow at least one failed popover recovery"
+        )
+        try require(
+            menuBarPopoverBehavior(applicationActive: false) == .applicationDefined
+                && menuBarPopoverBehavior(applicationActive: true) == .transient,
+            "an inactive app must own popover dismissal until activation succeeds"
+        )
+        try require(
+            !menuBarStatusItemNeedsRefresh(
+                renderedIndicator: .running,
+                nextIndicator: .running
+            ) && menuBarStatusItemNeedsRefresh(
+                renderedIndicator: .running,
+                nextIndicator: .degraded
+            ),
+            "status polling must redraw the menu bar icon only when its indicator changes"
         )
 
         var fallbackOpened = false
@@ -236,9 +239,6 @@ private func stateChangeCountAfterLifecycleEvents() -> Int {
     appDelegate.applicationDidBecomeActive(
         Notification(name: NSApplication.didBecomeActiveNotification)
     )
-    appDelegate.applicationDidUpdate(
-        Notification(name: NSApplication.didUpdateNotification)
-    )
     return panelPresenter.stateChangeCount
 }
 
@@ -247,26 +247,21 @@ private final class CheckMenuBarPresenter: MenuBarPresenting {
     var presentationCount = 0
     var stateChangeCount = 0
     func showPanel() { presentationCount += 1 }
-    func applicationStateDidChange() { stateChangeCount += 1 }
+    func applicationDidBecomeActive() { stateChangeCount += 1 }
 }
 
 private func panelPresentationAction(
-    applicationActive: Bool = true,
     anchorVisible: Bool = true,
     popoverShown: Bool = true,
     panelWindowAvailable: Bool = true,
-    popoverWindowWaitExpired: Bool = true,
-    panelWindowKey: Bool = true
+    popoverWindowWaitExpired: Bool = true
 ) -> MenuBarPanelPresentationAction {
     menuBarPanelPresentationAction(
         presentationPending: true,
-        popoverResetInProgress: false,
-        applicationActive: applicationActive,
         anchorVisible: anchorVisible,
         popoverShown: popoverShown,
         panelWindowAvailable: panelWindowAvailable,
-        popoverWindowWaitExpired: popoverWindowWaitExpired,
-        panelWindowKey: panelWindowKey
+        popoverWindowWaitExpired: popoverWindowWaitExpired
     )
 }
 
