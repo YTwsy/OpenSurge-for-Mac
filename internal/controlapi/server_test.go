@@ -1492,6 +1492,7 @@ func newTestServer(t *testing.T) *Server {
 func newTestServerWithNetwork(t *testing.T) (*Server, *fakeNetworkRunner) {
 	t.Helper()
 	dir := t.TempDir()
+	mihomoAPI := newReadyMihomoTestServer(t)
 	configPath := filepath.Join(dir, "config.yaml")
 	policyPath := filepath.Join(dir, "device-policy.json")
 	if err := os.WriteFile(policyPath, []byte(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`), 0o600); err != nil {
@@ -1510,6 +1511,8 @@ device_policy:
   file: "`+policyPath+`"
 transparent:
   mode: "tun"
+mihomo:
+  api_addr: "`+mihomoAPI.URL+`"
 runtime:
   dir: "`+filepath.Join(dir, "runtime")+`"
 `), 0o600); err != nil {
@@ -1533,6 +1536,25 @@ runtime:
 	}
 	server.sessions["expired"] = time.Now().Add(-time.Minute)
 	return server, network
+}
+
+func newReadyMihomoTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/version":
+			_, _ = w.Write([]byte(`{"version":"test","meta":true}`))
+		case "/configs":
+			_, _ = w.Write([]byte(`{"tun":{"enable":true,"device":"utun-test"}}`))
+		case "/proxies", "/providers/proxies", "/providers/rules":
+			_, _ = w.Write([]byte(`{"proxies":{},"providers":{}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
 
 type fakeRunner struct{}
