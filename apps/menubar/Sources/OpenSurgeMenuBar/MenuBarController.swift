@@ -463,7 +463,6 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     private func applyStatusItemPresentedState() {
         guard let button = statusItem.button else { return }
         button.state = panelPresented ? .on : .off
-        button.highlight(panelPresented)
     }
 
     private func updateStatusItem() {
