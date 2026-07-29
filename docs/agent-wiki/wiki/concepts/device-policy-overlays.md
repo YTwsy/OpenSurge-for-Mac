@@ -11,7 +11,8 @@ mihomo YAML”。
 ## 策略模型
 
 - 每台设备必须明确选择 `egress_mode`：`inherit_global` 只保留设备覆盖，未命中流量继续
-  走全局规则；`dedicated` 为公网流量生成并优先使用 `device/<id>/default` selector。
+  走 imported/managed 网关规则，不跟随 Mac 本机 Rule/Global/Direct 开关；
+  `dedicated` 为公网流量生成并优先使用 `device/<id>/default` selector。
 - `dedicated` 在设备覆盖和默认 selector 之前生成按设备源 IPv4 限定的本地/私网、
   link-local、CGNAT 与 multicast `DIRECT` 保护，避免远端代理吞掉 LAN 访问。
 - 含 `policies` 的设备规则会获得 `device/<id>/<rule-id>` selector；
@@ -57,7 +58,8 @@ same-Wi‑Fi DHCP 场景还必须将 router、recovery device、LAN proxy 等地
 
 ## 和 imported profile 的关系
 
-device override 规则在所有模式下都位于 imported/managed 全局规则之前。独立模式的
+Mac 本机 source-scoped 模式规则排在最前，但下游设备源地址不会命中。device override
+规则在所有设备模式下都位于 imported/managed 全局规则之前。独立模式的
 设备默认 selector 同样位于全局规则之前；跟随模式没有 default selector；只有旧版兼容
 模式把默认兜底放在全局规则之后、最终 `MATCH` 之前。imported profile 的 `MATCH`
 必须是 terminal；其后还有实质规则时渲染会失败。

@@ -75,11 +75,11 @@ connections. Use `omg providers --config <path>` to inspect proxy/rule
 providers, and `omg provider-update --config <path> --provider <name>` to
 refresh one proxy provider. `policy-select` first reads live groups and rejects
 unknown group or policy names before sending the selection change. These are
-control-plane checks. `make policy-control-test` also proves one local
-mixed-port request can be switched from `DIRECT` to a controlled HTTP CONNECT
-proxy with `policy-select`, and verifies both file and locally served HTTP
-proxy-provider refresh. It still does not require real-device validation unless
-the change also touches gateway, DNS, TUN, or traffic-capture behavior.
+control-plane checks. `make policy-control-test` also proves source-scoped
+local/private guards keep a local mixed-port target `DIRECT`, exercises the
+dedicated local-routing selectors, and verifies both file and locally served
+HTTP proxy-provider refresh. It still does not require real-device validation
+unless the change also touches gateway, DNS, TUN, or traffic-capture behavior.
 
 If a change affects generated runtime traffic defaults, TUN behavior, DNS
 behavior, or real proxy egress semantics, use the matching network gate:
@@ -94,6 +94,14 @@ explicit mode retains the legacy default after global rules and before terminal
 `MATCH`. An imported profile with rules after `MATCH` is rejected. Device identity and the selector data path use
 `make lab-test-tun-device-policy`; template and rule-provider compilation use
 `make test`.
+
+The local-Mac Rule/Global/Direct overlay is inserted before device overrides
+without changing the imported top-level rule mode. It owns hidden
+`open-surge/mac-*` selectors and matches both inbound type and local source
+identity, so downstream device sources continue into their existing path.
+Imported proxy/group targets may not occupy that reserved namespace. See
+`concepts/local-mac-routing-modes.md` and validate the real isolation boundary
+with `make lab-test-tun-local-routing`.
 
 `make lab-test-tun-imported-profile` runs the TUN gate with
 `tests/lab/mihomo-profile.imported-tun.yaml`, which keeps rules at

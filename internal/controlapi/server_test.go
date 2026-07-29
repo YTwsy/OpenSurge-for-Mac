@@ -92,14 +92,98 @@ func TestInspectSourceInvalidTopLevelReturnsEmptyCollections(t *testing.T) {
 }
 
 func TestInspectSourceRejectsReservedNamespace(t *testing.T) {
-	_, err := inspectSource([]byte(`proxy-groups:
+	tests := map[string]string{
+		"device group": `proxy-groups:
   - name: device/phone/default
     type: select
     proxies: [DIRECT]
 rules: ["MATCH,DIRECT"]
-`), "mihomo_profile")
-	if err == nil {
-		t.Fatal("inspectSource() succeeded")
+`,
+		"local routing proxy": `proxies:
+  - name: open-surge/mac-mode-tcp
+    type: direct
+rules: ["MATCH,DIRECT"]
+`,
+	}
+	for name, profile := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := inspectSource([]byte(profile), "mihomo_profile")
+			if err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("inspectSource() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLocalRoutingEndpointUsesDedicatedController(t *testing.T) {
+	server := newTestServer(t)
+	server.fetchLocalRouting = func(_ context.Context, cfg config.Config) (mihomo.LocalRoutingSnapshot, error) {
+		if !cfg.Transparent.TUNEnabled() {
+			t.Fatal("local routing endpoint did not load TUN runtime config")
+		}
+		return mihomo.LocalRoutingSnapshot{
+			Mode:               mihomo.LocalRoutingModeRule,
+			AvailableModes:     []string{mihomo.LocalRoutingModeRule, mihomo.LocalRoutingModeGlobal, mihomo.LocalRoutingModeDirect},
+			UDPBehavior:        "rules",
+			Transports:         []string{"tun", "loopback_explicit_proxy"},
+			NewConnectionsOnly: true,
+			Consistent:         true,
+		}, nil
+	}
+	response := performAuthorized(server, http.MethodGet, "/api/v1/local-routing", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET local routing status=%d body=%s", response.Code, response.Body.String())
+	}
+	var fetched LocalRoutingResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &fetched); err != nil {
+		t.Fatal(err)
+	}
+	if fetched.SchemaVersion != SchemaVersion || fetched.Mode != mihomo.LocalRoutingModeRule || !fetched.Consistent {
+		t.Fatalf("GET local routing = %#v", fetched)
+	}
+
+	var mode, policy string
+	server.setLocalRouting = func(_ context.Context, _ config.Config, requestedMode, requestedPolicy string) (mihomo.LocalRoutingSnapshot, error) {
+		mode, policy = requestedMode, requestedPolicy
+		return mihomo.LocalRoutingSnapshot{
+			Mode:               requestedMode,
+			AvailableModes:     []string{mihomo.LocalRoutingModeRule, mihomo.LocalRoutingModeGlobal, mihomo.LocalRoutingModeDirect},
+			GlobalGroup:        &mihomo.ProxyGroup{Name: mihomo.LocalRoutingGlobalGroup, Selected: requestedPolicy, Options: []string{"Proxy-A", "Proxy-B"}},
+			UDPBehavior:        "proxy",
+			Transports:         []string{"tun", "loopback_explicit_proxy"},
+			NewConnectionsOnly: true,
+			Consistent:         true,
+		}, nil
+	}
+	response = performAuthorized(server, http.MethodPost, "/api/v1/local-routing", []byte(`{"mode":"global","global_policy":"Proxy-B"}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST local routing status=%d body=%s", response.Code, response.Body.String())
+	}
+	if mode != mihomo.LocalRoutingModeGlobal || policy != "Proxy-B" {
+		t.Fatalf("set local routing arguments = %q/%q", mode, policy)
+	}
+	var updated LocalRoutingResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Mode != mihomo.LocalRoutingModeGlobal || updated.GlobalGroup == nil || updated.GlobalGroup.Selected != "Proxy-B" {
+		t.Fatalf("POST local routing = %#v", updated)
+	}
+}
+
+func TestGenericPolicySelectionRejectsLocalRoutingGroups(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodPost, "/api/v1/policies/open-surge%2Fmac-mode-tcp/selection", []byte(`{"policy":"DIRECT"}`))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "reserved_policy_group") {
+		t.Fatalf("reserved policy selection status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestProviderRefreshRejectsLocalRoutingGroups(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodPost, "/api/v1/providers/open-surge%2Fmac-global/refresh", nil)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "reserved_provider") {
+		t.Fatalf("reserved provider refresh status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

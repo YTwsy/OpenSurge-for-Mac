@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DevicePolicyDocument, DevicesResponse, Overview, PolicySet } from '../types'
+import type { DevicePolicyDocument, DevicesResponse, LocalRouting, LocalRoutingMode, Overview, PolicySet } from '../types'
 
 vi.mock('../api', () => {
   class RequestError extends Error {
@@ -14,6 +14,7 @@ vi.mock('../api', () => {
     api: {
       devices: vi.fn(), config: vi.fn(), sources: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
       selectPolicy: vi.fn(), selectDevicePolicy: vi.fn(), gateway: vi.fn(),
+      localRouting: vi.fn(), setLocalRouting: vi.fn(),
       proxyHealth: vi.fn(), testProxyHealth: vi.fn(),
     },
   }
@@ -34,6 +35,19 @@ const overview = {
   ],
   leases: [],
 } as unknown as Overview
+
+function localRouting(mode: LocalRoutingMode = 'rule', selected = 'Proxy-A'): LocalRouting {
+  return {
+    schema_version: 1,
+    mode,
+    available_modes: ['rule', 'direct', 'global'],
+    global_group: { name: 'open-surge/mac-global', type: 'Selector', selected, options: ['Proxy-A', 'Proxy-B'] },
+    udp_behavior: mode === 'global' ? 'proxy' : mode === 'direct' ? 'direct' : 'rules',
+    transports: ['tun', 'loopback_explicit_proxy'],
+    new_connections_only: true,
+    consistent: true,
+  }
+}
 
 function documentFor(policy: PolicySet, revision = 'policy-r1'): DevicePolicyDocument {
   return { schema_version: 1, revision, policy }
@@ -59,6 +73,8 @@ describe('DevicesPage', () => {
     vi.mocked(api.devices).mockResolvedValue(devicesResponse())
     vi.mocked(api.selectPolicy).mockResolvedValue({} as never)
     vi.mocked(api.selectDevicePolicy).mockResolvedValue({} as never)
+    vi.mocked(api.localRouting).mockResolvedValue(localRouting())
+    vi.mocked(api.setLocalRouting).mockImplementation(async (mode, policy) => localRouting(mode, policy ?? 'Proxy-A'))
     vi.mocked(api.gateway).mockResolvedValue({ id: 'reload-1', kind: 'reload', state: 'running' })
     vi.mocked(api.proxyHealth).mockResolvedValue({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', proxies: [
       { name: 'DIRECT', type: 'Direct', selected: '', provider: '', udp: true, status: 'not_applicable', probeable: false },
@@ -86,9 +102,8 @@ describe('DevicesPage', () => {
     renderPage()
 
     await screen.findByText('alice')
-    const layout = document.querySelector('.device-layout') as HTMLElement
-    const stack = layout.querySelector('.device-stack') as HTMLElement
-    expect(layout.children[0].classList.contains('this-mac')).toBe(true)
+    const stack = document.querySelector('.device-stack') as HTMLElement
+    expect(screen.getByRole('heading', { name: 'Mac 本机流量模式' })).toBeTruthy()
     expect(stack.querySelectorAll('.device-card')).toHaveLength(2)
 
     const saveBar = document.querySelector('.sticky-save') as HTMLElement
@@ -102,13 +117,16 @@ describe('DevicesPage', () => {
     expect(saveBar.classList.contains('has-changes')).toBe(true)
   })
 
-  it('shows only global groups on THIS MAC and switches them immediately', async () => {
+  it('switches the Mac-only mode and its dedicated global policy', async () => {
     renderPage()
-    const selector = await screen.findByLabelText('Main 当前出口 DIRECT')
-    expect(screen.queryByLabelText('device/alice/default 当前出口 DIRECT')).toBeNull()
+    await screen.findByRole('heading', { name: 'Mac 本机流量模式' })
+    await userEvent.click(screen.getByRole('button', { name: '全局' }))
+    await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('global', undefined))
+
+    const selector = screen.getByLabelText('本机全局出口 当前出口 Proxy-A')
     await userEvent.click(selector)
-    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Proxy-A/ }))
-    await waitFor(() => expect(api.selectPolicy).toHaveBeenCalledWith('Main', 'Proxy-A'))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Proxy-B/ }))
+    await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('global', 'Proxy-B'))
   })
 
   it('merges desired and applied devices into four states and separates identity readiness', async () => {
@@ -194,7 +212,7 @@ describe('DevicesPage', () => {
       applied_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global', groups: {} }],
     }))
     renderPage()
-    expect(await screen.findByText('默认出口跟随本机 / 全局规则')).toBeTruthy()
+    expect(await screen.findByText('默认出口跟随网关规则')).toBeTruthy()
     expect(screen.queryByLabelText('alice 独立出口 当前摘要')).toBeNull()
     await userEvent.click(screen.getByRole('radio', { name: /独立设备出口/ }))
     expect(screen.getByText(/草稿将改为“独立设备出口”/)).toBeTruthy()
@@ -218,9 +236,9 @@ describe('DevicesPage', () => {
     renderPage()
     expect(await screen.findByText('需要选择新的路由方式')).toBeTruthy()
     expect(screen.getByLabelText('alice 兼容兜底出口 当前摘要')).toBeTruthy()
-    expect((screen.getByRole('radio', { name: /跟随本机/ }) as HTMLInputElement).checked).toBe(false)
+    expect((screen.getByRole('radio', { name: /跟随网关/ }) as HTMLInputElement).checked).toBe(false)
     expect((screen.getByRole('radio', { name: /独立设备出口/ }) as HTMLInputElement).checked).toBe(false)
-    await userEvent.click(screen.getByRole('radio', { name: /跟随本机/ }))
+    await userEvent.click(screen.getByRole('radio', { name: /跟随网关/ }))
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
     expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0].egress_mode).toBe('inherit_global')
@@ -228,7 +246,7 @@ describe('DevicesPage', () => {
 
   it('defaults newly registered devices to following global rules and reveals candidates only for dedicated routing', async () => {
     renderPage()
-    const follow = await screen.findByRole('radio', { name: /跟随本机/ })
+    const follow = await screen.findByRole('radio', { name: /跟随网关/ })
     const registration = follow.closest('.registration') as HTMLElement
     expect(registration.classList.contains('device-tools-section')).toBe(true)
     expect(within(registration).getByRole('heading', { name: '设备身份与路由' })).toBeTruthy()

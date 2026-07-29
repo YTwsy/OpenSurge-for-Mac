@@ -79,15 +79,20 @@ recovery state active until the network has actually been restored.
   seconds of traffic trends.
 - **来源** (Sources) refreshes subscriptions and shows version differences. A
   refresh creates a draft that still needs to be applied.
-- **设备** (Devices) registers devices and lets each one follow global rules or
-  use an independent egress.
+- **设备** (Devices) switches local-Mac Rule / Global / Direct and lets each
+  downstream device follow gateway rules or use an independent egress. Those
+  controls do not affect each other.
 - **策略** (Policies) tests proxy health and switches applied Selectors
   immediately.
 - **连通性** (Connectivity) shows latency, matched rules, and egress chains
-  through the currently applied mihomo path.
+  through the applied configuration and current local-Mac mode. It does not
+  represent a downstream-device path.
 - **诊断** (Diagnostics) shows recent operations, connections, providers, and
   redacted logs.
 
+The local-Mac mode affects only new connections entering OpenSurge through TUN
+or the local explicit proxy. It does not rewrite macOS system-proxy settings or
+downstream behavior; see [local Mac routing modes](local-mac-routing.md).
 Green **即时生效** (Applies immediately) controls switch an already-applied
 egress. Changes to device identity, candidates, or rules must be saved and then
 applied through a gateway reload.

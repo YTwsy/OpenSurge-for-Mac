@@ -334,3 +334,36 @@ func TestInspectImportedProfileUsesSemanticTerminalMatchValidation(t *testing.T)
 		}
 	}
 }
+
+func TestInspectImportedProfileRejectsLocalRoutingNamespaceDefinitionsAndReferences(t *testing.T) {
+	tests := map[string]string{
+		"proxy definition": `proxies:
+  - name: open-surge/mac-global
+    type: direct
+rules: ["MATCH,DIRECT"]
+`,
+		"provider definition": `proxy-providers:
+  open-surge/mac-provider:
+    type: inline
+    payload: []
+rules: ["MATCH,DIRECT"]
+`,
+		"group candidate": `proxy-groups:
+  - name: Main
+    type: select
+    proxies: [DIRECT, open-surge/mac-global]
+rules: ["MATCH,DIRECT"]
+`,
+		"rule target": `rules:
+  - DOMAIN,example.com,open-surge/mac-mode-tcp
+  - MATCH,DIRECT
+`,
+	}
+	for name, profile := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := InspectImportedProfile([]byte(profile)); err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("InspectImportedProfile() error = %v", err)
+			}
+		})
+	}
+}

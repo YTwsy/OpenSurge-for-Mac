@@ -58,6 +58,8 @@ type Server struct {
 	credentials       SourceCredentialStore
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
 	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
+	fetchLocalRouting func(context.Context, config.Config) (mihomo.LocalRoutingSnapshot, error)
+	setLocalRouting   func(context.Context, config.Config, string, string) (mihomo.LocalRoutingSnapshot, error)
 	measureProxyDelay func(context.Context, config.Config, string, string, time.Duration) mihomo.ProxyDelayResult
 	probeConnectivity func(context.Context, config.Config, ConnectivityTarget) ConnectivityResult
 	trafficSampler    *trafficRateSampler
@@ -162,6 +164,8 @@ func New(options Options) (*Server, error) {
 		credentials:       options.Credentials,
 		fetchConnections:  mihomo.FetchConnections,
 		fetchProxyHealth:  mihomo.FetchProxyHealth,
+		fetchLocalRouting: mihomo.FetchLocalRouting,
+		setLocalRouting:   mihomo.SetLocalRouting,
 		measureProxyDelay: mihomo.MeasureProxyDelay,
 		probeConnectivity: probeConnectivityTarget,
 		trafficSampler:    newTrafficRateSampler(),
@@ -225,6 +229,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
+	mux.Handle("GET /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
+	mux.Handle("POST /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
 	mux.Handle("GET /api/v1/proxy-health", s.auth(http.HandlerFunc(s.handleProxyHealth)))
 	mux.Handle("POST /api/v1/proxy-health/tests", s.auth(http.HandlerFunc(s.handleProxyHealthTests)))
 	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
@@ -508,10 +514,12 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if groups == nil {
 		groups = []mihomo.ProxyGroup{}
 	}
+	groups = mihomo.VisibleProxyGroups(groups)
 	if groupErr != nil && status.Gateway == "running" {
 		warnings = append(warnings, "mihomo policies unavailable: "+groupErr.Error())
 	}
 	providers, providerErr := mihomo.FetchProviders(ctx, cfg)
+	providers = mihomo.VisibleProviders(providers)
 	if providers.ProxyProviders == nil {
 		providers.ProxyProviders = []mihomo.ProxyProvider{}
 	}
@@ -1504,6 +1512,7 @@ func (s *Server) handlePolicies(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "mihomo_unavailable", err.Error())
 		return
 	}
+	groups = mihomo.VisibleProxyGroups(groups)
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "groups": groups})
 }
 
@@ -1519,7 +1528,12 @@ func (s *Server) handlePolicySelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	group := r.PathValue("group")
+	if mihomo.IsLocalRoutingGroup(group) {
+		writeError(w, http.StatusUnprocessableEntity, "reserved_policy_group", "use the local Mac routing endpoint to change this internal policy group")
+		return
+	}
 	groups, err := mihomo.FetchProxyGroups(r.Context(), cfg)
+	groups = mihomo.VisibleProxyGroups(groups)
 	if err != nil || !validSelection(groups, group, req.Policy) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_selection", "group or policy is not available")
 		return
@@ -1529,6 +1543,34 @@ func (s *Server) handlePolicySelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "group": group, "selected": req.Policy})
+}
+
+func (s *Server) handleLocalRouting(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	var snapshot mihomo.LocalRoutingSnapshot
+	if r.Method == http.MethodGet {
+		snapshot, err = s.fetchLocalRouting(r.Context(), cfg)
+	} else {
+		var request LocalRoutingRequest
+		if decodeErr := decodeJSON(r, &request, 64<<10); decodeErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", decodeErr.Error())
+			return
+		}
+		snapshot, err = s.setLocalRouting(r.Context(), cfg, request.Mode, request.GlobalPolicy)
+	}
+	if err != nil {
+		status, code := http.StatusBadGateway, "mihomo_unavailable"
+		if r.Method == http.MethodPost {
+			status, code = http.StatusUnprocessableEntity, "local_routing_failed"
+		}
+		writeError(w, status, code, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, LocalRoutingResponse{SchemaVersion: SchemaVersion, LocalRoutingSnapshot: snapshot})
 }
 
 func (s *Server) handleDeviceSelection(w http.ResponseWriter, r *http.Request) {
@@ -1576,6 +1618,7 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "mihomo_unavailable", err.Error())
 		return
 	}
+	providers = mihomo.VisibleProviders(providers)
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "providers": providers})
 }
 
@@ -1624,7 +1667,12 @@ func (s *Server) handleProviderRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
-	provider, err := mihomo.UpdateProxyProvider(r.Context(), cfg, r.PathValue("name"))
+	name := r.PathValue("name")
+	if mihomo.IsLocalRoutingGroup(name) {
+		writeError(w, http.StatusUnprocessableEntity, "reserved_provider", "OpenSurge local Mac routing groups are internal and cannot be refreshed")
+		return
+	}
+	provider, err := mihomo.UpdateProxyProvider(r.Context(), cfg, name)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "provider_refresh_failed", err.Error())
 		return

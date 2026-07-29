@@ -64,6 +64,7 @@ make lab-test
 make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
+make lab-test-tun-local-routing
 make lab-test-tun-device-policy
 make lab-down
 ```
@@ -90,6 +91,14 @@ provider-backed policy selection changes the transparent TUN egress path; it
 does not prove a real subscription node or remote exit IP. The controlled
 proxy binds both upstream DNS and TCP dialing to the physical upstream
 interface so its own traffic cannot re-enter the TUN or use a fake IP.
+
+`lab-test-tun-local-routing` uses the same imported egress fixture to prove the
+local-Mac Rule/Global/Direct selectors remain isolated from downstream clients:
+local Global can use the controlled proxy while the client follows direct
+gateway rules, and local Direct can bypass the proxy while the client still
+uses it through gateway rules. It also checks the local TUN source identity,
+UDP `REJECT` for an HTTP-only global egress, and that generic `policies` hides
+the internal groups.
 
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
 devices. It assigns them fixed `.101` and `.102` DHCP leases, proves one
@@ -143,6 +152,7 @@ make lab-test     # run the end-to-end test and restore the host
 make lab-test-tun # run the TUN transparent proxy gate
 make lab-test-tun-imported-profile # run TUN with an imported profile fixture
 make lab-test-tun-imported-egress  # switch TUN egress through a controlled proxy
+make lab-test-tun-local-routing # prove local-Mac mode isolation
 make lab-test-tun-device-policy # prove independent per-device TUN policies
 make lab-down     # stop clients and remove the host network
 make lab-destroy  # delete the persistent Lima client disks too

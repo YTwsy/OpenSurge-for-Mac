@@ -184,6 +184,9 @@ func parseImportedProfile(data []byte) (importedProfile, error) {
 	if err != nil {
 		return importedProfile{}, err
 	}
+	if err := validateLocalRoutingNamespace(allSections, inventory); err != nil {
+		return importedProfile{}, err
+	}
 	for _, section := range []string{"proxy-providers", "rule-providers"} {
 		if err := validateProviderPaths(allSections[section]); err != nil {
 			return importedProfile{}, fmt.Errorf("%s: %w", section, err)
@@ -201,6 +204,68 @@ func parseImportedProfile(data []byte) (importedProfile, error) {
 		inventory:         inventory,
 		dnsResolverFields: dnsResolverFields,
 	}, nil
+}
+
+func validateLocalRoutingNamespace(sections map[string]*yaml.Node, inventory importedProfileInventory) error {
+	for name, section := range inventory.targets {
+		if IsLocalRoutingGroup(name) {
+			return fmt.Errorf("imported mihomo profile %s name %q occupies reserved %s namespace", section, name, LocalRoutingGroupPrefix)
+		}
+	}
+	for _, names := range [][]string{inventory.proxyProviderNames, inventory.ruleProviderNames} {
+		for _, name := range names {
+			if IsLocalRoutingGroup(name) {
+				return fmt.Errorf("imported mihomo profile provider name %q occupies reserved %s namespace", name, LocalRoutingGroupPrefix)
+			}
+		}
+	}
+
+	groups := resolveAlias(sections["proxy-groups"])
+	if groups != nil && groups.Kind == yaml.SequenceNode {
+		for _, item := range groups.Content {
+			item = resolveAlias(item)
+			if item == nil || item.Kind != yaml.MappingNode {
+				continue
+			}
+			for index := 0; index < len(item.Content); index += 2 {
+				key, value := item.Content[index], resolveAlias(item.Content[index+1])
+				if !isStringScalar(key) || key.Value != "proxies" || value == nil || value.Kind != yaml.SequenceNode {
+					continue
+				}
+				for _, candidate := range value.Content {
+					if name, ok := scalarStringValue(candidate); ok && IsLocalRoutingGroup(name) {
+						return fmt.Errorf("imported mihomo proxy group references reserved OpenSurge target %q", name)
+					}
+				}
+			}
+		}
+	}
+
+	rules := resolveAlias(sections["rules"])
+	if rules != nil && rules.Kind == yaml.SequenceNode {
+		for _, rule := range rules.Content {
+			value, ok := scalarStringValue(rule)
+			if !ok {
+				continue
+			}
+			if target := importedRuleTarget(value); IsLocalRoutingGroup(target) {
+				return fmt.Errorf("imported mihomo rule references reserved OpenSurge target %q", target)
+			}
+		}
+	}
+	return nil
+}
+
+func importedRuleTarget(rule string) string {
+	parts := strings.Split(rule, ",")
+	if len(parts) < 2 {
+		return ""
+	}
+	index := len(parts) - 1
+	if strings.EqualFold(strings.TrimSpace(parts[index]), "no-resolve") {
+		index--
+	}
+	return strings.TrimSpace(parts[index])
 }
 
 func isImportableProfileSection(value string) bool {
@@ -569,6 +634,10 @@ func quotedStringNode(value string) *yaml.Node {
 
 func intNode(value int) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: fmt.Sprintf("%d", value)}
+}
+
+func boolNode(value bool) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: fmt.Sprintf("%t", value)}
 }
 
 func sequenceNode(values ...*yaml.Node) *yaml.Node {

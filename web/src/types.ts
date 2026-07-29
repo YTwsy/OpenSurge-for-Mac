@@ -13,6 +13,18 @@ export type GatewayStatus = {
 export type DoctorCheck = { name: string; ok: boolean; message?: string }
 export type Lease = { ip: string; mac: string; hostname?: string; registered_name?: string; expires_at: string; online: boolean }
 export type ProxyGroup = { name: string; type: string; selected: string; options: string[] }
+export type LocalRoutingMode = 'rule' | 'global' | 'direct'
+export type LocalRouting = {
+  schema_version: number
+  mode: LocalRoutingMode
+  available_modes: LocalRoutingMode[]
+  global_group?: ProxyGroup
+  udp_behavior: 'rules' | 'proxy' | 'direct' | 'reject'
+  transports: Array<'tun' | 'loopback_explicit_proxy'>
+  new_connections_only: boolean
+  consistent: boolean
+  warning?: string
+}
 export type ProxyHealthEntry = {
   name: string
   type: string
@@ -196,7 +208,7 @@ export type ConnectivityResult = {
 export type ConnectivityResponse = {
   schema_version: number
   source: 'gateway_mihomo'
-  scope: 'applied_global_rules'
+  scope: 'local_mac_runtime'
   rounds: number
   targets: ConnectivityTarget[]
   results: ConnectivityResult[]

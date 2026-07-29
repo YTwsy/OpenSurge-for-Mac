@@ -72,8 +72,8 @@ reservation 可位于动态 DHCP 池内，`devices --format json` 会显式标�
 
 `egress_mode` 有两种明确取值：
 
-- `inherit_global`：设备专属规则仍优先；未命中流量继续走与本机相同的全局规则和
-  terminal `MATCH`；
+- `inherit_global`：设备专属规则仍优先；未命中流量继续走 imported/managed 网关规则和
+  terminal `MATCH`。它不跟随 Mac 本机的规则 / 全局 / 直连开关；
 - `dedicated`：未命中的公网流量会在全局规则前进入设备自己的
   `device/<device-id>/default` selector。局域网、私网、link-local、CGNAT 和 multicast
   目标仍保持 `DIRECT`。
@@ -94,7 +94,8 @@ Web GUI 新登记设备默认使用 `inherit_global`。旧文件没有 `egress_m
 启动前会校验候选项和 action 是否引用 imported profile 中存在的 proxy/group；内置目标
 仅显式允许 `DIRECT`、`REJECT`、`REJECT-DROP`、`REJECT-TINYGIF`。`device/` 是生成
 group 的保留命名空间，`open-surge-ruleset-` 是生成 provider 的保留命名空间，imported
-profile 不能占用它们。
+profile 不能占用它们。`open-surge/mac-*` 由 Mac 本机流量模式保留，proxy/group 也不能
+占用；详见 [Mac 本机流量模式](local-mac-routing.zh-CN.md)。
 
 ## 匹配与顺序
 
@@ -105,9 +106,11 @@ profile 不能占用它们。
 AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,media.example),(NETWORK,tcp)),device/alice-phone/media
 ```
 
-设备专属覆盖在所有模式下都先于全局规则。`inherit_global` 随后继续进入全局规则与
-terminal `MATCH`；`dedicated` 的顺序是按设备源地址限定的本地/私网 `DIRECT` 保护 →
-设备专属覆盖 → 设备默认 selector → imported/managed 全局规则 → terminal `MATCH`。
+Mac 本机 source-scoped 模式规则最先执行，但下游设备源地址不会命中。设备专属覆盖在
+所有设备模式下都先于网关规则。`inherit_global` 随后继续进入 imported/managed 网关
+规则与 terminal `MATCH`；`dedicated` 的顺序是按设备源地址限定的本地/私网 `DIRECT`
+保护 → 设备专属覆盖 → 设备默认 selector → imported/managed 网关规则 → terminal
+`MATCH`。
 缺少模式的旧文件仍保持设备默认 selector 位于全局规则之后、`MATCH` 之前。imported
 profile 的 `MATCH` 必须位于最后；若其后还有规则，OpenSurge 会拒绝渲染。
 

@@ -46,11 +46,11 @@ make policy-control-test
 也不需要 sudo。它用 imported profile fixture 验证 `policies`、`policy-select`、
 `connections`、`providers`、`provider-update` 和聚合 `snapshot` 能通过 live
 external-controller API 工作，并会重启 mihomo 证明 `profile.store-selected` 可以
-恢复选中的策略。它还会启动本机 origin 和受控 HTTP CONNECT proxy，证明
-`EgressSwitch` 可以把一次 mixed-port 请求从 `DIRECT` 切到受控代理。它适合策略组
-控制、file/HTTP provider 状态读取和刷新、机器可读 CLI、mihomo API wrapper 和
-`profile.store-selected` 相关改动；不要用它宣称 DHCP、DNS 下发、TUN 透明代理、
-same-LAN、真实设备路径或真实远端代理出口已验证。
+恢复选中的策略。它还验证本机/私网 mixed-port 目标保持 `DIRECT`、专用
+local-routing 控制器协调三种模式、HTTP-only Global 的 UDP fail-closed，以及普通
+policy 接口不泄露内部组。它适合策略组控制、file/HTTP provider 状态读取和刷新、
+机器可读 CLI、mihomo API wrapper 和 `profile.store-selected` 相关改动；不要用它
+宣称 DHCP、DNS 下发、TUN 透明代理、same-LAN、真实设备路径或真实远端代理出口已验证。
 
 ## 真实设备 smoke
 
@@ -264,6 +264,28 @@ proxy 日志出现 `CONNECT <host>:443`。它证明 imported provider-backed 策
 Lab 中的受控 CONNECT proxy 必须把上游 DNS 查询和 TCP socket 都绑定到真实 upstream
 interface。否则 proxy 自己的连接会再次进入正在测试的 TUN，或者把 mihomo fake-IP
 错误地发到物理接口，产生递归或 TLS timeout，而不是有效的出口切换证据。
+
+## Mac 本机模式隔离门槛
+
+运行：
+
+```sh
+make lab-test-tun-local-routing
+```
+
+当改动 `open-surge/mac-*` selector、本机 TUN/显式代理身份、规则 / 全局 / 直连语义，
+或本机与下游隔离时使用。门槛使用 imported TUN egress fixture 和受控 CONNECT proxy：
+
+1. Rule 模式下，本机继续进入 `TunEgress` 网关规则；
+2. Global 模式下，本机 TCP 使用受控代理，而下游客户端仍按 `TunEgress[DIRECT]`；
+3. Direct 模式下，本机保持 `DIRECT`，而下游客户端仍可按
+   `TunEgress[egress-proxy]` 使用受控代理；
+4. HTTP-only Global 出口令本机 UDP 状态明确为 `reject`；
+5. 普通 `policies` 输出不暴露 `open-surge/mac-*` 内部组。
+
+该门槛同时要求 `mihomo.log` 中本机 TUN source 为 `198.18.0.1`，下游仍保留自己的
+LAN IPv4。`make test`、`make web-test` 或 `make policy-control-test` 都不能替代这条
+真实 host-network/TUN 隔离证据。
 
 ## 每设备策略门槛
 
