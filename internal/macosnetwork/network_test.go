@@ -98,7 +98,7 @@ func TestVerifyManualRequiresManualModeAndExpectedIPv4(t *testing.T) {
 	}
 }
 
-func TestDetectGlobalTUNRouteRequiresSameUTUNForAllDestinations(t *testing.T) {
+func TestLookupRouteReturnsSelectedInterface(t *testing.T) {
 	original := runCommand
 	t.Cleanup(func() { runCommand = original })
 	runCommand = func(_ context.Context, binary string, args ...string) (string, error) {
@@ -108,44 +108,12 @@ func TestDetectGlobalTUNRouteRequiresSameUTUNForAllDestinations(t *testing.T) {
 		return "   gateway: 198.18.0.1\n interface: utun42\n", nil
 	}
 
-	conflict, found, err := DetectGlobalTUNRoute(t.Context(), "utun123")
+	route, err := LookupRoute(t.Context(), "1.0.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !found || conflict.Interface != "utun42" || conflict.Gateway != "198.18.0.1" {
-		t.Fatalf("conflict = %#v found=%v", conflict, found)
-	}
-	if len(conflict.Destinations) != len(globalTUNProbeDestinations) {
-		t.Fatalf("destinations = %#v", conflict.Destinations)
-	}
-}
-
-func TestDetectGlobalTUNRouteIgnoresSplitRouteAndOrdinaryUTUN(t *testing.T) {
-	original := runCommand
-	t.Cleanup(func() { runCommand = original })
-	calls := 0
-	runCommand = func(_ context.Context, _ string, _ ...string) (string, error) {
-		calls++
-		if calls == 1 {
-			return "gateway: 100.64.0.1\ninterface: utun8\n", nil
-		}
-		return "gateway: 192.168.1.1\ninterface: en0\n", nil
-	}
-
-	if conflict, found, err := DetectGlobalTUNRoute(t.Context(), "utun123"); err != nil || found {
-		t.Fatalf("conflict = %#v found=%v err=%v", conflict, found, err)
-	}
-}
-
-func TestDetectGlobalTUNRouteIgnoresConfiguredTUNDevice(t *testing.T) {
-	original := runCommand
-	t.Cleanup(func() { runCommand = original })
-	runCommand = func(_ context.Context, _ string, _ ...string) (string, error) {
-		return "gateway: 198.18.0.1\ninterface: utun123\n", nil
-	}
-
-	if conflict, found, err := DetectGlobalTUNRoute(t.Context(), " utun123 "); err != nil || found {
-		t.Fatalf("conflict = %#v found=%v err=%v", conflict, found, err)
+	if route.Interface != "utun42" || route.Gateway != "198.18.0.1" {
+		t.Fatalf("route = %#v", route)
 	}
 }
 

@@ -39,7 +39,6 @@ type Options struct {
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	PingRouter        func(context.Context, string) error
-	DetectGlobalTUN   func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error)
 	Static            http.Handler
 	Credentials       SourceCredentialStore
 }
@@ -55,7 +54,6 @@ type Server struct {
 	listInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	pingRouter        func(context.Context, string) error
-	detectGlobalTUN   func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error)
 	static            http.Handler
 	credentials       SourceCredentialStore
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
@@ -137,9 +135,6 @@ func New(options Options) (*Server, error) {
 	if options.PingRouter == nil {
 		options.PingRouter = macosnetwork.PingRouter
 	}
-	if options.DetectGlobalTUN == nil {
-		options.DetectGlobalTUN = macosnetwork.DetectGlobalTUNRoute
-	}
 	if options.Credentials == nil {
 		fileCredentials := NewFileCredentialStore(store.Dir())
 		if err := migrateSourceCredentials(context.Background(), store, fileCredentials); err != nil {
@@ -163,7 +158,6 @@ func New(options Options) (*Server, error) {
 		listInterfaces:    options.ListInterfaces,
 		discoverNeighbors: options.DiscoverNeighbors,
 		pingRouter:        options.PingRouter,
-		detectGlobalTUN:   options.DetectGlobalTUN,
 		static:            options.Static,
 		credentials:       options.Credentials,
 		fetchConnections:  mihomo.FetchConnections,
@@ -598,16 +592,6 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 		}
 		if snapshot.IPv6Default {
 			plan.Warnings = append(plan.Warnings, "IPv6 default route is active; per-device IPv4 policy can be bypassed")
-		}
-		if cfg.Transparent.TUNEnabled() && cfg.Transparent.TUNAutoRoute && s.detectGlobalTUN != nil {
-			probeCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-			conflict, found, err := s.detectGlobalTUN(probeCtx, cfg.Transparent.TUNDevice)
-			cancel()
-			if err != nil {
-				plan.Warnings = append(plan.Warnings, "could not inspect global TUN routing; startup readiness will still verify mihomo TUN: "+err.Error())
-			} else if found {
-				plan.Blockers = append(plan.Blockers, fmt.Sprintf("global TUN routing is already active via %s; stop its exit-node/global-routing mode before DHCP takeover", conflict.Interface))
-			}
 		}
 		if err := s.pingRouter(r.Context(), snapshot.Router); err != nil {
 			plan.Blockers = append(plan.Blockers, "upstream router is not reachable: "+err.Error())

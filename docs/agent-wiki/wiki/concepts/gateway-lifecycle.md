@@ -78,8 +78,7 @@ device-policy snapshot，避免把仍运行或 degraded 的网关误记为已完
 profile，也把 profile 内容 digest 写进 runtime state，作为运行版本的唯一依据。预校验失败保持现有运行态；
 stop 失败保留 state；stop 已成功但 start 失败时网关保持 stopped，由 Control API 根据
 拓扑进入明确的重试/恢复路径。Reload 不承诺零中断，也不做 mihomo/dnsmasq 热替换。
-Reload 不执行启发式全局 TUN 路由硬预检，避免刚停止的 OpenSurge 路由被误判为外部
-冲突；新 mihomo 进程仍必须通过同一套 TUN readiness，否则 start fail closed 并 rollback。
+新 mihomo 进程仍必须通过同一套 TUN readiness，否则 start fail closed 并 rollback。
 
 运行中应用 imported profile 额外包一层 config 事务：先保留旧 config，写入并验证新
 desired config，再调用上述 reload。失败时恢复旧 config；如果 reload 已完成 stop 且
@@ -102,7 +101,7 @@ applied。网关停止时应用 profile 只更新 desired，留待下次正常 s
 router 或 DNS。启动替代进程失败时 state 保持 Mihomo PID 为 0，便于再次执行恢复或完整
 `stop`；旧事故日志不会被新进程清空。Control API 在 same-WiFi DHCP 拓扑中只允许 active、
 client validated 或明确跳过客户端验收的接管阶段执行，且成功或失败都不改变 DHCP 恢复
-状态机。它同样不执行启发式全局 TUN 路由硬预检，但替代进程必须通过 TUN readiness。
+状态机。替代进程必须通过 TUN readiness。
 
 这是一条显式恢复路径，不是自动 watchdog。只有真实 same-WiFi 链路断开/重连门槛证明
 触发条件不会误判、恢复后本机 DIRECT 和代理出口均重新可用，才应增加自动触发。

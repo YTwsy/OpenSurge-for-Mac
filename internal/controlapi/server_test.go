@@ -39,73 +39,6 @@ func TestDoctorChecksForControlHidesRootPrivileges(t *testing.T) {
 	}
 }
 
-func TestGatewayPlanBlocksHighConfidenceGlobalTUNRoute(t *testing.T) {
-	server := newTestServer(t)
-	var ignoredInterface string
-	server.detectGlobalTUN = func(_ context.Context, ignored string) (macosnetwork.GlobalTUNRoute, bool, error) {
-		ignoredInterface = ignored
-		return macosnetwork.GlobalTUNRoute{Interface: "utun42"}, true, nil
-	}
-	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
-	if response.Code != http.StatusOK {
-		t.Fatalf("gateway plan status=%d body=%s", response.Code, response.Body.String())
-	}
-	var plan GatewayPlan
-	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
-		t.Fatal(err)
-	}
-	if len(plan.Blockers) == 0 || !strings.Contains(strings.Join(plan.Blockers, "\n"), "utun42") {
-		t.Fatalf("blockers = %#v", plan.Blockers)
-	}
-	if ignoredInterface != config.Default().Transparent.TUNDevice {
-		t.Fatalf("ignored interface = %q", ignoredInterface)
-	}
-}
-
-func TestGatewayPlanWarnsWhenGlobalTUNInspectionIsUnavailable(t *testing.T) {
-	server := newTestServer(t)
-	server.detectGlobalTUN = func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error) {
-		return macosnetwork.GlobalTUNRoute{}, false, errors.New("route inspection unavailable")
-	}
-	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
-	if response.Code != http.StatusOK {
-		t.Fatalf("gateway plan status=%d body=%s", response.Code, response.Body.String())
-	}
-	var plan GatewayPlan
-	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
-		t.Fatal(err)
-	}
-	if len(plan.Blockers) != 0 || !strings.Contains(strings.Join(plan.Warnings, "\n"), "route inspection unavailable") {
-		t.Fatalf("blockers=%#v warnings=%#v", plan.Blockers, plan.Warnings)
-	}
-}
-
-func TestGatewayPlanSkipsGlobalTUNInspectionOutsideDHCPMode(t *testing.T) {
-	server := newTestServer(t)
-	cfg, err := config.Load(server.configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.Gateway.Mode = config.GatewayModeSameLAN
-	cfg.DHCP.Enabled = false
-	if err := os.WriteFile(server.configPath, []byte(config.Render(cfg)), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	called := false
-	server.detectGlobalTUN = func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error) {
-		called = true
-		return macosnetwork.GlobalTUNRoute{Interface: "utun42"}, true, nil
-	}
-
-	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
-	if response.Code != http.StatusOK {
-		t.Fatalf("gateway plan status=%d body=%s", response.Code, response.Body.String())
-	}
-	if called {
-		t.Fatal("ordinary gateway plan inspected global TUN routing")
-	}
-}
-
 func TestInspectSourceInventory(t *testing.T) {
 	data := []byte(`proxies:
   - name: edge
@@ -1559,9 +1492,7 @@ runtime:
 	}
 	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
 		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi"}, {Interface: "en7", NetworkService: "USB LAN"}}, nil
-	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, DetectGlobalTUN: func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error) {
-		return macosnetwork.GlobalTUNRoute{}, false, nil
-	}, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
+	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)
 	}
