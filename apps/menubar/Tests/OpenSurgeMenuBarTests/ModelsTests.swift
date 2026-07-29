@@ -225,6 +225,31 @@ final class ModelsTests: XCTestCase {
         )
     }
 
+    func testVisibleInactivePanelNeedsOneShotActivationFallback() {
+        XCTAssertTrue(
+            menuBarNeedsForcedApplicationActivation(
+                panelPresented: true,
+                applicationActive: false
+            )
+        )
+        XCTAssertFalse(
+            menuBarNeedsForcedApplicationActivation(
+                panelPresented: false,
+                applicationActive: false
+            )
+        )
+        XCTAssertFalse(
+            menuBarNeedsForcedApplicationActivation(
+                panelPresented: true,
+                applicationActive: true
+            )
+        )
+        XCTAssertGreaterThan(
+            MenuBarPanelFocusPolicy.cooperativeActivationGrace,
+            0
+        )
+    }
+
     private func fixture(gateway: String, recovery: Bool, drift: Bool) -> MenuBarStatus {
         MenuBarStatus(schemaVersion: 1, revision: "r", gateway: gateway, topology: "same_wifi_dhcp",
                       lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded",

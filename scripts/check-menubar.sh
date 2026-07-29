@@ -80,8 +80,8 @@ grep -Fq 'button?.window?.isVisible == true' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar panel must wait until its status-item anchor is actually visible" >&2
   exit 1
 }
-grep -Fq 'panelWindow.makeKey()' "$MENU_BAR_CONTROLLER" || {
-  echo "menu bar popover should request key status after activation" >&2
+grep -Fq 'panelWindow.makeKeyAndOrderFront(nil)' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar popover should become key and frontmost after activation" >&2
   exit 1
 }
 grep -Fq 'NSApplication.shared.activate()' "$MENU_BAR_CONTROLLER" || {
@@ -89,7 +89,15 @@ grep -Fq 'NSApplication.shared.activate()' "$MENU_BAR_CONTROLLER" || {
   exit 1
 }
 grep -Fq 'activate(ignoringOtherApps: true)' "$MENU_BAR_CONTROLLER" || {
-  echo "macOS 13 must retain its compatible application activation fallback" >&2
+  echo "explicit menu panel requests must retain the macOS 26 activation fallback" >&2
+  exit 1
+}
+grep -Fq 'scheduleApplicationActivationFallback()' "$MENU_BAR_CONTROLLER" || {
+  echo "a visible inactive menu panel must schedule its bounded focus fallback" >&2
+  exit 1
+}
+grep -Fq 'menuBarNeedsForcedApplicationActivation(' "$MENU_BAR_CONTROLLER" || {
+  echo "forced activation must be gated by visible-panel and inactive-app state" >&2
   exit 1
 }
 grep -Fq 'func applicationDidBecomeActive' "$MENU_BAR_CONTROLLER" || {

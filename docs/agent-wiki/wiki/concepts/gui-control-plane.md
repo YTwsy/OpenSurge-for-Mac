@@ -20,7 +20,12 @@ AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状
 `NSPopover.show`。菜单栏 presenter 必须在状态栏按钮拥有 window 且可见后展开，但不能把
 `NSApplication.isActive` 或 popover window 的 `isKeyWindow` 当作展示前置条件：macOS 14
 及以上的 cooperative `NSApplication.activate()` 可能拒绝 LSUIElement App 的请求，激活与
-`makeKey()` 都只能是展示后的 best-effort 增强。
+key window 都只能是展示后的增强。macOS 26 还可能在用户首次打开 App 或点击状态栏图标时，
+让 popover 已出现但继续拒绝 cooperative activation。真实 popover window 已经存在后，
+如果 App 仍未 active，允许针对这次显式面板请求延迟执行一次
+`activate(ignoringOtherApps: true)`，并对现有 window 调用 `makeKeyAndOrderFront`。这个旧 API
+只作为 focus 兜底，不能参与可见性判定、重试 anchor 或反复抢焦点；App 变为 active 或面板
+关闭时必须取消尚未执行的兜底。
 
 App 未 active 时，popover 临时使用 `.applicationDefined`，由状态栏按钮、Escape 与全局鼠标
 监听负责关闭；App 获得 active 后再切为 `.transient` 并尝试令真实 window 成为 key。
@@ -29,7 +34,8 @@ SwiftUI 面板显式使用 active control appearance，状态栏按钮以持久 
 `applicationDidBecomeActive`、popover delegate 与 common run loop 上短时、有界的退避重试
 推进，不接入高频 `applicationDidUpdate`。`NSPopover.isShown` 只表示调用过 `show`，还必须
 给动画留出 window 创建宽限期并确认真实 window；超时后执行一次非阻塞兜底展示并清除
-pending，不能留下永久卡住状态。macOS 13 仅保留兼容的旧 activation fallback。
+pending，不能留下永久卡住状态。macOS 13 使用兼容的旧 activation 路径；macOS 14 及以上
+先请求 cooperative activation，旧 API 只允许进入前述的可见面板 focus 兜底。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP
