@@ -37,9 +37,11 @@ pf:
 ## 启动 readiness 与其他 TUN
 
 存在 `utun` 接口本身不是冲突证据。普通 split-route VPN、Tailscale 非 Exit Node
-路径和系统组件都可能保留或创建 utun。只读预检仅在多个分散的公网 IPv4 目标全部
-选择同一个 utun 时，把它视为高置信度全局路由接管候选；预检用于提前阻止 DHCP
-接管或改善错误信息，不能代替启动结果。macOS 无法可靠证明 utun 的进程所有权，
+路径和系统组件都可能保留或创建 utun。`same_wifi_dhcp` 接管计划的只读预检仅在多个
+分散的公网 IPv4 目标全部选择同一个 utun 时，把它视为高置信度全局路由接管候选；
+预检只用于在修改 Mac IPv4、关闭路由器 DHCP 前阻止高风险接管，不能代替启动结果，
+也不在普通 start、reload 或 `restart-mihomo` 中充当硬门槛。macOS 无法可靠证明
+utun 的进程所有权，
 因此若候选接口与配置的 `transparent.tun_device` 同名，预检必须跳过它：它可能是
 仍在清理的 OpenSurge 路由。第三方进程恰好使用同名接口时也不会提前阻断，但真实
 启动仍由下面的 readiness fail closed。

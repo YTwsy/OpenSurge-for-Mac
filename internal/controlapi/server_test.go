@@ -80,6 +80,32 @@ func TestGatewayPlanWarnsWhenGlobalTUNInspectionIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestGatewayPlanSkipsGlobalTUNInspectionOutsideDHCPMode(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.Load(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Gateway.Mode = config.GatewayModeSameLAN
+	cfg.DHCP.Enabled = false
+	if err := os.WriteFile(server.configPath, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	server.detectGlobalTUN = func(context.Context, string) (macosnetwork.GlobalTUNRoute, bool, error) {
+		called = true
+		return macosnetwork.GlobalTUNRoute{Interface: "utun42"}, true, nil
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("gateway plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	if called {
+		t.Fatal("ordinary gateway plan inspected global TUN routing")
+	}
+}
+
 func TestInspectSourceInventory(t *testing.T) {
 	data := []byte(`proxies:
   - name: edge
