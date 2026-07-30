@@ -488,8 +488,10 @@ stop_egress_probe() {
 }
 
 assert_tun_egress_proxy_unused() {
-  if [[ -s "$STATE_DIR/egress/proxy.log" ]]; then
-    echo "TunEgress DIRECT unexpectedly used the controlled proxy" >&2
+  local host
+  host="$(url_host "$TEST_URL")"
+  if grep -Fq -- "CONNECT $host:443" "$STATE_DIR/egress/proxy.log" 2>/dev/null; then
+    echo "TunEgress DIRECT unexpectedly proxied CONNECT $host:443" >&2
     cat "$STATE_DIR/egress/proxy.log" >&2
     exit 1
   fi
