@@ -37,6 +37,10 @@ enum MenuBarPanelRetryPolicy {
     }
 }
 
+enum MenuBarPanelFocusPolicy {
+    static let cooperativeActivationGrace: TimeInterval = 0.05
+}
+
 func menuBarPanelPresentationAction(
     presentationPending: Bool,
     anchorVisible: Bool,
@@ -55,6 +59,13 @@ func menuBarPanelPresentationAction(
 
 func menuBarPopoverBehavior(applicationActive: Bool) -> NSPopover.Behavior {
     applicationActive ? .transient : .applicationDefined
+}
+
+func menuBarNeedsForcedApplicationActivation(
+    panelPresented: Bool,
+    applicationActive: Bool
+) -> Bool {
+    panelPresented && !applicationActive
 }
 
 func menuBarStatusItemNeedsRefresh(
@@ -114,6 +125,7 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     private var outsideClickMonitor: Any?
     private var escapeKeyMonitor: Any?
     private var finalPresentationVerificationScheduled = false
+    private var applicationActivationFallbackScheduled = false
 
     init(model: StatusModel) {
         self.model = model
@@ -153,6 +165,7 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     func applicationDidBecomeActive() {
+        cancelApplicationActivationFallback()
         advancePanelPresentation()
         promoteVisiblePanelForActiveApplication()
     }
@@ -220,6 +233,55 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         } else {
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
+    }
+
+    private func scheduleApplicationActivationFallback() {
+        guard menuBarNeedsForcedApplicationActivation(
+            panelPresented: panelPresented,
+            applicationActive: NSApplication.shared.isActive
+        ),
+        !applicationActivationFallbackScheduled else {
+            return
+        }
+
+        applicationActivationFallbackScheduled = true
+        perform(
+            #selector(forceApplicationActivationIfNeeded),
+            with: nil,
+            afterDelay: MenuBarPanelFocusPolicy.cooperativeActivationGrace,
+            inModes: [.common]
+        )
+    }
+
+    @objc
+    private func forceApplicationActivationIfNeeded() {
+        applicationActivationFallbackScheduled = false
+        guard menuBarNeedsForcedApplicationActivation(
+            panelPresented: panelPresented,
+            applicationActive: NSApplication.shared.isActive
+        ),
+        popover.isShown,
+        let panelWindow = popover.contentViewController?.view.window else {
+            return
+        }
+
+        // macOS 26 can decline cooperative activation for an LSUIElement app
+        // even after an explicitly requested popover has a real window. Keep
+        // this deprecated call as a narrow, one-shot fallback after visibility
+        // succeeds; it must never become a presentation prerequisite.
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        panelWindow.makeKeyAndOrderFront(nil)
+        promoteVisiblePanelForActiveApplication()
+    }
+
+    private func cancelApplicationActivationFallback() {
+        guard applicationActivationFallbackScheduled else { return }
+        NSObject.cancelPreviousPerformRequests(
+            withTarget: self,
+            selector: #selector(forceApplicationActivationIfNeeded),
+            object: nil
+        )
+        applicationActivationFallbackScheduled = false
     }
 
     private func replaceFailedPopover() {
@@ -307,7 +369,7 @@ final class MenuBarController: NSObject, MenuBarPresenting {
               let panelWindow = popover.contentViewController?.view.window else {
             return
         }
-        panelWindow.makeKey()
+        panelWindow.makeKeyAndOrderFront(nil)
         popover.behavior = .transient
         removeApplicationDefinedDismissMonitors()
     }
@@ -396,6 +458,7 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         popoverWindowDeadline = nil
         setPanelPresented(true)
         promoteVisiblePanelForActiveApplication()
+        scheduleApplicationActivationFallback()
     }
 
     private func cancelPendingPresentation() {
@@ -457,6 +520,9 @@ final class MenuBarController: NSObject, MenuBarPresenting {
 
     private func setPanelPresented(_ presented: Bool) {
         panelPresented = presented
+        if !presented {
+            cancelApplicationActivationFallback()
+        }
         applyStatusItemPresentedState()
     }
 

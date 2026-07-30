@@ -183,6 +183,25 @@ struct MenuBarChecks {
             "an inactive app must own popover dismissal until activation succeeds"
         )
         try require(
+            menuBarNeedsForcedApplicationActivation(
+                panelPresented: true,
+                applicationActive: false
+            )
+                && !menuBarNeedsForcedApplicationActivation(
+                    panelPresented: false,
+                    applicationActive: false
+                )
+                && !menuBarNeedsForcedApplicationActivation(
+                    panelPresented: true,
+                    applicationActive: true
+                ),
+            "only a visible inactive panel may use the one-shot activation fallback"
+        )
+        try require(
+            MenuBarPanelFocusPolicy.cooperativeActivationGrace > 0,
+            "forced activation must allow cooperative activation to settle first"
+        )
+        try require(
             !menuBarStatusItemNeedsRefresh(
                 renderedIndicator: .running,
                 nextIndicator: .running
