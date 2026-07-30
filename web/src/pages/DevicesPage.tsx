@@ -127,14 +127,14 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
   }
 
   return <>
-    <PageHeader eyebrow="DEVICES" title="设备与规则" description="Mac 本机模式与下游设备策略彼此隔离；设备可以跟随网关规则，也可以使用独立出口。" />
+    <PageHeader eyebrow="DEVICES" title="设备与规则" description="分别设置当前 Mac 和下游设备如何选择出口；两者互不影响。" />
     {data?.drift && <DriftBanner data={data} running={overview?.status.gateway === 'running'} onReload={() => setReloadOpen(true)} onDashboard={() => onNavigate('dashboard')} />}
     {message && <div className="notice ok-notice" role="status">{message}</div>}
     {error && <div className="notice warn" role="alert">{error}{revisionConflict && <button className="inline-action" type="button" onClick={() => void discardDraft()}>放弃本地修改并加载最新版本</button>}</div>}
 
     <section className="section live-section local-routing-section">
-      <SectionTitle title="Mac 本机出口" subtitle="即时生效 · 不改变 mihomo 顶层 Rule 模式，也不改变下游设备策略" />
-      <LocalRoutingCard running={overview?.status.gateway === 'running'} interfaceName={overview?.status.interface} lanIP={overview?.status.lan_ip} healthByName={proxyHealth.byName} testing={proxyHealth.testing} onHealthTest={proxyHealth.test} onChanged={async () => { await onChanged(); await proxyHealth.refresh() }} onPolicies={() => onNavigate('policies')} />
+      <SectionTitle title="当前 Mac 的设备设置" subtitle="即时生效 · 与下游设备路由方式相互独立" />
+      <LocalRoutingCard running={overview?.status.gateway === 'running'} interfaceName={overview?.status.interface} lanIP={overview?.status.lan_ip} onChanged={async () => { await onChanged(); await proxyHealth.refresh() }} onPolicies={() => onNavigate('policies')} />
     </section>
 
     {document ? <>

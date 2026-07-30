@@ -103,7 +103,7 @@ describe('DevicesPage', () => {
 
     await screen.findByText('alice')
     const stack = document.querySelector('.device-stack') as HTMLElement
-    expect(screen.getByRole('heading', { name: 'Mac 本机流量模式' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '当前 Mac 的设备设置' })).toBeTruthy()
     expect(stack.querySelectorAll('.device-card')).toHaveLength(2)
 
     const saveBar = document.querySelector('.sticky-save') as HTMLElement
@@ -117,16 +117,24 @@ describe('DevicesPage', () => {
     expect(saveBar.classList.contains('has-changes')).toBe(true)
   })
 
-  it('switches the Mac-only mode and its dedicated global policy', async () => {
-    renderPage()
-    await screen.findByRole('heading', { name: 'Mac 本机流量模式' })
-    await userEvent.click(screen.getByRole('button', { name: '全局' }))
-    await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('global', undefined))
+  it('keeps the current Mac settings simple and delegates policy changes to the policy page', async () => {
+    const { onNavigate } = renderPage()
+    await screen.findByRole('heading', { name: '出口方式' })
+    expect(screen.getByText('根据网站和网关规则自动分流')).toBeTruthy()
+    expect(screen.queryByLabelText(/本机全局出口/)).toBeNull()
 
-    const selector = screen.getByLabelText('本机全局出口 当前出口 Proxy-A')
-    await userEvent.click(selector)
-    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Proxy-B/ }))
-    await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('global', 'Proxy-B'))
+    await userEvent.click(screen.getByRole('button', { name: '固定出口' }))
+    await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('global', undefined))
+    expect(await screen.findByText('本机公网流量统一使用当前全局策略')).toBeTruthy()
+    expect(screen.getByText('Proxy-A')).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '本机直连' }))
+    await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('direct', undefined))
+    expect(await screen.findByText('本机公网流量不使用代理')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '前往策略与节点健康 →' }))
+    expect(onNavigate).toHaveBeenCalledWith('policies')
   })
 
   it('merges desired and applied devices into four states and separates identity readiness', async () => {
