@@ -84,6 +84,22 @@ grep -Fq 'panelWindow.makeKeyAndOrderFront(nil)' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar popover should become key and frontmost after activation" >&2
   exit 1
 }
+grep -Fq 'case waitForPopoverAnimation' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar presentation must wait for the NSPopover expand animation to finish" >&2
+  exit 1
+}
+grep -Fq 'func popoverDidShow' "$MENU_BAR_CONTROLLER" || {
+  echo "menu bar presentation must observe popoverDidShow as the animation-complete signal" >&2
+  exit 1
+}
+grep -Fq 'menuBarPanelFocusAction(' "$MENU_BAR_CONTROLLER" || {
+  echo "panel focus must be gated on the popover expand animation being finished" >&2
+  exit 1
+}
+grep -Fq 'guard !awaitingPopoverShowAnimation' "$MENU_BAR_CONTROLLER" || {
+  echo "forced activation must not interrupt an in-flight popover expand animation" >&2
+  exit 1
+}
 grep -Fq 'NSApplication.shared.activate()' "$MENU_BAR_CONTROLLER" || {
   echo "macOS 14 and newer must use cooperative application activation" >&2
   exit 1

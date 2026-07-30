@@ -153,8 +153,19 @@ struct MenuBarChecks {
             "a logical popover still missing its window after the grace interval must be replaced"
         )
         try require(
+            panelPresentationAction(popoverAnimationFinished: false) == .waitForPopoverAnimation,
+            "an existing popover window must not be mistaken for a finished expand animation"
+        )
+        try require(
+            panelPresentationAction(
+                popoverAnimationFinished: false,
+                popoverAnimationWaitExpired: true
+            ) == .complete,
+            "a missing popoverDidShow must not keep the panel pending forever"
+        )
+        try require(
             panelPresentationAction() == .complete,
-            "a real popover window must complete presentation without waiting for activation or key status"
+            "a shown popover must complete presentation without waiting for activation or key status"
         )
         try require(
             menuBarPanelPresentationAction(
@@ -162,9 +173,20 @@ struct MenuBarChecks {
                 anchorVisible: true,
                 popoverShown: true,
                 panelWindowAvailable: false,
-                popoverWindowWaitExpired: true
+                popoverWindowWaitExpired: true,
+                popoverAnimationFinished: true,
+                popoverAnimationWaitExpired: true
             ) == .none,
             "a completed or abandoned presentation must not keep advancing"
+        )
+        try require(
+            presentationActionsDuringActivationRace() == [
+                .showPopover,
+                .waitForPopoverAnimation,
+                .waitForPopoverAnimation,
+                .complete
+            ],
+            "activation arriving during the expand animation must not promote the panel window early"
         )
         try require(
             MenuBarPanelRetryPolicy.delay(after: 0) == 0.05
@@ -176,6 +198,12 @@ struct MenuBarChecks {
             MenuBarPanelRetryPolicy.presentationWindow
                 > MenuBarPanelRetryPolicy.popoverWindowGrace,
             "the bounded startup retry window must allow at least one failed popover recovery"
+        )
+        try require(
+            MenuBarPanelRetryPolicy.popoverShowAnimationGrace > 0
+                && MenuBarPanelRetryPolicy.popoverShowAnimationGrace
+                    < MenuBarPanelRetryPolicy.popoverWindowGrace,
+            "the expand animation grace must be bounded and shorter than the window grace"
         )
         try require(
             menuBarPopoverBehavior(applicationActive: false) == .applicationDefined
@@ -200,6 +228,35 @@ struct MenuBarChecks {
         try require(
             MenuBarPanelFocusPolicy.cooperativeActivationGrace > 0,
             "forced activation must allow cooperative activation to settle first"
+        )
+        try require(
+            menuBarPanelFocusAction(
+                panelWindowAvailable: true,
+                applicationActive: true,
+                popoverShowAnimationInFlight: true
+            ) == .deferUntilPopoverDidShow,
+            "panel focus must never touch a popover window that is still animating open"
+        )
+        try require(
+            menuBarPanelFocusAction(
+                panelWindowAvailable: true,
+                applicationActive: true,
+                popoverShowAnimationInFlight: false
+            ) == .promote,
+            "a finished expand animation must let an active app key the panel window"
+        )
+        try require(
+            menuBarPanelFocusAction(
+                panelWindowAvailable: true,
+                applicationActive: false,
+                popoverShowAnimationInFlight: false
+            ) == .none
+                && menuBarPanelFocusAction(
+                    panelWindowAvailable: false,
+                    applicationActive: true,
+                    popoverShowAnimationInFlight: false
+                ) == .none,
+            "panel focus requires both a real panel window and an active application"
         )
         try require(
             !menuBarStatusItemNeedsRefresh(
@@ -295,15 +352,50 @@ private func panelPresentationAction(
     anchorVisible: Bool = true,
     popoverShown: Bool = true,
     panelWindowAvailable: Bool = true,
-    popoverWindowWaitExpired: Bool = true
+    popoverWindowWaitExpired: Bool = true,
+    popoverAnimationFinished: Bool = true,
+    popoverAnimationWaitExpired: Bool = false
 ) -> MenuBarPanelPresentationAction {
     menuBarPanelPresentationAction(
         presentationPending: true,
         anchorVisible: anchorVisible,
         popoverShown: popoverShown,
         panelWindowAvailable: panelWindowAvailable,
-        popoverWindowWaitExpired: popoverWindowWaitExpired
+        popoverWindowWaitExpired: popoverWindowWaitExpired,
+        popoverAnimationFinished: popoverAnimationFinished,
+        popoverAnimationWaitExpired: popoverAnimationWaitExpired
     )
+}
+
+// Reopening an already running App activates the process while the popover is
+// expanding. Every tick until popoverDidShow must stay in the waiting state.
+private func presentationActionsDuringActivationRace() -> [MenuBarPanelPresentationAction] {
+    var popoverShown = false
+    var animationFinished = false
+    var actions: [MenuBarPanelPresentationAction] = []
+
+    for step in 0..<4 {
+        let action = panelPresentationAction(
+            popoverShown: popoverShown,
+            panelWindowAvailable: popoverShown,
+            popoverWindowWaitExpired: false,
+            popoverAnimationFinished: animationFinished
+        )
+        actions.append(action)
+        switch action {
+        case .showPopover:
+            // NSPopover reports isShown and owns a window before it finished
+            // animating open.
+            popoverShown = true
+        case .waitForPopoverAnimation:
+            // The activation notification lands here; popoverDidShow only
+            // arrives on the last tick.
+            animationFinished = step >= 2
+        default:
+            break
+        }
+    }
+    return actions
 }
 
 private func requestBody(_ request: URLRequest) -> Data {
