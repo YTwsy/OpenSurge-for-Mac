@@ -6,10 +6,8 @@
 
 <!-- 发布前请更新为当前版本的主要变化，并同步维护 English / Highlights。 -->
 
-- 菜单栏状态面板不再把 App 激活或 key window 当作显示前置条件；首次启动会等待状态栏锚点真正上屏，并在协作式激活被系统拒绝时仍继续展示。
-- 面板打开期间会自行管理关闭行为，并保持“打开 OpenSurge 面板”按钮与状态栏图标的系统强调状态；快速状态轮询不会再清除选中外观。
-- 修复失败的 `NSPopover` 逻辑状态与重试兜底，避免启动后必须再次点击 App 或状态栏图标才能展开面板。
-- 升级安装器只停止已安装路径中的 OpenSurge App 与 Control Service，不再因仓库或临时目录中的同名开发进程而错误拒绝安装。
+- 新增「这台 Mac 的出口方式」控制：网关运行期间可在控制面为本机公网流量切换 **按规则 / 固定出口 / 本机直连** 三种模式，并展示当前全局出口。
+- TUN 启动异常检查：网关现在会校验 TUN 就绪状态并处理 DHCP 放弃（DHCP abandonment），加固就绪恢复路径，容忍更慢的运行时状态读取；移除投机式 TUN 预检，将预检限定到 DHCP 规划。
 
 ### 选择安装包
 
@@ -57,10 +55,8 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ### Highlights
 
-- The menu-bar panel no longer treats application activation or key-window status as visibility prerequisites. First launch waits for a real status-item anchor and continues presenting even when cooperative activation is declined.
-- While visible, the panel manages its own dismissal and preserves the system accent appearance of both the primary OpenSurge action and the status item across rapid status polling.
-- Failed logical `NSPopover` states now recover through bounded retries and a final fallback, avoiding the need to click the app or status item again after launch.
-- Installer upgrades now stop only OpenSurge processes from installed paths, so same-name development builds in repositories or temporary directories no longer cause false installation failures.
+- Added a "this Mac" routing control: while the gateway is running, the control plane can switch the local Mac's public traffic between **rule-based / fixed-outlet / direct** modes and shows the current global outlet.
+- TUN startup anomaly checks: the gateway now verifies TUN readiness and handles DHCP abandonment, hardens the readiness recovery path, tolerates slower runtime state reads, and drops speculative TUN preflight (preflight is now limited to DHCP planning).
 
 ### Choose a package
 
