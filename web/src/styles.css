@@ -202,6 +202,15 @@ button{cursor:pointer}
 .this-mac h3{margin:8px 0}
 .this-mac p{color:#7f938b}
 .this-mac .global-groups{grid-template-columns:repeat(2,minmax(0,1fr))}
+.local-routing-section .this-mac{max-width:none}
+.local-mode-switch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:17px 0 12px;padding:5px;border:1px solid #315246;border-radius:12px;background:#091512}
+.local-mode-switch button{min-height:39px;border:0;border-radius:8px;background:transparent;color:#80978e;font-weight:800}
+.local-mode-switch button[aria-pressed="true"]{background:#216044;color:#d6ffeb;box-shadow:0 3px 12px #0005}
+.local-mode-switch button:disabled{opacity:.38;cursor:not-allowed}
+.local-global-policy{margin-top:12px}
+.local-routing-note{display:flex;flex-wrap:wrap;gap:7px 15px;margin-top:12px;color:#7d938a;font-size:10px;line-height:1.45}
+.local-routing-note .attention{color:#ffc16b}
+.local-routing-warning{margin:12px 0 0;padding:10px 12px}
 .device-identity{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .device-identity code,.device-identity small{margin:0}
 .slots{display:grid;gap:8px;margin-top:18px}
@@ -414,6 +423,9 @@ html[data-theme="light"] .sidebar-status{border-color:#cbded6}
 html[data-theme="light"] .theme-toggle{background:#edf6f2;border-color:#bed6cc;color:#254c3e}
 html[data-theme="light"] .theme-toggle:hover{background:#dcece5;border-color:#69b895}
 html[data-theme="light"] .gateway-card,html[data-theme="light"] .metric,html[data-theme="light"] .section,html[data-theme="light"] .mode,html[data-theme="light"] .this-mac,html[data-theme="light"] .device-card,html[data-theme="light"] .policy-list article{background:#fff;border-color:#cbded6}
+html[data-theme="light"] .local-mode-switch{background:#f2f8f5;border-color:#b9d3c8}
+html[data-theme="light"] .local-mode-switch button{color:#60776e}
+html[data-theme="light"] .local-mode-switch button[aria-pressed="true"]{background:#d8eee4;color:#1f5b43;box-shadow:none}
 html[data-theme="light"] .gateway-health-card,html[data-theme="light"] .live-rate-card,html[data-theme="light"] .activity-card,html[data-theme="light"] .traffic-trend-card{background:#fff;border-color:#cbded6;box-shadow:0 16px 42px #2a594315}
 html[data-theme="light"] .gateway-health-main p,html[data-theme="light"] .rate-caption,html[data-theme="light"] .trend-card-header p,html[data-theme="light"] .traffic-section-heading p{color:#60776e}
 html[data-theme="light"] .gateway-meta{background:#f5faf8;border-color:#d1e2db}html[data-theme="light"] .gateway-meta small{color:#71877e}html[data-theme="light"] .gateway-meta strong{color:#27483c}html[data-theme="light"] .gateway-meta.ok{background:#e8f5ef;border-color:#add2c1}html[data-theme="light"] .gateway-meta.ok strong{color:#287557}html[data-theme="light"] .gateway-meta.warn{background:#fff2cf;border-color:#ddc584}html[data-theme="light"] .gateway-meta.warn strong{color:#916719}

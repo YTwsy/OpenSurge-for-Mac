@@ -106,7 +106,8 @@ the device ID as their name.
 `egress_mode` is either:
 
 - `inherit_global`: device overrides remain active, then unmatched traffic
-  follows the same global rules and terminal `MATCH` used by the Mac;
+  follows the imported/managed gateway rules and terminal `MATCH`. It does not
+  follow the local-Mac Rule / Global / Direct switch;
 - `dedicated`: unmatched public-Internet traffic uses the device-owned
   `device/<device-id>/default` selector before global rules. Local, private,
   link-local, CGNAT, and multicast destinations remain `DIRECT`.
@@ -133,6 +134,9 @@ proxy/group namespace before start. `DIRECT`, `REJECT`, `REJECT-DROP`, and
 `REJECT-TINYGIF` are the explicit built-ins. OpenSurge reserves `device/` for
 generated groups and `open-surge-ruleset-` for generated rule providers, so an
 imported profile may not occupy those namespaces.
+The `open-surge/mac-*` namespace is reserved for local-Mac routing, so imported
+proxies and groups may not occupy it either. See
+[local Mac routing modes](local-mac-routing.md).
 
 ## Matching and precedence
 
@@ -145,12 +149,14 @@ protocol compile to:
 AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,media.example),(NETWORK,tcp)),device/alice-phone/media
 ```
 
-Generated ordering is deliberate. All modes put device-specific overrides
-before global rules. `inherit_global` then continues through global rules and
-the terminal `MATCH`. `dedicated` adds source-scoped local/private `DIRECT`
-guards first, followed by device overrides, the device default selector,
-global rules, and the terminal `MATCH`. A legacy document keeps its historical
-device default after global rules and before `MATCH`.
+Generated ordering is deliberate. Source-scoped local-Mac mode rules come
+first, but downstream source addresses cannot match them. All device modes put
+device-specific overrides before gateway rules. `inherit_global` then
+continues through imported/managed gateway rules and the terminal `MATCH`.
+`dedicated` adds source-scoped local/private `DIRECT` guards first, followed by
+device overrides, the device default selector, gateway rules, and the terminal
+`MATCH`. A legacy document keeps its historical device default after gateway
+rules and before `MATCH`.
 
 An imported profile must keep `MATCH` terminal. OpenSurge rejects an imported
 profile that places later rules after a terminal `MATCH`, because the device

@@ -202,11 +202,15 @@ config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的�
 配置填写提示应作为表单内的低强调步骤说明，保存区与最后一组字段保持明确间距，并显示
 当前已保存或存在未保存修改，避免按钮紧贴字段卡片。
 
-设备页的主交互必须区分绿色“即时生效”和黄色“需重载”。前者只允许切换已应用的非
-`device/` 全局组和 `device/<id>/<slot>`；后者编辑 desired 设备身份、路由模式、候选与规则。
-设备路由模式是 `inherit_global`（跟随本机/全局规则）或 `dedicated`（公网流量优先设备
-default selector，本地/私网保持直连）；缺失字段显示旧版兼容状态并要求显式迁移。
-全局组说明不得暗示 macOS system proxy 或统一 fallback。DHCP 模式的登记面板复用
+设备页先显示独立的 Mac 本机模式卡片；它只调用 `GET/POST /api/v1/local-routing`，
+在规则 / 全局 / 直连之间协调 `open-surge/mac-*` 隐藏 selector。卡片必须说明只影响
+TUN/本机显式代理的新连接，不修改 macOS system proxy，也不改变下游设备。
+
+下游设备交互继续区分绿色“即时生效”和黄色“需重载”。前者只允许切换已应用的
+`device/<id>/<slot>`；后者编辑 desired 设备身份、路由模式、候选与规则。设备路由模式
+是 `inherit_global`（跟随 imported/managed 网关规则，不跟随 Mac 本机开关）或
+`dedicated`（公网流量优先设备 default selector，本地/私网保持直连）；缺失字段显示
+旧版兼容状态并要求显式迁移。DHCP 模式的登记面板复用
 OpenSurge lease 自动填写 hostname、MAC 与 IPv4；`same_lan` 则列出 mihomo 当前观察到且
 与 gateway 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补 MAC。只有当前经过 Mac 的
 设备会出现，ARP/流量观察不得显示为 DHCP 验证。登记默认创建 `<device-id>-policy` 私有 Profile；首次
@@ -222,7 +226,9 @@ Mac 上 mihomo 到检测地址的节点可达性，不是下游设备数据面�
 连通性页使用后端固定 catalog，避免把任意 URL 探测变成 SSRF 接口。
 `POST /api/v1/connectivity/tests` 从 Control Service 经 applied runtime mixed-port 发起
 三轮请求，并在请求仍活跃时尽力关联 mihomo connection 的 rule、rule payload 和 chain。
-它能证明 applied 全局规则路径，不证明设备 `SRC-IP-CIDR`、DHCP、DNS 或 TUN。页面把
+loopback 来源会进入当前 Mac 本机模式，因此 scope 是 `local_mac_runtime`；它证明
+applied 配置 + 本机运行路径，不证明下游网关规则、设备 `SRC-IP-CIDR`、DHCP、DNS 或
+TUN。页面把
 Net.Coffee 明确标为浏览器本机外部检测，并把尚无真实客户端发起器的“设备端检测”显示
 为不可用，不能把三种 scope 合并为一个模糊的“网络正常”。
 

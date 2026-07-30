@@ -305,6 +305,13 @@ func TestValidateRejectsInvalidUpstreamProxy(t *testing.T) {
 			},
 			want: "upstream_proxy.port must be between 1 and 65535",
 		},
+		{
+			name: "reserved local routing name",
+			edit: func(cfg *Config) {
+				cfg.UpstreamProxy.Name = "open-surge/mac-global"
+			},
+			want: "upstream_proxy.name must differ from reserved OpenSurge proxy groups",
+		},
 	}
 
 	for _, tt := range tests {

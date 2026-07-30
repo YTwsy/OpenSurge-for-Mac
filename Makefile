@@ -1,7 +1,7 @@
 .PHONY: test build doctor status policy-control-test
 .PHONY: web-install web-build web-test control-build control-run menubar-build menubar-test gui-build gui-test gui-installer gui-notarize
 .PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
-.PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-test-tun-device-policy lab-down lab-destroy
+.PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-test-tun-local-routing lab-test-tun-device-policy lab-down lab-destroy
 .PHONY: real-device-start-off real-device-start-tun real-device-start-tun-proxy
 .PHONY: real-device-stop real-device-status real-device-client-check
 .PHONY: same-lan-start-tun same-lan-start-tun-proxy same-lan-start-tun-imported-egress
@@ -88,6 +88,9 @@ lab-test-tun-imported-profile:
 
 lab-test-tun-imported-egress:
 	OMG_LAB_MIHOMO_PROFILE=tests/lab/mihomo-profile.imported-tun-egress.yaml ./tests/lab/lab.sh test-tun
+
+lab-test-tun-local-routing:
+	OMG_LAB_MIHOMO_PROFILE=tests/lab/mihomo-profile.imported-tun-egress.yaml OMG_LAB_LOCAL_ROUTING_TEST=true ./tests/lab/lab.sh test-tun
 
 lab-test-tun-device-policy:
 	./tests/lab/lab.sh test-tun-device-policy

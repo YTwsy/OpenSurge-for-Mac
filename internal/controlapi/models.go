@@ -262,6 +262,16 @@ type SelectionRequest struct {
 	Policy string `json:"policy"`
 }
 
+type LocalRoutingRequest struct {
+	Mode         string `json:"mode"`
+	GlobalPolicy string `json:"global_policy,omitempty"`
+}
+
+type LocalRoutingResponse struct {
+	SchemaVersion int `json:"schema_version"`
+	mihomo.LocalRoutingSnapshot
+}
+
 type DevicesResponse struct {
 	SchemaVersion    int                     `json:"schema_version"`
 	DesiredDigest    string                  `json:"desired_digest,omitempty"`

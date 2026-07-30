@@ -91,7 +91,7 @@ func (s *Server) handleConnectivity(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, ConnectivityResponse{
 		SchemaVersion: SchemaVersion,
 		Source:        "gateway_mihomo",
-		Scope:         "applied_global_rules",
+		Scope:         "local_mac_runtime",
 		Rounds:        connectivityProbeRounds,
 		Targets:       connectivityCatalog(),
 		Results:       []ConnectivityResult{},
@@ -136,7 +136,7 @@ func (s *Server) handleConnectivityTests(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, ConnectivityResponse{
 		SchemaVersion: SchemaVersion,
 		Source:        "gateway_mihomo",
-		Scope:         "applied_global_rules",
+		Scope:         "local_mac_runtime",
 		Rounds:        connectivityProbeRounds,
 		Targets:       connectivityCatalog(),
 		Results:       results,

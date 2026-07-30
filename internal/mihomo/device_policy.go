@@ -24,6 +24,7 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 	if err != nil {
 		return "", err
 	}
+	localRouting := buildLocalRoutingPolicy(cfg, imported)
 	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
 		if imported == nil {
 			return "", fmt.Errorf("imported mihomo profile was not loaded")
@@ -31,12 +32,12 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 		if err := validateImportedPolicySections(imported.inventory, sections); err != nil {
 			return "", err
 		}
-		return composeImportedPolicySections(imported, sections)
+		return composeImportedPolicySections(imported, sections, localRouting)
 	}
 	if err := validateManagedPolicySections(cfg, sections); err != nil {
 		return "", err
 	}
-	return composeManagedPolicySections(cfg, sections), nil
+	return composeManagedPolicySections(cfg, sections, localRouting), nil
 }
 
 func loadPolicySections(bundle *device.PolicyBundle, path string) (policySections, error) {
@@ -60,7 +61,7 @@ func loadPolicySections(bundle *device.PolicyBundle, path string) (policySection
 	}, nil
 }
 
-func composeManagedPolicySections(cfg config.Config, policy policySections) string {
+func composeManagedPolicySections(cfg config.Config, policy policySections, localRouting localRoutingGeneratedPolicy) string {
 	var out strings.Builder
 	if cfg.UpstreamProxy.Enabled {
 		out.WriteString("proxies:\n")
@@ -79,13 +80,17 @@ func composeManagedPolicySections(cfg config.Config, policy policySections) stri
 		out.WriteString("proxies: []\n\n")
 	}
 
-	managedGroups := []device.SelectorGroup(nil)
-	if cfg.UpstreamProxy.Enabled {
-		managedGroups = append(managedGroups, device.SelectorGroup{Name: "open-surge-egress", Policies: []string{cfg.UpstreamProxy.Name}})
-	}
-	managedGroups = append(managedGroups, policy.groups...)
-	if len(managedGroups) > 0 {
-		out.WriteString(renderSelectorGroups(managedGroups))
+	if cfg.UpstreamProxy.Enabled || len(localRouting.Groups) > 0 || len(policy.groups) > 0 {
+		out.WriteString("proxy-groups:\n")
+		if cfg.UpstreamProxy.Enabled {
+			out.WriteString(renderSelectorGroupItems([]device.SelectorGroup{{Name: "open-surge-egress", Policies: []string{cfg.UpstreamProxy.Name}}}))
+			out.WriteString("\n")
+		}
+		out.WriteString(renderLocalRoutingGroupItems(localRouting.Groups))
+		if len(policy.groups) > 0 {
+			out.WriteString("\n")
+			out.WriteString(renderSelectorGroupItems(policy.groups))
+		}
 		out.WriteString("\n")
 	}
 	if len(policy.providers) > 0 {
@@ -93,7 +98,8 @@ func composeManagedPolicySections(cfg config.Config, policy policySections) stri
 		out.WriteString("\n")
 	}
 
-	rules := orderedDevicePreRules(policy)
+	rules := append([]string{}, localRouting.Rules...)
+	rules = append(rules, orderedDevicePreRules(policy)...)
 	if cfg.UpstreamProxy.Enabled {
 		rules = append(rules, "DOMAIN,"+cfg.UpstreamProxy.MatchDomain+",open-surge-egress")
 	}
@@ -104,17 +110,47 @@ func composeManagedPolicySections(cfg config.Config, policy policySections) stri
 	return out.String()
 }
 
-func composeImportedPolicySections(imported *importedProfile, policy policySections) (string, error) {
+func composeImportedPolicySections(imported *importedProfile, policy policySections, localRouting localRoutingGeneratedPolicy) (string, error) {
+	appendImportedLocalRoutingGroups(imported, localRouting.Groups)
 	if len(policy.groups) > 0 {
 		appendImportedSelectorGroups(imported, policy.groups)
 	}
 	if len(policy.providers) > 0 {
 		appendImportedRuleProviders(imported, policy.providers)
 	}
-	if err := composeImportedRules(imported.sections["rules"], orderedDevicePreRules(policy), policy.defaults); err != nil {
+	preRules := append([]string{}, localRouting.Rules...)
+	preRules = append(preRules, orderedDevicePreRules(policy)...)
+	if err := composeImportedRules(imported.sections["rules"], preRules, policy.defaults); err != nil {
 		return "", err
 	}
 	return renderImportedProfileSections(imported)
+}
+
+func appendImportedLocalRoutingGroups(imported *importedProfile, groups []localRoutingGeneratedGroup) {
+	section := ensureImportedSection(imported, "proxy-groups", yaml.SequenceNode, "!!seq")
+	section.Style &^= yaml.FlowStyle
+	for _, group := range groups {
+		body := mappingNode(
+			stringNode("name"), stringNode(group.Name),
+			stringNode("type"), stringNode("select"),
+		)
+		if len(group.Policies) > 0 {
+			policies := make([]*yaml.Node, 0, len(group.Policies))
+			for _, policy := range group.Policies {
+				policies = append(policies, quotedStringNode(policy))
+			}
+			body.Content = append(body.Content, stringNode("proxies"), sequenceNode(policies...))
+		}
+		if len(group.Providers) > 0 {
+			providers := make([]*yaml.Node, 0, len(group.Providers))
+			for _, provider := range group.Providers {
+				providers = append(providers, quotedStringNode(provider))
+			}
+			body.Content = append(body.Content, stringNode("use"), sequenceNode(providers...))
+		}
+		body.Content = append(body.Content, stringNode("hidden"), boolNode(true))
+		section.Content = append(section.Content, body)
+	}
 }
 
 func appendImportedSelectorGroups(imported *importedProfile, groups []device.SelectorGroup) {
@@ -250,13 +286,16 @@ func orderedDevicePreRules(policy policySections) []string {
 }
 
 func validateImportedPolicySections(inventory importedProfileInventory, policy policySections) error {
-	if policy.bundle == nil {
-		return nil
-	}
 	for name := range inventory.targets {
+		if IsLocalRoutingGroup(name) {
+			return fmt.Errorf("imported mihomo profile target %q occupies reserved %s namespace", name, LocalRoutingGroupPrefix)
+		}
 		if strings.HasPrefix(name, "device/") {
 			return fmt.Errorf("imported mihomo profile target %q occupies reserved device/ namespace", name)
 		}
+	}
+	if policy.bundle == nil {
+		return nil
 	}
 	for name := range inventory.ruleProviders {
 		if strings.HasPrefix(name, "open-surge-ruleset-") {
@@ -324,6 +363,28 @@ func renderSelectorGroupItems(groups []device.SelectorGroup) string {
 		for _, policy := range group.Policies {
 			out.WriteString("      - " + yamlQuote(policy) + "\n")
 		}
+	}
+	return strings.TrimRight(out.String(), "\n")
+}
+
+func renderLocalRoutingGroupItems(groups []localRoutingGeneratedGroup) string {
+	var out strings.Builder
+	for _, group := range groups {
+		out.WriteString("  - name: " + yamlQuote(group.Name) + "\n")
+		out.WriteString("    type: select\n")
+		if len(group.Policies) > 0 {
+			out.WriteString("    proxies:\n")
+			for _, policy := range group.Policies {
+				out.WriteString("      - " + yamlQuote(policy) + "\n")
+			}
+		}
+		if len(group.Providers) > 0 {
+			out.WriteString("    use:\n")
+			for _, provider := range group.Providers {
+				out.WriteString("      - " + yamlQuote(provider) + "\n")
+			}
+		}
+		out.WriteString("    hidden: true\n")
 	}
 	return strings.TrimRight(out.String(), "\n")
 }

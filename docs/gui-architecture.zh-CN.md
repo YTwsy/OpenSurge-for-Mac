@@ -120,10 +120,15 @@ Service 启动，已有快照仍可使用，刷新地址可通过重新导入补
 网关运行或恢复未完成时拒绝 topology 修改。网络页可切换 `same_lan`、
 `same_wifi_dhcp`、`isolated_lan`，并可初始化空 device-policy 文件。
 
-设备页把 applied 与 desired 持续分为两层：顶部绿色“即时生效”只切换已经应用的全局或
-`device/<id>/<slot>` selector；下方黄色“保存后重载”才编辑设备身份、selector 成员和
-规则。`THIS MAC` 只列出非 `device/` 的既有全局组，并明确它只影响当前规则引用该组的
-流量，不代表全部 Mac 流量、未匹配流量或 macOS 系统代理。
+设备页把 Mac 本机控制与下游设备控制明确分开。顶部 Mac 卡片通过专用
+`GET/POST /api/v1/local-routing` 切换规则 / 全局 / 直连；后端协调隐藏的
+`open-surge/mac-*` TCP/UDP selector，普通 policies/overview 不展示这些内部组，
+普通 selector API 也拒绝修改。它只影响经 TUN 或本机显式代理进入 mihomo 的新连接，
+不修改 macOS system proxy，不改变下游设备。
+
+下游设备继续把 applied 与 desired 分为两层：绿色“即时生效”只切换已经应用的
+`device/<id>/<slot>` selector；黄色“保存后重载”才编辑设备身份、路由方式、selector
+成员和规则。`inherit_global` 在界面称为“跟随网关规则”，不得称为跟随 Mac 本机模式。
 
 普通登记默认创建 `<device-id>-policy` 私有 Profile。设备首次从主路径修改共享 Profile
 或继承 Template 的 Profile 时，前端把解析后的有效候选与规则复制到无 Template 的私有
@@ -146,9 +151,10 @@ JSON 结构检查。`GET /api/v1/devices` 同时返回 desired/applied 设备与
 
 连通性页使用后端固定目录，`POST /api/v1/connectivity/tests` 由 Control Service 通过
 当前 runtime mixed-port 对每个真实站点进行三轮请求，展示中位延迟，并尝试从活动
-connections 采集命中规则、payload 和完整出口 chain。它只证明 applied 全局 mihomo
-路径，不能伪装成某台下游设备的 `SRC-IP`、DHCP、DNS 或 TUN 证据。Net.Coffee 以外链
-方式保留为浏览器本机线路检测，并与网关策略路径明确分栏；前端不会代理或嵌入第三方
+connections 采集命中规则、payload 和完整出口 chain。因为请求来自 Control Service
+loopback，它会进入当前 Mac 本机模式；只证明 applied 配置 + 本机运行路径，不能当成
+下游网关规则或某台设备的 `SRC-IP`、DHCP、DNS、TUN 证据。Net.Coffee 以外链
+方式保留为浏览器本机线路检测，并与 Mac 本机运行路径明确分栏；前端不会代理或嵌入第三方
 页面，也不会把浏览器结果归因到 OpenSurge 网关。
 
 `POST /api/v1/gateway/reload`、`omg reload` 和运行中来源应用共用 operation/audit 与

@@ -57,6 +57,7 @@ make lab-test
 make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
+make lab-test-tun-local-routing
 make lab-test-tun-device-policy
 make lab-down
 ```
@@ -78,6 +79,12 @@ CONNECT proxy，然后通过 `omg policy-select` 把 `TunEgress` 从 `DIRECT` �
 代理。它证明 provider-backed 策略选择会改变透明 TUN 出口路径；它不证明真实订阅
 节点或远端出口 IP。受控代理会把上游 DNS 和 TCP 拨号都绑定到物理 upstream
 interface，避免代理自身流量重新进入 TUN 或使用 fake IP。
+
+`lab-test-tun-local-routing` 使用同一 imported egress fixture，验证 Mac 本机
+规则 / 全局 / 直连和下游客户端彼此隔离：本机 Global 使用受控代理时，下游仍可按
+网关规则直连；本机 Direct 绕过代理时，下游仍可按网关规则使用代理。它还验证本机
+TUN source、HTTP-only 全局出口的 UDP `REJECT`，以及内部组不会出现在普通
+`policies` 输出。
 
 `lab-test-tun-device-policy` 会把两个客户端作为独立识别的 LAN 设备，给它们分配
 固定 `.101`/`.102` DHCP 租约，先证明 `dedicated` 设备在全局 `MATCH` 前使用 selector，
@@ -124,6 +131,7 @@ make lab-test     # 运行端到端测试并恢复主机
 make lab-test-tun # 运行 TUN 透明代理门禁
 make lab-test-tun-imported-profile # 使用 imported profile fixture 跑 TUN
 make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
+make lab-test-tun-local-routing # 验证 Mac 本机模式与下游隔离
 make lab-test-tun-device-policy # 验证独立的每设备 TUN 策略
 make lab-down     # 停止客户端并移除 host network
 make lab-destroy  # 同时删除持久化的 Lima 客户端磁盘

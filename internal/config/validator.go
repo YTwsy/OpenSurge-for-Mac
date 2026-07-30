@@ -268,8 +268,8 @@ func validateUpstreamProxy(cfg UpstreamProxyConfig) error {
 	if strings.TrimSpace(cfg.Name) == "" {
 		return fmt.Errorf("upstream_proxy.name is required when upstream_proxy.enabled is true")
 	}
-	if strings.TrimSpace(cfg.Name) == "open-surge-egress" {
-		return fmt.Errorf("upstream_proxy.name must differ from reserved proxy group open-surge-egress")
+	if strings.TrimSpace(cfg.Name) == "open-surge-egress" || strings.HasPrefix(strings.TrimSpace(cfg.Name), "open-surge/mac-") {
+		return fmt.Errorf("upstream_proxy.name must differ from reserved OpenSurge proxy groups")
 	}
 	if !validRuleToken(cfg.Name) {
 		return fmt.Errorf("upstream_proxy.name must not contain whitespace, commas, or control characters")
