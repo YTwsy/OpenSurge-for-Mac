@@ -104,7 +104,14 @@ final class OpenSurgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        presenter?.showPanel()
+        // A LaunchServices reopen can arrive while this LSUIElement process is
+        // still inactive. Force the activation requested by the user's click,
+        // then let AppKit complete that transition before starting the
+        // NSPopover animation on the next main-run-loop turn.
+        sender.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [weak self] in
+            self?.presenter?.showPanel()
+        }
         return false
     }
 }

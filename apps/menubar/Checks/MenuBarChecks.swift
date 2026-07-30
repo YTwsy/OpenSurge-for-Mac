@@ -114,13 +114,13 @@ struct MenuBarChecks {
         let forwardingAlreadyEnabled = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "isolated_lan", lanIp: "192.168.50.1", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "enabled", clientCount: 0, drift: false, doctorHealthy: true, recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
         try require(!forwardingAlreadyEnabled.gatewayServicesActive && forwardingAlreadyEnabled.canQuitOpenSurge && forwardingAlreadyEnabled.canUninstall, "host forwarding must not block quit or uninstall")
 
-        let (useDefaultReopen, presentationCount) = await MainActor.run {
-            let panelPresenter = CheckMenuBarPresenter()
-            let appDelegate = OpenSurgeAppDelegate(presenter: panelPresenter)
-            let useDefaultReopen = appDelegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false)
-            return (useDefaultReopen, panelPresenter.presentationCount)
-        }
-        try require(!useDefaultReopen && presentationCount == 1, "opening OpenSurge again must show the menu bar panel")
+        let reopen = await presentationCountsAfterReopen()
+        try require(
+            !reopen.useDefault
+                && reopen.immediate == 0
+                && reopen.afterMainTurn == 1,
+            "opening OpenSurge again must activate first and defer the menu bar panel by one main-run-loop turn"
+        )
 
         let launchPresentationCount = await presentationCountAfterLaunch()
         try require(launchPresentationCount == 1, "launching OpenSurge must show the menu bar panel")
@@ -233,6 +233,28 @@ struct MenuBarChecks {
 
         print("OpenSurge menu bar checks passed")
     }
+}
+
+@MainActor
+private func presentationCountsAfterReopen() async -> (
+    useDefault: Bool,
+    immediate: Int,
+    afterMainTurn: Int
+) {
+    let panelPresenter = CheckMenuBarPresenter()
+    let appDelegate = OpenSurgeAppDelegate(presenter: panelPresenter)
+    let useDefault = appDelegate.applicationShouldHandleReopen(
+        NSApplication.shared,
+        hasVisibleWindows: false
+    )
+    let immediate = panelPresenter.presentationCount
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        DispatchQueue.main.async {
+            continuation.resume()
+        }
+    }
+    withExtendedLifetime(appDelegate) {}
+    return (useDefault, immediate, panelPresenter.presentationCount)
 }
 
 @MainActor

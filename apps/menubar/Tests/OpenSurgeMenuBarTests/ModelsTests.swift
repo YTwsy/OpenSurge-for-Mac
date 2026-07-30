@@ -145,13 +145,16 @@ final class ModelsTests: XCTestCase {
     }
 
     @MainActor
-    func testReopeningAppShowsMenuBarPanel() {
+    func testReopeningAppDefersMenuBarPanelUntilTheNextMainRunLoopTurn() async {
         let presenter = RecordingMenuBarPresenter()
         let delegate = OpenSurgeAppDelegate(presenter: presenter)
 
         XCTAssertFalse(delegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false))
-        let presentationCount = presenter.presentationCount
-        XCTAssertEqual(presentationCount, 1)
+        XCTAssertEqual(presenter.presentationCount, 0)
+
+        await nextMainActorTurn()
+
+        XCTAssertEqual(presenter.presentationCount, 1)
     }
 
     @MainActor
@@ -271,6 +274,15 @@ private final class RecordingMenuBarPresenter: MenuBarPresenting {
     var stateChangeCount = 0
     func showPanel() { presentationCount += 1 }
     func applicationDidBecomeActive() { stateChangeCount += 1 }
+}
+
+@MainActor
+private func nextMainActorTurn() async {
+    await withCheckedContinuation { continuation in
+        DispatchQueue.main.async {
+            continuation.resume()
+        }
+    }
 }
 
 private func panelPresentationAction(

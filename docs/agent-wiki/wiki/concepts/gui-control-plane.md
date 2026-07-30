@@ -27,6 +27,12 @@ key window 都只能是展示后的增强。macOS 26 还可能在用户首次打
 只作为 focus 兜底，不能参与可见性判定、重试 anchor 或反复抢焦点；App 变为 active 或面板
 关闭时必须取消尚未执行的兜底。
 
+Finder/Launchpad 对已运行 App 发出的 reopen 与状态栏按钮点击不是同一条时序。reopen
+属于用户明确要求把 App 带到前台：先使用兼容的强制 activation 请求激活 LSUIElement
+进程，再至少跨过一个主事件循环，最后才启动 `NSPopover` 展开动画。不能在
+`applicationShouldHandleReopen` 回调内同步调用 `show`，否则 AppKit 可能在 activation
+转换尚未提交时把动画停在中间，直到下一次鼠标事件才继续。
+
 App 未 active 时，popover 临时使用 `.applicationDefined`，由状态栏按钮、Escape 与全局鼠标
 监听负责关闭；App 获得 active 后再切为 `.transient` 并尝试令真实 window 成为 key。
 SwiftUI 面板显式使用 active control appearance，状态栏按钮以持久 `state` 表示面板已展示；

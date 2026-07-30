@@ -104,6 +104,14 @@ grep -Fq 'func applicationDidBecomeActive' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar presentation must enhance focus from AppKit activation events" >&2
   exit 1
 }
+grep -Fq 'sender.activate(ignoringOtherApps: true)' "$MENU_BAR_CONTROLLER" || {
+  echo "an explicit App reopen must activate the menu bar process before presentation" >&2
+  exit 1
+}
+grep -Fq 'DispatchQueue.main.async { [weak self] in' "$MENU_BAR_CONTROLLER" || {
+  echo "an App reopen must defer popover presentation until the next main-run-loop turn" >&2
+  exit 1
+}
 if grep -Fq 'func applicationDidUpdate' "$MENU_BAR_CONTROLLER"; then
   echo "menu bar presentation must not churn retries from every AppKit update event" >&2
   exit 1
