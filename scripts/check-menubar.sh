@@ -80,56 +80,20 @@ grep -Fq 'button?.window?.isVisible == true' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar panel must wait until its status-item anchor is actually visible" >&2
   exit 1
 }
-grep -Fq 'panelWindow.makeKeyAndOrderFront(nil)' "$MENU_BAR_CONTROLLER" || {
-  echo "menu bar popover should become key and frontmost after forced activation" >&2
-  exit 1
-}
 grep -Fq 'panelWindow.makeKey()' "$MENU_BAR_CONTROLLER" || {
-  echo "an active app must key the panel window without reordering it" >&2
+  echo "menu bar popover should request key status after activation" >&2
   exit 1
 }
-grep -Fq 'menuBarPanelFocusAction(' "$MENU_BAR_CONTROLLER" || {
-  echo "panel focus must be gated on key state and the popover settle window" >&2
-  exit 1
-}
-grep -Fq 'popoverShowSettleGrace' "$MENU_BAR_CONTROLLER" || {
-  echo "the popover expand animation needs a measured settle window, not a delegate callback" >&2
-  exit 1
-}
-grep -Fq 'menuBarForcedActivationDelay(' "$MENU_BAR_CONTROLLER" || {
-  echo "forced activation must be pushed past a pending popover settle window" >&2
-  exit 1
-}
-if grep -Eq 'popoverDidShow[^)]*\)[[:space:]]*\{[^}]*clearPopoverShow' "$MENU_BAR_CONTROLLER"; then
-  echo "popoverDidShow can arrive from inside show() and must not gate the settle window" >&2
-  exit 1
-fi
 grep -Fq 'NSApplication.shared.activate()' "$MENU_BAR_CONTROLLER" || {
   echo "macOS 14 and newer must use cooperative application activation" >&2
   exit 1
 }
 grep -Fq 'activate(ignoringOtherApps: true)' "$MENU_BAR_CONTROLLER" || {
-  echo "explicit menu panel requests must retain the macOS 26 activation fallback" >&2
-  exit 1
-}
-grep -Fq 'scheduleApplicationActivationFallback()' "$MENU_BAR_CONTROLLER" || {
-  echo "a visible inactive menu panel must schedule its bounded focus fallback" >&2
-  exit 1
-}
-grep -Fq 'menuBarNeedsForcedApplicationActivation(' "$MENU_BAR_CONTROLLER" || {
-  echo "forced activation must be gated by visible-panel and inactive-app state" >&2
+  echo "macOS 13 must retain its compatible application activation fallback" >&2
   exit 1
 }
 grep -Fq 'func applicationDidBecomeActive' "$MENU_BAR_CONTROLLER" || {
   echo "menu bar presentation must enhance focus from AppKit activation events" >&2
-  exit 1
-}
-grep -Fq 'sender.activate(ignoringOtherApps: true)' "$MENU_BAR_CONTROLLER" || {
-  echo "an explicit App reopen must activate the menu bar process before presentation" >&2
-  exit 1
-}
-grep -Fq 'DispatchQueue.main.async { [weak self] in' "$MENU_BAR_CONTROLLER" || {
-  echo "an App reopen must defer popover presentation until the next main-run-loop turn" >&2
   exit 1
 }
 if grep -Fq 'func applicationDidUpdate' "$MENU_BAR_CONTROLLER"; then

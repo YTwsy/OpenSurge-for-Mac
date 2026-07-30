@@ -114,13 +114,13 @@ struct MenuBarChecks {
         let forwardingAlreadyEnabled = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "isolated_lan", lanIp: "192.168.50.1", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "enabled", clientCount: 0, drift: false, doctorHealthy: true, recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
         try require(!forwardingAlreadyEnabled.gatewayServicesActive && forwardingAlreadyEnabled.canQuitOpenSurge && forwardingAlreadyEnabled.canUninstall, "host forwarding must not block quit or uninstall")
 
-        let reopen = await presentationCountsAfterReopen()
-        try require(
-            !reopen.useDefault
-                && reopen.immediate == 0
-                && reopen.afterMainTurn == 1,
-            "opening OpenSurge again must activate first and defer the menu bar panel by one main-run-loop turn"
-        )
+        let (useDefaultReopen, presentationCount) = await MainActor.run {
+            let panelPresenter = CheckMenuBarPresenter()
+            let appDelegate = OpenSurgeAppDelegate(presenter: panelPresenter)
+            let useDefaultReopen = appDelegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false)
+            return (useDefaultReopen, panelPresenter.presentationCount)
+        }
+        try require(!useDefaultReopen && presentationCount == 1, "opening OpenSurge again must show the menu bar panel")
 
         let launchPresentationCount = await presentationCountAfterLaunch()
         try require(launchPresentationCount == 1, "launching OpenSurge must show the menu bar panel")
@@ -178,67 +178,9 @@ struct MenuBarChecks {
             "the bounded startup retry window must allow at least one failed popover recovery"
         )
         try require(
-            MenuBarPanelRetryPolicy.popoverShowSettleGrace
-                > MenuBarPanelFocusPolicy.cooperativeActivationGrace,
-            "the popover settle window must outlast the cooperative activation grace"
-        )
-        try require(
-            MenuBarPanelRetryPolicy.popoverShowSettleGrace >= 0.35
-                && MenuBarPanelRetryPolicy.popoverShowSettleGrace
-                    <= MenuBarPanelRetryPolicy.popoverWindowGrace,
-            "the settle window must cover the measured expand animation without stalling focus"
-        )
-        try require(
             menuBarPopoverBehavior(applicationActive: false) == .applicationDefined
                 && menuBarPopoverBehavior(applicationActive: true) == .transient,
             "an inactive app must own popover dismissal until activation succeeds"
-        )
-        try require(
-            menuBarNeedsForcedApplicationActivation(
-                panelPresented: true,
-                applicationActive: false
-            )
-                && !menuBarNeedsForcedApplicationActivation(
-                    panelPresented: false,
-                    applicationActive: false
-                )
-                && !menuBarNeedsForcedApplicationActivation(
-                    panelPresented: true,
-                    applicationActive: true
-                ),
-            "only a visible inactive panel may use the one-shot activation fallback"
-        )
-        try require(
-            MenuBarPanelFocusPolicy.cooperativeActivationGrace > 0,
-            "forced activation must allow cooperative activation to settle first"
-        )
-        try require(
-            panelFocusAction(popoverShowSettling: true) == .adoptActiveBehavior,
-            "panel focus must not key a panel window the WindowServer is still expanding"
-        )
-        try require(
-            panelFocusAction(panelWindowKey: true) == .adoptActiveBehavior,
-            "an already-key panel window must never be keyed again"
-        )
-        try require(
-            panelFocusAction() == .keyPanelWindow,
-            "a settled panel window of an active app must become key"
-        )
-        try require(
-            panelFocusAction(applicationActive: false) == .none
-                && panelFocusAction(panelWindowAvailable: false) == .none,
-            "panel focus requires both a real panel window and an active application"
-        )
-        try require(
-            menuBarForcedActivationDelay(
-                cooperativeGrace: 0.05,
-                popoverSettleRemaining: 0.4
-            ) == 0.4
-                && menuBarForcedActivationDelay(
-                    cooperativeGrace: 0.05,
-                    popoverSettleRemaining: 0
-                ) == 0.05,
-            "forced activation must wait out a pending popover settle window"
         )
         try require(
             !menuBarStatusItemNeedsRefresh(
@@ -272,28 +214,6 @@ struct MenuBarChecks {
 
         print("OpenSurge menu bar checks passed")
     }
-}
-
-@MainActor
-private func presentationCountsAfterReopen() async -> (
-    useDefault: Bool,
-    immediate: Int,
-    afterMainTurn: Int
-) {
-    let panelPresenter = CheckMenuBarPresenter()
-    let appDelegate = OpenSurgeAppDelegate(presenter: panelPresenter)
-    let useDefault = appDelegate.applicationShouldHandleReopen(
-        NSApplication.shared,
-        hasVisibleWindows: false
-    )
-    let immediate = panelPresenter.presentationCount
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-        DispatchQueue.main.async {
-            continuation.resume()
-        }
-    }
-    withExtendedLifetime(appDelegate) {}
-    return (useDefault, immediate, panelPresenter.presentationCount)
 }
 
 @MainActor
@@ -342,20 +262,6 @@ private func panelPresentationAction(
         popoverShown: popoverShown,
         panelWindowAvailable: panelWindowAvailable,
         popoverWindowWaitExpired: popoverWindowWaitExpired
-    )
-}
-
-private func panelFocusAction(
-    panelWindowAvailable: Bool = true,
-    applicationActive: Bool = true,
-    panelWindowKey: Bool = false,
-    popoverShowSettling: Bool = false
-) -> MenuBarPanelFocusAction {
-    menuBarPanelFocusAction(
-        panelWindowAvailable: panelWindowAvailable,
-        applicationActive: applicationActive,
-        panelWindowKey: panelWindowKey,
-        popoverShowSettling: popoverShowSettling
     )
 }
 

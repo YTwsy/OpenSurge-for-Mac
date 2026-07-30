@@ -145,16 +145,13 @@ final class ModelsTests: XCTestCase {
     }
 
     @MainActor
-    func testReopeningAppDefersMenuBarPanelUntilTheNextMainRunLoopTurn() async {
+    func testReopeningAppShowsMenuBarPanel() {
         let presenter = RecordingMenuBarPresenter()
         let delegate = OpenSurgeAppDelegate(presenter: presenter)
 
         XCTAssertFalse(delegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false))
-        XCTAssertEqual(presenter.presentationCount, 0)
-
-        await nextMainActorTurn()
-
-        XCTAssertEqual(presenter.presentationCount, 1)
+        let presentationCount = presenter.presentationCount
+        XCTAssertEqual(presentationCount, 1)
     }
 
     @MainActor
@@ -234,31 +231,6 @@ final class ModelsTests: XCTestCase {
         )
     }
 
-    func testVisibleInactivePanelNeedsOneShotActivationFallback() {
-        XCTAssertTrue(
-            menuBarNeedsForcedApplicationActivation(
-                panelPresented: true,
-                applicationActive: false
-            )
-        )
-        XCTAssertFalse(
-            menuBarNeedsForcedApplicationActivation(
-                panelPresented: false,
-                applicationActive: false
-            )
-        )
-        XCTAssertFalse(
-            menuBarNeedsForcedApplicationActivation(
-                panelPresented: true,
-                applicationActive: true
-            )
-        )
-        XCTAssertGreaterThan(
-            MenuBarPanelFocusPolicy.cooperativeActivationGrace,
-            0
-        )
-    }
-
     private func fixture(gateway: String, recovery: Bool, drift: Bool) -> MenuBarStatus {
         MenuBarStatus(schemaVersion: 1, revision: "r", gateway: gateway, topology: "same_wifi_dhcp",
                       lanIp: "192.168.1.20", dhcp: "running", mihomo: "running", pfAnchor: "loaded",
@@ -274,15 +246,6 @@ private final class RecordingMenuBarPresenter: MenuBarPresenting {
     var stateChangeCount = 0
     func showPanel() { presentationCount += 1 }
     func applicationDidBecomeActive() { stateChangeCount += 1 }
-}
-
-@MainActor
-private func nextMainActorTurn() async {
-    await withCheckedContinuation { continuation in
-        DispatchQueue.main.async {
-            continuation.resume()
-        }
-    }
 }
 
 private func panelPresentationAction(

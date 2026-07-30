@@ -21,20 +21,9 @@ enum MenuBarPanelPresentationAction: Equatable {
     case complete
 }
 
-enum MenuBarPanelFocusAction: Equatable {
-    case none
-    case adoptActiveBehavior
-    case keyPanelWindow
-}
-
 enum MenuBarPanelRetryPolicy {
     static let presentationWindow: TimeInterval = 8
     static let popoverWindowGrace: TimeInterval = 1
-    // Measured on macOS 14: the WindowServer-side expand animation of the panel
-    // finishes about 350ms after show(), while popoverDidShow can arrive either
-    // ~560ms later or synchronously inside show(). Only elapsed time is a usable
-    // signal for "the popover geometry stopped moving".
-    static let popoverShowSettleGrace: TimeInterval = 0.5
 
     static func delay(after attempt: Int) -> TimeInterval {
         switch attempt {
@@ -46,10 +35,6 @@ enum MenuBarPanelRetryPolicy {
             return 0.25
         }
     }
-}
-
-enum MenuBarPanelFocusPolicy {
-    static let cooperativeActivationGrace: TimeInterval = 0.05
 }
 
 func menuBarPanelPresentationAction(
@@ -70,34 +55,6 @@ func menuBarPanelPresentationAction(
 
 func menuBarPopoverBehavior(applicationActive: Bool) -> NSPopover.Behavior {
     applicationActive ? .transient : .applicationDefined
-}
-
-func menuBarPanelFocusAction(
-    panelWindowAvailable: Bool,
-    applicationActive: Bool,
-    panelWindowKey: Bool,
-    popoverShowSettling: Bool
-) -> MenuBarPanelFocusAction {
-    guard panelWindowAvailable, applicationActive else { return .none }
-    // Keying or reordering the panel window while the WindowServer is still
-    // expanding it strands that expansion at an intermediate size until the next
-    // input event flushes it, and an already-key window has nothing to promote.
-    guard !panelWindowKey, !popoverShowSettling else { return .adoptActiveBehavior }
-    return .keyPanelWindow
-}
-
-func menuBarForcedActivationDelay(
-    cooperativeGrace: TimeInterval,
-    popoverSettleRemaining: TimeInterval
-) -> TimeInterval {
-    max(cooperativeGrace, popoverSettleRemaining)
-}
-
-func menuBarNeedsForcedApplicationActivation(
-    panelPresented: Bool,
-    applicationActive: Bool
-) -> Bool {
-    panelPresented && !applicationActive
 }
 
 func menuBarStatusItemNeedsRefresh(
@@ -136,14 +93,7 @@ final class OpenSurgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // A LaunchServices reopen can arrive while this LSUIElement process is
-        // still inactive. Force the activation requested by the user's click,
-        // then let AppKit complete that transition before starting the
-        // NSPopover animation on the next main-run-loop turn.
-        sender.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async { [weak self] in
-            self?.presenter?.showPanel()
-        }
+        presenter?.showPanel()
         return false
     }
 }
@@ -159,14 +109,11 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     private var presentationRetryAttempt = 0
     private var presentationRetryScheduled = false
     private var popoverWindowDeadline: Date?
-    private var popoverShowSettleDeadline: Date?
-    private var panelFocusRetryScheduled = false
     private var panelPresented = false
     private var renderedIndicator: IndicatorState?
     private var outsideClickMonitor: Any?
     private var escapeKeyMonitor: Any?
     private var finalPresentationVerificationScheduled = false
-    private var applicationActivationFallbackScheduled = false
 
     init(model: StatusModel) {
         self.model = model
@@ -206,7 +153,6 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     func applicationDidBecomeActive() {
-        cancelApplicationActivationFallback()
         advancePanelPresentation()
         promoteVisiblePanelForActiveApplication()
     }
@@ -249,8 +195,13 @@ final class MenuBarController: NSObject, MenuBarPresenting {
                 schedulePresentationRetry()
                 return
             }
-            showPopover(anchoredTo: button)
-            schedulePresentationRetry(notBefore: popoverWindowDeadline)
+            preparePopoverForCurrentActivationState()
+            let windowDeadline = Date().addingTimeInterval(
+                MenuBarPanelRetryPolicy.popoverWindowGrace
+            )
+            popoverWindowDeadline = windowDeadline
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            schedulePresentationRetry(notBefore: windowDeadline)
         case .waitForPanelWindow:
             schedulePresentationRetry(notBefore: popoverWindowDeadline)
         case .replacePopover:
@@ -271,97 +222,8 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         }
     }
 
-    private func scheduleApplicationActivationFallback() {
-        guard menuBarNeedsForcedApplicationActivation(
-            panelPresented: panelPresented,
-            applicationActive: NSApplication.shared.isActive
-        ),
-        !applicationActivationFallbackScheduled else {
-            return
-        }
-
-        applicationActivationFallbackScheduled = true
-        perform(
-            #selector(forceApplicationActivationIfNeeded),
-            with: nil,
-            // A forced activation transition strands the panel mid-expansion if
-            // it lands inside the settle window.
-            afterDelay: menuBarForcedActivationDelay(
-                cooperativeGrace: MenuBarPanelFocusPolicy.cooperativeActivationGrace,
-                popoverSettleRemaining: popoverShowSettleRemaining
-            ),
-            inModes: [.common]
-        )
-    }
-
-    @objc
-    private func forceApplicationActivationIfNeeded() {
-        applicationActivationFallbackScheduled = false
-        guard !popoverShowIsSettling else {
-            scheduleApplicationActivationFallback()
-            return
-        }
-        guard menuBarNeedsForcedApplicationActivation(
-            panelPresented: panelPresented,
-            applicationActive: NSApplication.shared.isActive
-        ),
-        popover.isShown,
-        let panelWindow = popover.contentViewController?.view.window else {
-            return
-        }
-
-        // macOS 26 can decline cooperative activation for an LSUIElement app
-        // even after an explicitly requested popover has a real window. Keep
-        // this deprecated call as a narrow, one-shot fallback after visibility
-        // succeeds; it must never become a presentation prerequisite.
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        panelWindow.makeKeyAndOrderFront(nil)
-        promoteVisiblePanelForActiveApplication()
-    }
-
-    private func cancelApplicationActivationFallback() {
-        guard applicationActivationFallbackScheduled else { return }
-        NSObject.cancelPreviousPerformRequests(
-            withTarget: self,
-            selector: #selector(forceApplicationActivationIfNeeded),
-            object: nil
-        )
-        applicationActivationFallbackScheduled = false
-    }
-
-    private func showPopover(anchoredTo button: NSButton) {
-        preparePopoverForCurrentActivationState()
-        popoverWindowDeadline = Date().addingTimeInterval(
-            MenuBarPanelRetryPolicy.popoverWindowGrace
-        )
-        // popoverDidShow is not a usable animation-complete signal: AppKit can
-        // post it synchronously from inside show(). Track the settle window by
-        // elapsed time instead.
-        popoverShowSettleDeadline = popover.animates
-            ? Date().addingTimeInterval(
-                MenuBarPanelRetryPolicy.popoverShowSettleGrace
-            )
-            : nil
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-    }
-
-    private var popoverShowIsSettling: Bool {
-        guard let popoverShowSettleDeadline else { return false }
-        return Date() < popoverShowSettleDeadline
-    }
-
-    private var popoverShowSettleRemaining: TimeInterval {
-        max(0, popoverShowSettleDeadline?.timeIntervalSinceNow ?? 0)
-    }
-
-    private func clearPopoverShowState() {
-        popoverShowSettleDeadline = nil
-        popoverWindowDeadline = nil
-        cancelPanelFocusRetry()
-    }
-
     private func replaceFailedPopover() {
-        clearPopoverShowState()
+        popoverWindowDeadline = nil
         setPanelPresented(false)
         removeApplicationDefinedDismissMonitors()
 
@@ -441,57 +303,13 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     }
 
     private func promoteVisiblePanelForActiveApplication() {
-        let panelWindow = popover.contentViewController?.view.window
-        let action = menuBarPanelFocusAction(
-            panelWindowAvailable: panelWindow != nil,
-            applicationActive: NSApplication.shared.isActive,
-            panelWindowKey: panelWindow?.isKeyWindow == true,
-            popoverShowSettling: popoverShowIsSettling
-        )
-        guard action != .none, let panelWindow else { return }
-
-        // Dismissal ownership is pure state, so it can follow activation at once.
-        popover.behavior = .transient
-        removeApplicationDefinedDismissMonitors()
-
-        guard action == .keyPanelWindow else {
-            // Still expanding: retry once the geometry settled, because an
-            // active app whose panel never becomes key stays unusable.
-            schedulePanelFocusRetry()
+        guard NSApplication.shared.isActive,
+              let panelWindow = popover.contentViewController?.view.window else {
             return
         }
         panelWindow.makeKey()
-    }
-
-    private func schedulePanelFocusRetry() {
-        guard !panelFocusRetryScheduled,
-              popoverShowIsSettling,
-              popover.contentViewController?.view.window?.isKeyWindow != true else {
-            return
-        }
-        panelFocusRetryScheduled = true
-        perform(
-            #selector(retryPanelFocus),
-            with: nil,
-            afterDelay: popoverShowSettleRemaining + 0.01,
-            inModes: [.common]
-        )
-    }
-
-    @objc
-    private func retryPanelFocus() {
-        panelFocusRetryScheduled = false
-        promoteVisiblePanelForActiveApplication()
-    }
-
-    private func cancelPanelFocusRetry() {
-        guard panelFocusRetryScheduled else { return }
-        NSObject.cancelPreviousPerformRequests(
-            withTarget: self,
-            selector: #selector(retryPanelFocus),
-            object: nil
-        )
-        panelFocusRetryScheduled = false
+        popover.behavior = .transient
+        removeApplicationDefinedDismissMonitors()
     }
 
     private func schedulePresentationRetry(notBefore: Date? = nil) {
@@ -563,7 +381,8 @@ final class MenuBarController: NSObject, MenuBarPresenting {
 
         // One final non-blocking attempt avoids leaving a pending state behind.
         // If AppKit still declines it, the next explicit click starts fresh.
-        showPopover(anchoredTo: button)
+        preparePopoverForCurrentActivationState()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         if popover.contentViewController?.view.window != nil {
             completePanelPresentation()
         } else {
@@ -577,13 +396,12 @@ final class MenuBarController: NSObject, MenuBarPresenting {
         popoverWindowDeadline = nil
         setPanelPresented(true)
         promoteVisiblePanelForActiveApplication()
-        scheduleApplicationActivationFallback()
     }
 
     private func cancelPendingPresentation() {
         cancelFinalPresentationVerification()
         clearPendingPresentation()
-        clearPopoverShowState()
+        popoverWindowDeadline = nil
         setPanelPresented(false)
         removeApplicationDefinedDismissMonitors()
     }
@@ -639,9 +457,6 @@ final class MenuBarController: NSObject, MenuBarPresenting {
 
     private func setPanelPresented(_ presented: Bool) {
         panelPresented = presented
-        if !presented {
-            cancelApplicationActivationFallback()
-        }
         applyStatusItemPresentedState()
     }
 
@@ -672,8 +487,6 @@ final class MenuBarController: NSObject, MenuBarPresenting {
 
 extension MenuBarController: NSPopoverDelegate {
     func popoverDidShow(_ notification: Notification) {
-        // AppKit may post this from inside show(), so it only means the popover
-        // is on screen, never that its expand animation finished.
         popoverWindowDeadline = nil
         if popover.contentViewController?.view.window != nil {
             completePanelPresentation()

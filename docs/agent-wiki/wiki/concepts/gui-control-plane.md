@@ -20,19 +20,7 @@ AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状
 `NSPopover.show`。菜单栏 presenter 必须在状态栏按钮拥有 window 且可见后展开，但不能把
 `NSApplication.isActive` 或 popover window 的 `isKeyWindow` 当作展示前置条件：macOS 14
 及以上的 cooperative `NSApplication.activate()` 可能拒绝 LSUIElement App 的请求，激活与
-key window 都只能是展示后的增强。macOS 26 还可能在用户首次打开 App 或点击状态栏图标时，
-让 popover 已出现但继续拒绝 cooperative activation。真实 popover window 已经存在后，
-如果 App 仍未 active，允许针对这次显式面板请求延迟执行一次
-`activate(ignoringOtherApps: true)`，并对现有 window 调用 `makeKeyAndOrderFront`。这个旧 API
-只作为 focus 兜底，不能参与可见性判定、重试 anchor 或反复抢焦点；App 变为 active 或面板
-关闭时必须取消尚未执行的兜底。兜底必须推迟到 popover 展开沉降之后，否则强制 activation
-会落在动画中段。
-
-Finder/Launchpad 对已运行 App 发出的 reopen 与状态栏按钮点击不是同一条时序。reopen
-属于用户明确要求把 App 带到前台：先使用兼容的强制 activation 请求激活 LSUIElement
-进程，再至少跨过一个主事件循环，最后才启动 `NSPopover` 展开动画。不能在
-`applicationShouldHandleReopen` 回调内同步调用 `show`，否则 AppKit 可能在 activation
-转换尚未提交时把动画停在中间，直到下一次鼠标事件才继续。
+`makeKey()` 都只能是展示后的 best-effort 增强。
 
 App 未 active 时，popover 临时使用 `.applicationDefined`，由状态栏按钮、Escape 与全局鼠标
 监听负责关闭；App 获得 active 后再切为 `.transient` 并尝试令真实 window 成为 key。
@@ -41,24 +29,14 @@ SwiftUI 面板显式使用 active control appearance，状态栏按钮以持久 
 `applicationDidBecomeActive`、popover delegate 与 common run loop 上短时、有界的退避重试
 推进，不接入高频 `applicationDidUpdate`。`NSPopover.isShown` 只表示调用过 `show`，还必须
 给动画留出 window 创建宽限期并确认真实 window；超时后执行一次非阻塞兜底展示并清除
-pending，不能留下永久卡住状态。macOS 13 使用兼容的旧 activation 路径；macOS 14 及以上
-先请求 cooperative activation，旧 API 只允许进入前述的可见面板 focus 兜底。
+pending，不能留下永久卡住状态。macOS 13 仅保留兼容的旧 activation fallback。
 
-面板展开动画由 WindowServer 侧驱动，它和 App 侧的 `NSWindow.frame` 是两套状态。实测
-（macOS 14，多显示器）：`show()` 之后 `NSWindow.frame` 立即就是最终值、`layer` 上没有任何
-CA 动画，而 WindowServer 侧的窗口仍在逐帧放大约 350ms。如果在这段时间内对 panel window
-调用 `makeKeyAndOrderFront`，WindowServer 侧的几何会被永久留在中间尺寸（实测停在 356x583
-的 102~128 宽），直到下一次输入事件才刷新，表现为“菜单栏面板展开一半卡住，随便点一下就
-恢复”。旧 App 已运行时的 reopen 六次复现六次。
-
-因此 focus 提升必须同时满足两个条件才允许触碰 panel window：window 还不是 key，且展开
-已经过 `popoverShowSettleGrace` 沉降窗口。App 已经 active 时 AppKit 通常已经把 popover
-window 设为 key，这时任何再次 key/reorder 都是纯风险没有收益。强制 activation 兜底也要
-用 `menuBarForcedActivationDelay` 推到沉降窗口之后。
-
-不要用 `popoverDidShow` 判断动画是否结束：实测它既可能在动画后约 560ms 到达，也可能在
-`show()` 内部同步到达（此时 `willShow` 与 `didShow` 时间戳相同）。Apple 文档在这一点上不足
-以作为实现依据，只有经过测量的时间窗口是可靠信号。
+不要再尝试"把面板 focus 工作推迟到展开动画结束之后"这一类改法。`codex/release-v0.1.24`
+上曾连续提交四版实现：无条件 activation fallback、把展开推迟到 reopen 激活、用
+`popoverDidShow` 作为动画完成信号、以及用固定 settle 时间窗跳过
+`makeKeyAndOrderFront`。它们都没有修复实际报告的展开异常，反而引入了新的问题，已被
+整体回退到 `0932641`。若要重开这个方向，先给出可复现的 WindowServer 级证据和真机
+验收，不要只依赖单元测试与 `scripts/check-menubar.sh`。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP
