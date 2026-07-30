@@ -25,8 +25,8 @@ key window 都只能是展示后的增强。macOS 26 还可能在用户首次打
 如果 App 仍未 active，允许针对这次显式面板请求延迟执行一次
 `activate(ignoringOtherApps: true)`，并对现有 window 调用 `makeKeyAndOrderFront`。这个旧 API
 只作为 focus 兜底，不能参与可见性判定、重试 anchor 或反复抢焦点；App 变为 active 或面板
-关闭时必须取消尚未执行的兜底。兜底计时只能在展开动画结束后才开始，否则强制 activation
-会正好落在动画中段。
+关闭时必须取消尚未执行的兜底。兜底必须推迟到 popover 展开沉降之后，否则强制 activation
+会落在动画中段。
 
 Finder/Launchpad 对已运行 App 发出的 reopen 与状态栏按钮点击不是同一条时序。reopen
 属于用户明确要求把 App 带到前台：先使用兼容的强制 activation 请求激活 LSUIElement
@@ -44,13 +44,21 @@ SwiftUI 面板显式使用 active control appearance，状态栏按钮以持久 
 pending，不能留下永久卡住状态。macOS 13 使用兼容的旧 activation 路径；macOS 14 及以上
 先请求 cooperative activation，旧 API 只允许进入前述的可见面板 focus 兜底。
 
-真实 popover window 存在只说明展开动画已经开始，`popoverDidShow` 才是 AppKit 唯一的
-动画结束信号。在它到达之前不得对 popover window 调用 `makeKeyAndOrderFront`、把 behavior
-切回 `.transient`，也不得执行强制 activation 兜底：这些操作会让 AppKit 把展开动画留在中间
-帧，直到下一次鼠标或键盘事件才继续，表现为“菜单栏面板展开一半卡住，随便点一下就恢复”。
-`applicationDidBecomeActive` 在动画进行中到达时只能推迟这些 focus 动作，由 `popoverDidShow`
-重放。等待动画同样必须有界（`popoverShowAnimationGrace`，短于 window 宽限期），过期后按
-已完成处理，避免丢失 delegate 回调时永久不取焦点。
+面板展开动画由 WindowServer 侧驱动，它和 App 侧的 `NSWindow.frame` 是两套状态。实测
+（macOS 14，多显示器）：`show()` 之后 `NSWindow.frame` 立即就是最终值、`layer` 上没有任何
+CA 动画，而 WindowServer 侧的窗口仍在逐帧放大约 350ms。如果在这段时间内对 panel window
+调用 `makeKeyAndOrderFront`，WindowServer 侧的几何会被永久留在中间尺寸（实测停在 356x583
+的 102~128 宽），直到下一次输入事件才刷新，表现为“菜单栏面板展开一半卡住，随便点一下就
+恢复”。旧 App 已运行时的 reopen 六次复现六次。
+
+因此 focus 提升必须同时满足两个条件才允许触碰 panel window：window 还不是 key，且展开
+已经过 `popoverShowSettleGrace` 沉降窗口。App 已经 active 时 AppKit 通常已经把 popover
+window 设为 key，这时任何再次 key/reorder 都是纯风险没有收益。强制 activation 兜底也要
+用 `menuBarForcedActivationDelay` 推到沉降窗口之后。
+
+不要用 `popoverDidShow` 判断动画是否结束：实测它既可能在动画后约 560ms 到达，也可能在
+`show()` 内部同步到达（此时 `willShow` 与 `didShow` 时间戳相同）。Apple 文档在这一点上不足
+以作为实现依据，只有经过测量的时间窗口是可靠信号。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP

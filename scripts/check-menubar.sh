@@ -81,25 +81,29 @@ grep -Fq 'button?.window?.isVisible == true' "$MENU_BAR_CONTROLLER" || {
   exit 1
 }
 grep -Fq 'panelWindow.makeKeyAndOrderFront(nil)' "$MENU_BAR_CONTROLLER" || {
-  echo "menu bar popover should become key and frontmost after activation" >&2
+  echo "menu bar popover should become key and frontmost after forced activation" >&2
   exit 1
 }
-grep -Fq 'case waitForPopoverAnimation' "$MENU_BAR_CONTROLLER" || {
-  echo "menu bar presentation must wait for the NSPopover expand animation to finish" >&2
-  exit 1
-}
-grep -Fq 'func popoverDidShow' "$MENU_BAR_CONTROLLER" || {
-  echo "menu bar presentation must observe popoverDidShow as the animation-complete signal" >&2
+grep -Fq 'panelWindow.makeKey()' "$MENU_BAR_CONTROLLER" || {
+  echo "an active app must key the panel window without reordering it" >&2
   exit 1
 }
 grep -Fq 'menuBarPanelFocusAction(' "$MENU_BAR_CONTROLLER" || {
-  echo "panel focus must be gated on the popover expand animation being finished" >&2
+  echo "panel focus must be gated on key state and the popover settle window" >&2
   exit 1
 }
-grep -Fq 'guard !awaitingPopoverShowAnimation' "$MENU_BAR_CONTROLLER" || {
-  echo "forced activation must not interrupt an in-flight popover expand animation" >&2
+grep -Fq 'popoverShowSettleGrace' "$MENU_BAR_CONTROLLER" || {
+  echo "the popover expand animation needs a measured settle window, not a delegate callback" >&2
   exit 1
 }
+grep -Fq 'menuBarForcedActivationDelay(' "$MENU_BAR_CONTROLLER" || {
+  echo "forced activation must be pushed past a pending popover settle window" >&2
+  exit 1
+}
+if grep -Eq 'popoverDidShow[^)]*\)[[:space:]]*\{[^}]*clearPopoverShow' "$MENU_BAR_CONTROLLER"; then
+  echo "popoverDidShow can arrive from inside show() and must not gate the settle window" >&2
+  exit 1
+fi
 grep -Fq 'NSApplication.shared.activate()' "$MENU_BAR_CONTROLLER" || {
   echo "macOS 14 and newer must use cooperative application activation" >&2
   exit 1
