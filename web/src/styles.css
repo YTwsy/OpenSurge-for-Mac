@@ -207,6 +207,7 @@ button{cursor:pointer}
 .local-mode-switch button{min-height:39px;border:0;border-radius:8px;background:transparent;color:#80978e;font-weight:800}
 .local-mode-switch button[aria-pressed="true"]{background:#216044;color:#d6ffeb;box-shadow:0 3px 12px #0005}
 .local-mode-switch button:disabled{opacity:.38;cursor:not-allowed}
+.local-global-policy{margin-top:12px}
 .local-routing-state{display:grid;gap:5px;margin-top:12px;padding:13px 14px;border:1px solid #315246;border-radius:11px;background:#0b1b16}
 .local-routing-state strong{font-size:13px;color:#dcebe5}
 .local-routing-state span{font-size:11px;color:#89a097}.local-routing-state span b{color:#b7f3d7}

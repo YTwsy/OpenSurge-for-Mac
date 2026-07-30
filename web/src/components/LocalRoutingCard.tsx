@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
-import type { LocalRouting, LocalRoutingMode } from '../types'
+import type { LocalRouting, LocalRoutingMode, ProxyHealthEntry } from '../types'
+import { OutletSummary } from './OutletSummary'
 
 const modeDetails: Record<LocalRoutingMode, { label: string; description: string }> = {
   rule: { label: '按规则', description: '根据网站和网关规则自动分流' },
@@ -12,12 +13,18 @@ export function LocalRoutingCard({
   running,
   interfaceName,
   lanIP,
+  healthByName,
+  testing,
+  onHealthTest,
   onChanged,
   onPolicies,
 }: {
   running: boolean
   interfaceName?: string
   lanIP?: string
+  healthByName: Map<string, ProxyHealthEntry>
+  testing: Set<string>
+  onHealthTest: (names: string[]) => Promise<void>
   onChanged: () => Promise<void>
   onPolicies: () => void
 }) {
@@ -75,8 +82,18 @@ export function LocalRoutingCard({
     {running && !routing && !error && <div className="local-routing-note">正在读取本机设置…</div>}
     {mode && <div className="local-routing-state" role="status">
       <strong>{mode.description}</strong>
-      {routing?.mode === 'global' && routing.global_group && <span>当前策略：<b>{routing.global_group.selected || '未选择'}</b></span>}
       <small>局域网访问和下游设备不受影响；切换只影响新连接。</small>
+    </div>}
+    {routing?.mode === 'global' && routing.global_group && <div className="local-global-policy">
+      <OutletSummary
+        title="本机全局出口"
+        ariaLabel={`本机全局策略组 当前策略 ${routing.global_group.selected}`}
+        group={routing.global_group}
+        healthByName={healthByName}
+        testing={testing}
+        onTest={onHealthTest}
+        onSelect={policy => apply('global', policy)}
+      />
     </div>}
     {udpRejected && <div className="notice warn local-routing-warning" role="alert">当前固定出口不支持 UDP，部分应用可能无法联网。</div>}
     {(runtimeWarning || error) && <div className="notice warn local-routing-warning" role="alert">{error || runtimeWarning}</div>}

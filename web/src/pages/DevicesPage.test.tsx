@@ -117,21 +117,24 @@ describe('DevicesPage', () => {
     expect(saveBar.classList.contains('has-changes')).toBe(true)
   })
 
-  it('keeps the current Mac settings simple and delegates policy changes to the policy page', async () => {
+  it('shows the local global outlet only for fixed routing and keeps the policy-page shortcut', async () => {
     const { onNavigate } = renderPage()
     await screen.findByRole('heading', { name: '出口方式' })
     expect(screen.getByText('根据网站和网关规则自动分流')).toBeTruthy()
-    expect(screen.queryByLabelText(/本机全局出口/)).toBeNull()
+    expect(screen.queryByLabelText(/本机全局策略组/)).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: '固定出口' }))
     await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('global', undefined))
     expect(await screen.findByText('本机公网流量统一使用当前全局策略')).toBeTruthy()
-    expect(screen.getByText('Proxy-A')).toBeTruthy()
-    expect(screen.queryByRole('dialog')).toBeNull()
+    await userEvent.click(screen.getByLabelText('本机全局策略组 当前策略 Proxy-A'))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Proxy-B/ }))
+    await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('global', 'Proxy-B'))
+    expect(await screen.findByLabelText('本机全局策略组 当前策略 Proxy-B')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: '本机直连' }))
     await waitFor(() => expect(api.setLocalRouting).toHaveBeenCalledWith('direct', undefined))
     expect(await screen.findByText('本机公网流量不使用代理')).toBeTruthy()
+    expect(screen.queryByLabelText(/本机全局策略组/)).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: '前往策略与节点健康 →' }))
     expect(onNavigate).toHaveBeenCalledWith('policies')
