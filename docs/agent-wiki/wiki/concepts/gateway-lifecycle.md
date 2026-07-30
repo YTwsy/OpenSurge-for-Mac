@@ -3,8 +3,8 @@
 当任务涉及 gateway startup、shutdown、rollback、runtime state 或服务职责边界
 时，先读这个页面。
 
-OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtime path
-协调四类职责：
+OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。下游网关数据面当前是
+IPv4；TUN IPv6 只控制宿主 Mac 上的 mihomo VIF。runtime path 协调四类职责：
 
 - dnsmasq 为下游客户端提供 DHCP 和 DNS；
 - mihomo 提供代理能力，并在启用时承担透明 TUN 处理；
@@ -25,7 +25,7 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtim
 6. 记录启动前 IPv4 forwarding 状态和 PF enabled 状态；
 7. 在修改 host network 前保存 runtime state；
 8. 启用 IPv4 forwarding；
-9. 启动 mihomo；
+9. 启动 mihomo；若请求 TUN IPv6，确认预期 VIF 地址实际出现；
 10. 启动 dnsmasq；
 11. 加载 PF anchor。
 
@@ -105,4 +105,6 @@ macOS“系统设置 → 网络 → 详细信息 → TCP/IP”，并且不得进
 ## 验证
 
 用 `make test` 验证代码层行为。宣称真实网关生命周期在 host network 上
-工作前，运行 `make lab-test`。涉及透明代理行为时，运行 `make lab-test-tun`。
+工作前，运行 `make lab-test`。涉及透明代理行为时，运行 `make lab-test-tun`；
+涉及 DNS AAAA 或本机 VIF IPv6 时还必须运行 `make lab-test-tun-ipv6`。该 gate
+不证明下游设备 IPv6 数据面。

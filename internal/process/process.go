@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -15,6 +16,10 @@ func StartDetached(name string, args ...string) (int, error) {
 }
 
 func StartDetachedWithLog(logPath string, name string, args ...string) (int, error) {
+	return StartDetachedWithLogEnv(logPath, nil, name, args...)
+}
+
+func StartDetachedWithLogEnv(logPath string, extraEnv map[string]string, name string, args ...string) (int, error) {
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return 0, err
@@ -22,9 +27,27 @@ func StartDetachedWithLog(logPath string, name string, args ...string) (int, err
 	defer logFile.Close()
 
 	cmd := exec.Command(name, args...)
+	if len(extraEnv) > 0 {
+		cmd.Env = environmentWithOverrides(os.Environ(), extraEnv)
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	return startDetached(cmd)
+}
+
+func environmentWithOverrides(base []string, overrides map[string]string) []string {
+	out := make([]string, 0, len(base)+len(overrides))
+	for _, entry := range base {
+		key, _, ok := strings.Cut(entry, "=")
+		if _, replaced := overrides[key]; ok && replaced {
+			continue
+		}
+		out = append(out, entry)
+	}
+	for key, value := range overrides {
+		out = append(out, key+"="+value)
+	}
+	return out
 }
 
 func startDetached(cmd *exec.Cmd) (int, error) {

@@ -29,11 +29,12 @@ const defaultDNSResolverFieldsYAML = `nameserver:
 // and filtering behavior; preserving them is required for profiles whose proxy
 // server hostnames depend on nameserver-policy or private resolvers.
 var gatewayOwnedDNSFields = map[string]bool{
-	"enable":        true,
-	"listen":        true,
-	"ipv6":          true,
-	"enhanced-mode": true,
-	"fake-ip-range": true,
+	"enable":         true,
+	"listen":         true,
+	"ipv6":           true,
+	"enhanced-mode":  true,
+	"fake-ip-range":  true,
+	"fake-ip-range6": true,
 }
 
 // ImportedProfileInspection is the structural inventory shared by the source

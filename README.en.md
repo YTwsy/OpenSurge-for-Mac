@@ -73,6 +73,9 @@ Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 - Start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback.
 - Provide explicit proxying through mihomo `mixed-port`.
 - Provide transparent proxying through mihomo TUN on macOS.
+- Control DNS AAAA answers and the host Mac's TUN/VIF IPv6 independently.
+  OpenSurge does not advertise downstream RA or claim downstream-device IPv6
+  takeover.
 - Generate a MAC-backed fixed IPv4 lease in DHCP takeover mode, or use a stable
   main-router IPv4 in same-LAN manual-gateway mode, with an independent egress
   policy available in either topology.
@@ -426,7 +429,12 @@ same controlled host privileges and network isolation.
 
 Use `make lab-test-tun` for the supported transparent proxy path. That test
 keeps clients proxy-free and requires mihomo to log the direct HTTPS connection
-through its TUN inbound. Use `make lab-test-tun-imported-profile` when changing
+through its TUN inbound. Use `make lab-test-tun-ipv6` when changing DNS AAAA or
+host-VIF IPv6 behavior. It proves clients can obtain fake AAAA answers over
+IPv4 DNS and a Mac-local IPv6 socket can complete HTTPS through TUN and a
+controlled egress, while downstream RA stays disabled and IPv6 forwarding
+remains unchanged. It does not prove a downstream-device IPv6 data plane. Use
+`make lab-test-tun-imported-profile` when changing
 mihomo profile import or overlay behavior; it runs the same TUN gate with an
 imported profile fixture. Use `make lab-test-tun-imported-egress` when changing
 imported provider or policy-selection behavior that should affect transparent
@@ -485,6 +493,7 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-ipv6
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy

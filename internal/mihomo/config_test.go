@@ -19,6 +19,7 @@ func TestRenderConfig(t *testing.T) {
 
 	for _, want := range []string{
 		"mixed-port: 7890",
+		"ipv6: false",
 		"external-controller: 127.0.0.1:9090",
 		"profile:",
 		"  store-selected: true",
@@ -42,6 +43,28 @@ func TestRenderConfig(t *testing.T) {
 	}
 	if strings.Contains(rendered, "tun:") {
 		t.Fatalf("rendered config enables tun by default:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigWithIPv6DNSAndTUN(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.DNS.IPv6 = true
+
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	for _, want := range []string{
+		"ipv6: true",
+		"  ipv6: true",
+		"  fake-ip-range6: " + config.MihomoFakeIPv6Range,
+		"  inet6-address:\n    - " + config.MihomoTUNIPv6,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
 	}
 }
 

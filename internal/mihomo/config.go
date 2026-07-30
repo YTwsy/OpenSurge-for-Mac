@@ -13,6 +13,7 @@ allow-lan: true
 bind-address: "*"
 mode: rule
 log-level: info
+ipv6: {{ .TUNIPv6Enabled }}
 {{ if .TUNEnabled }}
 interface-name: {{ .UpstreamInterface }}
 {{ end }}
@@ -37,9 +38,12 @@ geox-url:
 dns:
   enable: true
   listen: 0.0.0.0:1053
-  ipv6: false
+  ipv6: {{ .DNSIPv6 }}
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+{{- if .DNSIPv6 }}
+  fake-ip-range6: {{ .FakeIPv6Range }}
+{{- end }}
 {{ .DNSResolverFields }}
 
 {{ if .TUNEnabled }}
@@ -50,6 +54,10 @@ tun:
   auto-route: {{ .TUNAutoRoute }}
   auto-detect-interface: {{ .TUNAutoDetectInterface }}
   strict-route: {{ .TUNStrictRoute }}
+{{- if .TUNIPv6Enabled }}
+  inet6-address:
+    - {{ .TUNIPv6Address }}
+{{- end }}
   dns-hijack:
     - any:53
   route-exclude-address:
@@ -89,9 +97,13 @@ type templateData struct {
 	TUNAutoRoute           bool
 	TUNAutoDetectInterface bool
 	TUNStrictRoute         bool
+	TUNIPv6Enabled         bool
+	TUNIPv6Address         string
 	UpstreamInterface      string
 	LANPrefix              string
 	UpstreamProxy          config.UpstreamProxyConfig
+	DNSIPv6                bool
+	FakeIPv6Range          string
 	DNSResolverFields      string
 	PolicySections         string
 }
@@ -124,9 +136,13 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 		TUNAutoRoute:           transparent.TUNAutoRoute,
 		TUNAutoDetectInterface: transparent.TUNAutoDetectInterface,
 		TUNStrictRoute:         transparent.TUNStrictRoute,
+		TUNIPv6Enabled:         transparent.TUNIPv6 != config.TUNIPv6Off,
+		TUNIPv6Address:         config.MihomoTUNIPv6,
 		UpstreamInterface:      cfg.Gateway.UpstreamInterface,
 		LANPrefix:              lanPrefix,
 		UpstreamProxy:          cfg.UpstreamProxy,
+		DNSIPv6:                cfg.DNS.IPv6,
+		FakeIPv6Range:          config.MihomoFakeIPv6Range,
 		DNSResolverFields:      indentYAMLBlock(dnsResolverFields, "  "),
 		PolicySections:         policySections,
 	}, nil

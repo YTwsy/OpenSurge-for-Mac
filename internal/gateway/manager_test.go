@@ -20,6 +20,8 @@ func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -28,6 +30,7 @@ func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 	mihomoManager := &fakeMihomo{startErr: errors.New("mihomo start failed")}
 	pfManager := &fakePF{enabled: false}
 	sysctlManager := &fakeSysctl{current: "0"}
+	ipv6Manager := &fakeIPv6{tunEffective: true}
 
 	manager := Manager{
 		cfg:   cfg,
@@ -49,6 +52,9 @@ func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 			},
 			newSysctl: func() sysctlService {
 				return sysctlManager
+			},
+			newIPv6: func(config.Config) ipv6Service {
+				return ipv6Manager
 			},
 			interfaces: func() ([]net.Interface, error) {
 				return []net.Interface{{Name: cfg.Gateway.Interface}}, nil
@@ -113,6 +119,41 @@ func TestPreflightRejectsSameGatewayAndUpstreamInterface(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "must differ") {
 		t.Fatalf("preflight() error = %q", err)
+	}
+}
+
+func TestResolveIPv6AutoDisablesTUNWhenNativeIPv6IsUnavailable(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Auto
+	manager := Manager{cfg: cfg}
+	ipv6Manager := &fakeIPv6{nativeAvailable: false}
+
+	resolution := manager.resolveIPv6(gatewayDeps{
+		newIPv6: func(config.Config) ipv6Service { return ipv6Manager },
+	})
+
+	if resolution.Config.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		t.Fatalf("effective TUN IPv6 = %q, want off", resolution.Config.Transparent.TUNIPv6)
+	}
+	if resolution.Requested != config.TUNIPv6Auto || resolution.Reason != "native_ipv6_unavailable" {
+		t.Fatalf("resolution = %#v", resolution)
+	}
+}
+
+func TestResolveIPv6AlwaysDoesNotDependOnNativeDetection(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	manager := Manager{cfg: cfg}
+	ipv6Manager := &fakeIPv6{nativeErr: errors.New("must not be called")}
+
+	resolution := manager.resolveIPv6(gatewayDeps{
+		newIPv6: func(config.Config) ipv6Service { return ipv6Manager },
+	})
+
+	if resolution.Config.Transparent.TUNIPv6 != config.TUNIPv6Always || resolution.Reason != "forced" {
+		t.Fatalf("resolution = %#v", resolution)
 	}
 }
 
@@ -777,3 +818,15 @@ func (f *fakeSysctl) Restore(value string) error {
 	f.restoreValue = value
 	return f.restoreErr
 }
+
+type fakeIPv6 struct {
+	nativeAvailable bool
+	nativeErr       error
+	tunEffective    bool
+}
+
+func (f *fakeIPv6) NativeAvailable() (bool, error) {
+	return f.nativeAvailable, f.nativeErr
+}
+
+func (f *fakeIPv6) TUNEffective() bool { return f.tunEffective }

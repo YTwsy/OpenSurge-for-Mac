@@ -239,8 +239,10 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.DHCP.Domain = input.DHCP.Domain
 	cfg.DNS.Listen = input.DNS.Listen
 	cfg.DNS.Upstream = input.DNS.Upstream
+	cfg.DNS.IPv6 = input.DNS.IPv6
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
+	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6
 	cfg.DevicePolicy.ProtectedIPv4 = append([]string(nil), input.DevicePolicy.ProtectedIPv4...)
 	createdPolicy := ""
 	if input.DevicePolicy.Enabled && cfg.DevicePolicy.File == "" {

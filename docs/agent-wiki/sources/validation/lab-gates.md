@@ -22,6 +22,12 @@ HTTPS，以及清理行为。
 它使用 `tests/lab/mihomo-profile.imported-tun.yaml`，保持规则为 `MATCH,DIRECT`，
 证明 imported profile 可以进入透明 TUN lab 路径。
 
+`make lab-test-tun-ipv6` 是 DNS AAAA 与宿主 Mac VIF IPv6 的门槛。它强制启用
+TUN IPv6，要求客户端通过网关的 IPv4 DNS 取得 fake AAAA，并要求 Mac 本机的
+IPv6 socket 经 mihomo VIF 完成 HTTPS。mihomo 日志必须记录 TUN 目标，受控 HTTP
+CONNECT proxy 必须记录出口；dnsmasq 不得启用 RA，IPv6 forwarding 必须保持不变，
+停止后 VIF IPv6 地址必须消失。它不证明下游设备 IPv6 数据面或真实设备兼容性。
+
 `make lab-test-tun-imported-egress` 是 imported provider + policy-select 的 TUN
 出口切换门槛。它使用本地 HTTP provider 注入 `egress-proxy`，通过
 `omg policy-select` 把 `TunEgress` 从 `DIRECT` 切到受控 HTTP CONNECT proxy，并
@@ -51,6 +57,7 @@ selector 上 UDP/443 记录为 `REJECT` 而非 fall through 到 `DIRECT`。它�
 - runtime traffic defaults。
 
 宣称透明代理路径被验证前，应运行 `make lab-test-tun`。
+宣称 DNS AAAA 与宿主 VIF IPv6 被验证前，应运行 `make lab-test-tun-ipv6`。
 
 ## 运行前置条件
 

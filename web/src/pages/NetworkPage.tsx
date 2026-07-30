@@ -34,6 +34,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const configDirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
   const gatewayActive = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
   const gatewayStopped = overview?.status.gateway === 'stopped'
+  const runtimeTUNIPv6Requested = overview?.status.tun_ipv6_requested ?? 'off'
   const dhcpRuntimeDisabled = config?.gateway.mode === 'same_lan'
   const configurationEditable = !busy && gatewayStopped && !recoveryBlocksConfig
   const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
@@ -54,7 +55,11 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
 
   useEffect(() => {
     let active = true
-    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
+    void api.config().then(value => {
+      const normalized = normalizeIPv6Config(value)
+      if (active) { setConfig(normalized); setSavedConfig(normalized); setExpandedMode(normalized.gateway.mode); setDetailMode(normalized.gateway.mode) }
+      return active ? loadPlan(normalized) : undefined
+    }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
     void api.networkInterfaces().then(value => { if (active) setInterfaceOptions(value.interfaces) }).catch(() => { if (active) setInterfaceDiscoveryError(true) })
     return () => { active = false }
   }, [loadPlan])
@@ -235,9 +240,30 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
             <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
           </ConfigField>
-          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
-            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, mode: event.target.value as 'off' | 'tun' } })}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+          <ConfigField label="IPv6 DNS 查询" setting="dns.ipv6" hint="决定 mihomo DNS 是否回答 AAAA 查询。关闭时返回空的 AAAA 结果；开启后可生成 fake IPv6。这个设置本身不会建立 IPv6 路由，也不会让下游 IPv6 自动经过 Mac。">
+            <label className="checkbox-field"><input type="checkbox" checked={config.dns.ipv6} onChange={event => setConfig({ ...config, dns: { ...config.dns, ipv6: event.target.checked } })} /> 允许 AAAA / IPv6 DNS 查询</label>
           </ConfigField>
+          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
+            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
+              const mode = event.target.value as 'off' | 'tun'
+              setConfig({ ...config, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 } })
+            }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+          </ConfigField>
+          <ConfigField label="TUN IPv6" setting="transparent.tun_ipv6" hint="只控制这台 Mac 的 mihomo VIF。关闭：不创建 VIF IPv6。自动：仅在上游接口同时具有可用 IPv6 地址和默认路由时启用。总是启用：忽略宿主机 IPv6 探测，适合受控实验或明确需要强制启用的网络。">
+            <select aria-label="TUN IPv6" value={config.transparent.tun_ipv6} disabled={config.transparent.mode !== 'tun'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, tun_ipv6: event.target.value as 'off' | 'auto' | 'always' } })}>
+              <option value="off">关闭</option>
+              <option value="auto">自动</option>
+              <option value="always">总是启用</option>
+            </select>
+          </ConfigField>
+          {config.dns.ipv6 && config.transparent.tun_ipv6 === 'off' && <div className="notice warn">IPv6 DNS 查询已开启，但 TUN IPv6 关闭。客户端可能得到 AAAA 结果，却没有由 OpenSurge 提供的 IPv6 透明路径。</div>}
+          {config.transparent.tun_ipv6 !== 'off' && !config.dns.ipv6 && <div className="notice">TUN IPv6 已开启，但 IPv6 DNS 查询关闭。IPv6 字面地址仍可进入 TUN，普通域名不会从 OpenSurge DNS 获得 AAAA 结果。</div>}
+          {config.transparent.tun_ipv6 !== 'off' && <div className="notice warn">TUN IPv6 只控制这台 Mac 的 mihomo VIF，不会向下游局域网广播 Router Advertisement，也不会接管下游设备的 IPv6。下游设备仍可能沿原路由器的 IPv6 路径绕过 Mac。</div>}
+          {gatewayActive && overview && <div className="network-config-guide">
+            <strong>IPv6 运行状态</strong>
+            <p>DNS 查询：{overview.status.dns_ipv6 ? '开启' : '关闭'} · 本机 VIF 请求：{tunIPv6Label(runtimeTUNIPv6Requested)} · 实际生效：{overview.status.tun_ipv6_effective ? '是' : '否'}</p>
+            {!overview.status.tun_ipv6_effective && runtimeTUNIPv6Requested !== 'off' && <small>原因：{ipv6ReasonLabel(overview.status.ipv6_reason ?? '')}</small>}
+          </div>}
           <ConfigField label="每设备策略" setting="device_policy.file" hint="启用后可在“设备”页为 MAC 固定租约及独立 mihomo 策略；若尚无策略文件，保存时会创建一个空文件。关闭后不再使用此策略文件。">
             <label className="checkbox-field"><input type="checkbox" checked={config.device_policy.enabled} onChange={event => setConfig({ ...config, device_policy: { ...config.device_policy, enabled: event.target.checked } })} /> 启用每设备策略</label>
           </ConfigField>
@@ -308,6 +334,25 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
 
 function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
   return mode === 'same_lan' ? '旁路由模式' : '独立下游 LAN'
+}
+
+function tunIPv6Label(mode: ControlConfig['transparent']['tun_ipv6']) {
+  return mode === 'auto' ? '自动' : mode === 'always' ? '总是启用' : '关闭'
+}
+
+function normalizeIPv6Config(value: ControlConfig): ControlConfig {
+  return {
+    ...value,
+    dns: { ...value.dns, ipv6: value.dns.ipv6 ?? false },
+    transparent: { ...value.transparent, tun_ipv6: value.transparent.tun_ipv6 ?? 'off' },
+  }
+}
+
+function ipv6ReasonLabel(reason: string) {
+  if (reason === 'native_ipv6_unavailable') return '上游接口没有同时具备可用 IPv6 地址与默认路由'
+  if (reason === 'tun_ipv6_address_missing') return 'mihomo TUN 未出现预期 IPv6 地址'
+  if (reason.startsWith('native_detection_failed:')) return `自动探测失败（${reason.slice('native_detection_failed:'.length).trim()}）`
+  return reason || '未提供'
 }
 
 function gatewayModeDescription(config: ControlConfig) {

@@ -49,3 +49,23 @@ func TestValidateConfigWithTimeoutReportsSlowEngine(t *testing.T) {
 		t.Fatalf("validateConfigWithTimeout() error = %v", err)
 	}
 }
+
+func TestRuntimeEnvOnlyForAlwaysTUNIPv6(t *testing.T) {
+	cfg := config.Default()
+	manager := New(cfg, runtime.NewPaths(cfg))
+	if got := manager.runtimeEnv(); got != nil {
+		t.Fatalf("runtimeEnv() = %#v for disabled IPv6", got)
+	}
+
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Auto
+	manager = New(cfg, runtime.NewPaths(cfg))
+	if got := manager.runtimeEnv(); got != nil {
+		t.Fatalf("runtimeEnv() = %#v for automatic IPv6", got)
+	}
+
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	manager = New(cfg, runtime.NewPaths(cfg))
+	if got := manager.runtimeEnv()["SKIP_SYSTEM_IPV6_CHECK"]; got != "1" {
+		t.Fatalf("SKIP_SYSTEM_IPV6_CHECK = %q", got)
+	}
+}

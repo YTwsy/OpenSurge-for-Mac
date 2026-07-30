@@ -154,3 +154,18 @@ func TestRenderConfigSameWiFiDHCP(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderConfigNeverAdvertisesDownstreamIPv6(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "bridge100"
+	cfg.Gateway.UpstreamInterface = "en0"
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rendered, "enable-ra") || strings.Contains(rendered, "ra-only") {
+		t.Fatalf("dnsmasq unexpectedly advertises downstream IPv6:\n%s", rendered)
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
+	"open-mihomo-gateway/internal/macosipv6"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/pf"
 	"open-mihomo-gateway/internal/runtime"
@@ -62,6 +63,11 @@ type sysctlService interface {
 	Restore(string) error
 }
 
+type ipv6Service interface {
+	NativeAvailable() (bool, error)
+	TUNEffective() bool
+}
+
 type gatewayDeps struct {
 	geteuid            func() int
 	loadState          func(string) (runtime.State, bool, error)
@@ -72,6 +78,7 @@ type gatewayDeps struct {
 	newMihomo          func(config.Config, runtime.Paths) mihomoService
 	newPF              func(config.Config, runtime.Paths) pfService
 	newSysctl          func() sysctlService
+	newIPv6            func(config.Config) ipv6Service
 	interfaces         func() ([]net.Interface, error)
 	interfaceByName    func(string) (*net.Interface, error)
 	interfaceAddrs     func(*net.Interface) ([]net.Addr, error)
@@ -98,6 +105,9 @@ func defaultGatewayDeps() gatewayDeps {
 		newSysctl: func() sysctlService {
 			return sysctl.New()
 		},
+		newIPv6: func(cfg config.Config) ipv6Service {
+			return macosipv6.New(cfg)
+		},
 		interfaces:      net.Interfaces,
 		interfaceByName: net.InterfaceByName,
 		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
@@ -105,6 +115,70 @@ func defaultGatewayDeps() gatewayDeps {
 		},
 		probeReservationIP: probeReservationIPConflict,
 		now:                time.Now,
+	}
+}
+
+func (d gatewayDeps) ipv6(cfg config.Config) ipv6Service {
+	if d.newIPv6 != nil {
+		return d.newIPv6(cfg)
+	}
+	return macosipv6.New(cfg)
+}
+
+type ipv6Resolution struct {
+	Config          config.Config
+	Requested       string
+	NativeAvailable bool
+	Reason          string
+}
+
+func (m Manager) resolveIPv6(deps gatewayDeps) ipv6Resolution {
+	resolution := ipv6Resolution{
+		Config:    m.cfg,
+		Requested: m.cfg.Transparent.TUNIPv6,
+		Reason:    "disabled",
+	}
+	switch m.cfg.Transparent.TUNIPv6 {
+	case config.TUNIPv6Always:
+		resolution.Reason = "forced"
+	case config.TUNIPv6Auto:
+		available, err := deps.ipv6(m.cfg).NativeAvailable()
+		if err != nil {
+			resolution.Config.Transparent.TUNIPv6 = config.TUNIPv6Off
+			resolution.Reason = "native_detection_failed: " + err.Error()
+			return resolution
+		}
+		resolution.NativeAvailable = available
+		if available {
+			resolution.Reason = "native_ipv6_available"
+		} else {
+			resolution.Config.Transparent.TUNIPv6 = config.TUNIPv6Off
+			resolution.Reason = "native_ipv6_unavailable"
+		}
+	}
+	return resolution
+}
+
+func appliedConfigFromState(cfg config.Config, state runtime.State) config.Config {
+	cfg.DNS.IPv6 = state.DNSIPv6
+	if state.TUNIPv6Effective {
+		cfg.Transparent.TUNIPv6 = state.TUNIPv6Requested
+	} else {
+		cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+	}
+	return cfg
+}
+
+func waitForTUNIPv6(service ipv6Service, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if service.TUNEffective() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -131,6 +205,8 @@ func (m Manager) Start(_ context.Context) error {
 	if err := config.Validate(m.cfg); err != nil {
 		return err
 	}
+	ipv6Resolution := m.resolveIPv6(deps)
+	m.cfg = ipv6Resolution.Config
 	if err := deps.ensure(m.paths); err != nil {
 		return err
 	}
@@ -139,6 +215,7 @@ func (m Manager) Start(_ context.Context) error {
 	mihomoManager := deps.newMihomo(m.cfg, m.paths)
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
+	ipv6Manager := deps.ipv6(m.cfg)
 	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
 		return err
 	}
@@ -180,10 +257,14 @@ func (m Manager) Start(_ context.Context) error {
 	}
 
 	state := runtime.State{
-		StartedAt:          deps.now(),
-		IPForwardingBefore: ipForwardingBefore,
-		PFEnabledBefore:    pfEnabledBefore,
-		ProfileDigest:      profileDigest,
+		StartedAt:           deps.now(),
+		IPForwardingBefore:  ipForwardingBefore,
+		PFEnabledBefore:     pfEnabledBefore,
+		ProfileDigest:       profileDigest,
+		DNSIPv6:             m.cfg.DNS.IPv6,
+		TUNIPv6Requested:    ipv6Resolution.Requested,
+		NativeIPv6Available: ipv6Resolution.NativeAvailable,
+		IPv6Reason:          ipv6Resolution.Reason,
 	}
 	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
 		state.DevicePolicyDigest = bundle.Digest
@@ -202,6 +283,12 @@ func (m Manager) Start(_ context.Context) error {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
 	state.PIDMihomo = mihomoPID
+	if m.cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		if !waitForTUNIPv6(ipv6Manager, 2*time.Second) {
+			return m.rollback(fmt.Errorf("mihomo TUN IPv6 address did not become effective"), state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		}
+		state.TUNIPv6Effective = true
+	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
 	}
@@ -297,7 +384,8 @@ func (m Manager) RestartMihomo(_ context.Context) error {
 		return fmt.Errorf("desired imported mihomo profile differs from the applied runtime; run reload instead")
 	}
 
-	mihomoManager := deps.newMihomo(m.cfg, m.paths)
+	appliedCfg := appliedConfigFromState(m.cfg, state)
+	mihomoManager := deps.newMihomo(appliedCfg, m.paths)
 	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
 		return fmt.Errorf("prepared mihomo config validation failed: %w", err)
 	}
@@ -321,6 +409,10 @@ func (m Manager) RestartMihomo(_ context.Context) error {
 	newPID, err := mihomoManager.Start()
 	if err != nil {
 		return fmt.Errorf("start replacement mihomo process: %w", err)
+	}
+	if state.TUNIPv6Effective && !waitForTUNIPv6(deps.ipv6(appliedCfg), 2*time.Second) {
+		stopErr := mihomoManager.Stop(newPID)
+		return errors.Join(fmt.Errorf("replacement mihomo TUN IPv6 address did not become effective"), stopErr)
 	}
 	state.PIDMihomo = newPID
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
@@ -410,12 +502,13 @@ func (m Manager) Stop(_ context.Context) error {
 		return err
 	}
 	var cleanupErr error
-	pfManager := deps.newPF(m.cfg, m.paths)
+	appliedCfg := appliedConfigFromState(m.cfg, state)
+	pfManager := deps.newPF(appliedCfg, m.paths)
 	sysctlManager := deps.newSysctl()
 	if exists {
-		dhcpManager := deps.newDHCP(m.cfg, m.paths)
+		dhcpManager := deps.newDHCP(appliedCfg, m.paths)
 		cleanupErr = errors.Join(cleanupErr, dhcpManager.Stop(state.PIDDNSMasq))
-		mihomoManager := deps.newMihomo(m.cfg, m.paths)
+		mihomoManager := deps.newMihomo(appliedCfg, m.paths)
 		cleanupErr = errors.Join(cleanupErr, mihomoManager.Stop(state.PIDMihomo))
 		if state.PFAnchorLoaded {
 			cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))

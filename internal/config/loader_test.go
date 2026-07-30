@@ -37,17 +37,50 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.DNS.Upstream != MihomoDNSUpstream {
 		t.Fatalf("DNS.Upstream = %q", cfg.DNS.Upstream)
 	}
+	if cfg.DNS.IPv6 {
+		t.Fatalf("DNS.IPv6 = true")
+	}
 	if cfg.Transparent.Mode != TransparentModeOff {
 		t.Fatalf("Transparent.Mode = %q", cfg.Transparent.Mode)
 	}
 	if cfg.Transparent.TUNDevice != "utun123" {
 		t.Fatalf("Transparent.TUNDevice = %q", cfg.Transparent.TUNDevice)
 	}
+	if cfg.Transparent.TUNIPv6 != TUNIPv6Off {
+		t.Fatalf("Transparent.TUNIPv6 = %q", cfg.Transparent.TUNIPv6)
+	}
 	if cfg.UpstreamProxy.Enabled {
 		t.Fatalf("UpstreamProxy.Enabled = true")
 	}
 	if cfg.UpstreamProxy.MatchDomain != "example.com" {
 		t.Fatalf("UpstreamProxy.MatchDomain = %q", cfg.UpstreamProxy.MatchDomain)
+	}
+}
+
+func TestLoadIPv6DNSAndTUNMode(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yaml")
+	configBody := `
+dns:
+  ipv6: true
+
+transparent:
+  mode: "tun"
+  tun_ipv6: "always"
+`
+	if err := os.WriteFile(configPath, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.DNS.IPv6 {
+		t.Fatal("DNS.IPv6 = false")
+	}
+	if cfg.Transparent.TUNIPv6 != TUNIPv6Always {
+		t.Fatalf("Transparent.TUNIPv6 = %q", cfg.Transparent.TUNIPv6)
 	}
 }
 

@@ -171,9 +171,12 @@ render_tun_egress_profile() {
 }
 
 write_config() {
-  local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line device_policy_file
+  local mode transparent_mode dns_ipv6 tun_ipv6 iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line device_policy_file
   local profile_mode profile_path profile_source
 	mode="${1:-off}"
+  transparent_mode="$mode"
+  dns_ipv6=false
+  tun_ipv6=off
   TUN_EGRESS_PROFILE=0
 	iface="$(lab_interface)"
 	upstream="$(upstream_interface)"
@@ -203,6 +206,12 @@ write_config() {
   case "$mode" in
     off) ;;
     tun) dns_upstream_line='  upstream: "127.0.0.1#1053"' ;;
+    tun-ipv6)
+      transparent_mode=tun
+      dns_ipv6=true
+      tun_ipv6=always
+      dns_upstream_line='  upstream: "127.0.0.1#1053"'
+      ;;
     *) echo "unknown transparent mode: $mode" >&2; exit 2 ;;
   esac
 
@@ -224,8 +233,10 @@ write_config() {
     -e "s|__MIHOMO_PROFILE_MODE__|$(sed_escape "$profile_mode")|g" \
     -e "s|__MIHOMO_PROFILE__|$(sed_escape "$profile_path")|g" \
     -e "s|__DEVICE_POLICY_FILE__|$(sed_escape "$device_policy_file")|g" \
+    -e "s|__DNS_IPV6__|$(sed_escape "$dns_ipv6")|g" \
     -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
-    -e "s|__TRANSPARENT_MODE__|$(sed_escape "$mode")|g" \
+    -e "s|__TRANSPARENT_MODE__|$(sed_escape "$transparent_mode")|g" \
+    -e "s|__TUN_IPV6__|$(sed_escape "$tun_ipv6")|g" \
     -e "s|__RUNTIME_DIR__|$(sed_escape "$runtime_dir")|g" \
     "$CONFIG_TEMPLATE" >"$CONFIG"
 }
@@ -258,7 +269,10 @@ start_clients() {
     if [[ ! -d "$(instance_dir "$client")" ]]; then
       limactl create -y --name "$client" "$CLIENT_CONFIG"
     fi
-    limactl start "$client"
+    # Fresh cloud images can need more than Lima's default startup window
+    # before SSH and cloud-init are ready, especially immediately after a
+    # client template change.
+    limactl start --timeout 10m "$client"
     limactl shell "$client" -- true
   done
 }
@@ -287,11 +301,18 @@ collect_artifacts() {
   artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$artifact_dir"
   cp "$CONFIG" "$artifact_dir/config.yaml" 2>/dev/null || true
+  cp "$STATE_DIR/mihomo.yaml" "$artifact_dir/mihomo.yaml" 2>/dev/null || true
+  cp "$STATE_DIR/dnsmasq.conf" "$artifact_dir/dnsmasq.conf" 2>/dev/null || true
+  cp "$STATE_DIR/pf.anchor" "$artifact_dir/pf.anchor" 2>/dev/null || true
+  cp "$STATE_DIR/ipv6-status.json" "$artifact_dir/ipv6-status.json" 2>/dev/null || true
   cp "$LAB_DEVICE_POLICY_FILE" "$artifact_dir/device-policy.json" 2>/dev/null || true
   cp "$LAB_MIHOMO_PROFILE" "$artifact_dir/device-policy-profile.yaml" 2>/dev/null || true
   cp "$EGRESS_PROVIDER" "$artifact_dir/tun-egress-provider.yaml" 2>/dev/null || true
   cp -R "$STATE_DIR/egress" "$artifact_dir/egress" 2>/dev/null || true
   cp -R "$STATE_DIR/logs" "$artifact_dir/logs" 2>/dev/null || true
+  /usr/sbin/netstat -rn -f inet6 >"$artifact_dir/host-ipv6-routes.txt" 2>&1 || true
+  /usr/sbin/ndp -an >"$artifact_dir/host-ipv6-neighbors.txt" 2>&1 || true
+  /usr/sbin/sysctl net.inet6.ip6.forwarding >"$artifact_dir/host-ipv6-forwarding.txt" 2>&1 || true
   "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
   "$BINARY" leases --config "$CONFIG" >"$artifact_dir/leases.txt" 2>&1 || true
   /sbin/ifconfig "$(lab_interface)" >"$artifact_dir/interface.txt" 2>&1 || true
@@ -309,6 +330,31 @@ url_host() {
   host="${host%%/*}"
   host="${host%%:*}"
   printf '%s\n' "$host"
+}
+
+host_tun_ipv6_test() {
+  local authority fake_aaaa host port scheme test_url
+  test_url="${1:-https://example.com/}"
+  scheme="${test_url%%:*}"
+  authority="${test_url#*://}"
+  authority="${authority%%/*}"
+  host="${authority%%:*}"
+  if [[ "$authority" == *:* ]]; then
+    port="${authority##*:}"
+  elif [[ "$scheme" == "https" ]]; then
+    port=443
+  else
+    port=80
+  fi
+  fake_aaaa="$(dig +time=5 +tries=1 +short @127.0.0.1 -p 1053 "$host" AAAA | awk '/:/ { print; exit }')"
+  [[ "$fake_aaaa" == fdfe:dcba:9876:* ]] || {
+    echo "unexpected host fake AAAA for $host: $fake_aaaa" >&2
+    exit 1
+  }
+  /sbin/route -n get -inet6 "$fake_aaaa" | grep -Fq "interface: utun123"
+  curl -6 --noproxy '*' --resolve "$host:$port:[$fake_aaaa]" \
+    --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+  printf 'HOST_TUN_IPV6_OK interface=utun123 fake_aaaa=%s url=%s\n' "$fake_aaaa" "$test_url"
 }
 
 wait_for_transparent_log() {
@@ -789,17 +835,22 @@ run_device_policy_test() {
 }
 
 run_test() {
-  local mode client gateway_started egress_probe_started
+  local mode client client_aaaa gateway_started egress_probe_started host ipv6_forwarding_before
   mode="${1:-off}"
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
   ensure_lab_state_writable
   write_config "$mode"
+  rm -f "$STATE_DIR"/logs/ipv6-packets-*.log
   require_command go
   mkdir -p "$ROOT/bin"
   GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
     go build -o "$BINARY" ./cmd/omg
+  ipv6_forwarding_before=""
+  if [[ "$mode" == "tun-ipv6" ]]; then
+    ipv6_forwarding_before="$(/usr/sbin/sysctl -n net.inet6.ip6.forwarding | tr -d '[:space:]')"
+  fi
 
   gateway_started=0
   egress_probe_started=0
@@ -829,7 +880,35 @@ run_test() {
     limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   done
 
-  if [[ "$mode" == "tun" && "$TUN_EGRESS_PROFILE" == 1 ]]; then
+  if [[ "$mode" == "tun-ipv6" ]]; then
+    [[ "$TUN_EGRESS_PROFILE" == 1 ]] || { echo "IPv6 TUN lab requires the controlled imported egress profile" >&2; exit 1; }
+    wait_for_policy_option TunEgress egress-proxy
+    "$BINARY" policy-select --config "$CONFIG" --group TunEgress --policy egress-proxy --format json
+    : >"$STATE_DIR/egress/proxy.log"
+    host="$(url_host "$TEST_URL")"
+    for client in $CLIENTS; do
+      client_aaaa="$(limactl shell "$client" -- dig +time=5 +tries=1 +short "@$LAN_IP" "$host" AAAA | awk '/:/ { print; exit }' | tr -d '\r')"
+      [[ "$client_aaaa" == fdfe:dcba:9876:* ]] || {
+        echo "unexpected client fake AAAA for $host on $client: $client_aaaa" >&2
+        exit 1
+      }
+    done
+    host_tun_ipv6_test "$TEST_URL"
+    wait_for_tun_policy_log TunEgress egress-proxy
+    assert_tun_egress_proxy_used
+    "$BINARY" status --config "$CONFIG" --format json >"$STATE_DIR/ipv6-status.json"
+    grep -Fq '"dns_ipv6": true' "$STATE_DIR/ipv6-status.json"
+    grep -Fq '"tun_ipv6_requested": "always"' "$STATE_DIR/ipv6-status.json"
+    grep -Fq '"tun_ipv6_effective": true' "$STATE_DIR/ipv6-status.json"
+    [[ "$(/usr/sbin/sysctl -n net.inet6.ip6.forwarding | tr -d '[:space:]')" == "$ipv6_forwarding_before" ]] || {
+      echo "TUN IPv6 unexpectedly changed host IPv6 forwarding" >&2
+      exit 1
+    }
+    if grep -Eq 'enable-ra|ra-only' "$STATE_DIR/dnsmasq.conf"; then
+      echo "TUN IPv6 unexpectedly enabled downstream Router Advertisement" >&2
+      exit 1
+    fi
+  elif [[ "$mode" == "tun" && "$TUN_EGRESS_PROFILE" == 1 ]]; then
     wait_for_policy_option TunEgress egress-proxy
     "$BINARY" providers --config "$CONFIG" --format json >"$STATE_DIR/tun-egress-providers.json"
     grep -Fq '"name": "tun-egress-provider"' "$STATE_DIR/tun-egress-providers.json"
@@ -870,6 +949,16 @@ run_test() {
 
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
+  if [[ "$mode" == "tun-ipv6" ]]; then
+    [[ "$(/usr/sbin/sysctl -n net.inet6.ip6.forwarding | tr -d '[:space:]')" == "$ipv6_forwarding_before" ]] || {
+      echo "IPv6 forwarding was not restored after stop" >&2
+      exit 1
+    }
+    /sbin/ifconfig utun123 2>/dev/null | grep -Fq 'fdfe:dcba:9877::1' && {
+      echo "mihomo TUN IPv6 address remained after stop" >&2
+      exit 1
+    }
+  fi
   if [[ "$egress_probe_started" == 1 ]]; then
     stop_egress_probe
     egress_probe_started=0
@@ -924,6 +1013,9 @@ case "${1:-}" in
   test-tun)
     run_test tun
     ;;
+  test-tun-ipv6)
+    run_test tun-ipv6
+    ;;
   test-tun-device-policy)
     run_device_policy_test
     ;;
@@ -940,7 +1032,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|down|destroy>" >&2
+    echo "usage: $0 <check|up|status|test|test-tun|test-tun-ipv6|test-tun-device-policy|down|destroy>" >&2
     exit 2
     ;;
 esac

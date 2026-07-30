@@ -65,6 +65,8 @@ forwarding 提供原生网关路径。
 - 启停 DHCP/DNS、mihomo、pf NAT 与 IPv4 forwarding，并带 rollback；
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
+- 独立控制 IPv6 DNS 查询与本机 TUN/VIF IPv6；当前不会向下游 LAN 广播 RA，
+  也不宣称接管下游设备的 IPv6；
 - DHCP 接管模式为登记设备生成 MAC 绑定的固定 IPv4 租约；旁路由模式（手工网关）
   使用主路由侧保持稳定的静态 IPv4，两者都可使用独立出口策略。
 
@@ -374,6 +376,10 @@ lab 脚本，以及会影响运行时流量的示例配置。除非有专用 mac
 
 使用 `make lab-test-tun` 验证支持的透明代理路径。该测试会让客户端不配置代理，
 并要求 mihomo 日志中出现通过 TUN inbound 观察到的直连 HTTPS 请求。修改
+mihomo 的 DNS AAAA 或本机 VIF IPv6 行为时，使用
+`make lab-test-tun-ipv6`；它验证客户端经 IPv4 DNS 获得 fake AAAA、本机 IPv6
+socket 经 TUN 与受控出口完成 HTTPS，同时确认未启用下游 RA、未改变 IPv6
+forwarding。它不证明下游设备 IPv6 数据面。修改
 mihomo profile 导入或 overlay 行为时，使用
 `make lab-test-tun-imported-profile`；它会用 imported profile fixture 跑同一个
 TUN 门禁。修改 imported provider 或会影响透明 TUN 流量的策略选择行为时，使用
@@ -426,6 +432,7 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-ipv6
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy

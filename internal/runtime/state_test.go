@@ -14,6 +14,10 @@ func TestSaveAndLoadState(t *testing.T) {
 		IPForwardingBefore: "0",
 		PFEnabledBefore:    true,
 		PFAnchorLoaded:     true,
+		DNSIPv6:            true,
+		TUNIPv6Requested:   "always",
+		TUNIPv6Effective:   true,
+		IPv6Reason:         "forced",
 		StartedAt:          time.Unix(1_700_000_000, 0).UTC(),
 	}
 

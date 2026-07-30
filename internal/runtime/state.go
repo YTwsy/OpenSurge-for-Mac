@@ -9,14 +9,19 @@ import (
 )
 
 type State struct {
-	PIDDNSMasq         int       `json:"pid_dnsmasq,omitempty"`
-	PIDMihomo          int       `json:"pid_mihomo,omitempty"`
-	IPForwardingBefore string    `json:"ip_forwarding_before,omitempty"`
-	PFEnabledBefore    bool      `json:"pf_enabled_before"`
-	PFAnchorLoaded     bool      `json:"pf_anchor_loaded"`
-	DevicePolicyDigest string    `json:"device_policy_digest,omitempty"`
-	ProfileDigest      string    `json:"profile_digest,omitempty"`
-	StartedAt          time.Time `json:"started_at"`
+	PIDDNSMasq          int       `json:"pid_dnsmasq,omitempty"`
+	PIDMihomo           int       `json:"pid_mihomo,omitempty"`
+	IPForwardingBefore  string    `json:"ip_forwarding_before,omitempty"`
+	PFEnabledBefore     bool      `json:"pf_enabled_before"`
+	PFAnchorLoaded      bool      `json:"pf_anchor_loaded"`
+	DNSIPv6             bool      `json:"dns_ipv6"`
+	TUNIPv6Requested    string    `json:"tun_ipv6_requested,omitempty"`
+	TUNIPv6Effective    bool      `json:"tun_ipv6_effective"`
+	NativeIPv6Available bool      `json:"native_ipv6_available"`
+	IPv6Reason          string    `json:"ipv6_reason,omitempty"`
+	DevicePolicyDigest  string    `json:"device_policy_digest,omitempty"`
+	ProfileDigest       string    `json:"profile_digest,omitempty"`
+	StartedAt           time.Time `json:"started_at"`
 }
 
 func LoadState(path string) (State, bool, error) {

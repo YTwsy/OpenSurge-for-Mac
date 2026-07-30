@@ -62,6 +62,7 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-ipv6
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
@@ -81,6 +82,15 @@ the fake-IP answer intentionally.
 with `transparent.mode: "tun"`, forwards dnsmasq to mihomo DNS, leaves the
 clients without explicit proxy settings, and requires the no-proxy HTTPS
 request to appear in `mihomo.log`.
+
+`lab-test-tun-ipv6` is the DNS AAAA and host-Mac VIF IPv6 gate. It enables
+`dns.ipv6` and forces `transparent.tun_ipv6: "always"` in the controlled lab.
+Clients must resolve a fake AAAA through the gateway's IPv4 DNS path, while an
+IPv6 socket on the Mac must complete HTTPS through `utun123`. The request must
+appear in both the mihomo TUN log and the controlled CONNECT proxy log.
+dnsmasq must not enable RA, macOS IPv6 forwarding must remain unchanged, and
+the VIF IPv6 address must disappear after stop. This is not a downstream-device
+IPv6 data-plane or real-device compatibility claim.
 
 `lab-test-tun-imported-profile` runs the TUN gate with an imported profile
 fixture. `lab-test-tun-imported-egress` extends that path with a local HTTP
@@ -141,6 +151,7 @@ make lab-up       # create/start network and clients
 make lab-status   # inspect host and client state
 make lab-test     # run the end-to-end test and restore the host
 make lab-test-tun # run the TUN transparent proxy gate
+make lab-test-tun-ipv6 # prove fake AAAA and host-Mac VIF IPv6
 make lab-test-tun-imported-profile # run TUN with an imported profile fixture
 make lab-test-tun-imported-egress  # switch TUN egress through a controlled proxy
 make lab-test-tun-device-policy # prove independent per-device TUN policies

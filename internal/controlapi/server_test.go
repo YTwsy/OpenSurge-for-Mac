@@ -864,6 +864,8 @@ func TestControlConfigUsesRevisionAndAppliesTopology(t *testing.T) {
 	}
 	current.Gateway.Mode = config.GatewayModeSameLAN
 	current.DHCP.Enabled = false
+	current.DNS.IPv6 = true
+	current.Transparent.TUNIPv6 = config.TUNIPv6Auto
 	requestBody, _ := json.Marshal(current)
 	conflict := performAuthorized(server, http.MethodPut, "/api/v1/config", requestBody)
 	if conflict.Code != http.StatusConflict {
@@ -882,7 +884,7 @@ func TestControlConfigUsesRevisionAndAppliesTopology(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Gateway.Mode != config.GatewayModeSameLAN || updated.DHCP.Enabled {
+	if updated.Gateway.Mode != config.GatewayModeSameLAN || updated.DHCP.Enabled || !updated.DNS.IPv6 || updated.Transparent.TUNIPv6 != config.TUNIPv6Auto {
 		t.Fatalf("updated config=%#v", updated)
 	}
 }

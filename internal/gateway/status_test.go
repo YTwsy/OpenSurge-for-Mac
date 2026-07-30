@@ -36,3 +36,23 @@ func TestStatusFormatLabelsDHCPMode(t *testing.T) {
 		t.Fatalf("status did not preserve DHCP label:\n%s", got)
 	}
 }
+
+func TestStatusFormatIncludesIPv6RuntimeState(t *testing.T) {
+	status := Status{
+		Gateway:          "running",
+		DNSIPv6:          true,
+		TUNIPv6Requested: "auto",
+		TUNIPv6Effective: true,
+		IPv6Reason:       "native_ipv6_available",
+	}
+
+	got := status.Format()
+	for _, want := range []string{
+		"IPv6 DNS queries: true",
+		"TUN IPv6: requested=auto effective=true (native_ipv6_available)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("status missing %q:\n%s", want, got)
+		}
+	}
+}

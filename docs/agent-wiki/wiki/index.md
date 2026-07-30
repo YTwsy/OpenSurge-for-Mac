@@ -11,6 +11,8 @@
   gateway，以及如何停止并恢复。
 - [macOS TUN 透明代理](concepts/macos-tun-transparent-proxy.md)：为什么
   TUN 是透明代理主线，以及哪些旧旋钮必须保持 inactive。
+- [IPv6 DNS 与 TUN](concepts/ipv6-dns-tun.md)：AAAA 与 TUN 两个设置、自动/强制
+  语义、宿主 VIF 能力与下游 IPv6 非支持边界。
 - [mihomo profile overlay](concepts/mihomo-profile-overlay.md)：如何导入
   mihomo 代理/规则 section，同时保持 OpenSurge 接管网关字段。
 - [每设备策略覆盖](concepts/device-policy-overlays.md)：如何以 DHCP reservation 和

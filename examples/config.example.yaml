@@ -19,6 +19,8 @@ device_policy:
 dns:
   listen: "192.168.50.1"
   port: 53
+  # Answer AAAA queries and enable fake IPv6 only when an IPv6 path is wanted.
+  ipv6: false
   # Recommended: dnsmasq -> mihomo fake-IP DNS. Use 1.1.1.1 only as an
   # explicit diagnostic resolver; TUN dns-hijack may still capture it.
   upstream: "127.0.0.1#1053"
@@ -44,6 +46,8 @@ pf:
 
 transparent:
   mode: "off"
+  # off, auto (requires native upstream IPv6), or always.
+  tun_ipv6: "off"
   tun_device: "utun123"
   tun_stack: "mixed"
   tun_auto_route: true

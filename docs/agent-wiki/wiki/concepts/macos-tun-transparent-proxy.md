@@ -49,4 +49,8 @@ provider 和受控 HTTP CONNECT proxy，证明无显式代理客户端的 TUN �
 `TunEgress[DIRECT]` 切到 `TunEgress[egress-proxy]`。它仍然不是真实订阅节点或远端
 出口 IP 验收。
 
+如果变更涉及 TUN IPv6 或 fake AAAA，使用 `make lab-test-tun-ipv6`。它验证宿主
+VIF，不验证下游 RA/IPv6 forwarding。设置语义和支持边界见
+[IPv6 DNS 与 TUN](ipv6-dns-tun.md)。
+
 除非这个 gate 实际运行过，否则不要宣称 TUN lab coverage。

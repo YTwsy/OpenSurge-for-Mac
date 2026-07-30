@@ -15,6 +15,8 @@ func TestRenderRoundTrip(t *testing.T) {
 	cfg.DHCP.RangeStart = "192.168.1.120"
 	cfg.DHCP.RangeEnd = "192.168.1.199"
 	cfg.Transparent.Mode = TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = TUNIPv6Always
+	cfg.DNS.IPv6 = true
 	cfg.DevicePolicy.ProtectedIPv4 = []string{"192.168.1.1", "192.168.1.21"}
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "devices.json")
@@ -30,7 +32,8 @@ func TestRenderRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(Render()) error = %v", err)
 	}
-	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart {
+	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart ||
+		loaded.DNS.IPv6 != cfg.DNS.IPv6 || loaded.Transparent.TUNIPv6 != cfg.Transparent.TUNIPv6 {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 }

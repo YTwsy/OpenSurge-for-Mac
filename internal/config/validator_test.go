@@ -40,6 +40,29 @@ func TestValidateAcceptsTUNTransparentMode(t *testing.T) {
 	}
 }
 
+func TestValidateTUNIPv6Modes(t *testing.T) {
+	for _, mode := range []string{TUNIPv6Off, TUNIPv6Auto, TUNIPv6Always} {
+		cfg := Default()
+		cfg.Transparent.Mode = TransparentModeTUN
+		cfg.Transparent.TUNIPv6 = mode
+		if err := Validate(cfg); err != nil {
+			t.Fatalf("Validate() rejected transparent.tun_ipv6 %q: %v", mode, err)
+		}
+	}
+
+	cfg := Default()
+	cfg.Transparent.TUNIPv6 = TUNIPv6Auto
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), `requires transparent.mode: "tun"`) {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	cfg.Transparent.Mode = TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = "sometimes"
+	if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), "must be off, auto, or always") {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestValidateAcceptsSameLANGatewayMode(t *testing.T) {
 	cfg := Default()
 	cfg.Gateway.Mode = GatewayModeSameLAN

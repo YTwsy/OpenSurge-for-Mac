@@ -55,6 +55,7 @@ make lab-up
 sudo -v
 make lab-test
 make lab-test-tun
+make lab-test-tun-ipv6
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
@@ -71,6 +72,13 @@ artifact 会写入 `artifacts/lab`。managed mihomo DNS 在 TUN 关闭时仍会�
 `lab-test-tun` 是 TUN 透明代理门禁。它会把 lab 配置改写成
 `transparent.mode: "tun"`，让 dnsmasq 转发到 mihomo DNS，让客户端不设置显式代理，
 并要求无代理 HTTPS 请求出现在 `mihomo.log` 中。
+
+`lab-test-tun-ipv6` 是 DNS AAAA 与宿主 Mac VIF IPv6 门禁。它在受控 Lab 中开启
+`dns.ipv6` 并强制使用 `transparent.tun_ipv6: "always"`，要求客户端经网关的 IPv4
+DNS 获得 fake AAAA，并要求 Mac 本机的 IPv6 socket 经 `utun123` 完成 HTTPS。
+请求必须同时出现在 mihomo TUN 日志和受控 CONNECT proxy 日志中；dnsmasq 不得
+启用 RA，macOS IPv6 forwarding 必须保持不变，停止后 VIF IPv6 地址必须消失。
+该结论不代表下游设备 IPv6 数据面或真实设备兼容性。
 
 `lab-test-tun-imported-profile` 会使用 imported profile fixture 跑 TUN 门禁。
 `lab-test-tun-imported-egress` 会在这条路径上加入本地 HTTP provider 和受控 HTTP
@@ -122,6 +130,7 @@ make lab-up       # 创建/启动网络和客户端
 make lab-status   # 检查主机和客户端状态
 make lab-test     # 运行端到端测试并恢复主机
 make lab-test-tun # 运行 TUN 透明代理门禁
+make lab-test-tun-ipv6 # 验证 fake AAAA 与宿主 Mac VIF IPv6
 make lab-test-tun-imported-profile # 使用 imported profile fixture 跑 TUN
 make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
 make lab-test-tun-device-policy # 验证独立的每设备 TUN 策略

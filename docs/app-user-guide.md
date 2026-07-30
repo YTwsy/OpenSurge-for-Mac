@@ -57,6 +57,13 @@ upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Enable
 **每设备策略** (Per-device policies) if devices need independent egress
 choices, then select **保存网络配置** (Save network configuration).
 
+IPv6 has two independent controls: **IPv6 DNS queries** controls AAAA answers,
+while **TUN IPv6** controls the mihomo VIF IPv6 path on this Mac
+(Off/Auto/Always). Prefer Auto for normal use; Always is for networks where
+bypassing host detection is intentional. These controls do not advertise RA or
+take over downstream-device IPv6, so clients can still bypass the Mac through
+the existing router's IPv6 path.
+
 ### 3. Start OpenSurge
 
 For **Same-LAN DHCP takeover**, gateway start and stop are part of the recovery

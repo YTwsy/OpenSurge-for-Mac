@@ -67,7 +67,7 @@ func (m Manager) Start() (int, error) {
 	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o640); err != nil {
 		return 0, err
 	}
-	pid, err := process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-d", configDir, "-f", m.paths.MihomoConfig)
+	pid, err := process.StartDetachedWithLogEnv(m.paths.MihomoLog, m.runtimeEnv(), binary, "-d", configDir, "-f", m.paths.MihomoConfig)
 	if err != nil {
 		return 0, err
 	}
@@ -80,6 +80,13 @@ func (m Manager) Start() (int, error) {
 		return 0, err
 	}
 	return pid, nil
+}
+
+func (m Manager) runtimeEnv() map[string]string {
+	if m.cfg.Transparent.TUNIPv6 == config.TUNIPv6Always {
+		return map[string]string{"SKIP_SYSTEM_IPV6_CHECK": "1"}
+	}
+	return nil
 }
 
 func (m Manager) Check() error {

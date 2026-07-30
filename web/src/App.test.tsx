@@ -101,7 +101,7 @@ function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
     schema_version: 1, revision: 'config-revision',
     gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
     dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-    dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+    dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
 }
@@ -600,6 +600,51 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('button', { name: '保存网络配置' })).toBeTruthy()
   })
 
+  it('saves IPv6 DNS and TUN IPv6 as independent settings', async () => {
+    const current = configFor('isolated_lan')
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.saveConfig).mockImplementation(async value => value)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    const dnsIPv6 = await screen.findByLabelText('允许 AAAA / IPv6 DNS 查询')
+    const tunIPv6 = screen.getByLabelText('TUN IPv6')
+    expect((dnsIPv6 as HTMLInputElement).checked).toBe(false)
+    expect((tunIPv6 as HTMLSelectElement).value).toBe('off')
+
+    await userEvent.click(dnsIPv6)
+    expect(screen.getByText(/IPv6 DNS 查询已开启，但 TUN IPv6 关闭/)).toBeTruthy()
+    await userEvent.selectOptions(tunIPv6, 'auto')
+    expect(screen.queryByText(/IPv6 DNS 查询已开启，但 TUN IPv6 关闭/)).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      dns: expect.objectContaining({ ipv6: true }),
+      transparent: expect.objectContaining({ tun_ipv6: 'auto' }),
+    })))
+  })
+
+  it('shows applied host-VIF IPv6 state and the downstream boundary', async () => {
+    const current = configFor('isolated_lan')
+    current.dns.ipv6 = true
+    current.transparent.tun_ipv6 = 'auto'
+    const overview = overviewFor('isolated_lan', 'running')
+    overview.status.dns_ipv6 = true
+    overview.status.tun_ipv6_requested = 'auto'
+    overview.status.tun_ipv6_effective = false
+    overview.status.ipv6_reason = 'native_ipv6_unavailable'
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.overview).mockResolvedValue(overview)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    expect(await screen.findByText('IPv6 运行状态')).toBeTruthy()
+    expect(screen.getByText(/本机 VIF 请求：自动 · 实际生效：否/)).toBeTruthy()
+    expect(screen.getByText(/上游接口没有同时具备可用 IPv6 地址与默认路由/)).toBeTruthy()
+    expect(screen.getByText(/不会向下游局域网广播 Router Advertisement/)).toBeTruthy()
+  })
+
   it('imports an HTTPS source as a draft', async () => {
     vi.mocked(api.importURL).mockImplementationOnce(() => new Promise<Source>(() => {}))
     render(<App />)
@@ -679,7 +724,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
@@ -699,7 +744,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [] } })
@@ -724,7 +769,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })

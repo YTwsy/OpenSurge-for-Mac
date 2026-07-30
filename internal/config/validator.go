@@ -243,6 +243,14 @@ func validateMihomoProfile(cfg Config) error {
 }
 
 func validateTransparent(cfg TransparentConfig) error {
+	switch cfg.TUNIPv6 {
+	case TUNIPv6Off, TUNIPv6Auto, TUNIPv6Always:
+	default:
+		return fmt.Errorf("transparent.tun_ipv6 must be off, auto, or always")
+	}
+	if cfg.TUNIPv6 != TUNIPv6Off && cfg.Mode != TransparentModeTUN {
+		return fmt.Errorf("transparent.tun_ipv6 %s requires transparent.mode: \"tun\"", cfg.TUNIPv6)
+	}
 	switch cfg.Mode {
 	case TransparentModeOff:
 		return nil

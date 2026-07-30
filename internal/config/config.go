@@ -1,11 +1,11 @@
 package config
 
-import "open-mihomo-gateway/internal/device"
-
 import (
 	"fmt"
 	"net"
 	"path/filepath"
+
+	"open-mihomo-gateway/internal/device"
 )
 
 type Config struct {
@@ -48,6 +48,7 @@ type DNSConfig struct {
 	Listen   string
 	Port     int
 	Upstream string
+	IPv6     bool
 }
 
 type MihomoConfig struct {
@@ -77,6 +78,17 @@ const (
 	TransparentModeTUN = "tun"
 )
 
+const (
+	TUNIPv6Off    = "off"
+	TUNIPv6Auto   = "auto"
+	TUNIPv6Always = "always"
+)
+
+const (
+	MihomoFakeIPv6Range = "fdfe:dcba:9876::/64"
+	MihomoTUNIPv6       = "fdfe:dcba:9877::1/126"
+)
+
 // MihomoDNSUpstream is the dnsmasq upstream that preserves mihomo fake-IP and
 // TUN DNS semantics. An explicit public resolver remains supported for
 // diagnostics, but TUN dns-hijack means it is not a guaranteed bypass path.
@@ -94,6 +106,7 @@ type TransparentConfig struct {
 	TUNAutoRoute           bool
 	TUNAutoDetectInterface bool
 	TUNStrictRoute         bool
+	TUNIPv6                string
 }
 
 func (c TransparentConfig) TUNEnabled() bool {
@@ -140,6 +153,7 @@ func Default() Config {
 			Listen:   "192.168.50.1",
 			Port:     53,
 			Upstream: MihomoDNSUpstream,
+			IPv6:     false,
 		},
 		Mihomo: MihomoConfig{
 			Binary:      "./bin/mihomo",
@@ -162,6 +176,7 @@ func Default() Config {
 			TUNAutoRoute:           true,
 			TUNAutoDetectInterface: false,
 			TUNStrictRoute:         false,
+			TUNIPv6:                TUNIPv6Off,
 		},
 		UpstreamProxy: UpstreamProxyConfig{
 			Enabled:     false,

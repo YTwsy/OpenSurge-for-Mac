@@ -149,6 +149,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.DNS.Port = port
 	case "dns.upstream":
 		cfg.DNS.Upstream = value
+	case "dns.ipv6":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("dns.ipv6 must be a boolean")
+		}
+		cfg.DNS.IPv6 = enabled
 	case "mihomo.binary":
 		cfg.Mihomo.Binary = value
 	case "mihomo.config":
@@ -205,6 +211,8 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("transparent.tun_strict_route must be a boolean")
 		}
 		cfg.Transparent.TUNStrictRoute = enabled
+	case "transparent.tun_ipv6":
+		cfg.Transparent.TUNIPv6 = strings.ToLower(value)
 	case "upstream_proxy.enabled":
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {

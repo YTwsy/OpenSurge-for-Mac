@@ -17,6 +17,7 @@ device_policy:
 dns:
   listen: "192.168.50.1"
   port: 53
+  ipv6: __DNS_IPV6__
 __DNS_UPSTREAM_LINE__
 
 mihomo:
@@ -37,6 +38,7 @@ pf:
 
 transparent:
   mode: "__TRANSPARENT_MODE__"
+  tun_ipv6: "__TUN_IPV6__"
   tun_device: "utun123"
   tun_stack: "mixed"
   tun_auto_route: true
