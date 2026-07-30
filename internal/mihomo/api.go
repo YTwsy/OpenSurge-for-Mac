@@ -193,7 +193,7 @@ func FetchVersion(ctx context.Context, cfg config.Config) (Version, error) {
 }
 
 func FetchTUNRuntimeState(ctx context.Context, cfg config.Config) (TUNRuntimeState, error) {
-	client := &http.Client{Timeout: 500 * time.Millisecond}
+	client := &http.Client{Timeout: 2 * time.Second}
 	return fetchTUNRuntimeStateWithClient(ctx, cfg, client)
 }
 
