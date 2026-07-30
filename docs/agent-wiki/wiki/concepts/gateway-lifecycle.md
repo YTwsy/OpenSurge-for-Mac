@@ -26,11 +26,27 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtim
 7. 在修改 host network 前保存 runtime state；
 8. 启用 IPv4 forwarding；
 9. 启动 mihomo；
-10. 启动 dnsmasq；
-11. 加载 PF anchor。
+10. 最多等待 10 秒让 mihomo 运行时确认 TUN ready；若失败，先给 mihomo 3 秒
+    SIGTERM 清理窗口，再按需 SIGKILL 并 rollback；
+11. 启动 dnsmasq；
+12. 加载 PF anchor。
 
 Rollback 是 start 契约的一部分。如果后续步骤失败，manager 会尝试停止已经
 启动的服务、卸载 PF 状态，并恢复 forwarding。
+
+在 `same_wifi_dhcp` 中，gateway start 发生前，恢复状态机已经可能把 Mac 设为
+固定 IPv4，并要求操作者关闭路由器 DHCP。gateway rollback 只恢复本次 start
+拥有的进程、PF、forwarding 和 runtime state，不能重新开启路由器 DHCP，也不会
+在未确认 DHCP server 可用时把 Mac 冒险切回自动 DHCP。
+
+因此固定 IPv4 已应用、但 gateway 尚未 active 时必须提供“放弃 DHCP 接管”：
+
+- 若 DHCP OFFER 已可见，恢复 Mac 自动 DHCP 并完成恢复，菜单栏可退出 OpenSurge；
+- 若没有 DHCP OFFER，明确以 `complete_static` 结束：不冒险切换 Mac，保留固定
+  IPv4，也不声称路由器 DHCP 或其他客户端自动获取能力已恢复；这是用户主动放弃
+  后的终态，因此菜单栏可退出 OpenSurge；
+- TUN 启动失败时保留 `router_dhcp_disabled_confirmed` 和失败说明，让操作者选择
+  解决冲突后重试，或走上述放弃/恢复分支。
 
 ## Stop 顺序
 
@@ -62,6 +78,7 @@ device-policy snapshot，避免把仍运行或 degraded 的网关误记为已完
 profile，也把 profile 内容 digest 写进 runtime state，作为运行版本的唯一依据。预校验失败保持现有运行态；
 stop 失败保留 state；stop 已成功但 start 失败时网关保持 stopped，由 Control API 根据
 拓扑进入明确的重试/恢复路径。Reload 不承诺零中断，也不做 mihomo/dnsmasq 热替换。
+新 mihomo 进程仍必须通过同一套 TUN readiness，否则 start fail closed 并 rollback。
 
 运行中应用 imported profile 额外包一层 config 事务：先保留旧 config，写入并验证新
 desired config，再调用上述 reload。失败时恢复旧 config；如果 reload 已完成 stop 且
@@ -84,7 +101,7 @@ applied。网关停止时应用 profile 只更新 desired，留待下次正常 s
 router 或 DNS。启动替代进程失败时 state 保持 Mihomo PID 为 0，便于再次执行恢复或完整
 `stop`；旧事故日志不会被新进程清空。Control API 在 same-WiFi DHCP 拓扑中只允许 active、
 client validated 或明确跳过客户端验收的接管阶段执行，且成功或失败都不改变 DHCP 恢复
-状态机。
+状态机。替代进程必须通过 TUN readiness。
 
 这是一条显式恢复路径，不是自动 watchdog。只有真实 same-WiFi 链路断开/重连门槛证明
 触发条件不会误判、恢复后本机 DIRECT 和代理出口均重新可用，才应增加自动触发。

@@ -159,6 +159,10 @@ macOS 上支持的透明代理路径是 TUN。mihomo `redir-port` 和 PF TCP 重
 `mihomo.redir_port` 和 `pf.redirect_tcp_to` 为 `0`，并通过
 `transparent.mode: "tun"` 启用透明代理。
 
+OpenSurge 不会在启动前根据现有 utun 或公网路由猜测冲突。实际启动会等待 mihomo
+运行时确认 TUN ready；失败时给进程短暂清理窗口、回滚网关运行时，并根据实际
+TUN 错误补充冲突路由的接口/网关信息。默认不支持两个全局 TUN 同时占有公网路由。
+
 ## mihomo profile
 
 OpenSurge for Mac 可以渲染托管的 mihomo 配置，也可以导入已有 mihomo profile。

@@ -8,6 +8,9 @@ struct MenuBarStatus: Codable, Equatable {
     let lanIp: String
     let dhcp: String
     let mihomo: String
+    let tun: String?
+    let tunInterface: String?
+    let tunError: String?
     let pfAnchor: String
     let forwarding: String
     let clientCount: Int
@@ -22,7 +25,9 @@ struct MenuBarStatus: Codable, Equatable {
         case schemaVersion = "schema_version"
         case revision, gateway, topology
         case lanIp = "lan_ip"
-        case dhcp, mihomo
+        case dhcp, mihomo, tun
+        case tunInterface = "tun_interface"
+        case tunError = "tun_error"
         case pfAnchor = "pf_anchor"
         case forwarding
         case clientCount = "client_count"
@@ -32,6 +37,48 @@ struct MenuBarStatus: Codable, Equatable {
         case recoveryStage = "recovery_stage"
         case warnings
         case errorCode = "error_code"
+    }
+
+    init(
+        schemaVersion: Int,
+        revision: String,
+        gateway: String,
+        topology: String,
+        lanIp: String,
+        dhcp: String,
+        mihomo: String,
+        tun: String? = nil,
+        tunInterface: String? = nil,
+        tunError: String? = nil,
+        pfAnchor: String,
+        forwarding: String,
+        clientCount: Int,
+        drift: Bool,
+        doctorHealthy: Bool,
+        recoveryRequired: Bool,
+        recoveryStage: String?,
+        warnings: [String],
+        errorCode: String?
+    ) {
+        self.schemaVersion = schemaVersion
+        self.revision = revision
+        self.gateway = gateway
+        self.topology = topology
+        self.lanIp = lanIp
+        self.dhcp = dhcp
+        self.mihomo = mihomo
+        self.tun = tun
+        self.tunInterface = tunInterface
+        self.tunError = tunError
+        self.pfAnchor = pfAnchor
+        self.forwarding = forwarding
+        self.clientCount = clientCount
+        self.drift = drift
+        self.doctorHealthy = doctorHealthy
+        self.recoveryRequired = recoveryRequired
+        self.recoveryStage = recoveryStage
+        self.warnings = warnings
+        self.errorCode = errorCode
     }
 }
 
@@ -157,6 +204,7 @@ extension MenuBarStatus {
             "LAN IP: \(lanIp)",
             "DHCP/DNS: \(dhcp)",
             "mihomo: \(mihomo)",
+            "TUN: \(tun ?? "unknown")\(tunInterface.map { " [\($0)]" } ?? "")",
             "PF: \(pfAnchor)",
             "Forwarding: \(forwarding)",
             "Clients: \(clientCount)",

@@ -204,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/recovery/card", s.auth(http.HandlerFunc(s.handleRecoveryCard)))
 	mux.Handle("POST /api/v1/recovery/discard", s.auth(http.HandlerFunc(s.handleRecoveryDiscard)))
 	mux.Handle("POST /api/v1/recovery/prepare", s.auth(http.HandlerFunc(s.handleRecoveryPrepare)))
+	mux.Handle("POST /api/v1/recovery/abandon-takeover", s.auth(http.HandlerFunc(s.handleAbandonTakeover)))
 	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
 	mux.Handle("POST /api/v1/recovery/manual-finish", s.auth(http.HandlerFunc(s.handleManualRecoveryFinish)))
 	mux.Handle("POST /api/v1/recovery/client-validated", s.auth(http.HandlerFunc(s.handleClientValidated)))
@@ -521,6 +522,9 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if providerErr != nil && status.Gateway == "running" {
 		warnings = append(warnings, "mihomo providers unavailable: "+providerErr.Error())
 	}
+	if status.TUNError != "" {
+		warnings = append(warnings, "mihomo TUN: "+status.TUNError)
+	}
 	return Overview{
 		SchemaVersion:        SchemaVersion,
 		Revision:             fileDigest(s.configPath),
@@ -553,6 +557,7 @@ func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
 		SchemaVersion: SchemaVersion, Revision: overview.Revision, Gateway: overview.Status.Gateway,
 		Topology: cfg.Gateway.Mode, LANIP: overview.Status.LANIP, DHCP: overview.Status.DHCP,
 		Mihomo: overview.Status.Mihomo, PFAnchor: overview.Status.PFAnchor, Forwarding: overview.Status.Forwarding,
+		TUN: overview.Status.TUN, TUNInterface: overview.Status.TUNInterface, TUNError: overview.Status.TUNError,
 		ClientCount: overview.Status.ClientCount, Drift: overview.Drift, DoctorHealthy: overview.DoctorHealthy,
 		Recovery: overview.Recovery.Required, RecoveryStage: overview.Recovery.Stage, Warnings: overview.Warnings,
 	})
@@ -678,6 +683,9 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 	if err != nil {
 		op.State = "failed"
 		op.Error = err.Error()
+		if op.Kind == "start" {
+			s.recordStartRecoveryFailure(topology, recoveryBefore, err)
+		}
 		if op.Kind == "reload" {
 			s.recordReloadRecoveryFailure(topology, recoveryBefore, err)
 		}
@@ -697,6 +705,22 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 		}
 	}
 	_ = s.store.SaveOperation(op)
+}
+
+func (s *Server) recordStartRecoveryFailure(topology string, recoveryBefore RecoveryState, startErr error) {
+	if topology != config.GatewayModeSameWiFiDHCP || recoveryBefore.Stage != RecoveryRouterDHCPDisabledConfirmed {
+		return
+	}
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		return
+	}
+	if _, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile); stateErr != nil || exists {
+		return
+	}
+	recoveryBefore.Required = true
+	appendRecoveryNote(&recoveryBefore, "gateway start failed and runtime changes were rolled back; router DHCP may remain disabled; resolve the error and retry, or abandon takeover and recover the LAN: "+startErr.Error())
+	_ = s.store.SaveRecovery(recoveryBefore)
 }
 
 func (s *Server) recordReloadRecoveryFailure(topology string, recoveryBefore RecoveryState, reloadErr error) {
@@ -814,6 +838,60 @@ func (s *Server) handleRecoveryDiscard(w http.ResponseWriter, _ *http.Request) {
 	}
 	idle, _ := s.store.Recovery()
 	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: idle})
+}
+
+func (s *Server) handleAbandonTakeover(w http.ResponseWriter, r *http.Request) {
+	state, err := s.store.Recovery()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_read_failed", err.Error())
+		return
+	}
+	if state.Stage != RecoveryMacStatic && state.Stage != RecoveryRouterDHCPDisabledConfirmed {
+		writeError(w, http.StatusConflict, "recovery_precondition", "takeover can be abandoned only after the Mac uses fixed IPv4 and before the gateway becomes active")
+		return
+	}
+	if state.NetworkSnapshot == nil {
+		writeError(w, http.StatusConflict, "recovery_snapshot_missing", "saved network recovery data is missing")
+		return
+	}
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	if cfg.Gateway.Mode != config.GatewayModeSameWiFiDHCP {
+		writeError(w, http.StatusConflict, "same_wifi_config_required", "takeover abandonment requires the same-LAN DHCP takeover topology")
+		return
+	}
+	if _, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile); stateErr != nil {
+		writeError(w, http.StatusInternalServerError, "runtime_state_invalid", stateErr.Error())
+		return
+	} else if exists {
+		writeError(w, http.StatusConflict, "gateway_still_active", "stop the gateway before abandoning DHCP takeover")
+		return
+	}
+
+	servers, err := s.networkRunner.ProbeDHCP(r.Context(), s.configPath, state.NetworkSnapshot.Interface, 3*time.Second)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "dhcp_probe_failed", err.Error())
+		return
+	}
+	if len(servers) > 0 {
+		if err := s.networkRunner.SetDHCP(r.Context(), s.configPath, state.NetworkSnapshot.NetworkService); err != nil {
+			writeError(w, http.StatusBadGateway, "restore_dhcp_failed", err.Error())
+			return
+		}
+		appendRecoveryNote(&state, "DHCP takeover abandoned; a DHCP server answered and the Mac was restored to automatic DHCP")
+		state.Stage, state.Required = RecoveryComplete, false
+	} else {
+		appendRecoveryNote(&state, "DHCP takeover abandoned while no DHCP server answered; the Mac remains on fixed IPv4 and router DHCP availability was not verified")
+		state.Stage, state.Required = RecoveryCompleteStatic, false
+	}
+	if err := s.store.SaveRecovery(state); err != nil {
+		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state, DHCPServers: servers})
 }
 
 func (s *Server) handleClientValidated(w http.ResponseWriter, r *http.Request) {

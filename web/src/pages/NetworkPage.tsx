@@ -152,6 +152,17 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     finally { setBusy(false) }
   }
 
+  const abandonTakeover = async () => {
+    if (!window.confirm('放弃本次局域网 DHCP 接管？OpenSurge 会先探测可用 DHCP：若有 OFFER，就把 Mac 恢复为自动 DHCP；若没有，就保留当前固定 IPv4 并结束流程。后一种情况不会确认路由器 DHCP 或其他设备的自动获取能力。')) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      await api.abandonTakeover()
+      await onChanged()
+      setMessage('已放弃 DHCP 接管；网关停止后，菜单栏中的“退出 OpenSurge”可用。')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+
   const finishRecoveryManually = async () => {
     if (!window.confirm('仅在你已经确认路由器 DHCP 重新开启时使用。OpenSurge 将跳过 OFFER 证据并立即把 Mac 恢复为自动 DHCP；如果路由器 DHCP 实际未恢复，Mac 可能断网。仍要继续吗？')) return
     setBusy(true); setError('')
@@ -297,6 +308,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         <div className="recovery-actions">
           <button ref={gatewayControlRef} id="gateway-control" className="primary" disabled={busy || configDirty || blockedByPlan || (current === 'gateway_active' && (!clientIPv4 || !clientConfirmed || Boolean(plan?.snapshot.ipv6_default && !ipv6Acknowledged)))} onClick={() => void advance()}>{busy ? '正在验证…' : actionLabel(current)}</button>
           {current === 'prepared' && <button className="danger" disabled={busy} onClick={() => void discardRecovery()}>放弃恢复并销毁资料</button>}
+          {(current === 'mac_static' || current === 'router_dhcp_disabled_confirmed') && <button className="danger" disabled={busy} onClick={() => void abandonTakeover()}>放弃 DHCP 接管</button>}
           {current === 'gateway_active' && <button className="danger" disabled={busy} onClick={() => void skipClientValidation()}>跳过客户端验收</button>}
           {current === 'gateway_stopped_waiting_router_dhcp' && <button className="danger" disabled={busy} onClick={() => void finishRecoveryManually()}>跳过 OFFER 探测并恢复 Mac 自动 DHCP</button>}
           {(current === 'gateway_stopped_waiting_router_dhcp' || current === 'router_dhcp_restored') && <button className="danger" disabled={busy} onClick={() => void finishKeepingStatic()}>保留静态 IP 并结束</button>}

@@ -21,6 +21,18 @@ type Version struct {
 	Meta    bool   `json:"meta"`
 }
 
+type TUNRuntimeState struct {
+	Enabled bool   `json:"enabled"`
+	Device  string `json:"device,omitempty"`
+}
+
+type runtimeConfigResponse struct {
+	TUN *struct {
+		Enable bool   `json:"enable"`
+		Device string `json:"device"`
+	} `json:"tun"`
+}
+
 type ProxyGroup struct {
 	Name     string   `json:"name"`
 	Type     string   `json:"type"`
@@ -180,6 +192,11 @@ func FetchVersion(ctx context.Context, cfg config.Config) (Version, error) {
 	return fetchVersionWithClient(ctx, cfg, client)
 }
 
+func FetchTUNRuntimeState(ctx context.Context, cfg config.Config) (TUNRuntimeState, error) {
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	return fetchTUNRuntimeStateWithClient(ctx, cfg, client)
+}
+
 func FetchProxyGroups(ctx context.Context, cfg config.Config) ([]ProxyGroup, error) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	return fetchProxyGroupsWithClient(ctx, cfg, client)
@@ -244,6 +261,32 @@ func fetchVersionWithClient(ctx context.Context, cfg config.Config, client *http
 		return Version{}, err
 	}
 	return version, nil
+}
+
+func fetchTUNRuntimeStateWithClient(ctx context.Context, cfg config.Config, client *http.Client) (TUNRuntimeState, error) {
+	req, err := newAPIRequest(ctx, cfg, http.MethodGet, "/configs", nil)
+	if err != nil {
+		return TUNRuntimeState{}, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return TUNRuntimeState{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return TUNRuntimeState{}, fmt.Errorf("mihomo API returned %s", resp.Status)
+	}
+	var body runtimeConfigResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			return TUNRuntimeState{}, fmt.Errorf("empty mihomo API response")
+		}
+		return TUNRuntimeState{}, err
+	}
+	if body.TUN == nil {
+		return TUNRuntimeState{}, fmt.Errorf("mihomo runtime config did not report TUN state")
+	}
+	return TUNRuntimeState{Enabled: body.TUN.Enable, Device: body.TUN.Device}, nil
 }
 
 func fetchProxyGroupsWithClient(ctx context.Context, cfg config.Config, client *http.Client) ([]ProxyGroup, error) {

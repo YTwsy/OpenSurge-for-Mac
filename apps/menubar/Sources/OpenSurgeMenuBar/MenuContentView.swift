@@ -148,6 +148,7 @@ struct MenuContentView: View {
             row("Clients", String(status.clientCount))
             row("DHCP / DNS", status.dhcp)
             row("mihomo", status.mihomo)
+            row("TUN", status.tunInterface.map { "\(status.tun ?? "unknown") · \($0)" } ?? status.tun ?? "unknown")
             row("PF", status.pfAnchor)
             row("Forwarding", status.forwarding)
         }.font(.caption)

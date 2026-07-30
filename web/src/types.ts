@@ -5,6 +5,9 @@ export type GatewayStatus = {
   dhcp: string
   dhcp_enabled: boolean
   mihomo: string
+  tun?: string
+  tun_interface?: string
+  tun_error?: string
   pf_anchor: string
   forwarding: string
   client_count: number

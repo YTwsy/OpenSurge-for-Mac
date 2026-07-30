@@ -363,6 +363,88 @@ func TestSameWiFiNetworkRecoveryFlow(t *testing.T) {
 	}
 }
 
+func TestAbandonTakeoverRestoresMacDHCPWhenServerAnswers(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryMacStatic,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	network.servers = []string{"192.168.1.1"}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/abandon-takeover", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("abandon status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
+		t.Fatalf("state=%#v network=%#v", state, network)
+	}
+	if !strings.Contains(state.RecoveryNotes, "takeover abandoned") {
+		t.Fatalf("notes=%q", state.RecoveryNotes)
+	}
+}
+
+func TestAbandonTakeoverFinishesStaticWhenNoServerAnswers(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryRouterDHCPDisabledConfirmed,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	network.servers = []string{}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/abandon-takeover", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("abandon status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryCompleteStatic || state.Required || network.dhcpRestored {
+		t.Fatalf("state=%#v network=%#v", state, network)
+	}
+	if !strings.Contains(state.RecoveryNotes, "remains on fixed IPv4") {
+		t.Fatalf("notes=%q", state.RecoveryNotes)
+	}
+}
+
+func TestFailedSameWiFiStartPreservesRetryOrAbandonRecovery(t *testing.T) {
+	server := newTestServer(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryRouterDHCPDisabledConfirmed,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	server.recordStartRecoveryFailure(config.GatewayModeSameWiFiDHCP, state, errors.New("TUN route conflict via utun42"))
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryRouterDHCPDisabledConfirmed || !state.Required || !strings.Contains(state.RecoveryNotes, "retry") || !strings.Contains(state.RecoveryNotes, "utun42") {
+		t.Fatalf("state=%#v", state)
+	}
+}
+
 func TestApplyStaticWarnsWhenMacStillUsesDHCP(t *testing.T) {
 	server, network := newTestServerWithNetwork(t)
 	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
@@ -1374,6 +1456,7 @@ func newTestServer(t *testing.T) *Server {
 func newTestServerWithNetwork(t *testing.T) (*Server, *fakeNetworkRunner) {
 	t.Helper()
 	dir := t.TempDir()
+	mihomoAPI := newReadyMihomoTestServer(t)
 	configPath := filepath.Join(dir, "config.yaml")
 	policyPath := filepath.Join(dir, "device-policy.json")
 	if err := os.WriteFile(policyPath, []byte(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`), 0o600); err != nil {
@@ -1392,6 +1475,8 @@ device_policy:
   file: "`+policyPath+`"
 transparent:
   mode: "tun"
+mihomo:
+  api_addr: "`+mihomoAPI.URL+`"
 runtime:
   dir: "`+filepath.Join(dir, "runtime")+`"
 `), 0o600); err != nil {
@@ -1413,6 +1498,25 @@ runtime:
 	}
 	server.sessions["expired"] = time.Now().Add(-time.Minute)
 	return server, network
+}
+
+func newReadyMihomoTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/version":
+			_, _ = w.Write([]byte(`{"version":"test","meta":true}`))
+		case "/configs":
+			_, _ = w.Write([]byte(`{"tun":{"enable":true,"device":"utun-test"}}`))
+		case "/proxies", "/providers/proxies", "/providers/rules":
+			_, _ = w.Write([]byte(`{"proxies":{},"providers":{}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
 
 type fakeRunner struct{}

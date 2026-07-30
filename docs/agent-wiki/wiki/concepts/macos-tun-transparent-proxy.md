@@ -34,6 +34,31 @@ pf:
 - `internal/pf/template.go` 不应重新引入 `rdr pass` TCP redirect 规则。
 - 文档应把 TUN 描述为受支持路径，不要描述成候选或实验路线。
 
+## 启动 readiness 与其他 TUN
+
+存在 `utun` 接口本身不是冲突证据。普通 split-route VPN、Tailscale 非 Exit Node
+路径和系统组件都可能保留或创建 utun。macOS 也无法可靠证明 utun 的进程所有权，
+因此不要在 start、reload、`restart-mihomo` 或 DHCP 接管计划中根据现有公网路由
+猜测冲突。真实启动由下面的 readiness fail closed；只有 mihomo 实际报告添加路由
+失败后，才查询该目标的当前接口/网关并补充诊断。
+
+mihomo REST API 可以先于 TUN 初始化对外响应，因此 `/version` 成功不代表透明
+路径已经就绪。启动流程必须在有限时间内等待运行时 `/configs` 报告
+`tun.enable: true`，同时识别 `Start TUN listening error`。当前启动预算是 10 秒；
+失败时先给新进程 3 秒 SIGTERM 清理窗口，再按需 SIGKILL，并进入 gateway
+rollback。运行中的 status/overview 每次只读取一次轻量运行时状态；若 `/configs`
+暂时不可读，TUN 显示 `unknown` 并附带 warning，但不能据此把仍运行的网关改成
+`degraded`。只有明确读取到 `tun.enable: false` 才是失败信号。不要增加独立后台
+watchdog，也不要在状态热路径反复执行 route/scutil 扫描。
+
+`tun.enable: false` 的失败语义已经针对项目固定的 mihomo v1.19.27 验证。升级
+mihomo 时必须重新核对失败后的 `/configs` 行为并跑真实 TUN Lab，不能把这个语义
+当作所有历史版本都具备的通用契约。
+
+当前默认不支持与另一个全局 TUN 同时占有公网路由。DNS resolver 状态与 TUN 路由
+所有权是不同信号；不要因为出现 utun scoped/supplemental resolver 就判定 TUN
+冲突。
+
 ## 验证
 
 透明代理相关变更使用 `make lab-test-tun`。
