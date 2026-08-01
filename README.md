@@ -54,20 +54,7 @@ forwarding 提供原生网关路径。
 
   <p>左右滚动查看完整图文。</p>
 
-  <table>
-    <tr>
-      <td><img src="docs/promo/xiaohongshu/final-10/01-cover.png" width="240" alt="OpenSurge for Mac 介绍封面"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/02-pain-points.png" width="240" alt="全屋网络的常见痛点"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/03-dhcp-explainer.png" width="240" alt="DHCP 工作原理"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/04-default-gateway.png" width="240" alt="默认网关工作原理"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/05-device-routing.png" width="240" alt="按设备分流"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/06-network-modes.png" width="240" alt="OpenSurge 网络模式"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/07-dhcp-takeover-steps.png" width="240" alt="DHCP 接管步骤"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/08-device-egress.png" width="240" alt="设备出口策略"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/09-dashboard.png" width="240" alt="OpenSurge 控制面板"></td>
-      <td><img src="docs/promo/xiaohongshu/final-10/10-closing.png" width="240" alt="OpenSurge for Mac 结语"></td>
-    </tr>
-  </table>
+  <pre><img src="docs/promo/xiaohongshu/final-10/01-cover.png" width="240" alt="OpenSurge for Mac 介绍封面"><img src="docs/promo/xiaohongshu/final-10/02-pain-points.png" width="240" alt="全屋网络的常见痛点"><img src="docs/promo/xiaohongshu/final-10/03-dhcp-explainer.png" width="240" alt="DHCP 工作原理"><img src="docs/promo/xiaohongshu/final-10/04-default-gateway.png" width="240" alt="默认网关工作原理"><img src="docs/promo/xiaohongshu/final-10/05-device-routing.png" width="240" alt="按设备分流"><img src="docs/promo/xiaohongshu/final-10/06-network-modes.png" width="240" alt="OpenSurge 网络模式"><img src="docs/promo/xiaohongshu/final-10/07-dhcp-takeover-steps.png" width="240" alt="DHCP 接管步骤"><img src="docs/promo/xiaohongshu/final-10/08-device-egress.png" width="240" alt="设备出口策略"><img src="docs/promo/xiaohongshu/final-10/09-dashboard.png" width="240" alt="OpenSurge 控制面板"><img src="docs/promo/xiaohongshu/final-10/10-closing.png" width="240" alt="OpenSurge for Mac 结语"></pre>
 </details>
 
 ## 能力
