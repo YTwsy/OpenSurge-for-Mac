@@ -43,6 +43,15 @@ delegate 与 common run loop 上短时、有界的退避重试推进，不使用
 `NSPopover.isShown` 当成窗口已经真实出现的充分证据；重试期限到达时执行一次非阻塞兜底并
 清除 pending，后续用户点击仍可重新进入展示流程。
 
+菜单栏面板独立查询 GitHub `releases/latest` 发现新的稳定版本：面板首次打开时自动检查，
+同一 App 进程中最多每 24 小时自动请求一次，并保留手动检查入口。版本检查状态不得并入
+Control Service 可达性或网关 indicator。只有远端语义版本更高、且 `html_url` 仍精确指向
+本仓库对应 tag 的 Release 页面时才显示更新按钮；按钮只交给默认浏览器打开下载页，不下载
+或安装 unsigned PKG，也不改变任何网关或后台服务状态。
+App 从 `OpenSurgeReleaseTag` 读取完整安装版本，并按 `rc.N` 低于同基础版本 stable 的顺序
+比较；因此 `0.1.24-rc.1` 不会被旧的 `0.1.23` 降级，却会在 `0.1.24` stable 发布时收到
+提醒。旧包缺少该 key 时回退到数字形式的 `CFBundleShortVersionString`。
+
 菜单栏提供两个不同的退出层级。“只退出菜单栏 App”在二次确认后直接结束菜单栏进程，
 不会改变用户级 Control Service、网关数据面或 root Helper。“退出 OpenSurge”只有在
 Gateway、DHCP/DNS、mihomo 与 PF 已确认停止，并且没有待处理网络恢复时
@@ -115,15 +124,22 @@ fragment。来源快照仍是用户目录下权限为 `0600` 的按 digest 版�
 继续访问 Keychain 或反复触发授权。旧 Keychain 项不自动删除；迁移失败不阻止 Control
 Service 启动，已有快照仍可使用，刷新地址可通过重新导入补回。
 
-`GET/PUT /api/v1/config` 只暴露 topology、DHCP/DNS、TUN 与 device-policy 开关等
+`GET/PUT /api/v1/config` 只暴露 topology、DHCP/DNS、TUN、本机系统代理协同与 device-policy 开关等
 非敏感字段，并强制 `If-Match` revision。生产环境由 helper 原子写入 root-owned config；
 网关运行或恢复未完成时拒绝 topology 修改。网络页可切换 `same_lan`、
 `same_wifi_dhcp`、`isolated_lan`，并可初始化空 device-policy 文件。
 
-设备页把 applied 与 desired 持续分为两层：顶部绿色“即时生效”只切换已经应用的全局或
-`device/<id>/<slot>` selector；下方黄色“保存后重载”才编辑设备身份、selector 成员和
-规则。`THIS MAC` 只列出非 `device/` 的既有全局组，并明确它只影响当前规则引用该组的
-流量，不代表全部 Mac 流量、未匹配流量或 macOS 系统代理。
+设备页把 Mac 本机控制与下游设备控制明确分开。顶部 Mac 卡片通过专用
+`GET/POST /api/v1/local-routing` 切换规则 / 全局 / 直连；后端协调隐藏的
+`open-surge/mac-*` TCP/UDP selector，普通 policies/overview 不展示这些内部组，
+普通 selector API 也拒绝修改。它只影响经 TUN 或本机显式代理进入 mihomo 的新连接，
+自身不修改 macOS system proxy，也不改变下游设备。系统代理由 Desired 网络配置中默认
+关闭、仅 TUN 可用的独立兼容开关管理；它面向 SafeDNS/DNS Proxy 等冲突场景，启停由
+gateway runtime snapshot 负责恢复。
+
+下游设备继续把 applied 与 desired 分为两层：绿色“即时生效”只切换已经应用的
+`device/<id>/<slot>` selector；黄色“保存后重载”才编辑设备身份、路由方式、selector
+成员和规则。`inherit_global` 在界面称为“跟随网关规则”，不得称为跟随 Mac 本机模式。
 
 普通登记默认创建 `<device-id>-policy` 私有 Profile。设备首次从主路径修改共享 Profile
 或继承 Template 的 Profile 时，前端把解析后的有效候选与规则复制到无 Template 的私有
@@ -146,9 +162,10 @@ JSON 结构检查。`GET /api/v1/devices` 同时返回 desired/applied 设备与
 
 连通性页使用后端固定目录，`POST /api/v1/connectivity/tests` 由 Control Service 通过
 当前 runtime mixed-port 对每个真实站点进行三轮请求，展示中位延迟，并尝试从活动
-connections 采集命中规则、payload 和完整出口 chain。它只证明 applied 全局 mihomo
-路径，不能伪装成某台下游设备的 `SRC-IP`、DHCP、DNS 或 TUN 证据。Net.Coffee 以外链
-方式保留为浏览器本机线路检测，并与网关策略路径明确分栏；前端不会代理或嵌入第三方
+connections 采集命中规则、payload 和完整出口 chain。因为请求来自 Control Service
+loopback，它会进入当前 Mac 本机模式；只证明 applied 配置 + 本机运行路径，不能当成
+下游网关规则或某台设备的 `SRC-IP`、DHCP、DNS、TUN 证据。Net.Coffee 以外链
+方式保留为浏览器本机线路检测，并与 Mac 本机运行路径明确分栏；前端不会代理或嵌入第三方
 页面，也不会把浏览器结果归因到 OpenSurge 网关。
 
 `POST /api/v1/gateway/reload`、`omg reload` 和运行中来源应用共用 operation/audit 与
@@ -261,12 +278,15 @@ OPENSURGE_MIHOMO_BINARY=/path/to/mihomo \
 OPENSURGE_DNSMASQ_BINARY=/path/to/dnsmasq \
 OPENSURGE_VERSION=0.1.1 \
 OPENSURGE_BUILD_NUMBER=2 \
+OPENSURGE_RELEASE_TAG=v0.1.1-rc.1 \
 make gui-installer
 ```
 
 `OPENSURGE_VERSION` 同时写入 pkg receipt 和菜单栏 App 的
-`CFBundleShortVersionString`，`OPENSURGE_BUILD_NUMBER` 写入 `CFBundleVersion`；不要让新
-pkg 携带仍标成旧版本的 App，否则现场无法可靠区分已安装二进制是否包含最新修复。
+`CFBundleShortVersionString`，`OPENSURGE_BUILD_NUMBER` 写入 `CFBundleVersion`，完整的
+`OPENSURGE_RELEASE_TAG` 写入 `OpenSurgeReleaseTag`；tag 的基础版本必须与 pkg version
+一致。不要让新 pkg 携带仍标成旧版本或丢失 RC 身份的 App，否则现场无法可靠区分已安装
+二进制是否包含最新修复。
 
 安装器显式以 `/` 为 payload 根目录，并将 `OpenSurge.app` 声明为不可
 relocatable bundle，确保它固定安装到 `/Applications/OpenSurge.app`。

@@ -92,14 +92,98 @@ func TestInspectSourceInvalidTopLevelReturnsEmptyCollections(t *testing.T) {
 }
 
 func TestInspectSourceRejectsReservedNamespace(t *testing.T) {
-	_, err := inspectSource([]byte(`proxy-groups:
+	tests := map[string]string{
+		"device group": `proxy-groups:
   - name: device/phone/default
     type: select
     proxies: [DIRECT]
 rules: ["MATCH,DIRECT"]
-`), "mihomo_profile")
-	if err == nil {
-		t.Fatal("inspectSource() succeeded")
+`,
+		"local routing proxy": `proxies:
+  - name: open-surge/mac-mode-tcp
+    type: direct
+rules: ["MATCH,DIRECT"]
+`,
+	}
+	for name, profile := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := inspectSource([]byte(profile), "mihomo_profile")
+			if err == nil || !strings.Contains(err.Error(), "reserved") {
+				t.Fatalf("inspectSource() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestLocalRoutingEndpointUsesDedicatedController(t *testing.T) {
+	server := newTestServer(t)
+	server.fetchLocalRouting = func(_ context.Context, cfg config.Config) (mihomo.LocalRoutingSnapshot, error) {
+		if !cfg.Transparent.TUNEnabled() {
+			t.Fatal("local routing endpoint did not load TUN runtime config")
+		}
+		return mihomo.LocalRoutingSnapshot{
+			Mode:               mihomo.LocalRoutingModeRule,
+			AvailableModes:     []string{mihomo.LocalRoutingModeRule, mihomo.LocalRoutingModeGlobal, mihomo.LocalRoutingModeDirect},
+			UDPBehavior:        "rules",
+			Transports:         []string{"tun", "loopback_explicit_proxy"},
+			NewConnectionsOnly: true,
+			Consistent:         true,
+		}, nil
+	}
+	response := performAuthorized(server, http.MethodGet, "/api/v1/local-routing", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET local routing status=%d body=%s", response.Code, response.Body.String())
+	}
+	var fetched LocalRoutingResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &fetched); err != nil {
+		t.Fatal(err)
+	}
+	if fetched.SchemaVersion != SchemaVersion || fetched.Mode != mihomo.LocalRoutingModeRule || !fetched.Consistent {
+		t.Fatalf("GET local routing = %#v", fetched)
+	}
+
+	var mode, policy string
+	server.setLocalRouting = func(_ context.Context, _ config.Config, requestedMode, requestedPolicy string) (mihomo.LocalRoutingSnapshot, error) {
+		mode, policy = requestedMode, requestedPolicy
+		return mihomo.LocalRoutingSnapshot{
+			Mode:               requestedMode,
+			AvailableModes:     []string{mihomo.LocalRoutingModeRule, mihomo.LocalRoutingModeGlobal, mihomo.LocalRoutingModeDirect},
+			GlobalGroup:        &mihomo.ProxyGroup{Name: mihomo.LocalRoutingGlobalGroup, Selected: requestedPolicy, Options: []string{"Proxy-A", "Proxy-B"}},
+			UDPBehavior:        "proxy",
+			Transports:         []string{"tun", "loopback_explicit_proxy"},
+			NewConnectionsOnly: true,
+			Consistent:         true,
+		}, nil
+	}
+	response = performAuthorized(server, http.MethodPost, "/api/v1/local-routing", []byte(`{"mode":"global","global_policy":"Proxy-B"}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST local routing status=%d body=%s", response.Code, response.Body.String())
+	}
+	if mode != mihomo.LocalRoutingModeGlobal || policy != "Proxy-B" {
+		t.Fatalf("set local routing arguments = %q/%q", mode, policy)
+	}
+	var updated LocalRoutingResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated.Mode != mihomo.LocalRoutingModeGlobal || updated.GlobalGroup == nil || updated.GlobalGroup.Selected != "Proxy-B" {
+		t.Fatalf("POST local routing = %#v", updated)
+	}
+}
+
+func TestGenericPolicySelectionRejectsLocalRoutingGroups(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodPost, "/api/v1/policies/open-surge%2Fmac-mode-tcp/selection", []byte(`{"policy":"DIRECT"}`))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "reserved_policy_group") {
+		t.Fatalf("reserved policy selection status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestProviderRefreshRejectsLocalRoutingGroups(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodPost, "/api/v1/providers/open-surge%2Fmac-global/refresh", nil)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "reserved_provider") {
+		t.Fatalf("reserved provider refresh status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -360,6 +444,88 @@ func TestSameWiFiNetworkRecoveryFlow(t *testing.T) {
 	state, _ = server.store.Recovery()
 	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
 		t.Fatalf("final state=%#v network=%#v", state, network)
+	}
+}
+
+func TestAbandonTakeoverRestoresMacDHCPWhenServerAnswers(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryMacStatic,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	network.servers = []string{"192.168.1.1"}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/abandon-takeover", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("abandon status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryComplete || state.Required || !network.dhcpRestored {
+		t.Fatalf("state=%#v network=%#v", state, network)
+	}
+	if !strings.Contains(state.RecoveryNotes, "takeover abandoned") {
+		t.Fatalf("notes=%q", state.RecoveryNotes)
+	}
+}
+
+func TestAbandonTakeoverFinishesStaticWhenNoServerAnswers(t *testing.T) {
+	server, network := newTestServerWithNetwork(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryRouterDHCPDisabledConfirmed,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	network.servers = []string{}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/abandon-takeover", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("abandon status=%d body=%s", response.Code, response.Body.String())
+	}
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryCompleteStatic || state.Required || network.dhcpRestored {
+		t.Fatalf("state=%#v network=%#v", state, network)
+	}
+	if !strings.Contains(state.RecoveryNotes, "remains on fixed IPv4") {
+		t.Fatalf("notes=%q", state.RecoveryNotes)
+	}
+}
+
+func TestFailedSameWiFiStartPreservesRetryOrAbandonRecovery(t *testing.T) {
+	server := newTestServer(t)
+	state := RecoveryState{
+		SchemaVersion: 1,
+		Stage:         RecoveryRouterDHCPDisabledConfirmed,
+		Topology:      config.GatewayModeSameWiFiDHCP,
+		Required:      true,
+		NetworkSnapshot: &macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+		},
+	}
+	if err := server.store.SaveRecovery(state); err != nil {
+		t.Fatal(err)
+	}
+	server.recordStartRecoveryFailure(config.GatewayModeSameWiFiDHCP, state, errors.New("TUN route conflict via utun42"))
+	state, _ = server.store.Recovery()
+	if state.Stage != RecoveryRouterDHCPDisabledConfirmed || !state.Required || !strings.Contains(state.RecoveryNotes, "retry") || !strings.Contains(state.RecoveryNotes, "utun42") {
+		t.Fatalf("state=%#v", state)
 	}
 }
 
@@ -1100,6 +1266,38 @@ func TestControlConfigShowsMihomoDNSForLegacyEmptyUpstream(t *testing.T) {
 	}
 }
 
+func TestControlConfigRoundTripsLocalSystemProxyCompatibilityMode(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.LocalSystemProxy.Enabled = true
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	if !input.LocalSystemProxy.Enabled {
+		t.Fatal("control config did not expose enabled local system proxy coordination")
+	}
+	input.LocalSystemProxy.Enabled = false
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.LocalSystemProxy.Enabled {
+		t.Fatal("local system proxy coordination remained enabled after control config update")
+	}
+}
+
 func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
 	server := newTestServer(t)
 	state, err := server.stateEvent(t.Context())
@@ -1374,6 +1572,7 @@ func newTestServer(t *testing.T) *Server {
 func newTestServerWithNetwork(t *testing.T) (*Server, *fakeNetworkRunner) {
 	t.Helper()
 	dir := t.TempDir()
+	mihomoAPI := newReadyMihomoTestServer(t)
 	configPath := filepath.Join(dir, "config.yaml")
 	policyPath := filepath.Join(dir, "device-policy.json")
 	if err := os.WriteFile(policyPath, []byte(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`), 0o600); err != nil {
@@ -1392,6 +1591,8 @@ device_policy:
   file: "`+policyPath+`"
 transparent:
   mode: "tun"
+mihomo:
+  api_addr: "`+mihomoAPI.URL+`"
 runtime:
   dir: "`+filepath.Join(dir, "runtime")+`"
 `), 0o600); err != nil {
@@ -1413,6 +1614,25 @@ runtime:
 	}
 	server.sessions["expired"] = time.Now().Add(-time.Minute)
 	return server, network
+}
+
+func newReadyMihomoTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/version":
+			_, _ = w.Write([]byte(`{"version":"test","meta":true}`))
+		case "/configs":
+			_, _ = w.Write([]byte(`{"tun":{"enable":true,"device":"utun-test"}}`))
+		case "/proxies", "/providers/proxies", "/providers/rules":
+			_, _ = w.Write([]byte(`{"proxies":{},"providers":{}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
 
 type fakeRunner struct{}

@@ -4,14 +4,15 @@
 mihomo profile 时，先读此页。
 
 OpenSurge 只运行一个 mihomo。可选的 `device_policy.file` JSON 文件为每台设备记录
-MAC、固定 IPv4 与 profile；编译时将它们转换为 DHCP reservation、独立 selector
+固定 IPv4、可选 MAC 与 profile；编译时按拓扑将它们转换为 DHCP reservation、独立 selector
 group，以及以 `SRC-IP-CIDR` 区分来源的 mihomo 规则。它不是“一台设备一份完整
 mihomo YAML”。
 
 ## 策略模型
 
 - 每台设备必须明确选择 `egress_mode`：`inherit_global` 只保留设备覆盖，未命中流量继续
-  走全局规则；`dedicated` 为公网流量生成并优先使用 `device/<id>/default` selector。
+  走 imported/managed 网关规则，不跟随 Mac 本机 Rule/Global/Direct 开关；
+  `dedicated` 为公网流量生成并优先使用 `device/<id>/default` selector。
 - `dedicated` 在设备覆盖和默认 selector 之前生成按设备源 IPv4 限定的本地/私网、
   link-local、CGNAT 与 multicast `DIRECT` 保护，避免远端代理吞掉 LAN 访问。
 - 含 `policies` 的设备规则会获得 `device/<id>/<rule-id>` selector；
@@ -39,6 +40,21 @@ Profile，只改变该设备引用；ID 冲突时追加数字后缀。
 流量已观察或邻居已观察。ARP/流量只证明近期观察，不是 MAC 身份认证；未经过 Mac、已经
 离线或经 IPv6 绕过的同 LAN 设备不会因此被自动发现。
 
+`same_lan` 的设备主键仍是稳定 `id`，运行规则只需唯一固定 IPv4；MAC 可以为空，仅作为
+身份观察和后续迁移信息。空 MAC 不生成 dnsmasq reservation。离开 `same_lan` 进入 DHCP
+拓扑时，GUI 只按登记 IPv4 接受唯一且格式有效的当前邻居 MAC，并在写入前显示给用户确认；
+全部设备原本已有 MAC 时不弹窗。仍没有 MAC 的设备保持在 declarative policy 中，但
+mode-aware compiled bundle 必须排除其 device、selector、rule 与 reservation，并在设备页
+持续显示“需要 MAC / 策略暂停”。返回 `same_lan` 或补全 MAC 后重新编译即可恢复，禁止删除
+资料、伪造 MAC 或让新 DHCP lease holder 继承旧 `SRC-IP-CIDR` 策略。
+
+same-LAN applied IPv4 没有当前流量时，只有“恰好一个不同 IPv4、相同规范化邻居 MAC、
+`neighbor_observed=true` 且存在活跃连接”的观察项可以进入地址变化提示。GUI 不静默写入：
+它先禁用旧 `SRC-IP-CIDR` 对应的路由方式和 applied selectors，再由用户确认一次保存与
+安全重载。更新只替换设备 IPv4，必须保留稳定 ID、名称、Profile、规则、egress mode 与
+selector 选择。无观察证据时 selector 可标成预设；同 MAC 多地址或目标 IPv4 已被其他
+desired 设备占用时必须 fail closed，不提供猜测式更新。
+
 旧文件省略 `egress_mode` 时解析为 `legacy_fallback`，继续保持“设备覆盖 → 全局规则 →
 设备默认兜底 → terminal MATCH”。GUI 会显示兼容提示并要求用户明确迁移到跟随或独立，
 不会静默改变现有流量。
@@ -57,7 +73,8 @@ same-Wi‑Fi DHCP 场景还必须将 router、recovery device、LAN proxy 等地
 
 ## 和 imported profile 的关系
 
-device override 规则在所有模式下都位于 imported/managed 全局规则之前。独立模式的
+Mac 本机 source-scoped 模式规则排在最前，但下游设备源地址不会命中。device override
+规则在所有设备模式下都位于 imported/managed 全局规则之前。独立模式的
 设备默认 selector 同样位于全局规则之前；跟随模式没有 default selector；只有旧版兼容
 模式把默认兜底放在全局规则之后、最终 `MATCH` 之前。imported profile 的 `MATCH`
 必须是 terminal；其后还有实质规则时渲染会失败。

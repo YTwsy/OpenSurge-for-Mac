@@ -19,6 +19,7 @@ func TestProxyHealthEndpointsExposeAndTestCurrentNodes(t *testing.T) {
 			{Name: "DIRECT", Type: "Direct", Status: "reachable", Probeable: true},
 			{Name: "HK", Type: "Hysteria2", Status: "untested", UDP: true, Probeable: true},
 			{Name: "REJECT", Type: "Reject", Status: "not_applicable", Probeable: false},
+			{Name: mihomo.LocalRoutingGlobalGroup, Type: "Selector", Status: "untested", Probeable: true},
 		}}, nil
 	}
 	server.measureProxyDelay = func(_ context.Context, _ config.Config, name, testURL string, timeout time.Duration) mihomo.ProxyDelayResult {
@@ -29,7 +30,7 @@ func TestProxyHealthEndpointsExposeAndTestCurrentNodes(t *testing.T) {
 	}
 
 	response := performAuthorized(server, http.MethodGet, "/api/v1/proxy-health", nil)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"HK"`) || !strings.Contains(response.Body.String(), `"probeable":true`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"name":"HK"`) || !strings.Contains(response.Body.String(), `"probeable":true`) || strings.Contains(response.Body.String(), mihomo.LocalRoutingGlobalGroup) {
 		t.Fatalf("GET status=%d body=%s", response.Code, response.Body.String())
 	}
 

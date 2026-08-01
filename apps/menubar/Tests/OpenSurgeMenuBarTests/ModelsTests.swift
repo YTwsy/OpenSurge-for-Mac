@@ -110,6 +110,12 @@ final class ModelsTests: XCTestCase {
         XCTAssertTrue(openSurgeQuitWarning(for: recovery).contains("网络恢复尚未完成"))
         XCTAssertTrue(recovery.canUninstall)
         XCTAssertTrue(uninstallWarning(for: recovery).contains("IPv4 forwarding"))
+
+        let abandoned = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "same_wifi_dhcp",
+                                      lanIp: "192.168.1.20", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded",
+                                      forwarding: "disabled", clientCount: 0, drift: false, doctorHealthy: true,
+                                      recoveryRequired: false, recoveryStage: "complete_static", warnings: [], errorCode: nil)
+        XCTAssertTrue(abandoned.canQuitOpenSurge)
     }
 
     func testHostForwardingDoesNotKeepOpenSurgeActive() {

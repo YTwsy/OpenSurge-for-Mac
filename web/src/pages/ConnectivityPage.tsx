@@ -79,8 +79,8 @@ export function ConnectivityPage({ overview }: { overview: Overview | null }) {
   }
 
   return <>
-    <PageHeader eyebrow="CONNECTIVITY" title="分流与网络连通性" description="通过当前 applied mihomo 规则访问真实服务，展示三轮中位延迟、命中规则和实际出口链。" action={<button className="primary" type="button" disabled={!running || !targets.length || testing.size > 0} onClick={() => void run(targets.map(target => target.id))}>{testing.size ? `正在检测 ${testing.size} 项…` : '检测全部'}</button>} />
-    <section className="probe-scope" aria-label="检测来源"><button className="active" type="button" aria-pressed="true"><span>◉</span><strong>网关策略路径</strong><small>opensurge-control → mihomo</small></button><a href="https://ip.net.coffee/link/" target="_blank" rel="noreferrer"><span>↗</span><strong>本机浏览器线路</strong><small>在 Net.Coffee 中打开</small></a><button type="button" disabled title="需要真实下游设备发起探测"><span>◇</span><strong>设备端检测</strong><small>后续：真实 DHCP / DNS / TUN</small></button></section>
+    <PageHeader eyebrow="CONNECTIVITY" title="分流与网络连通性" description="通过当前 applied 配置与 Mac 本机运行模式访问真实服务，展示三轮中位延迟、命中规则和实际出口链。" action={<button className="primary" type="button" disabled={!running || !targets.length || testing.size > 0} onClick={() => void run(targets.map(target => target.id))}>{testing.size ? `正在检测 ${testing.size} 项…` : '检测全部'}</button>} />
+    <section className="probe-scope" aria-label="检测来源"><button className="active" type="button" aria-pressed="true"><span>◉</span><strong>Mac 本机运行路径</strong><small>opensurge-control → mihomo</small></button><a href="https://ip.net.coffee/link/" target="_blank" rel="noreferrer"><span>↗</span><strong>本机浏览器线路</strong><small>在 Net.Coffee 中打开</small></a><button type="button" disabled title="需要真实下游设备发起探测"><span>◇</span><strong>设备端检测</strong><small>后续：真实 DHCP / DNS / TUN</small></button></section>
     {overview?.drift && <div className="notice warn" role="status">当前存在未应用修改。本页只检测正在运行的 applied 配置；保存但未重载的规则不会反映在结果中。</div>}
     {!running && <div className="notice warn" role="status">启动网关和 mihomo 后才能执行策略路径检测。浏览器线路测试仍可通过上方 Net.Coffee 打开。</div>}
     {runtimeActive && <div className="notice actionable" role="status"><div><strong>Wi-Fi 重连后仍持续超时？</strong><p>可只重启 Mihomo 以重建 TUN 与出站 socket；不会停止 DHCP/DNS、卸载 PF 或修改 Mac 网络设置，旧 Mihomo 日志会先归档。</p></div><button type="button" disabled={recovering || testing.size > 0} onClick={() => void recoverMihomo()}>{recovering ? '正在恢复并复测…' : '仅重启 Mihomo'}</button></div>}
@@ -90,6 +90,6 @@ export function ConnectivityPage({ overview }: { overview: Overview | null }) {
       const items = targets.filter(target => target.category === category)
       return items.length ? <ConnectivityCategory key={category} category={category} targets={items} results={results} testing={testing} enforceBaseline={enforceBaseline} onTest={run} /> : null
     }) : !error && <Empty text="正在加载检测目录…" />}
-    <p className="evidence-note"><strong>证据范围：</strong>这里的请求由 Mac 上的 Control Service 经 mihomo mixed-port 发起，能观察全局 applied 规则；它不冒充某台下游设备的设备级 SRC-IP、DHCP、DNS 或 TUN 验收。HTTP 响应表示网络可达，不等同于已登录后的完整产品功能可用。</p>
+    <p className="evidence-note"><strong>证据范围：</strong>这里的请求由 Mac 上的 Control Service 经 mihomo mixed-port 发起，会经过当前 Mac 本机规则 / 全局 / 直连模式。它不证明下游设备的网关规则、设备级 SRC-IP、DHCP、DNS 或 TUN；选择全局或直连时，分流判断基线出现差异可能正是当前模式的结果。HTTP 响应表示网络可达，不等同于已登录后的完整产品功能可用。</p>
   </>
 }

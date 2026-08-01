@@ -3,6 +3,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	"open-mihomo-gateway/internal/device"
 )
 
 func TestValidateRejectsMihomoRedirPort(t *testing.T) {
@@ -40,6 +42,21 @@ func TestValidateAcceptsTUNTransparentMode(t *testing.T) {
 	}
 }
 
+func TestValidateLocalSystemProxyRequiresTUN(t *testing.T) {
+	cfg := Default()
+	cfg.LocalSystemProxy.Enabled = true
+
+	err := Validate(cfg)
+	if err == nil || !strings.Contains(err.Error(), `requires transparent.mode: "tun"`) {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	cfg.Transparent.Mode = TransparentModeTUN
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate() with TUN error = %v", err)
+	}
+}
+
 func TestValidateAcceptsSameLANGatewayMode(t *testing.T) {
 	cfg := Default()
 	cfg.Gateway.Mode = GatewayModeSameLAN
@@ -50,6 +67,35 @@ func TestValidateAcceptsSameLANGatewayMode(t *testing.T) {
 
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestPrepareDevicePolicyPausesIPOnlyDevicesOutsideSameLAN(t *testing.T) {
+	policy := device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices:  []device.ManagedDevice{{ID: "speaker", IPv4: "192.168.50.101", Profile: "home"}},
+	}
+	bundle, err := device.CompilePolicyBundle(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Default()
+	cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
+	cfg.DevicePolicy.File = "already-loaded.json"
+	cfg.DevicePolicy.Bundle = &bundle
+	if err := PrepareDevicePolicy(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DevicePolicy.Bundle.IPOnlyDevicesActive || len(cfg.DevicePolicy.Bundle.Compiled.Devices) != 0 || len(cfg.DevicePolicy.Bundle.Policy.Devices) != 1 {
+		t.Fatalf("DHCP bundle = %#v", cfg.DevicePolicy.Bundle)
+	}
+
+	cfg.Gateway.Mode = GatewayModeSameLAN
+	if err := PrepareDevicePolicy(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.DevicePolicy.Bundle.IPOnlyDevicesActive || len(cfg.DevicePolicy.Bundle.Compiled.Devices) != 1 {
+		t.Fatalf("same-LAN bundle = %#v", cfg.DevicePolicy.Bundle)
 	}
 }
 
@@ -304,6 +350,13 @@ func TestValidateRejectsInvalidUpstreamProxy(t *testing.T) {
 				cfg.UpstreamProxy.Port = 0
 			},
 			want: "upstream_proxy.port must be between 1 and 65535",
+		},
+		{
+			name: "reserved local routing name",
+			edit: func(cfg *Config) {
+				cfg.UpstreamProxy.Name = "open-surge/mac-global"
+			},
+			want: "upstream_proxy.name must differ from reserved OpenSurge proxy groups",
 		},
 	}
 
