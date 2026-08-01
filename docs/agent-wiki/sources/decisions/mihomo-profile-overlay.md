@@ -73,11 +73,11 @@ starts mihomo without dnsmasq, pf, or TUN, switches the imported fixture's
 `Proxy` group to `DIRECT`, restarts mihomo in the same runtime directory,
 requires the `DIRECT` selection to be restored through `profile.store-selected`,
 verifies file and HTTP proxy-provider updates change live provider and policy
-group state, and proves one local mixed-port request can be switched from
-`DIRECT` to a controlled HTTP CONNECT proxy by changing an `EgressSwitch`
-selection. The HTTP provider is served by a local fixture, so this is still a
-control-plane/API gate, not proof of TUN capture, whole-LAN routing, or real
-remote proxy egress.
+group state, verifies source-scoped local/private guards keep a local
+mixed-port destination `DIRECT`, and exercises the dedicated local-routing
+selectors plus their generic-policy isolation. The HTTP provider is served by
+a local fixture, so this is still a control-plane/API gate, not proof of TUN
+capture, whole-LAN routing, or real remote proxy egress.
 
 Use `make lab-test-tun-imported-profile` for a reproducible TUN lab gate that
 starts OpenSurge with an imported profile fixture. The fixture keeps

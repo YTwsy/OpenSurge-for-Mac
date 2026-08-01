@@ -15,6 +15,10 @@
   mihomo 代理/规则 section，同时保持 OpenSurge 接管网关字段。
 - [每设备策略覆盖](concepts/device-policy-overlays.md)：如何以 DHCP reservation 和
   `SRC-IP-CIDR` 在一个 mihomo 进程中实现独立的设备策略。
+- [Mac 本机流量模式](concepts/local-mac-routing-modes.md)：如何用 source-scoped
+  overlay 实现规则 / 全局 / 直连，同时保持下游设备规则不变。
+- [Mac 本机系统代理协同](concepts/local-system-proxy-coordination.md)：默认关闭的
+  TUN HTTP/HTTPS 兼容层、fail-closed 冲突检查和恢复契约。
 - [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、SwiftUI 菜单栏
   launcher、本地 API 与恢复状态的职责边界。
 - 许可证边界：OpenSurge 自有代码采用 `GPL-3.0-only`；随 pkg 分发的独立组件保留
@@ -32,7 +36,7 @@ DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 
 边界。
 
 当前控制面契约优先保持机器可读：`status`、`doctor`、`leases`、`logs`、
-`policies`、`devices`、`connections`、`providers`、`provider-update` 和 `snapshot` 支持 JSON
+`policies`、`local-routing`、`devices`、`connections`、`providers`、`provider-update` 和 `snapshot` 支持 JSON
 输出。`logs --tail N --format json` 会返回最近的 dnsmasq/mihomo 日志行，并对每个
 日志文件标出存在状态和读取错误。`snapshot --format json` 聚合 status、doctor、
 leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo API 不可用记录在局部
@@ -49,6 +53,10 @@ leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo AP
 - 配置验证：`internal/config/validator.go`
 - mihomo profile 导入：`internal/mihomo/profile.go` 和
   `docs/agent-wiki/sources/decisions/mihomo-profile-overlay.md`
+- Mac 本机模式：`internal/mihomo/local_routing.go` 和
+  `docs/agent-wiki/sources/decisions/local-mac-routing-modes.md`
+- Mac 本机系统代理：`internal/macosnetwork/system_proxy.go` 和
+  `docs/agent-wiki/sources/decisions/local-system-proxy-coordination.md`
 - Virtual LAN lab：`tests/lab/README.md` 和 `tests/lab/lab.sh`
 - 真实设备 smoke：`tests/real-device/README.md` 和
   `tests/real-device/smoke.sh`

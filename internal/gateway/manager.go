@@ -13,6 +13,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/pf"
 	"open-mihomo-gateway/internal/runtime"
@@ -62,21 +63,28 @@ type sysctlService interface {
 	Restore(string) error
 }
 
+type localSystemProxyService interface {
+	Prepare(context.Context, string, int) (runtime.SystemProxySnapshot, error)
+	Enable(context.Context, runtime.SystemProxySnapshot, int) error
+	Restore(context.Context, runtime.SystemProxySnapshot) error
+}
+
 type gatewayDeps struct {
-	geteuid            func() int
-	loadState          func(string) (runtime.State, bool, error)
-	saveState          func(string, runtime.State) error
-	removeState        func(string) error
-	ensure             func(runtime.Paths) error
-	newDHCP            func(config.Config, runtime.Paths) dhcpService
-	newMihomo          func(config.Config, runtime.Paths) mihomoService
-	newPF              func(config.Config, runtime.Paths) pfService
-	newSysctl          func() sysctlService
-	interfaces         func() ([]net.Interface, error)
-	interfaceByName    func(string) (*net.Interface, error)
-	interfaceAddrs     func(*net.Interface) ([]net.Addr, error)
-	probeReservationIP func(ip string, expectedMAC string) error
-	now                func() time.Time
+	geteuid             func() int
+	loadState           func(string) (runtime.State, bool, error)
+	saveState           func(string, runtime.State) error
+	removeState         func(string) error
+	ensure              func(runtime.Paths) error
+	newDHCP             func(config.Config, runtime.Paths) dhcpService
+	newMihomo           func(config.Config, runtime.Paths) mihomoService
+	newPF               func(config.Config, runtime.Paths) pfService
+	newSysctl           func() sysctlService
+	newLocalSystemProxy func() localSystemProxyService
+	interfaces          func() ([]net.Interface, error)
+	interfaceByName     func(string) (*net.Interface, error)
+	interfaceAddrs      func(*net.Interface) ([]net.Addr, error)
+	probeReservationIP  func(ip string, expectedMAC string) error
+	now                 func() time.Time
 }
 
 func defaultGatewayDeps() gatewayDeps {
@@ -98,6 +106,9 @@ func defaultGatewayDeps() gatewayDeps {
 		newSysctl: func() sysctlService {
 			return sysctl.New()
 		},
+		newLocalSystemProxy: func() localSystemProxyService {
+			return macosnetwork.SystemProxy{}
+		},
 		interfaces:      net.Interfaces,
 		interfaceByName: net.InterfaceByName,
 		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
@@ -115,7 +126,14 @@ func (m Manager) gatewayDeps() gatewayDeps {
 	return m.deps
 }
 
-func (m Manager) Start(_ context.Context) error {
+func (m Manager) localSystemProxy(deps gatewayDeps) localSystemProxyService {
+	if deps.newLocalSystemProxy != nil {
+		return deps.newLocalSystemProxy()
+	}
+	return macosnetwork.SystemProxy{}
+}
+
+func (m Manager) Start(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("start requires sudo/root privileges")
@@ -139,11 +157,20 @@ func (m Manager) Start(_ context.Context) error {
 	mihomoManager := deps.newMihomo(m.cfg, m.paths)
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
+	systemProxyManager := m.localSystemProxy(deps)
 	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
 		return err
 	}
 	if err := m.checkReservationConflicts(deps); err != nil {
 		return err
+	}
+	var systemProxySnapshot *runtime.SystemProxySnapshot
+	if m.cfg.LocalSystemProxy.Enabled {
+		snapshot, err := systemProxyManager.Prepare(ctx, m.cfg.Gateway.UpstreamInterface, m.cfg.Mihomo.MixedPort)
+		if err != nil {
+			return fmt.Errorf("prepare local system proxy coordination: %w", err)
+		}
+		systemProxySnapshot = &snapshot
 	}
 	if err := mihomoManager.WriteConfig(); err != nil {
 		return err
@@ -157,15 +184,6 @@ func (m Manager) Start(_ context.Context) error {
 	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
 		return err
 	}
-	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
-		if err := dhcp.ReconcilePolicyLeases(m.paths.LeaseFile, bundle.Compiled.Reservations); err != nil {
-			return err
-		}
-		if err := device.WritePolicyBundleSnapshot(m.paths.DevicePolicyApplied, *bundle); err != nil {
-			return err
-		}
-	}
-
 	ipForwardingBefore, err := sysctlManager.Current()
 	if err != nil {
 		return err
@@ -178,12 +196,21 @@ func (m Manager) Start(_ context.Context) error {
 	if err != nil {
 		return fmt.Errorf("digest imported mihomo profile: %w", err)
 	}
+	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
+		if err := dhcp.ReconcilePolicyLeases(m.paths.LeaseFile, bundle.Compiled.Reservations); err != nil {
+			return err
+		}
+		if err := device.WritePolicyBundleSnapshot(m.paths.DevicePolicyApplied, *bundle); err != nil {
+			return err
+		}
+	}
 
 	state := runtime.State{
 		StartedAt:          deps.now(),
 		IPForwardingBefore: ipForwardingBefore,
 		PFEnabledBefore:    pfEnabledBefore,
 		ProfileDigest:      profileDigest,
+		LocalSystemProxy:   systemProxySnapshot,
 	}
 	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
 		state.DevicePolicyDigest = bundle.Digest
@@ -194,40 +221,45 @@ func (m Manager) Start(_ context.Context) error {
 	}
 
 	if err := sysctlManager.Enable(); err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 
 	mihomoPID, err := mihomoManager.Start()
 	if err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	state.PIDMihomo = mihomoPID
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 
 	pid, err := dhcpManager.Start()
 	if err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	state.PIDDNSMasq = pid
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 
 	if err := pfManager.Load(!pfEnabledBefore); err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	state.PFAnchorLoaded = true
 	loaded, err := pfManager.Loaded()
 	if err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	if !loaded {
-		return m.rollback(fmt.Errorf("pf anchor %s did not become visible after load", m.cfg.PF.AnchorName), state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, fmt.Errorf("pf anchor %s did not become visible after load", m.cfg.PF.AnchorName), state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
-		return m.rollback(err, state, dhcpManager, mihomoManager, pfManager, sysctlManager)
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+	}
+	if state.LocalSystemProxy != nil {
+		if err := systemProxyManager.Enable(ctx, *state.LocalSystemProxy, m.cfg.Mihomo.MixedPort); err != nil {
+			return m.rollback(ctx, fmt.Errorf("enable local system proxy coordination: %w", err), state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, true)
+		}
 	}
 
 	fmt.Printf("Gateway runtime prepared in %s\n", m.paths.Dir)
@@ -238,6 +270,9 @@ func (m Manager) Start(_ context.Context) error {
 		fmt.Printf("dnsmasq started with pid %d\n", pid)
 	}
 	fmt.Printf("pf anchor %s loaded\n", m.cfg.PF.AnchorName)
+	if state.LocalSystemProxy != nil {
+		fmt.Printf("macOS HTTP/HTTPS system proxy enabled for network service %s\n", state.LocalSystemProxy.NetworkService)
+	}
 	return nil
 }
 
@@ -277,7 +312,7 @@ func (m Manager) Reload(ctx context.Context) error {
 // so an upstream link recovery does not turn into a full gateway takeover
 // transition. The existing rendered configuration is validated before the
 // live process is stopped, and the previous log is archived for diagnosis.
-func (m Manager) RestartMihomo(_ context.Context) error {
+func (m Manager) RestartMihomo(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("restart-mihomo requires sudo/root privileges")
@@ -298,6 +333,13 @@ func (m Manager) RestartMihomo(_ context.Context) error {
 	}
 
 	mihomoManager := deps.newMihomo(m.cfg, m.paths)
+	systemProxyManager := m.localSystemProxy(deps)
+	restoreSystemProxy := func() error {
+		if state.LocalSystemProxy == nil {
+			return nil
+		}
+		return systemProxyManager.Restore(ctx, *state.LocalSystemProxy)
+	}
 	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
 		return fmt.Errorf("prepared mihomo config validation failed: %w", err)
 	}
@@ -310,22 +352,24 @@ func (m Manager) RestartMihomo(_ context.Context) error {
 	if err := mihomoManager.Stop(previousPID); err != nil {
 		if mihomoManager.Running(previousPID) {
 			state.PIDMihomo = previousPID
+			return errors.Join(fmt.Errorf("stop mihomo pid %d: %w", previousPID, err), deps.saveState(m.paths.StateFile, state))
 		}
-		return errors.Join(fmt.Errorf("stop mihomo pid %d: %w", previousPID, err), deps.saveState(m.paths.StateFile, state))
+		return errors.Join(fmt.Errorf("stop mihomo pid %d: %w", previousPID, err), restoreSystemProxy(), deps.saveState(m.paths.StateFile, state))
 	}
 
 	archivedLog, err := archiveMihomoLog(m.paths.MihomoLog, deps.now())
 	if err != nil {
-		return fmt.Errorf("archive mihomo log before restart: %w", err)
+		return errors.Join(fmt.Errorf("archive mihomo log before restart: %w", err), restoreSystemProxy())
 	}
 	newPID, err := mihomoManager.Start()
 	if err != nil {
-		return fmt.Errorf("start replacement mihomo process: %w", err)
+		return errors.Join(fmt.Errorf("start replacement mihomo process: %w", err), restoreSystemProxy())
 	}
 	state.PIDMihomo = newPID
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
+		restoreErr := restoreSystemProxy()
 		stopErr := mihomoManager.Stop(newPID)
-		return errors.Join(fmt.Errorf("save replacement mihomo pid: %w", err), stopErr)
+		return errors.Join(fmt.Errorf("save replacement mihomo pid: %w", err), restoreErr, stopErr)
 	}
 
 	fmt.Printf("mihomo restarted with pid %d\n", newPID)
@@ -400,7 +444,7 @@ func (m Manager) validateReloadCandidate() error {
 	return mihomoManager.ValidateWrittenConfig()
 }
 
-func (m Manager) Stop(_ context.Context) error {
+func (m Manager) Stop(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("stop requires sudo/root privileges")
@@ -413,6 +457,11 @@ func (m Manager) Stop(_ context.Context) error {
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
 	if exists {
+		if state.LocalSystemProxy != nil {
+			if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
+				return fmt.Errorf("restore local system proxy before stopping gateway services: %w", err)
+			}
+		}
 		dhcpManager := deps.newDHCP(m.cfg, m.paths)
 		cleanupErr = errors.Join(cleanupErr, dhcpManager.Stop(state.PIDDNSMasq))
 		mihomoManager := deps.newMihomo(m.cfg, m.paths)
@@ -528,19 +577,27 @@ func addrHasIPv4(addr net.Addr, target net.IP) bool {
 	}
 }
 
-func (m Manager) rollback(cause error, state runtime.State, dhcpManager dhcpService, mihomoManager mihomoService, pfManager pfService, sysctlManager sysctlService) error {
+func (m Manager) rollback(ctx context.Context, cause error, state runtime.State, dhcpManager dhcpService, mihomoManager mihomoService, pfManager pfService, sysctlManager sysctlService, systemProxyManager localSystemProxyService, restoreSystemProxy bool) error {
 	deps := m.gatewayDeps()
 	var cleanupErr error
+	if restoreSystemProxy && state.LocalSystemProxy != nil {
+		if err := systemProxyManager.Restore(ctx, *state.LocalSystemProxy); err != nil {
+			return fmt.Errorf("%w; rollback could not restore the local system proxy, so gateway services were left running for recovery: %v", cause, err)
+		}
+	}
 	cleanupErr = errors.Join(cleanupErr, dhcpManager.Stop(state.PIDDNSMasq))
 	cleanupErr = errors.Join(cleanupErr, mihomoManager.Stop(state.PIDMihomo))
 	if state.PFAnchorLoaded {
 		cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
 	}
 	cleanupErr = errors.Join(cleanupErr, sysctlManager.Restore(state.IPForwardingBefore))
+	if cleanupErr != nil {
+		return fmt.Errorf("%w; rollback failed and runtime state was retained for recovery: %v", cause, cleanupErr)
+	}
 	cleanupErr = errors.Join(cleanupErr, deps.removeState(m.paths.StateFile))
 	cleanupErr = errors.Join(cleanupErr, device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied))
 	if cleanupErr != nil {
-		return fmt.Errorf("%w; rollback failed: %v", cause, cleanupErr)
+		return fmt.Errorf("%w; rollback cleanup failed: %v", cause, cleanupErr)
 	}
 	return cause
 }

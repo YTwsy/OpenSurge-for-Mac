@@ -25,6 +25,16 @@ CLI and development workflows are intentionally left out.
 The menu bar app shows status and recovery warnings and opens the Web GUI.
 Sources, network settings, devices, and policies are managed in the Web GUI.
 
+The menu bar panel automatically checks once for the latest stable release and
+also provides a manual **检查更新** (Check for Updates) action. When an update is
+available, **打开下载页** opens that version's GitHub Release page. The app does
+not download or install the PKG itself; choose the package for the Mac's
+architecture and follow the installation steps above. Existing configuration
+and data are preserved without uninstalling first.
+Prerelease builds display their complete `rc.N` version. They are not offered an
+older stable release, while the stable release with the same base version is
+still detected when it becomes available.
+
 ## First-time setup
 
 ### 1. Import a source
@@ -57,6 +67,17 @@ upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Enable
 **每设备策略** (Per-device policies) if devices need independent egress
 choices, then select **保存网络配置** (Save network configuration).
 
+If SafeDNS, DNS Proxy, content filtering, or another Network Extension causes
+local-Mac DNS or connectivity failures with TUN alone, enable **Mac local
+system-proxy coordination** in the same form. After the gateway is ready,
+OpenSurge points HTTP and HTTPS proxy settings for the current upstream network
+service at the local mihomo mixed-port, then restores the pre-start state on
+stop, startup rollback, or a failed mihomo restart. This option is off by
+default, requires TUN, and affects only Mac applications that honor system
+proxy settings; it does not replace TUN or change downstream devices. Startup
+is rejected when HTTP/HTTPS proxying, PAC, or proxy auto-discovery is already
+active, rather than overwriting those settings.
+
 ### 3. Start OpenSurge
 
 For **Same-LAN DHCP takeover**, gateway start and stop are part of the recovery
@@ -79,15 +100,22 @@ recovery state active until the network has actually been restored.
   seconds of traffic trends.
 - **来源** (Sources) refreshes subscriptions and shows version differences. A
   refresh creates a draft that still needs to be applied.
-- **设备** (Devices) registers devices and lets each one follow global rules or
-  use an independent egress.
+- **设备** (Devices) switches local-Mac Rule / Global / Direct and lets each
+  downstream device follow gateway rules or use an independent egress. Those
+  controls do not affect each other.
 - **策略** (Policies) tests proxy health and switches applied Selectors
   immediately.
 - **连通性** (Connectivity) shows latency, matched rules, and egress chains
-  through the currently applied mihomo path.
+  through the applied configuration and current local-Mac mode. It does not
+  represent a downstream-device path.
 - **诊断** (Diagnostics) shows recent operations, connections, providers, and
   redacted logs.
 
+The local-Mac mode affects only new connections entering OpenSurge through TUN
+or the local explicit proxy. The mode switch itself does not rewrite macOS
+system-proxy settings or downstream behavior; the optional network compatibility
+setting above owns system-proxy coordination. See
+[local Mac routing modes](local-mac-routing.md).
 Green **即时生效** (Applies immediately) controls switch an already-applied
 egress. Changes to device identity, candidates, or rules must be saved and then
 applied through a gateway reload.

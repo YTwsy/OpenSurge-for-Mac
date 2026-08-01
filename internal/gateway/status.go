@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
 	"open-mihomo-gateway/internal/mihomo"
@@ -14,15 +15,18 @@ import (
 )
 
 type Status struct {
-	Gateway     string `json:"gateway"`
-	Interface   string `json:"interface"`
-	LANIP       string `json:"lan_ip"`
-	DHCP        string `json:"dhcp"`
-	DHCPEnabled bool   `json:"dhcp_enabled"`
-	Mihomo      string `json:"mihomo"`
-	PFAnchor    string `json:"pf_anchor"`
-	Forwarding  string `json:"forwarding"`
-	ClientCount int    `json:"client_count"`
+	Gateway      string `json:"gateway"`
+	Interface    string `json:"interface"`
+	LANIP        string `json:"lan_ip"`
+	DHCP         string `json:"dhcp"`
+	DHCPEnabled  bool   `json:"dhcp_enabled"`
+	Mihomo       string `json:"mihomo"`
+	TUN          string `json:"tun"`
+	TUNInterface string `json:"tun_interface,omitempty"`
+	TUNError     string `json:"tun_error,omitempty"`
+	PFAnchor     string `json:"pf_anchor"`
+	Forwarding   string `json:"forwarding"`
+	ClientCount  int    `json:"client_count"`
 }
 
 func (m Manager) Status(ctx context.Context) (Status, error) {
@@ -38,6 +42,12 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 	gatewayStatus := "stopped"
 	dhcpStatus := "stopped"
 	mihomoStatus := "stopped"
+	tunStatus := "disabled"
+	tunInterface := ""
+	tunError := ""
+	if m.cfg.Transparent.TUNEnabled() {
+		tunStatus = "stopped"
+	}
 	pfStatus := "unloaded"
 	if exists {
 		dhcpRunning := false
@@ -46,8 +56,23 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		if mihomoManager.Running(state.PIDMihomo) {
 			mihomoRunning = true
 			mihomoStatus = "running"
-			if version, err := mihomo.FetchVersion(ctx, m.cfg); err == nil && version.Version != "" {
+			version, versionErr, runtimeTUN, tunErr := fetchMihomoRuntime(ctx, m.cfg)
+			if versionErr == nil && version.Version != "" {
 				mihomoStatus = "running (" + version.Version + ")"
+			}
+			if m.cfg.Transparent.TUNEnabled() {
+				switch {
+				case tunErr != nil:
+					tunStatus = "unknown"
+					tunError = tunErr.Error()
+				case runtimeTUN.Enabled:
+					tunStatus = "ready"
+					tunInterface = runtimeTUN.Device
+				default:
+					tunStatus = "failed"
+					tunInterface = runtimeTUN.Device
+					tunError = "mihomo runtime config reports TUN disabled"
+				}
 			}
 		}
 		dhcpManager := dhcp.New(m.cfg, m.paths)
@@ -55,7 +80,11 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 			dhcpRunning = true
 			dhcpStatus = "running"
 		}
-		if dhcpRunning && mihomoRunning {
+		// A failed runtime read is an observability warning, not evidence that
+		// the already-running TUN data plane stopped. An explicit disabled
+		// response remains a real degraded condition.
+		tunReady := !m.cfg.Transparent.TUNEnabled() || tunStatus == "ready" || tunStatus == "unknown"
+		if dhcpRunning && mihomoRunning && tunReady {
 			gatewayStatus = "running"
 		} else {
 			gatewayStatus = "degraded"
@@ -73,16 +102,49 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 	}
 
 	return Status{
-		Gateway:     gatewayStatus,
-		Interface:   m.cfg.Gateway.Interface,
-		LANIP:       m.cfg.Gateway.LANIP,
-		DHCP:        dhcpStatus,
-		DHCPEnabled: m.cfg.DHCP.Enabled,
-		Mihomo:      mihomoStatus,
-		PFAnchor:    pfStatus,
-		Forwarding:  forwarding,
-		ClientCount: len(clients),
+		Gateway:      gatewayStatus,
+		Interface:    m.cfg.Gateway.Interface,
+		LANIP:        m.cfg.Gateway.LANIP,
+		DHCP:         dhcpStatus,
+		DHCPEnabled:  m.cfg.DHCP.Enabled,
+		Mihomo:       mihomoStatus,
+		TUN:          tunStatus,
+		TUNInterface: tunInterface,
+		TUNError:     tunError,
+		PFAnchor:     pfStatus,
+		Forwarding:   forwarding,
+		ClientCount:  len(clients),
 	}, nil
+}
+
+type versionResult struct {
+	value mihomo.Version
+	err   error
+}
+
+type tunResult struct {
+	value mihomo.TUNRuntimeState
+	err   error
+}
+
+func fetchMihomoRuntime(ctx context.Context, cfg config.Config) (mihomo.Version, error, mihomo.TUNRuntimeState, error) {
+	if !cfg.Transparent.TUNEnabled() {
+		version, err := mihomo.FetchVersion(ctx, cfg)
+		return version, err, mihomo.TUNRuntimeState{}, nil
+	}
+	versionCh := make(chan versionResult, 1)
+	tunCh := make(chan tunResult, 1)
+	go func() {
+		value, err := mihomo.FetchVersion(ctx, cfg)
+		versionCh <- versionResult{value: value, err: err}
+	}()
+	go func() {
+		value, err := mihomo.FetchTUNRuntimeState(ctx, cfg)
+		tunCh <- tunResult{value: value, err: err}
+	}()
+	version := <-versionCh
+	tun := <-tunCh
+	return version.value, version.err, tun.value, tun.err
 }
 
 func (s Status) Format() string {
@@ -90,12 +152,20 @@ func (s Status) Format() string {
 	if !s.DHCPEnabled {
 		dnsmasqLabel = "DNS"
 	}
+	tunLabel := s.TUN
+	if s.TUNInterface != "" {
+		tunLabel += " (" + s.TUNInterface + ")"
+	}
+	if s.TUNError != "" {
+		tunLabel += ": " + s.TUNError
+	}
 	lines := []string{
 		fmt.Sprintf("Gateway: %s", s.Gateway),
 		fmt.Sprintf("Interface: %s", s.Interface),
 		fmt.Sprintf("LAN IP: %s", s.LANIP),
 		fmt.Sprintf("%s: %s", dnsmasqLabel, s.DHCP),
 		fmt.Sprintf("mihomo: %s", s.Mihomo),
+		fmt.Sprintf("TUN: %s", tunLabel),
 		fmt.Sprintf("pf anchor: %s", s.PFAnchor),
 		fmt.Sprintf("IP forwarding: %s", s.Forwarding),
 		fmt.Sprintf("Clients: %d", s.ClientCount),

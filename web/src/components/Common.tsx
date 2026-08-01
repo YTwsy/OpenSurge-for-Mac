@@ -28,6 +28,10 @@ export function Mode({ title, description, badge, active, expanded, controls, di
 export function Empty({ text }: { text: string }) { return <div className="empty">{text}</div> }
 
 export function StatusDot({ status }: { status: string }) {
-  const state = status.includes('running') ? 'running' : status.includes('degraded') ? 'degraded' : 'stopped'
+  const state = status.includes('running') || status === 'ready'
+    ? 'running'
+    : status.includes('degraded') || status === 'failed' || status === 'unknown'
+      ? 'degraded'
+      : 'stopped'
   return <span className={`status-dot ${state}`} aria-label={state} />
 }

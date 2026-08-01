@@ -153,6 +153,35 @@ func TestObservedLANDevicesJoinsActiveSourcesToNeighborMAC(t *testing.T) {
 	}
 }
 
+func TestObservedLANDevicesIncludesNeighborOnlyEvidenceForRegisteredIPOnlyDevice(t *testing.T) {
+	neighbors := []macosnetwork.Neighbor{
+		{IP: "192.168.5.137", MAC: "aa:bb:cc:dd:ee:37"},
+		{IP: "192.168.5.138", MAC: "aa:bb:cc:dd:ee:38"},
+	}
+	registered := []device.ManagedDevice{
+		{ID: "ip-only", IPv4: "192.168.5.137"},
+		{ID: "identified", IPv4: "192.168.5.138", MAC: "aa:bb:cc:dd:ee:38"},
+	}
+
+	observed := observedLANDevices(mihomo.ConnectionsSnapshot{}, neighbors, "192.168.5.123", registered...)
+	if len(observed) != 1 || observed[0].IP != "192.168.5.137" || observed[0].MAC != "aa:bb:cc:dd:ee:37" || !observed[0].NeighborObserved || observed[0].ActiveConnections != 0 {
+		t.Fatalf("observed = %#v", observed)
+	}
+}
+
+func TestObservedLANDevicesDoesNotGuessWhenOneIPHasConflictingNeighborMACs(t *testing.T) {
+	neighbors := []macosnetwork.Neighbor{
+		{IP: "192.168.5.137", MAC: "aa:bb:cc:dd:ee:37"},
+		{IP: "192.168.5.137", MAC: "aa:bb:cc:dd:ee:99"},
+	}
+	registered := []device.ManagedDevice{{ID: "ip-only", IPv4: "192.168.5.137"}}
+
+	observed := observedLANDevices(mihomo.ConnectionsSnapshot{}, neighbors, "192.168.5.123", registered...)
+	if len(observed) != 0 {
+		t.Fatalf("observed = %#v", observed)
+	}
+}
+
 func TestTrafficRateSamplerUsesConnectionDeltasForGatewayAndDevices(t *testing.T) {
 	now := time.Date(2026, 7, 17, 8, 0, 0, 0, time.UTC)
 	sampler := newTrafficRateSampler()

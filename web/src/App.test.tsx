@@ -16,7 +16,7 @@ vi.mock('./api', () => ({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: false, protected_ipv4: [] },
     })),
     networkInterfaces: vi.fn(async () => ({
@@ -43,6 +43,7 @@ vi.mock('./api', () => ({
     recovery: vi.fn(),
     prepareRecovery: vi.fn(),
     discardRecovery: vi.fn(),
+    abandonTakeover: vi.fn(),
     applyStatic: vi.fn(),
     probeDHCP: vi.fn(),
     confirmRouterRestored: vi.fn(),
@@ -60,13 +61,15 @@ vi.mock('./api', () => ({
     deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })),
     policies: vi.fn(async () => ({ groups: [] })),
     selectPolicy: vi.fn(),
+    localRouting: vi.fn(async () => ({ schema_version: 1, mode: 'rule', available_modes: ['rule', 'direct'], udp_behavior: 'rules', transports: ['tun', 'loopback_explicit_proxy'], new_connections_only: true, consistent: true })),
+    setLocalRouting: vi.fn(),
     devicePolicy: vi.fn(async () => null),
     saveDevicePolicy: vi.fn(),
     selectDevicePolicy: vi.fn(),
     proxyHealth: vi.fn(async () => ({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', proxies: [] })),
     testProxyHealth: vi.fn(async () => ({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', results: [] })),
-    connectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'applied_global_rules', rounds: 3, targets: [], results: [] })),
-    testConnectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'applied_global_rules', rounds: 3, targets: [], results: [] })),
+    connectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'local_mac_runtime', rounds: 3, targets: [], results: [] })),
+    testConnectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'local_mac_runtime', rounds: 3, targets: [], results: [] })),
     refreshProvider: vi.fn(),
     diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {}, operations: [], recovery: { stage: 'idle', required: false } })),
   },
@@ -101,7 +104,7 @@ function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
     schema_version: 1, revision: 'config-revision',
     gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
     dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-    dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+    dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
 }
@@ -255,6 +258,23 @@ describe('OpenSurge app shell', () => {
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-same-lan')
     expect(await screen.findByText('旁路由模式已启动。')).toBeTruthy()
+  })
+
+  it('offers DHCP takeover abandonment after the Mac becomes static', async () => {
+    window.history.replaceState({}, '', '/network')
+    vi.mocked(api.overview).mockResolvedValue({
+      ...overview,
+      recovery: { ...overview.recovery, stage: 'mac_static', required: true },
+    })
+    vi.mocked(api.abandonTakeover).mockResolvedValue({} as never)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '放弃 DHCP 接管' }))
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('放弃本次局域网 DHCP 接管'))
+    expect(api.abandonTakeover).toHaveBeenCalledOnce()
+    expect(await screen.findByText(/已放弃 DHCP 接管/)).toBeTruthy()
   })
 
   it('starts isolated downstream LAN while keeping DHCP fields editable', async () => {
@@ -534,6 +554,24 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('button', { name: '将 Mac 切换为固定 IPv4' }).hasAttribute('disabled')).toBe(true)
   })
 
+  it('saves the opt-in macOS HTTP and HTTPS system proxy coordination mode', async () => {
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    const systemProxy = await screen.findByRole('checkbox', { name: '同时启用 macOS HTTP/HTTPS 系统代理' })
+    expect(systemProxy.hasAttribute('disabled')).toBe(false)
+    expect(screen.getByText(/SafeDNS、DNS Proxy、内容过滤/)).toBeTruthy()
+    expect(screen.getAllByText('已关闭').length).toBeGreaterThanOrEqual(2)
+    await userEvent.click(systemProxy)
+    expect(systemProxy.closest('label')?.classList.contains('is-on')).toBe(true)
+    const devicePolicy = screen.getByRole('checkbox', { name: '启用每设备策略' })
+    await userEvent.click(devicePolicy)
+    expect(devicePolicy.closest('label')?.classList.contains('is-on')).toBe(true)
+    expect(screen.getAllByText('已开启').length).toBeGreaterThanOrEqual(2)
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ local_system_proxy: { enabled: true }, device_policy: { enabled: true, protected_ipv4: [] } })))
+  })
+
   it('shows the fixed IPv4 readback warning during recovery step 2', async () => {
     vi.mocked(api.gatewayPlan).mockResolvedValue({
       schema_version: 1, revision: 'config-revision', topology: 'same_wifi_dhcp',
@@ -576,6 +614,78 @@ describe('OpenSurge app shell', () => {
     expect(manual.getAttribute('aria-expanded')).toBe('false')
     expect(detail?.getAttribute('aria-hidden')).toBe('true')
     expect(detail?.classList.contains('open')).toBe(false)
+  })
+
+  it('switches from same-LAN to DHCP without a migration dialog when every device already has a MAC', async () => {
+    const current = { ...configFor('same_lan'), device_policy: { enabled: true, protected_ipv4: [] } }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: {
+      devices: [{ id: 'phone', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.137', profile: 'home', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [],
+    } })
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    expect(screen.queryByRole('dialog', { name: /确认设备身份/ })).toBeNull()
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
+  })
+
+  it('prefills an observed MAC and asks for confirmation before switching to DHCP', async () => {
+    const current = { ...configFor('same_lan'), device_policy: { enabled: true, protected_ipv4: [] } }
+    const policy = {
+      devices: [{ id: 'speaker', name: 'Speaker', mac: '', ipv4: '192.168.1.137', profile: 'home', egress_mode: 'inherit_global' as const }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [],
+    }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy })
+    vi.mocked(api.devices).mockResolvedValue({ drift: false, applied: false, devices: [], leases: [], observed_devices: [{ ip: '192.168.1.137', mac: 'AA:BB:CC:DD:EE:37', active_connections: 0, neighbor_observed: true }] })
+    vi.mocked(api.saveDevicePolicy).mockImplementation(async next => ({ schema_version: 1, revision: 'policy-next', policy: next }))
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '确认设备身份后切换 DHCP 模式' })
+    expect(dialog.textContent).toContain('Speaker')
+    expect(dialog.textContent).toContain('aa:bb:cc:dd:ee:37')
+    expect(api.saveConfig).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: '确认 MAC 并切换' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({ devices: [expect.objectContaining({ id: 'speaker', mac: 'aa:bb:cc:dd:ee:37' })] }), 'policy-r'))
+    expect(api.saveConfig).toHaveBeenCalled()
+  })
+
+  it('offers inspection or an explicit paused-policy switch when an IP-only device has no observed MAC', async () => {
+    const current = { ...configFor('same_lan'), device_policy: { enabled: true, protected_ipv4: [] } }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: {
+      devices: [{ id: 'speaker', name: 'Speaker', mac: '', ipv4: '192.168.1.137', profile: 'home', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [],
+    } })
+    vi.mocked(api.devices).mockResolvedValue({ drift: false, applied: false, devices: [], leases: [], observed_devices: [{ ip: '192.168.1.137', active_connections: 1, neighbor_observed: false }] })
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '确认设备身份后切换 DHCP 模式' })
+    expect(dialog.textContent).toContain('这些设备的策略将在 DHCP 模式下暂停，补充 MAC 后恢复。')
+    expect(within(dialog).getByRole('button', { name: '检查设备' })).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '仍然切换并暂停这些策略' }))
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
   })
 
   it('selects an isolated topology in the revisioned network editor', async () => {
@@ -679,7 +789,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
@@ -699,7 +809,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [] } })
@@ -724,7 +834,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
