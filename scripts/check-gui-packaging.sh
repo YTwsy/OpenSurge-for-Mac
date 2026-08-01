@@ -147,6 +147,14 @@ grep -Fq 'plutil -replace CFBundleVersion' "$ROOT/scripts/build-menubar-app.sh" 
   echo "menu bar build must stamp the build number into Info.plist" >&2
   exit 1
 }
+grep -Fq 'plutil -replace OpenSurgeReleaseTag' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build must stamp the full release tag into Info.plist" >&2
+  exit 1
+}
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :OpenSurgeReleaseTag' "$MENUBAR_INFO")" == "v0.1.0" ]] || {
+  echo "menu bar app Info.plist must declare a default full release tag" >&2
+  exit 1
+}
 [[ -s "$APP_ICON_SOURCE" && -s "$MENU_BAR_ICON_SOURCE" ]] || {
   echo "menu bar app icon assets must be present" >&2
   exit 1
@@ -229,12 +237,32 @@ grep -Fq 'arm64' "$RELEASE_WORKFLOW" && grep -Fq 'x86_64' "$RELEASE_WORKFLOW" ||
   echo "unsigned release workflow must build Apple Silicon and Intel packages" >&2
   exit 1
 }
-if grep -Fq -- '--prerelease' "$RELEASE_WORKFLOW"; then
-  echo "tagged packages must be published as a stable release" >&2
+grep -Fq 'source_branch="codex/release-v${package_version}"' "$RELEASE_WORKFLOW" || {
+  echo "release candidates must be built from their release integration branch" >&2
   exit 1
-fi
+}
+grep -Fq 'source_branch=master' "$RELEASE_WORKFLOW" || {
+  echo "stable releases must be built from master" >&2
+  exit 1
+}
+grep -Fq 'channel_flag=--prerelease' "$RELEASE_WORKFLOW" || {
+  echo "release-candidate tags must publish a GitHub prerelease" >&2
+  exit 1
+}
 grep -Fq -- '--latest' "$RELEASE_WORKFLOW" || {
   echo "stable release workflow must mark the tagged release as latest" >&2
+  exit 1
+}
+grep -Fq 'OPENSURGE_RELEASE_TAG: ${{ steps.version.outputs.release_tag }}' "$RELEASE_WORKFLOW" || {
+  echo "release workflow must pass the full tag into the app bundle" >&2
+  exit 1
+}
+grep -Fq '"$OPENSURGE_RELEASE_TAG"' "$RELEASE_WORKFLOW" || {
+  echo "release workflow must verify the packaged full release tag" >&2
+  exit 1
+}
+grep -Fq 'OpenSurgeReleaseTag' "$RELEASE_VERIFY" || {
+  echo "package verification must inspect the full release tag" >&2
   exit 1
 }
 grep -Fq 'actions/download-artifact@v8' "$RELEASE_WORKFLOW" || {

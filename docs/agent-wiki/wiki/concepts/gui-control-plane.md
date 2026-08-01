@@ -13,6 +13,9 @@ Go gateway、device、mihomo 和 runtime 包中。
 一次本仓库 GitHub `releases/latest`，也提供手动检查；只比较稳定版语义版本并校验返回的
 下载页仍位于 `YTwsy/OpenSurge-for-Mac`。发现新版本后只打开对应 Release 页面，不下载
 PKG、不请求管理员权限，也不触发 gateway、Control Service 或 Helper 生命周期动作。
+打包时额外写入完整 `OpenSurgeReleaseTag`；比较遵循
+`0.1.24-rc.1 < 0.1.24`，因此 RC 不会降级到旧 stable，同版本 stable 发布后仍会提示。
+旧包没有该 key 时才回退到 `CFBundleShortVersionString`。
 
 菜单栏 App 使用纯 AppKit `NSApplication` 生命周期，不声明占位的 SwiftUI `Settings`
 Scene；否则这个由系统管理、可恢复的空窗口可能在部分 macOS 环境中被显示。状态面板使用
@@ -267,7 +270,9 @@ bundle identifier 与 launchd label 保持既有技术命名。生产 pkg 把 ap
 `/Library/Application Support/OpenSurge` / `PrivilegedHelperTools` 下；用户级 Control
 Service 只通过 admin 组只读访问 applied 状态，通过 helper 执行固定 privileged 动作。
 打包时 `OPENSURGE_VERSION` 必须同时写入 pkg receipt 与菜单栏 App 的 short version，
-`OPENSURGE_BUILD_NUMBER` 写入 App build number，避免新安装包继续携带旧的 bundle 版本标识。
+`OPENSURGE_BUILD_NUMBER` 写入 App build number，`OPENSURGE_RELEASE_TAG` 写入完整 stable/RC
+tag；tag 的基础版本必须与 pkg 版本一致，避免新安装包继续携带旧的 bundle 版本标识，或让
+RC 丢失其预发布身份。
 没有 Apple Developer 身份的 GitHub tag workflow 会产生 Apple Silicon 与 Intel 两个
 架构专用的 unsigned 正式 Release 安装包：文件名分别带 `arm64-unsigned.pkg` 与
 `x86_64-unsigned.pkg`，发布同时提供合并的 SHA-256 清单和每个 pkg 的 GitHub artifact

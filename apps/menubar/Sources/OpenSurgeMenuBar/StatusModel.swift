@@ -29,9 +29,12 @@ final class StatusModel: ObservableObject {
         client: ControlAPIClient = ControlAPIClient(),
         urlLauncher: WebGUIURLLauncher = WebGUIURLLauncher(),
         updateChecker: UpdateChecker = UpdateChecker(),
-        currentVersion: String = Bundle.main.object(
-            forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "未知"
+        currentVersion: String = installedReleaseVersion(
+            releaseTag: Bundle.main.object(forInfoDictionaryKey: "OpenSurgeReleaseTag") as? String,
+            shortVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String
+        )
     ) {
         self.client = client
         self.urlLauncher = urlLauncher

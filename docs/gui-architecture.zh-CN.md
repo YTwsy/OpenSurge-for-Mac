@@ -48,6 +48,9 @@ delegate 与 common run loop 上短时、有界的退避重试推进，不使用
 Control Service 可达性或网关 indicator。只有远端语义版本更高、且 `html_url` 仍精确指向
 本仓库对应 tag 的 Release 页面时才显示更新按钮；按钮只交给默认浏览器打开下载页，不下载
 或安装 unsigned PKG，也不改变任何网关或后台服务状态。
+App 从 `OpenSurgeReleaseTag` 读取完整安装版本，并按 `rc.N` 低于同基础版本 stable 的顺序
+比较；因此 `0.1.24-rc.1` 不会被旧的 `0.1.23` 降级，却会在 `0.1.24` stable 发布时收到
+提醒。旧包缺少该 key 时回退到数字形式的 `CFBundleShortVersionString`。
 
 菜单栏提供两个不同的退出层级。“只退出菜单栏 App”在二次确认后直接结束菜单栏进程，
 不会改变用户级 Control Service、网关数据面或 root Helper。“退出 OpenSurge”只有在
@@ -275,12 +278,15 @@ OPENSURGE_MIHOMO_BINARY=/path/to/mihomo \
 OPENSURGE_DNSMASQ_BINARY=/path/to/dnsmasq \
 OPENSURGE_VERSION=0.1.1 \
 OPENSURGE_BUILD_NUMBER=2 \
+OPENSURGE_RELEASE_TAG=v0.1.1-rc.1 \
 make gui-installer
 ```
 
 `OPENSURGE_VERSION` 同时写入 pkg receipt 和菜单栏 App 的
-`CFBundleShortVersionString`，`OPENSURGE_BUILD_NUMBER` 写入 `CFBundleVersion`；不要让新
-pkg 携带仍标成旧版本的 App，否则现场无法可靠区分已安装二进制是否包含最新修复。
+`CFBundleShortVersionString`，`OPENSURGE_BUILD_NUMBER` 写入 `CFBundleVersion`，完整的
+`OPENSURGE_RELEASE_TAG` 写入 `OpenSurgeReleaseTag`；tag 的基础版本必须与 pkg version
+一致。不要让新 pkg 携带仍标成旧版本或丢失 RC 身份的 App，否则现场无法可靠区分已安装
+二进制是否包含最新修复。
 
 安装器显式以 `/` 为 payload 根目录，并将 `OpenSurge.app` 声明为不可
 relocatable bundle，确保它固定安装到 `/Applications/OpenSurge.app`。

@@ -79,6 +79,21 @@ struct UpdateChecker {
     }
 }
 
+func installedReleaseVersion(
+    releaseTag: String?,
+    shortVersion: String?
+) -> String {
+    let candidate = releaseTag?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fallback = shortVersion?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let value: String
+    if let candidate, !candidate.isEmpty {
+        value = candidate
+    } else {
+        value = fallback ?? "未知"
+    }
+    return value.hasPrefix("v") ? String(value.dropFirst()) : value
+}
+
 private struct GitHubRelease: Decodable {
     let tagName: String
     let htmlURL: URL
@@ -96,10 +111,17 @@ private struct ProductVersion: Comparable, CustomStringConvertible {
     let major: Int
     let minor: Int
     let patch: Int
+    let releaseCandidate: Int?
 
     init?(_ value: String) {
         let normalized = value.hasPrefix("v") ? String(value.dropFirst()) : value
-        let parts = normalized.split(separator: ".", omittingEmptySubsequences: false)
+        let versionParts = normalized.split(
+            separator: "-",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard (1...2).contains(versionParts.count) else { return nil }
+        let parts = versionParts[0].split(separator: ".", omittingEmptySubsequences: false)
         guard (2...3).contains(parts.count),
               parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }),
               let major = Int(parts[0]),
@@ -107,14 +129,45 @@ private struct ProductVersion: Comparable, CustomStringConvertible {
               let patch = parts.count == 3 ? Int(parts[2]) : 0 else {
             return nil
         }
+        let releaseCandidate: Int?
+        if versionParts.count == 2 {
+            let prerelease = versionParts[1].split(
+                separator: ".",
+                omittingEmptySubsequences: false
+            )
+            guard prerelease.count == 2,
+                  prerelease[0] == "rc",
+                  !prerelease[1].isEmpty,
+                  prerelease[1].allSatisfy(\.isNumber),
+                  let rc = Int(prerelease[1]) else {
+                return nil
+            }
+            releaseCandidate = rc
+        } else {
+            releaseCandidate = nil
+        }
         self.major = major
         self.minor = minor
         self.patch = patch
+        self.releaseCandidate = releaseCandidate
     }
 
-    var description: String { "\(major).\(minor).\(patch)" }
+    var description: String {
+        let stable = "\(major).\(minor).\(patch)"
+        return releaseCandidate.map { "\(stable)-rc.\($0)" } ?? stable
+    }
 
     static func < (lhs: ProductVersion, rhs: ProductVersion) -> Bool {
-        (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)
+        let lhsStable = (lhs.major, lhs.minor, lhs.patch)
+        let rhsStable = (rhs.major, rhs.minor, rhs.patch)
+        if lhsStable != rhsStable { return lhsStable < rhsStable }
+        switch (lhs.releaseCandidate, rhs.releaseCandidate) {
+        case (.some(let lhsRC), .some(let rhsRC)):
+            return lhsRC < rhsRC
+        case (.some, .none):
+            return true
+        case (.none, .some), (.none, .none):
+            return false
+        }
     }
 }

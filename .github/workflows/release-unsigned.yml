@@ -60,6 +60,7 @@ jobs:
             exit 1
           }
           echo "version=$package_version" >>"$GITHUB_OUTPUT"
+          echo "release_tag=$GITHUB_REF_NAME" >>"$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >>"$GITHUB_OUTPUT"
 
       - name: Set up Go
@@ -94,6 +95,7 @@ jobs:
           GOCACHE: ${{ runner.temp }}/go-build-cache
           OPENSURGE_VERSION: ${{ steps.version.outputs.version }}
           OPENSURGE_BUILD_NUMBER: ${{ github.run_number }}
+          OPENSURGE_RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
           OPENSURGE_MIHOMO_BINARY: ${{ github.workspace }}/runtime/release-tools/bin/mihomo
           OPENSURGE_DNSMASQ_BINARY: ${{ github.workspace }}/runtime/release-tools/bin/dnsmasq
         run: |
@@ -103,7 +105,12 @@ jobs:
           release_pkg="$release_dir/OpenSurge-for-Mac-${OPENSURGE_VERSION}-${RELEASE_ARCH}-unsigned.pkg"
           mkdir -p "$release_dir"
           mv "$GITHUB_WORKSPACE/artifacts/gui-installer/OpenSurge-for-Mac-${OPENSURGE_VERSION}.pkg" "$release_pkg"
-          ./scripts/verify-unsigned-gui-installer.sh "$release_pkg" "$OPENSURGE_VERSION" "$RELEASE_ARCH"
+          ./scripts/verify-unsigned-gui-installer.sh \
+            "$release_pkg" \
+            "$OPENSURGE_VERSION" \
+            "$RELEASE_ARCH" \
+            "$OPENSURGE_MINIMUM_MACOS" \
+            "$OPENSURGE_RELEASE_TAG"
           echo "pkg=$release_pkg" >>"$GITHUB_OUTPUT"
 
       - name: Attest build provenance

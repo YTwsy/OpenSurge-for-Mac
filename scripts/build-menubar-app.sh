@@ -11,10 +11,13 @@ APP_ICON_ICNS="${OPENSURGE_APP_ICON_ICNS:-}"
 APP_ICONSET="$SCRATCH/OpenSurgeAppIcon.iconset"
 VERSION="${OPENSURGE_VERSION:-0.1.0}"
 BUILD_NUMBER="${OPENSURGE_BUILD_NUMBER:-1}"
+RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v$VERSION}"
 ARCH="${OPENSURGE_APP_ARCH:-}"
 
 [[ "$VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]] || { echo "invalid OpenSurge app version: $VERSION" >&2; exit 1; }
 [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || { echo "invalid OpenSurge app build number: $BUILD_NUMBER" >&2; exit 1; }
+[[ "$RELEASE_TAG" =~ ^v([0-9]+([.][0-9]+){2})(-rc[.][0-9]+)?$ ]] || { echo "invalid OpenSurge release tag: $RELEASE_TAG" >&2; exit 1; }
+[[ "${BASH_REMATCH[1]}" == "$VERSION" ]] || { echo "OpenSurge release tag $RELEASE_TAG does not match package version $VERSION" >&2; exit 1; }
 [[ -s "$APP_ICON_SOURCE" && -s "$MENU_BAR_ICON_SOURCE" ]] || { echo "OpenSurge icon assets are missing" >&2; exit 1; }
 if [[ -z "$ARCH" && -x "$ROOT/bin/omg" ]]; then
   ARCH="$(/usr/bin/lipo -archs "$ROOT/bin/omg")"
@@ -53,5 +56,6 @@ else
 fi
 /usr/bin/plutil -replace CFBundleShortVersionString -string "$VERSION" "$OUTPUT/Contents/Info.plist"
 /usr/bin/plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$OUTPUT/Contents/Info.plist"
+/usr/bin/plutil -replace OpenSurgeReleaseTag -string "$RELEASE_TAG" "$OUTPUT/Contents/Info.plist"
 /usr/bin/lipo "$OUTPUT/Contents/MacOS/OpenSurgeMenuBar" -verify_arch "$ARCH"
-printf 'Built %s version %s (%s) for %s\n' "$OUTPUT" "$VERSION" "$BUILD_NUMBER" "$ARCH"
+printf 'Built %s version %s (%s, %s) for %s\n' "$OUTPUT" "$VERSION" "$BUILD_NUMBER" "$RELEASE_TAG" "$ARCH"

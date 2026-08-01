@@ -31,6 +31,9 @@ available, **打开下载页** opens that version's GitHub Release page. The app
 not download or install the PKG itself; choose the package for the Mac's
 architecture and follow the installation steps above. Existing configuration
 and data are preserved without uninstalling first.
+Prerelease builds display their complete `rc.N` version. They are not offered an
+older stable release, while the stable release with the same base version is
+still detected when it becomes available.
 
 ## First-time setup
 
