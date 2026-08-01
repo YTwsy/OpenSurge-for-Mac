@@ -40,7 +40,6 @@ func (s *Server) handleProxyHealth(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "mihomo_unavailable", err.Error())
 		return
 	}
-	snapshot.Proxies = mihomo.VisibleProxyHealth(snapshot.Proxies)
 	writeJSON(w, http.StatusOK, ProxyHealthResponse{SchemaVersion: SchemaVersion, TestURL: snapshot.TestURL, Proxies: snapshot.Proxies})
 }
 
@@ -65,7 +64,6 @@ func (s *Server) handleProxyHealthTests(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadGateway, "mihomo_unavailable", err.Error())
 		return
 	}
-	snapshot.Proxies = mihomo.VisibleProxyHealth(snapshot.Proxies)
 	available := make(map[string]mihomo.ProxyHealth, len(snapshot.Proxies))
 	for _, proxy := range snapshot.Proxies {
 		available[proxy.Name] = proxy

@@ -1,9 +1,6 @@
 package macosnetwork
 
-import (
-	"context"
-	"testing"
-)
+import "testing"
 
 func TestParseNetworkInfo(t *testing.T) {
 	got := parseNetworkInfo("DHCP Configuration\nIP address: 192.168.1.20\nSubnet mask: 255.255.255.0\nRouter: 192.168.1.1\n")
@@ -95,31 +92,5 @@ func TestVerifyManualRequiresManualModeAndExpectedIPv4(t *testing.T) {
 	applied.IPv4 = "192.168.1.99"
 	if err := VerifyManual(applied, expected); err == nil {
 		t.Fatal("unexpected manual IPv4 should not verify")
-	}
-}
-
-func TestLookupRouteReturnsSelectedInterface(t *testing.T) {
-	original := runCommand
-	t.Cleanup(func() { runCommand = original })
-	runCommand = func(_ context.Context, binary string, args ...string) (string, error) {
-		if binary != "/sbin/route" || len(args) != 3 {
-			t.Fatalf("command = %s %#v", binary, args)
-		}
-		return "   gateway: 198.18.0.1\n interface: utun42\n", nil
-	}
-
-	route, err := LookupRoute(t.Context(), "1.0.0.0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if route.Interface != "utun42" || route.Gateway != "198.18.0.1" {
-		t.Fatalf("route = %#v", route)
-	}
-}
-
-func TestParseRouteGet(t *testing.T) {
-	got := parseRouteGet("   route to: 1.1.1.1\n    gateway: 198.18.0.1\n  interface: utun123\n")
-	if got.Interface != "utun123" || got.Gateway != "198.18.0.1" {
-		t.Fatalf("parseRouteGet() = %#v", got)
 	}
 }

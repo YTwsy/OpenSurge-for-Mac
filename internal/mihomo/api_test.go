@@ -45,41 +45,6 @@ func TestFetchVersion(t *testing.T) {
 	}
 }
 
-func TestFetchTUNRuntimeState(t *testing.T) {
-	cfg := config.Default()
-	cfg.Mihomo.APIAddr = "127.0.0.1:9090"
-	cfg.Mihomo.Secret = "test-secret"
-	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.String() != "http://127.0.0.1:9090/configs" {
-			t.Fatalf("URL = %q", req.URL.String())
-		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Status:     "200 OK",
-			Body:       io.NopCloser(strings.NewReader(`{"tun":{"enable":true,"device":"utun123"}}`)),
-			Header:     make(http.Header),
-		}, nil
-	})}
-
-	state, err := fetchTUNRuntimeStateWithClient(context.Background(), cfg, client)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !state.Enabled || state.Device != "utun123" {
-		t.Fatalf("state = %#v", state)
-	}
-}
-
-func TestFetchTUNRuntimeStateRejectsMissingState(t *testing.T) {
-	cfg := config.Default()
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
-	})}
-	if _, err := fetchTUNRuntimeStateWithClient(context.Background(), cfg, client); err == nil {
-		t.Fatal("missing TUN state should fail")
-	}
-}
-
 func TestFetchProxyGroups(t *testing.T) {
 	cfg := config.Default()
 	cfg.Mihomo.APIAddr = "127.0.0.1:9090"

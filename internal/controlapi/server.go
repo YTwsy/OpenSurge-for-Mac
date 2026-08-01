@@ -58,8 +58,6 @@ type Server struct {
 	credentials       SourceCredentialStore
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
 	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
-	fetchLocalRouting func(context.Context, config.Config) (mihomo.LocalRoutingSnapshot, error)
-	setLocalRouting   func(context.Context, config.Config, string, string) (mihomo.LocalRoutingSnapshot, error)
 	measureProxyDelay func(context.Context, config.Config, string, string, time.Duration) mihomo.ProxyDelayResult
 	probeConnectivity func(context.Context, config.Config, ConnectivityTarget) ConnectivityResult
 	trafficSampler    *trafficRateSampler
@@ -164,8 +162,6 @@ func New(options Options) (*Server, error) {
 		credentials:       options.Credentials,
 		fetchConnections:  mihomo.FetchConnections,
 		fetchProxyHealth:  mihomo.FetchProxyHealth,
-		fetchLocalRouting: mihomo.FetchLocalRouting,
-		setLocalRouting:   mihomo.SetLocalRouting,
 		measureProxyDelay: mihomo.MeasureProxyDelay,
 		probeConnectivity: probeConnectivityTarget,
 		trafficSampler:    newTrafficRateSampler(),
@@ -208,7 +204,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/recovery/card", s.auth(http.HandlerFunc(s.handleRecoveryCard)))
 	mux.Handle("POST /api/v1/recovery/discard", s.auth(http.HandlerFunc(s.handleRecoveryDiscard)))
 	mux.Handle("POST /api/v1/recovery/prepare", s.auth(http.HandlerFunc(s.handleRecoveryPrepare)))
-	mux.Handle("POST /api/v1/recovery/abandon-takeover", s.auth(http.HandlerFunc(s.handleAbandonTakeover)))
 	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
 	mux.Handle("POST /api/v1/recovery/manual-finish", s.auth(http.HandlerFunc(s.handleManualRecoveryFinish)))
 	mux.Handle("POST /api/v1/recovery/client-validated", s.auth(http.HandlerFunc(s.handleClientValidated)))
@@ -230,8 +225,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
-	mux.Handle("GET /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
-	mux.Handle("POST /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
 	mux.Handle("GET /api/v1/proxy-health", s.auth(http.HandlerFunc(s.handleProxyHealth)))
 	mux.Handle("POST /api/v1/proxy-health/tests", s.auth(http.HandlerFunc(s.handleProxyHealthTests)))
 	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
@@ -317,12 +310,11 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 	}
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
-		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
-		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain},
-		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream},
-		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute},
-		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
-		DevicePolicy:     DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
+		Gateway:      GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
+		DHCP:         DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain},
+		DNS:          DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream},
+		Transparent:  TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute},
+		DevicePolicy: DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
 	}
 }
 
@@ -516,12 +508,10 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if groups == nil {
 		groups = []mihomo.ProxyGroup{}
 	}
-	groups = mihomo.VisibleProxyGroups(groups)
 	if groupErr != nil && status.Gateway == "running" {
 		warnings = append(warnings, "mihomo policies unavailable: "+groupErr.Error())
 	}
 	providers, providerErr := mihomo.FetchProviders(ctx, cfg)
-	providers = mihomo.VisibleProviders(providers)
 	if providers.ProxyProviders == nil {
 		providers.ProxyProviders = []mihomo.ProxyProvider{}
 	}
@@ -530,9 +520,6 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	}
 	if providerErr != nil && status.Gateway == "running" {
 		warnings = append(warnings, "mihomo providers unavailable: "+providerErr.Error())
-	}
-	if status.TUNError != "" {
-		warnings = append(warnings, "mihomo TUN: "+status.TUNError)
 	}
 	return Overview{
 		SchemaVersion:        SchemaVersion,
@@ -566,7 +553,6 @@ func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
 		SchemaVersion: SchemaVersion, Revision: overview.Revision, Gateway: overview.Status.Gateway,
 		Topology: cfg.Gateway.Mode, LANIP: overview.Status.LANIP, DHCP: overview.Status.DHCP,
 		Mihomo: overview.Status.Mihomo, PFAnchor: overview.Status.PFAnchor, Forwarding: overview.Status.Forwarding,
-		TUN: overview.Status.TUN, TUNInterface: overview.Status.TUNInterface, TUNError: overview.Status.TUNError,
 		ClientCount: overview.Status.ClientCount, Drift: overview.Drift, DoctorHealthy: overview.DoctorHealthy,
 		Recovery: overview.Recovery.Required, RecoveryStage: overview.Recovery.Stage, Warnings: overview.Warnings,
 	})
@@ -692,9 +678,6 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 	if err != nil {
 		op.State = "failed"
 		op.Error = err.Error()
-		if op.Kind == "start" {
-			s.recordStartRecoveryFailure(topology, recoveryBefore, err)
-		}
 		if op.Kind == "reload" {
 			s.recordReloadRecoveryFailure(topology, recoveryBefore, err)
 		}
@@ -714,22 +697,6 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 		}
 	}
 	_ = s.store.SaveOperation(op)
-}
-
-func (s *Server) recordStartRecoveryFailure(topology string, recoveryBefore RecoveryState, startErr error) {
-	if topology != config.GatewayModeSameWiFiDHCP || recoveryBefore.Stage != RecoveryRouterDHCPDisabledConfirmed {
-		return
-	}
-	cfg, err := config.LoadRuntime(s.configPath)
-	if err != nil {
-		return
-	}
-	if _, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile); stateErr != nil || exists {
-		return
-	}
-	recoveryBefore.Required = true
-	appendRecoveryNote(&recoveryBefore, "gateway start failed and runtime changes were rolled back; router DHCP may remain disabled; resolve the error and retry, or abandon takeover and recover the LAN: "+startErr.Error())
-	_ = s.store.SaveRecovery(recoveryBefore)
 }
 
 func (s *Server) recordReloadRecoveryFailure(topology string, recoveryBefore RecoveryState, reloadErr error) {
@@ -847,60 +814,6 @@ func (s *Server) handleRecoveryDiscard(w http.ResponseWriter, _ *http.Request) {
 	}
 	idle, _ := s.store.Recovery()
 	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: idle})
-}
-
-func (s *Server) handleAbandonTakeover(w http.ResponseWriter, r *http.Request) {
-	state, err := s.store.Recovery()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "recovery_read_failed", err.Error())
-		return
-	}
-	if state.Stage != RecoveryMacStatic && state.Stage != RecoveryRouterDHCPDisabledConfirmed {
-		writeError(w, http.StatusConflict, "recovery_precondition", "takeover can be abandoned only after the Mac uses fixed IPv4 and before the gateway becomes active")
-		return
-	}
-	if state.NetworkSnapshot == nil {
-		writeError(w, http.StatusConflict, "recovery_snapshot_missing", "saved network recovery data is missing")
-		return
-	}
-	cfg, err := config.LoadRuntime(s.configPath)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
-		return
-	}
-	if cfg.Gateway.Mode != config.GatewayModeSameWiFiDHCP {
-		writeError(w, http.StatusConflict, "same_wifi_config_required", "takeover abandonment requires the same-LAN DHCP takeover topology")
-		return
-	}
-	if _, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile); stateErr != nil {
-		writeError(w, http.StatusInternalServerError, "runtime_state_invalid", stateErr.Error())
-		return
-	} else if exists {
-		writeError(w, http.StatusConflict, "gateway_still_active", "stop the gateway before abandoning DHCP takeover")
-		return
-	}
-
-	servers, err := s.networkRunner.ProbeDHCP(r.Context(), s.configPath, state.NetworkSnapshot.Interface, 3*time.Second)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "dhcp_probe_failed", err.Error())
-		return
-	}
-	if len(servers) > 0 {
-		if err := s.networkRunner.SetDHCP(r.Context(), s.configPath, state.NetworkSnapshot.NetworkService); err != nil {
-			writeError(w, http.StatusBadGateway, "restore_dhcp_failed", err.Error())
-			return
-		}
-		appendRecoveryNote(&state, "DHCP takeover abandoned; a DHCP server answered and the Mac was restored to automatic DHCP")
-		state.Stage, state.Required = RecoveryComplete, false
-	} else {
-		appendRecoveryNote(&state, "DHCP takeover abandoned while no DHCP server answered; the Mac remains on fixed IPv4 and router DHCP availability was not verified")
-		state.Stage, state.Required = RecoveryCompleteStatic, false
-	}
-	if err := s.store.SaveRecovery(state); err != nil {
-		writeError(w, http.StatusInternalServerError, "recovery_write_failed", err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, NetworkActionResponse{SchemaVersion: SchemaVersion, Recovery: state, DHCPServers: servers})
 }
 
 func (s *Server) handleClientValidated(w http.ResponseWriter, r *http.Request) {
@@ -1461,11 +1374,11 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
+	if err := device.ValidatePolicySetForLANWithProtected(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_validation_failed", err.Error())
 		return
 	}
-	if _, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
+	if _, err := device.CompilePolicyBundle(policy); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_compile_failed", err.Error())
 		return
 	}
@@ -1490,7 +1403,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, DevicesResponse{SchemaVersion: SchemaVersion, Devices: []device.CompiledDevice{}, Leases: []device.Client{}, ObservedDevices: []ObservedDevice{}})
 		return
 	}
-	desired, err := device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+	desired, err := device.LoadPolicyBundle(cfg.DevicePolicy.File)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "device_policy_invalid", err.Error())
 		return
@@ -1531,7 +1444,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if cfg.Gateway.Mode == config.GatewayModeSameLAN {
 		connections, connectionErr := s.fetchConnections(r.Context(), cfg)
 		neighbors, neighborErr := s.discoverNeighbors(r.Context(), cfg.Gateway.Interface)
-		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP, desired.Policy.Devices...)
+		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP)
 		observationErrors := []string{}
 		if connectionErr != nil {
 			observationErrors = append(observationErrors, "mihomo connections: "+connectionErr.Error())
@@ -1591,7 +1504,6 @@ func (s *Server) handlePolicies(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "mihomo_unavailable", err.Error())
 		return
 	}
-	groups = mihomo.VisibleProxyGroups(groups)
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "groups": groups})
 }
 
@@ -1607,12 +1519,7 @@ func (s *Server) handlePolicySelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	group := r.PathValue("group")
-	if mihomo.IsLocalRoutingGroup(group) {
-		writeError(w, http.StatusUnprocessableEntity, "reserved_policy_group", "use the local Mac routing endpoint to change this internal policy group")
-		return
-	}
 	groups, err := mihomo.FetchProxyGroups(r.Context(), cfg)
-	groups = mihomo.VisibleProxyGroups(groups)
 	if err != nil || !validSelection(groups, group, req.Policy) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_selection", "group or policy is not available")
 		return
@@ -1622,34 +1529,6 @@ func (s *Server) handlePolicySelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "group": group, "selected": req.Policy})
-}
-
-func (s *Server) handleLocalRouting(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.LoadRuntime(s.configPath)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
-		return
-	}
-	var snapshot mihomo.LocalRoutingSnapshot
-	if r.Method == http.MethodGet {
-		snapshot, err = s.fetchLocalRouting(r.Context(), cfg)
-	} else {
-		var request LocalRoutingRequest
-		if decodeErr := decodeJSON(r, &request, 64<<10); decodeErr != nil {
-			writeError(w, http.StatusBadRequest, "invalid_request", decodeErr.Error())
-			return
-		}
-		snapshot, err = s.setLocalRouting(r.Context(), cfg, request.Mode, request.GlobalPolicy)
-	}
-	if err != nil {
-		status, code := http.StatusBadGateway, "mihomo_unavailable"
-		if r.Method == http.MethodPost {
-			status, code = http.StatusUnprocessableEntity, "local_routing_failed"
-		}
-		writeError(w, status, code, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, LocalRoutingResponse{SchemaVersion: SchemaVersion, LocalRoutingSnapshot: snapshot})
 }
 
 func (s *Server) handleDeviceSelection(w http.ResponseWriter, r *http.Request) {
@@ -1669,7 +1548,7 @@ func (s *Server) handleDeviceSelection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "device_policy_not_applied", err.Error())
 		return
 	}
-	group, err := device.DeviceGroupFromCompiled(bundle.Compiled, r.PathValue("device"), r.PathValue("slot"))
+	group, err := device.DeviceGroup(bundle.Policy, r.PathValue("device"), r.PathValue("slot"))
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_device_slot", err.Error())
 		return
@@ -1697,7 +1576,6 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "mihomo_unavailable", err.Error())
 		return
 	}
-	providers = mihomo.VisibleProviders(providers)
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "providers": providers})
 }
 
@@ -1746,12 +1624,7 @@ func (s *Server) handleProviderRefresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
 	}
-	name := r.PathValue("name")
-	if mihomo.IsLocalRoutingGroup(name) {
-		writeError(w, http.StatusUnprocessableEntity, "reserved_provider", "OpenSurge local Mac routing groups are internal and cannot be refreshed")
-		return
-	}
-	provider, err := mihomo.UpdateProxyProvider(r.Context(), cfg, name)
+	provider, err := mihomo.UpdateProxyProvider(r.Context(), cfg, r.PathValue("name"))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "provider_refresh_failed", err.Error())
 		return

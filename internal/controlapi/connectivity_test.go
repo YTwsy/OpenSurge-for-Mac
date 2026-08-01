@@ -78,7 +78,7 @@ func TestConnectivityEndpointsReturnCatalogAndSelectedResults(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil {
 		t.Fatal(err)
 	}
-	if catalog.Source != "gateway_mihomo" || catalog.Scope != "local_mac_runtime" || len(catalog.Targets) < 12 || len(catalog.Results) != 0 {
+	if catalog.Source != "gateway_mihomo" || catalog.Scope != "applied_global_rules" || len(catalog.Targets) < 12 || len(catalog.Results) != 0 {
 		t.Fatalf("catalog = %#v", catalog)
 	}
 

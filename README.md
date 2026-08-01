@@ -66,29 +66,23 @@ forwarding 提供原生网关路径。
 - 在一个控制面中完成订阅导入、网络设置、设备分流、节点健康、连通性检查与诊断；
 - 使用恢复状态机引导局域网 DHCP 接管的启动、客户端验收、停止和网络恢复。
 
-第一次使用请参阅 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)。遇到常见
-网络、TUN 或设备配置问题时，请参阅 [常见问题](docs/faq.zh-CN.md)。
+第一次使用请参阅 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)。
 
 **网关与代理**
 
 - 启停 DHCP/DNS、mihomo、pf NAT 与 IPv4 forwarding，并带 rollback；
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
-- 在不改变下游设备的前提下，为 Mac 本机经 TUN/显式代理的新连接切换
-  **规则 / 全局 / 直连**；默认不修改 macOS 系统代理，也可在 TUN 模式下显式启用
-  HTTP/HTTPS 系统代理协同，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰
-  TUN-only 本机 DNS 的场景；
-- DHCP 接管模式为带 MAC 的登记设备生成固定 IPv4 租约；旁路由模式（手工网关）
-  允许只按主路由侧保持稳定的静态 IPv4 登记设备，MAC 是可选身份信息，两者都可使用
-  独立出口策略。
+- DHCP 接管模式为登记设备生成 MAC 绑定的固定 IPv4 租约；旁路由模式（手工网关）
+  使用主路由侧保持稳定的静态 IPv4，两者都可使用独立出口策略。
 
 **可观测性**
 
 - 把活跃会话流量归属到 DHCP 设备或同 LAN 的静态登记/当前观察设备，显示每设备
   连接数、实时上下行速率、累计字节与占主要流量的 mihomo 出口链；
 - 集中检测代理节点可达性/延迟，并从健康视图切换已应用的 Selector；
-- 通过 applied mihomo mixed-port 和当前 Mac 本机模式探测固定真实服务目录，展示
-  三轮中位延迟、命中规则与实际出口链；
+- 通过 applied mihomo mixed-port 路径探测固定真实服务目录，展示三轮中位延迟、
+  命中规则与实际出口链；
 - 查看与切换策略组、查看 imported proxy/rule provider 状态、查看当前连接；
 - 输出文本/JSON 形式的 status / doctor / logs / snapshot，并收集允许局部失败的
   JSON snapshot 供诊断与 UI 使用。
@@ -100,16 +94,13 @@ forwarding 提供原生网关路径。
 
 ## 每设备策略
 
-一个 mihomo 进程可以对已登记的 LAN 设备应用独立策略。DHCP 接管模式会为带 MAC 的设备
-配置固定 IPv4 租约；旁路由模式只需主路由侧保持稳定的静态 IPv4，MAC 可留空，并可从
-当前经过 Mac 的流量与 ARP 邻居观察辅助登记。切换到 DHCP 模式时，GUI 会要求确认当前
-可观察到的 MAC；仍无 MAC 的登记会保留，但设备专属策略暂停，补全 MAC 后恢复。当前拓扑中
-身份信息充分的设备会生成各自的 mihomo selector group 和 `SRC-IP-CIDR` 规则。可选 JSON
-策略文件让每台设备要么跟随网关规则，要么在
+一个 mihomo 进程可以对已登记的 LAN 设备应用独立策略。DHCP 接管模式会为每台设备
+配置 MAC 绑定的固定 IPv4 租约；旁路由模式则使用主路由侧保持稳定的静态
+IPv4，并从当前经过 Mac 的流量与 ARP 邻居观察辅助登记。两种模式都会生成每设备的
+mihomo selector group 和 `SRC-IP-CIDR` 规则。可选 JSON 策略文件让每台设备要么跟随 Mac/全局规则，要么在
 全局规则之前走设备专属 selector；它也支持 `REJECT` 这类设备专属动作，以及按
 域名/IP/协议/端口/rule-provider 叠加的规则覆盖。dedicated 模式下，本地/私有目标
-保持直连。Mac 本机的规则 / 全局 / 直连开关不改变这些下游规则；详见
-[Mac 本机流量模式](docs/local-mac-routing.zh-CN.md)。
+保持直连。
 
 OpenSurge 有意不内置家庭模板或第三方规则列表；策略内容由操作者提供，空 starter
 文件也是合法配置。JSON 模型、优先级、CLI 命令和验证边界见
@@ -136,9 +127,8 @@ Control Service；系统 launchd 托管的 root Helper 保持空闲加载，下�
 菜单栏还提供独立的“卸载 OpenSurge”入口：只要网关已经停止即可通过 macOS 管理员授权
 移除 App、Control Service 与 root Helper，并可选择保留配置数据供以后重新安装或彻底删除。
 架构、安全边界与构建说明见 [Web GUI 与菜单栏 App](docs/gui-architecture.zh-CN.md)。
-Web GUI 内置 applied 配置 + 当前 Mac 本机模式的连通性页面，并提供 Net.Coffee 的
-独立浏览器本机检测入口；两者都不会被描述成下游设备网关规则或 DHCP/DNS/TUN 路径
-已经验收。
+Web GUI 内置 applied 网关策略路径的连通性页面，并提供 Net.Coffee 的独立浏览器本机
+检测入口；两者都不会被描述成下游设备 DHCP/DNS/TUN 路径已经验收。
 
 `make gui-installer` 会在取得真实 mihomo、dnsmasq 二进制后构建 macOS 安装包。
 Developer ID 签名和 notarization 必须显式提供发布凭据。GitHub 正式发布同时提供文件名中
@@ -166,8 +156,7 @@ gh attestation verify OpenSurge-for-Mac-*-x86_64-unsigned.pkg \
 仍保持停止，只有在控制面中明确操作才会启动。
 
 pkg 升级会在同一 LAN DHCP 恢复未完成时拒绝执行。替换 payload 前，preinstall 先停止
-菜单栏 App 以阻断 Control Service 自动唤醒，再卸载用户级 Control Service；随后使用
-当前已安装的 `omg stop` 清理网关，最后
+用户级 Control Service 与菜单栏 App，再使用当前已安装的 `omg stop` 清理网关，最后
 卸载 root helper。升级会保留现有配置、导入源、策略数据和 runtime 历史；只有首次安装
 才会用包内示例生成 `config.yaml`。
 
@@ -177,10 +166,6 @@ macOS 上支持的透明代理路径是 TUN。mihomo `redir-port` 和 PF TCP 重
 有意禁用，因为当前 Darwin 构建在运行时报告 redir 不受支持。请保持
 `mihomo.redir_port` 和 `pf.redirect_tcp_to` 为 `0`，并通过
 `transparent.mode: "tun"` 启用透明代理。
-
-OpenSurge 不会在启动前根据现有 utun 或公网路由猜测冲突。实际启动会等待 mihomo
-运行时确认 TUN ready；失败时给进程短暂清理窗口、回滚网关运行时，并根据实际
-TUN 错误补充冲突路由的接口/网关信息。默认不支持两个全局 TUN 同时占有公网路由。
 
 ## mihomo profile
 
@@ -243,14 +228,6 @@ go run ./cmd/omg policy-select \
   --config examples/config.imported-profile.example.yaml \
   --group Proxy \
   --policy DIRECT
-
-# Mac 本机规则 / 全局 / 直连（不会改变下游设备）：
-go run ./cmd/omg local-routing \
-  --config examples/config.imported-profile.example.yaml
-go run ./cmd/omg local-routing-set \
-  --config examples/config.imported-profile.example.yaml \
-  --mode global \
-  --policy Proxy
 
 # 配置 device_policy.file 后：
 go run ./cmd/omg devices --config ./config.yaml --format json
@@ -412,10 +389,6 @@ TUN 门禁。修改 imported provider 或会影响透明 TUN 流量的策略选�
 CONNECT proxy，证明 `policy-select` 可以把 TUN 出口路径在 `DIRECT` 与受控代理
 之间切换。
 
-修改 Mac 本机规则 / 全局 / 直连、`open-surge/mac-*` 选择器或本机/下游隔离时，
-使用 `make lab-test-tun-local-routing`。它会分别证明本机 Global 可使用受控代理而
-下游仍按网关规则直连，以及本机 Direct 可绕过代理而下游仍使用网关代理。
-
 修改 MAC 租约、每设备 selector 或设备覆盖的数据路径时，使用
 `make lab-test-tun-device-policy`。它会证明两个客户端获得各自的固定租约、可独立
 选择不同的 TUN 出口，并验证设备级域名 `REJECT` 生效。域名/协议规则编译、模板和
@@ -424,9 +397,9 @@ HTTP/MRS rule-provider 配置由单元测试覆盖；不需要为每条操作者
 策略组控制面和机器可读 CLI 改动优先使用 `make policy-control-test`。它会启动真实
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller
 API 检查 `policies`、`policy-select`、mihomo 重启后的策略选择恢复、通过
-mixed-port 进行的本机/私网 `DIRECT` 保护、专用 local-routing 三模式控制，以及
-`connections`、`providers`、针对 file 与 HTTP proxy provider 的 `provider-update`
-和 `snapshot`；其中也会验证未知 policy 和内部组会被普通 `policy-select` 拒绝。
+mixed-port 进行的本机 DIRECT/代理出口切换，以及 `connections`、`providers`、
+针对 file 与 HTTP proxy provider 的 `provider-update` 和 `snapshot`；其中也会验证
+未知 policy 会被 `policy-select` 拒绝。
 
 使用 `make same-lan-start-tun` 和 `make same-lan-adb-check` 验证窄范围的同
 LAN 默认网关 smoke。这个 gate 会保持 DHCP disabled，要求 TUN，并通过 ADB 检查

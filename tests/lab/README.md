@@ -41,14 +41,13 @@ The installer downloads pinned, checksummed upstream releases into
 - installs Lima 2.1.3, dnsmasq 2.93, and mihomo 1.19.27 for this project;
 - verifies and installs socket_vmnet 1.2.2 under `/opt/socket_vmnet`;
 - installs a fixed-function network helper under `/opt/open-mihomo-gateway`;
-- does not install a passwordless sudo rule by default.
+- grants the current user passwordless sudo for only the helper's `start`,
+  `stop`, and `status` commands.
 
-For unattended setup/teardown of the isolated network, explicitly run
-`./tests/lab/install-host-deps.sh --root-only --with-sudoers`. The optional rule
-allows only the root-owned helper's `start`, `stop`, and `status` commands; it
-never executes scripts or binaries from this writable repository. The gateway
-binary still requires a cached sudo credential. Run `make lab-uninstall-root`
-to remove the root-owned helper, socket_vmnet copy, lab log, and sudoers rule.
+The helper is copied to a root-owned path before the sudoers rule is installed.
+The rule never executes scripts or binaries from this writable repository.
+Run `make lab-uninstall-root` to remove the root-owned helper, socket_vmnet
+copy, lab log, and sudoers rule.
 
 Optional proxy variables can be stored in `runtime/lab/proxy.env`. The
 installer and lab commands load that file for host-side operations. Lima VM
@@ -59,14 +58,14 @@ VMs.
 ## Daily workflow
 
 ```sh
-sudo -v && make lab-up
-sudo -v && make lab-test
-sudo -v && make lab-test-tun
-sudo -v && make lab-test-tun-imported-profile
-sudo -v && make lab-test-tun-imported-egress
-sudo -v && make lab-test-tun-local-routing
-sudo -v && make lab-test-tun-device-policy
-sudo -v && make lab-down
+make lab-up
+sudo -v
+make lab-test
+make lab-test-tun
+make lab-test-tun-imported-profile
+make lab-test-tun-imported-egress
+make lab-test-tun-device-policy
+make lab-down
 ```
 
 `lab-up` starts the DHCP-free host network and the two clients. `lab-test`
@@ -77,17 +76,6 @@ under `artifacts/lab`. Managed mihomo DNS returns fake IPs even while TUN is
 disabled, so the direct HTTPS NAT proof resolves a real public A record and
 pins it with `curl --resolve`; the separate gateway-DNS assertion still checks
 the fake-IP answer intentionally.
-
-The first `lab-up` is intentionally slower because it downloads the pinned,
-checksummed Ubuntu image and installs test tools in both clients. `lab-down`
-stops the clients but preserves their Lima disks, so use it for normal cleanup;
-later `lab-up` runs reuse those clients. Use `make lab-destroy` only to discard
-broken state or intentionally rebuild the VMs. On every boot provisioning
-restores guest DNS to the Lima control gateway before the gateway under test is
-running, and skips `apt-get update` and package installation when all required
-tools are already present. Cold rebuilds provision clients sequentially so two
-apt jobs cannot contend for upstream bandwidth; unchanged persistent clients
-start in parallel so routine `lab-up` does not add two guest boot times.
 
 `lab-test-tun` is the TUN transparent proxy gate. It rewrites the lab config
 with `transparent.mode: "tun"`, forwards dnsmasq to mihomo DNS, leaves the
@@ -103,14 +91,6 @@ does not prove a real subscription node or remote exit IP. The controlled
 proxy binds both upstream DNS and TCP dialing to the physical upstream
 interface so its own traffic cannot re-enter the TUN or use a fake IP.
 
-`lab-test-tun-local-routing` uses the same imported egress fixture to prove the
-local-Mac Rule/Global/Direct selectors remain isolated from downstream clients:
-local Global can use the controlled proxy while the client follows direct
-gateway rules, and local Direct can bypass the proxy while the client still
-uses it through gateway rules. It also checks the local TUN source identity,
-UDP `REJECT` for an HTTP-only global egress, and that generic `policies` hides
-the internal groups.
-
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
 devices. It assigns them fixed `.101` and `.102` DHCP leases, proves one
 `dedicated` device takes its selector before global `MATCH`, and proves one
@@ -123,13 +103,7 @@ gate for device identity, routing modes, device defaults, and device overrides. 
 also verifies the applied bundle/state digest, both exact DHCP identities,
 desired-vs-applied drift after a policy-file edit, and a UDP/443 request through
 an HTTP-only selected outbound that must log `REJECT` instead of falling through
-to `DIRECT`. The fixture also preserves one raw device without a MAC and proves
-DHCP mode keeps it in the applied snapshot for later identity completion while
-emitting no reservation, mihomo rule, or active selector for it.
-The passing artifact retains that applied snapshot, runtime state, generated
-dnsmasq/mihomo configuration, and the initial and post-reload device views so
-the boundary remains auditable.
-Rule/template/provider compilation stays in unit tests.
+to `DIRECT`. Rule/template/provider compilation stays in unit tests.
 
 Treat `make lab-test` as the required local gate for high-risk network changes:
 DHCP/DNS behavior, mihomo process or config generation, pf/NAT rules,
@@ -149,26 +123,7 @@ credential without embedding or broadening root privileges.
 The cached sudo credential is terminal-scoped and time-limited. If an agent or
 automation runs `sudo -v` in one TTY and `make lab-test` in another, the lab
 script may still fail its `sudo -n` preflight. Run `sudo -v` in the same
-terminal session, immediately before the root-required lab target. The most
-reliable form is `sudo -v && make <lab-target>`; revalidate for every gate in a
-long session instead of treating one credential cache as permanent. A cold
-`lab-up` can itself outlive the sudo ticket, so after it finishes run
-`sudo -v && make lab-test...` again. If cleanup follows a long gate, also use
-`sudo -v && make lab-down`; otherwise the VMs may stop while stale state for the
-root-owned helper remains.
-
-The fixed-size Lima and mihomo downloads use segmented caches and verify the
-checksum after assembly. If TLS or network instability interrupts an install,
-rerun the same installer command: it reuses complete segments and resumes
-incomplete ones. Do not copy unverified files into `runtime/tools/cache`.
-
-The default client size is `1 CPU / 512 MiB`. A slow `lab-up` alone is not a
-reason to increase it. Use `limactl shell <client> -- free -m`, `vmstat`, and
-the guest OOM log to distinguish CPU or memory pressure from DNS, image
-download, and apt provisioning waits. More CPU or memory will not fix a guest
-that is mostly idle, still has available memory, and has no OOM evidence;
-change the default only after sustained load, reclaim pressure, or OOM proves
-that resources are the bottleneck.
+terminal session, immediately before the root-required lab target.
 
 The lab owns `192.168.50.1/24` only on its vmnet bridge. Do not leave the same
 address on another interface. The real-device smoke also uses `192.168.50.1` on
@@ -188,7 +143,6 @@ make lab-test     # run the end-to-end test and restore the host
 make lab-test-tun # run the TUN transparent proxy gate
 make lab-test-tun-imported-profile # run TUN with an imported profile fixture
 make lab-test-tun-imported-egress  # switch TUN egress through a controlled proxy
-make lab-test-tun-local-routing # prove local-Mac mode isolation
 make lab-test-tun-device-policy # prove independent per-device TUN policies
 make lab-down     # stop clients and remove the host network
 make lab-destroy  # delete the persistent Lima client disks too

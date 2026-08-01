@@ -55,9 +55,6 @@ transparent:
   tun_auto_detect_interface: %t
   tun_strict_route: %t
 
-local_system_proxy:
-  enabled: %t
-
 upstream_proxy:
   enabled: %t
   name: %s
@@ -78,7 +75,6 @@ runtime:
 		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
 		q(cfg.PF.AnchorName), cfg.PF.RedirectTCPTo,
 		q(cfg.Transparent.Mode), q(cfg.Transparent.TUNDevice), q(cfg.Transparent.TUNStack), cfg.Transparent.TUNAutoRoute, cfg.Transparent.TUNAutoDetectInterface, cfg.Transparent.TUNStrictRoute,
-		cfg.LocalSystemProxy.Enabled,
 		cfg.UpstreamProxy.Enabled, q(cfg.UpstreamProxy.Name), q(cfg.UpstreamProxy.Type), q(cfg.UpstreamProxy.Server), cfg.UpstreamProxy.Port, q(cfg.UpstreamProxy.Username), q(cfg.UpstreamProxy.Password), q(cfg.UpstreamProxy.MatchDomain),
 		q(cfg.Runtime.Dir),
 	)

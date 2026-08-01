@@ -17,7 +17,6 @@ export function GatewayHealthCard({ overview }: { overview: Overview | null }) {
     <div className="gateway-service-strip" aria-label="核心服务状态">
       <ServiceState label={status?.dhcp_enabled === false ? 'DNS' : 'DHCP / DNS'} state={status?.dhcp} />
       <ServiceState label="mihomo" state={status?.mihomo} />
-      <ServiceState label={status?.tun_interface ? `TUN · ${status.tun_interface}` : 'TUN'} state={status?.tun} />
       <ServiceState label="PF Anchor" state={status?.pf_anchor} />
       <ServiceState label="IPv4 转发" state={status?.forwarding} />
     </div>

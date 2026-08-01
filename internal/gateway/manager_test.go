@@ -312,84 +312,6 @@ func TestStartValidatesMihomoBeforeEnablingForwarding(t *testing.T) {
 	}
 }
 
-func TestStartAndStopCoordinateLocalSystemProxyAroundGatewayServices(t *testing.T) {
-	cfg := config.Default()
-	cfg.Gateway.Interface = "lan0"
-	cfg.Gateway.UpstreamInterface = "wan0"
-	cfg.Gateway.LANIP = "192.168.50.1"
-	cfg.Transparent.Mode = config.TransparentModeTUN
-	cfg.LocalSystemProxy.Enabled = true
-	cfg.Runtime.Dir = t.TempDir()
-	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
-	paths := runtime.NewPaths(cfg)
-	events := []string{}
-	dhcpManager := &fakeDHCP{startPID: 11, events: &events}
-	mihomoManager := &fakeMihomo{startPID: 12, events: &events}
-	pfManager := &fakePF{loaded: true, events: &events}
-	systemProxyManager := &fakeLocalSystemProxy{
-		snapshot: runtime.SystemProxySnapshot{NetworkService: "USB 10/100/1000 LAN", Interface: "wan0"},
-		events:   &events,
-	}
-	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
-		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
-		removeState: runtime.RemoveState, ensure: runtime.Ensure,
-		newDHCP:             func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
-		newMihomo:           func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
-		newPF:               func(config.Config, runtime.Paths) pfService { return pfManager },
-		newSysctl:           func() sysctlService { return &fakeSysctl{current: "0"} },
-		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
-		interfaces: func() ([]net.Interface, error) {
-			return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil
-		},
-		interfaceByName: func(name string) (*net.Interface, error) { return &net.Interface{Name: name}, nil },
-		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
-			if iface.Name == "lan0" {
-				return []net.Addr{&net.IPNet{IP: net.ParseIP(cfg.Gateway.LANIP), Mask: net.CIDRMask(24, 32)}}, nil
-			}
-			return nil, nil
-		},
-		now: time.Now,
-	}}
-
-	if err := manager.Start(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if systemProxyManager.prepareInterface != "wan0" || systemProxyManager.preparePort != cfg.Mihomo.MixedPort {
-		t.Fatalf("Prepare() interface=%q port=%d", systemProxyManager.prepareInterface, systemProxyManager.preparePort)
-	}
-	if indexOfEvent(events, "system-proxy-prepare") > indexOfEvent(events, "mihomo-write") {
-		t.Fatalf("system proxy conflict check ran after runtime artifacts were written: %v", events)
-	}
-	state, exists, err := runtime.LoadState(paths.StateFile)
-	if err != nil || !exists || state.LocalSystemProxy == nil || state.LocalSystemProxy.NetworkService != "USB 10/100/1000 LAN" {
-		t.Fatalf("runtime state=%#v exists=%v err=%v", state, exists, err)
-	}
-	if indexOfEvent(events, "system-proxy-enable") < indexOfEvent(events, "pf-load") {
-		t.Fatalf("system proxy enabled before gateway readiness: %v", events)
-	}
-
-	if err := manager.Stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	restoreIndex := indexOfEvent(events, "system-proxy-restore")
-	if restoreIndex == -1 || restoreIndex > indexOfEvent(events, "mihomo-stop") || restoreIndex > indexOfEvent(events, "dhcp-stop") {
-		t.Fatalf("system proxy was not restored before gateway services stopped: %v", events)
-	}
-
-	events = nil
-	systemProxyManager.enableErr = errors.New("proxy endpoint rejected")
-	err = manager.Start(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "proxy endpoint rejected") {
-		t.Fatalf("Start() proxy enable error=%v", err)
-	}
-	if systemProxyManager.restoreCalls != 2 {
-		t.Fatalf("system proxy restore calls=%d, want stop plus failed-start rollback", systemProxyManager.restoreCalls)
-	}
-	if _, exists, loadErr := runtime.LoadState(paths.StateFile); loadErr != nil || exists {
-		t.Fatalf("runtime state after proxy rollback exists=%v err=%v", exists, loadErr)
-	}
-}
-
 func TestReloadValidationFailureLeavesRunningGatewayUntouched(t *testing.T) {
 	cfg := config.Default()
 	cfg.Gateway.Interface = "lan0"
@@ -614,19 +536,16 @@ func TestRestartMihomoStartFailureLeavesRetryableRuntimeState(t *testing.T) {
 	if err := runtime.Ensure(paths); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := &runtime.SystemProxySnapshot{NetworkService: "Wi-Fi", Interface: "en0"}
-	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, LocalSystemProxy: snapshot, StartedAt: time.Now()}); err != nil {
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(paths.MihomoLog, []byte("incident\n"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	mihomoManager := &fakeMihomo{startErr: errors.New("replacement failed")}
-	systemProxyManager := &fakeLocalSystemProxy{}
 	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
 		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
-		newMihomo:           func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
-		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager }, now: time.Now,
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, now: time.Now,
 	}}
 
 	err := manager.RestartMihomo(context.Background())
@@ -640,9 +559,6 @@ func TestRestartMihomoStartFailureLeavesRetryableRuntimeState(t *testing.T) {
 	matches, globErr := filepath.Glob(filepath.Join(paths.LogDir, "mihomo-before-restart-*.log"))
 	if globErr != nil || len(matches) != 1 {
 		t.Fatalf("archived logs=%v err=%v", matches, globErr)
-	}
-	if systemProxyManager.restoreCalls != 1 {
-		t.Fatalf("system proxy restore calls=%d, want 1", systemProxyManager.restoreCalls)
 	}
 }
 
@@ -697,41 +613,6 @@ func TestStopFailureRetainsRuntimeStateForRetryAndRecovery(t *testing.T) {
 	}}
 	if err := manager.Stop(context.Background()); err == nil || !strings.Contains(err.Error(), "dnsmasq did not stop") {
 		t.Fatalf("Stop() error=%v", err)
-	}
-	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || !exists {
-		t.Fatalf("runtime state exists=%v err=%v", exists, err)
-	}
-}
-
-func TestStopProxyRestoreFailureKeepsServicesRunningAndStateRetryable(t *testing.T) {
-	cfg := config.Default()
-	cfg.Runtime.Dir = t.TempDir()
-	paths := runtime.NewPaths(cfg)
-	if err := runtime.Ensure(paths); err != nil {
-		t.Fatal(err)
-	}
-	snapshot := &runtime.SystemProxySnapshot{NetworkService: "Wi-Fi", Interface: "en0"}
-	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDDNSMasq: 11, PIDMihomo: 12, LocalSystemProxy: snapshot, StartedAt: time.Now()}); err != nil {
-		t.Fatal(err)
-	}
-	dhcpManager := &fakeDHCP{}
-	mihomoManager := &fakeMihomo{}
-	systemProxyManager := &fakeLocalSystemProxy{restoreErr: errors.New("networksetup failed")}
-	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
-		geteuid: func() int { return 0 }, loadState: runtime.LoadState, removeState: runtime.RemoveState,
-		newDHCP:             func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
-		newMihomo:           func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
-		newPF:               func(config.Config, runtime.Paths) pfService { return &fakePF{} },
-		newSysctl:           func() sysctlService { return &fakeSysctl{} },
-		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
-	}}
-
-	err := manager.Stop(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "networksetup failed") {
-		t.Fatalf("Stop() error=%v", err)
-	}
-	if dhcpManager.stopCalled || mihomoManager.stopCalled {
-		t.Fatal("gateway services stopped even though the system proxy could not be restored")
 	}
 	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || !exists {
 		t.Fatalf("runtime state exists=%v err=%v", exists, err)
@@ -841,7 +722,6 @@ type fakePF struct {
 	unloadErr    error
 	loadCalled   bool
 	unloadCalled bool
-	events       *[]string
 }
 
 func (f *fakePF) Check() error {
@@ -858,9 +738,6 @@ func (f *fakePF) Enabled() (bool, error) {
 
 func (f *fakePF) Load(bool) error {
 	f.loadCalled = true
-	if f.events != nil {
-		*f.events = append(*f.events, "pf-load")
-	}
 	return f.loadErr
 }
 
@@ -899,50 +776,4 @@ func (f *fakeSysctl) Enable() error {
 func (f *fakeSysctl) Restore(value string) error {
 	f.restoreValue = value
 	return f.restoreErr
-}
-
-type fakeLocalSystemProxy struct {
-	snapshot         runtime.SystemProxySnapshot
-	prepareErr       error
-	enableErr        error
-	restoreErr       error
-	prepareInterface string
-	preparePort      int
-	enableCalls      int
-	restoreCalls     int
-	events           *[]string
-}
-
-func (f *fakeLocalSystemProxy) Prepare(_ context.Context, interfaceName string, port int) (runtime.SystemProxySnapshot, error) {
-	f.prepareInterface = interfaceName
-	f.preparePort = port
-	if f.events != nil {
-		*f.events = append(*f.events, "system-proxy-prepare")
-	}
-	return f.snapshot, f.prepareErr
-}
-
-func (f *fakeLocalSystemProxy) Enable(_ context.Context, _ runtime.SystemProxySnapshot, _ int) error {
-	f.enableCalls++
-	if f.events != nil {
-		*f.events = append(*f.events, "system-proxy-enable")
-	}
-	return f.enableErr
-}
-
-func (f *fakeLocalSystemProxy) Restore(_ context.Context, _ runtime.SystemProxySnapshot) error {
-	f.restoreCalls++
-	if f.events != nil {
-		*f.events = append(*f.events, "system-proxy-restore")
-	}
-	return f.restoreErr
-}
-
-func indexOfEvent(events []string, target string) int {
-	for index, event := range events {
-		if event == target {
-			return index
-		}
-	}
-	return -1
 }

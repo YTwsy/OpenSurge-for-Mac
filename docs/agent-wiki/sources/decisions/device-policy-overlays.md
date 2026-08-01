@@ -68,16 +68,6 @@ only for an applied dedicated/legacy device. It creates a private
 template-derived profile, it copies the resolved effective content to a
 template-free private profile and changes only that device reference.
 
-In `same_lan`, a unique active observation at a different IPv4 may be offered
-as an explicit rebind only when its normalized neighbor MAC matches the applied
-device. The GUI does not silently mutate identity: it blocks routing-mode and
-applied-selector controls tied to the stale `SRC-IP-CIDR`, asks for confirmation,
-then changes only the device IPv4 and uses the normal validated save/reload path.
-Stable ID, display name, profile, rules, egress mode, and selector choices are
-preserved. Offline devices may preset selectors with an activation-boundary
-message. Ambiguous same-MAC observations, MAC conflicts, or an IPv4 owned by
-another desired device must not produce a guessed rebind.
-
 A device may also carry human-readable `name` metadata with spaces or Unicode.
 Its technical `id` remains restricted and stable because it is part of the
 generated mihomo selector namespace. The GUI derives a collision-free ID for a

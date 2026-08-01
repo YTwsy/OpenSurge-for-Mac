@@ -511,9 +511,7 @@ func TestSnapshotCommandPrintsPartialJSON(t *testing.T) {
 			t.Fatalf("api_addr = %q", cfg.Mihomo.APIAddr)
 		}
 		return []mihomo.ProxyGroup{
-			{Name: mihomo.LocalRoutingTCPGroup, Type: "Selector", Selected: "PASS", Options: []string{"PASS", "DIRECT"}},
 			{Name: "Proxy", Type: "Selector", Selected: "DIRECT", Options: []string{"DIRECT", "HK"}},
-			{Name: mihomo.LocalRoutingGlobalGroup, Type: "Selector", Selected: "HK", Options: []string{"HK"}},
 		}, nil
 	}
 	fetchConnections = func(ctx context.Context, cfg config.Config) (mihomo.ConnectionsSnapshot, error) {
@@ -523,7 +521,6 @@ func TestSnapshotCommandPrintsPartialJSON(t *testing.T) {
 		return mihomo.ProvidersSnapshot{
 			ProxyProviders: []mihomo.ProxyProvider{
 				{Name: "demo", Type: "Proxy", VehicleType: "File", ProxyCount: 1, Proxies: []mihomo.ProviderProxy{{Name: "HK", Type: "Http", Alive: true}}},
-				{Name: mihomo.LocalRoutingGlobalGroup, Type: "Proxy", VehicleType: "Compatible", ProxyCount: 1, Proxies: []mihomo.ProviderProxy{{Name: "HK", Type: "Http", Alive: true}}},
 			},
 		}, nil
 	}
@@ -770,132 +767,6 @@ func TestPoliciesCommandPrintsJSON(t *testing.T) {
 	}
 	if strings.Join(payload.Groups[0].Options, ",") != "DIRECT,HK" {
 		t.Fatalf("options = %#v", payload.Groups[0].Options)
-	}
-}
-
-func TestLocalRoutingCommandsUseDedicatedMihomoController(t *testing.T) {
-	oldFetch := fetchLocalRouting
-	oldSet := setLocalRouting
-	t.Cleanup(func() {
-		fetchLocalRouting = oldFetch
-		setLocalRouting = oldSet
-	})
-	fetchLocalRouting = func(_ context.Context, cfg config.Config) (mihomo.LocalRoutingSnapshot, error) {
-		if cfg.Mihomo.Secret != "test-secret" {
-			t.Fatalf("secret = %q", cfg.Mihomo.Secret)
-		}
-		return mihomo.LocalRoutingSnapshot{
-			Mode:               mihomo.LocalRoutingModeRule,
-			AvailableModes:     []string{mihomo.LocalRoutingModeRule, mihomo.LocalRoutingModeGlobal, mihomo.LocalRoutingModeDirect},
-			UDPBehavior:        "rules",
-			Transports:         []string{"tun", "loopback_explicit_proxy"},
-			NewConnectionsOnly: true,
-			Consistent:         true,
-		}, nil
-	}
-	var mode, policy string
-	setLocalRouting = func(_ context.Context, _ config.Config, requestedMode, requestedPolicy string) (mihomo.LocalRoutingSnapshot, error) {
-		mode, policy = requestedMode, requestedPolicy
-		return mihomo.LocalRoutingSnapshot{
-			Mode:               requestedMode,
-			AvailableModes:     []string{mihomo.LocalRoutingModeRule, mihomo.LocalRoutingModeGlobal, mihomo.LocalRoutingModeDirect},
-			GlobalGroup:        &mihomo.ProxyGroup{Name: mihomo.LocalRoutingGlobalGroup, Selected: requestedPolicy, Options: []string{"Proxy-A", "Proxy-B"}},
-			UDPBehavior:        "proxy",
-			Transports:         []string{"tun", "loopback_explicit_proxy"},
-			NewConnectionsOnly: true,
-			Consistent:         true,
-		}, nil
-	}
-
-	configPath := writeAPIConfig(t, "127.0.0.1:9090")
-	var exitCode int
-	output := captureStdout(t, func() {
-		exitCode = run([]string{"local-routing", "--config", configPath, "--format", "json"})
-	})
-	if exitCode != 0 {
-		t.Fatalf("local-routing exit=%d output=%s", exitCode, output)
-	}
-	var fetched mihomo.LocalRoutingSnapshot
-	if err := json.Unmarshal([]byte(output), &fetched); err != nil {
-		t.Fatal(err)
-	}
-	if fetched.Mode != mihomo.LocalRoutingModeRule || !fetched.Consistent {
-		t.Fatalf("local-routing = %#v", fetched)
-	}
-
-	output = captureStdout(t, func() {
-		exitCode = run([]string{"local-routing-set", "--config", configPath, "--mode", "global", "--policy", "Proxy-B", "--format", "json"})
-	})
-	if exitCode != 0 {
-		t.Fatalf("local-routing-set exit=%d output=%s", exitCode, output)
-	}
-	if mode != mihomo.LocalRoutingModeGlobal || policy != "Proxy-B" {
-		t.Fatalf("local-routing-set arguments = %q/%q", mode, policy)
-	}
-	var updated mihomo.LocalRoutingSnapshot
-	if err := json.Unmarshal([]byte(output), &updated); err != nil {
-		t.Fatal(err)
-	}
-	if updated.Mode != mihomo.LocalRoutingModeGlobal || updated.GlobalGroup == nil || updated.GlobalGroup.Selected != "Proxy-B" {
-		t.Fatalf("local-routing-set = %#v", updated)
-	}
-}
-
-func TestPolicySelectCommandRejectsLocalRoutingGroup(t *testing.T) {
-	oldFetch := fetchProxyGroups
-	oldSelect := selectProxyGroup
-	t.Cleanup(func() {
-		fetchProxyGroups = oldFetch
-		selectProxyGroup = oldSelect
-	})
-	fetchCalled := false
-	fetchProxyGroups = func(context.Context, config.Config) ([]mihomo.ProxyGroup, error) {
-		fetchCalled = true
-		return nil, nil
-	}
-	selectCalled := false
-	selectProxyGroup = func(context.Context, config.Config, string, string) error {
-		selectCalled = true
-		return nil
-	}
-
-	configPath := writeAPIConfig(t, "127.0.0.1:9090")
-	var exitCode int
-	stderr := captureStderr(t, func() {
-		exitCode = run([]string{"policy-select", "--config", configPath, "--group", mihomo.LocalRoutingTCPGroup, "--policy", "DIRECT"})
-	})
-	if exitCode == 0 || fetchCalled || selectCalled || !strings.Contains(stderr, "use local-routing-set") {
-		t.Fatalf("reserved selection exit=%d fetch=%t select=%t stderr=%s", exitCode, fetchCalled, selectCalled, stderr)
-	}
-}
-
-func TestPolicySelectCommandRejectsLocalRoutingOptionThroughGlobal(t *testing.T) {
-	oldFetch := fetchProxyGroups
-	oldSelect := selectProxyGroup
-	t.Cleanup(func() {
-		fetchProxyGroups = oldFetch
-		selectProxyGroup = oldSelect
-	})
-	fetchProxyGroups = func(context.Context, config.Config) ([]mihomo.ProxyGroup, error) {
-		return []mihomo.ProxyGroup{{
-			Name:     "GLOBAL",
-			Selected: "DIRECT",
-			Options:  []string{"DIRECT", mihomo.LocalRoutingGlobalGroup},
-		}}, nil
-	}
-	selectCalled := false
-	selectProxyGroup = func(context.Context, config.Config, string, string) error {
-		selectCalled = true
-		return nil
-	}
-
-	configPath := writeAPIConfig(t, "127.0.0.1:9090")
-	var exitCode int
-	stderr := captureStderr(t, func() {
-		exitCode = run([]string{"policy-select", "--config", configPath, "--group", "GLOBAL", "--policy", mihomo.LocalRoutingGlobalGroup})
-	})
-	if exitCode == 0 || selectCalled || !strings.Contains(stderr, "is not a member") {
-		t.Fatalf("indirect reserved selection exit=%d select=%t stderr=%s", exitCode, selectCalled, stderr)
 	}
 }
 
@@ -1263,25 +1134,6 @@ func TestProvidersCommandPrintsJSON(t *testing.T) {
 	}
 	if len(payload.RuleProviders) != 1 || payload.RuleProviders[0].Name != "cn" || payload.RuleProviders[0].RuleCount != 2 {
 		t.Fatalf("rule providers = %#v", payload.RuleProviders)
-	}
-}
-
-func TestProviderUpdateCommandRejectsLocalRoutingGroup(t *testing.T) {
-	oldUpdate := updateProxyProvider
-	t.Cleanup(func() { updateProxyProvider = oldUpdate })
-	updateCalled := false
-	updateProxyProvider = func(context.Context, config.Config, string) (mihomo.ProxyProvider, error) {
-		updateCalled = true
-		return mihomo.ProxyProvider{}, nil
-	}
-
-	configPath := writeAPIConfig(t, "127.0.0.1:9090")
-	var exitCode int
-	stderr := captureStderr(t, func() {
-		exitCode = run([]string{"provider-update", "--config", configPath, "--provider", mihomo.LocalRoutingGlobalGroup})
-	})
-	if exitCode == 0 || updateCalled || !strings.Contains(stderr, "internal") {
-		t.Fatalf("reserved provider update exit=%d called=%t stderr=%s", exitCode, updateCalled, stderr)
 	}
 }
 

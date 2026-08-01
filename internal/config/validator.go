@@ -97,9 +97,6 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err
 	}
-	if cfg.LocalSystemProxy.Enabled && !cfg.Transparent.TUNEnabled() {
-		return fmt.Errorf("local_system_proxy.enabled requires transparent.mode: \"tun\"")
-	}
 	if cfg.Gateway.SameLAN() {
 		if cfg.Transparent.Mode != TransparentModeTUN {
 			return fmt.Errorf("gateway.mode %s requires transparent.mode: \"tun\"", cfg.Gateway.Mode)
@@ -162,12 +159,12 @@ func validateDevicePolicy(cfg Config) error {
 	bundle := cfg.DevicePolicy.Bundle
 	if bundle == nil {
 		var err error
-		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File, cfg.Gateway.Mode == GatewayModeSameLAN)
+		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File)
 		if err != nil {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(bundle.Policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
+	if err := device.ValidatePolicySetForLANWithProtected(bundle.Policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	return nil
@@ -177,22 +174,10 @@ func validateDevicePolicy(cfg Config) error {
 // instance. Gateway startup, DHCP rendering and mihomo rendering all consume
 // the resulting immutable bundle.
 func PrepareDevicePolicy(cfg *Config) error {
-	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
+	if strings.TrimSpace(cfg.DevicePolicy.File) == "" || cfg.DevicePolicy.Bundle != nil {
 		return nil
 	}
-	ipOnlyDevicesActive := cfg.Gateway.Mode == GatewayModeSameLAN
-	if cfg.DevicePolicy.Bundle != nil && cfg.DevicePolicy.Bundle.IPOnlyDevicesActive == ipOnlyDevicesActive {
-		return nil
-	}
-	if cfg.DevicePolicy.Bundle != nil {
-		bundle, err := device.CompilePolicyBundleForIPOnlyMode(cfg.DevicePolicy.Bundle.Policy, ipOnlyDevicesActive)
-		if err != nil {
-			return fmt.Errorf("device_policy.file: %w", err)
-		}
-		cfg.DevicePolicy.Bundle = &bundle
-		return nil
-	}
-	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File, ipOnlyDevicesActive)
+	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File)
 	if err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
@@ -200,7 +185,7 @@ func PrepareDevicePolicy(cfg *Config) error {
 	return nil
 }
 
-func loadDevicePolicyBundle(path string, ipOnlyDevicesActive bool) (*device.PolicyBundle, error) {
+func loadDevicePolicyBundle(path string) (*device.PolicyBundle, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -208,7 +193,7 @@ func loadDevicePolicyBundle(path string, ipOnlyDevicesActive bool) (*device.Poli
 	if info.IsDir() {
 		return nil, fmt.Errorf("must not be a directory")
 	}
-	bundle, err := device.LoadPolicyBundleForIPOnlyMode(path, ipOnlyDevicesActive)
+	bundle, err := device.LoadPolicyBundle(path)
 	if err != nil {
 		return nil, err
 	}
@@ -283,8 +268,8 @@ func validateUpstreamProxy(cfg UpstreamProxyConfig) error {
 	if strings.TrimSpace(cfg.Name) == "" {
 		return fmt.Errorf("upstream_proxy.name is required when upstream_proxy.enabled is true")
 	}
-	if strings.TrimSpace(cfg.Name) == "open-surge-egress" || strings.HasPrefix(strings.TrimSpace(cfg.Name), "open-surge/mac-") {
-		return fmt.Errorf("upstream_proxy.name must differ from reserved OpenSurge proxy groups")
+	if strings.TrimSpace(cfg.Name) == "open-surge-egress" {
+		return fmt.Errorf("upstream_proxy.name must differ from reserved proxy group open-surge-egress")
 	}
 	if !validRuleToken(cfg.Name) {
 		return fmt.Errorf("upstream_proxy.name must not contain whitespace, commas, or control characters")

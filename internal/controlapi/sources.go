@@ -313,9 +313,8 @@ func inspectSource(data []byte, kind string) (Inventory, error) {
 		inv.RuleCount = inspection.RuleCount
 		inv.TerminalMatch = inspection.TerminalMatch
 		inv.Warnings = inspection.Warnings
-		targets := append(append([]string{}, inv.Proxies...), inv.ProxyGroups...)
-		for _, name := range append(targets, inv.RuleProviders...) {
-			if strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") || strings.HasPrefix(name, mihomo.LocalRoutingGroupPrefix) {
+		for _, name := range append(append([]string{}, inv.ProxyGroups...), inv.RuleProviders...) {
+			if strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") {
 				return inv, fmt.Errorf("imported source uses reserved OpenSurge name %q", name)
 			}
 		}
@@ -342,9 +341,8 @@ func inspectSource(data []byte, kind string) (Inventory, error) {
 	inv.ProxyGroups = sequenceNames(sections["proxy-groups"])
 	inv.ProxyProviders = mappingKeys(sections["proxy-providers"])
 	inv.RuleProviders = mappingKeys(sections["rule-providers"])
-	targets := append(append([]string{}, inv.Proxies...), inv.ProxyGroups...)
-	for _, name := range append(targets, inv.RuleProviders...) {
-		if strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") || strings.HasPrefix(name, mihomo.LocalRoutingGroupPrefix) {
+	for _, name := range append(append([]string{}, inv.ProxyGroups...), inv.RuleProviders...) {
+		if strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") {
 			return inv, fmt.Errorf("imported source uses reserved OpenSurge name %q", name)
 		}
 	}

@@ -8,7 +8,6 @@ MIHOMO="${OPENSURGE_MIHOMO_BINARY:-$ROOT/bin/mihomo}"
 DNSMASQ="${OPENSURGE_DNSMASQ_BINARY:-$(command -v dnsmasq || true)}"
 VERSION="${OPENSURGE_VERSION:-0.1.0}"
 BUILD_NUMBER="${OPENSURGE_BUILD_NUMBER:-1}"
-RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v$VERSION}"
 APP_ARCH="${OPENSURGE_APP_ARCH:-$(uname -m)}"
 ARTIFACTS="$ROOT/artifacts/gui-installer"
 PAYLOAD="$ARTIFACTS/payload"
@@ -20,7 +19,6 @@ PNPM_BIN="${PNPM_BIN:-$(command -v pnpm || true)}"
 export GOCACHE="${GOCACHE:-/private/tmp/opensurge-gui-build-cache}"
 export OPENSURGE_VERSION="$VERSION"
 export OPENSURGE_BUILD_NUMBER="$BUILD_NUMBER"
-export OPENSURGE_RELEASE_TAG="$RELEASE_TAG"
 case "$APP_ARCH" in
   arm64) GO_ARCH=arm64 ;;
   x86_64) GO_ARCH=amd64 ;;

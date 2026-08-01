@@ -15,7 +15,6 @@ swiftc -parse-as-library -sdk "$SDKROOT" -module-cache-path "$MODULE_CACHE" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/Models.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/OpenSurgeUninstaller.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/StatusModel.swift" \
-  "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/UpdateChecker.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/WebGUIURLLauncher.swift" \
   "$ROOT/apps/menubar/Checks/MenuBarChecks.swift" \
   -o "$OUTPUT"

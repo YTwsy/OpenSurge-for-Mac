@@ -28,14 +28,10 @@ status, doctor, leases, logs, policies, providers, and connections while mihomo
 is running. The gate rejects an unknown policy with a machine-readable JSON
 error before switching, then restarts mihomo in the same runtime directory to verify
 `profile.store-selected` restores the selected policy. It also starts a local
-origin and controlled HTTP CONNECT proxy, then proves source-scoped
-local/private guards keep that destination `DIRECT` even after `EgressSwitch`
-selects the proxy. It also verifies the dedicated local-routing controller,
-UDP fail-closed for an HTTP-only Global target, and that generic policy
-surfaces cannot expose or indirectly select internal groups. It proves the
-control-plane contract with mihomo, not whole-LAN routing, transparent proxy
-capture, or a real remote proxy exit; `make lab-test-tun-local-routing` owns the
-real local-vs-downstream egress-isolation proof.
+origin and controlled HTTP CONNECT proxy, then proves an `EgressSwitch` policy
+selection changes one mixed-port request from `DIRECT` to the controlled proxy.
+It proves the control-plane contract with mihomo, not whole-LAN routing,
+transparent proxy capture, or a real remote proxy exit.
 
 The transparent proxy gate is `make lab-test-tun`. It is stricter than the
 default lab path because clients do not use `mixed-port`; the test must prove

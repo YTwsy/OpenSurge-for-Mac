@@ -66,20 +66,13 @@ into the next engineering loop.
 - Follow a recovery state machine through same-LAN DHCP takeover startup,
   client validation, shutdown, and network restoration.
 
-Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md). For
-common local-network, TUN, and device configuration questions, see the
-[FAQ](docs/faq.md).
+Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 
 **Gateway and proxying**
 
 - Start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback.
 - Provide explicit proxying through mihomo `mixed-port`.
 - Provide transparent proxying through mihomo TUN on macOS.
-- Switch **Rule / Global / Direct** for new local-Mac connections entering
-  TUN or the explicit proxy without changing downstream devices. OpenSurge
-  leaves macOS system-proxy settings unchanged by default, with an explicit
-  TUN-only HTTP/HTTPS coordination option for conflicts involving SafeDNS,
-  DNS Proxy, or other Network Extensions.
 - Generate a MAC-backed fixed IPv4 lease in DHCP takeover mode, or use a stable
   main-router IPv4 in same-LAN manual-gateway mode, with an independent egress
   policy available in either topology.
@@ -92,8 +85,8 @@ common local-network, TUN, and device configuration questions, see the
 - Test proxy-node reachability and latency in one place, then switch an applied
   Selector from the health view.
 - Probe a fixed catalog of real services through the applied mihomo mixed-port
-  and current local-Mac mode, showing the three-round median latency, matched
-  rule, and actual egress chain.
+  path, showing the three-round median latency, matched rule, and actual egress
+  chain.
 - Inspect and switch policy groups, inspect imported proxy/rule provider
   status, and view current connections.
 - Produce text/JSON status, doctor, logs, and snapshot output, including a
@@ -113,12 +106,10 @@ DHCP takeover mode gives each device a MAC-backed fixed IPv4 lease. Same-LAN
 manual-gateway mode instead uses an IPv4 kept stable by the main router and can
 assist registration with current traffic plus ARP-neighbor observations. Both
 topologies emit per-device mihomo selector groups and `SRC-IP-CIDR` rules. The optional JSON
-policy file lets each device either follow gateway rules or take a
+policy file lets each device either follow the Mac/global rules or take a
 dedicated device selector before global rules. It also supports direct
 device-specific actions such as `REJECT` and domain/IP/protocol/port/rule-provider
-overlays. Local/private destinations remain direct in dedicated mode. The
-local-Mac Rule / Global / Direct switch does not change those downstream rules;
-see [local Mac routing modes](docs/local-mac-routing.md).
+overlays. Local/private destinations remain direct in dedicated mode.
 
 OpenSurge intentionally ships no household templates or third-party rule
 lists. Operators supply their own policy content; the empty starter file is
@@ -152,10 +143,9 @@ The menu bar also provides a separate Uninstall OpenSurge action. Once the
 gateway is stopped, macOS administrator authorization can remove the app,
 Control Service, and root Helper while either preserving configuration data
 for reinstallation or deleting everything.
-The Web GUI includes a native connectivity page for the applied configuration
-plus current local-Mac mode and links to Net.Coffee for a separate browser-local
-check. Neither result is presented as proof of downstream gateway rules or a
-device's DHCP/DNS/TUN path.
+The Web GUI includes a native connectivity page for the applied gateway policy
+path and links to Net.Coffee for a separate browser-local check. Neither result
+is presented as proof of a downstream device's DHCP/DNS/TUN path.
 See the [GUI architecture notes](docs/gui-architecture.zh-CN.md) for the current
 security and packaging boundary.
 
@@ -188,10 +178,9 @@ helper and Control Service, but the gateway remains stopped until you explicitly
 start it from the control plane.
 
 Package upgrades refuse to run while same-LAN DHCP recovery is incomplete.
-Before replacing payload files, preinstall stops the menu bar app so it cannot
-wake the Control Service, then unloads the user Control Service, runs the
-installed `omg stop`, and unloads the root helper. The existing config,
-imported sources, policy data, and runtime history are kept;
+Before replacing payload files, preinstall stops the user control service and
+menu bar app, runs the installed `omg stop`, and unloads the root helper. The
+existing config, imported sources, policy data, and runtime history are kept;
 only a first installation seeds `config.yaml` from the packaged example.
 
 ## Transparent proxying
@@ -201,12 +190,6 @@ PF TCP redirection are intentionally unsupported because the current Darwin
 build reports redir as unsupported at runtime. Keep `mihomo.redir_port` and
 `pf.redirect_tcp_to` at `0`; enable transparent proxying with
 `transparent.mode: "tun"`.
-
-OpenSurge does not predict conflicts from existing utun interfaces or public
-routes before startup. It waits for mihomo to report the TUN runtime as ready.
-Failure gives the process a short cleanup window, rolls back the gateway
-runtime, and enriches the actual TUN error with the selected route interface
-and gateway. Two full-route TUNs are not supported by default.
 
 ## Mihomo profiles
 
@@ -272,14 +255,6 @@ go run ./cmd/omg policy-select \
   --config examples/config.imported-profile.example.yaml \
   --group Proxy \
   --policy DIRECT
-
-# Local-Mac Rule / Global / Direct (downstream devices remain unchanged):
-go run ./cmd/omg local-routing \
-  --config examples/config.imported-profile.example.yaml
-go run ./cmd/omg local-routing-set \
-  --config examples/config.imported-profile.example.yaml \
-  --mode global \
-  --policy Proxy
 
 # After configuring device_policy.file:
 go run ./cmd/omg devices --config ./config.yaml --format json
@@ -459,12 +434,6 @@ TUN traffic; it uses a local HTTP provider and controlled HTTP CONNECT proxy to
 prove `policy-select` changes the TUN egress path between `DIRECT` and the
 controlled proxy.
 
-Use `make lab-test-tun-local-routing` when changing the local-Mac
-Rule/Global/Direct selectors or the local-vs-downstream isolation boundary. It
-proves both directions: local Global can use the controlled proxy while a
-downstream client remains on direct gateway rules, and local Direct can bypass
-the proxy while the downstream gateway rule still uses it.
-
 Use `make lab-test-tun-device-policy` when changing MAC reservations,
 per-device selectors, or the device override data path. It proves that two
 clients receive their own fixed leases, can independently select different TUN
@@ -475,10 +444,9 @@ unit tests; they do not require one Lab run per operator-defined rule.
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
 checks `policies`, invalid and valid `policy-select`, persisted selection
-restore after mihomo restart, local/private `DIRECT` guards through
-mihomo's mixed-port, the dedicated local-routing mode controller,
-`connections`, `providers`, `provider-update` for file and HTTP proxy
-providers, and `snapshot` against the live external-controller API.
+restore after mihomo restart, local DIRECT-vs-proxy egress switching through
+mihomo's mixed-port, `connections`, `providers`, `provider-update` for file and
+HTTP proxy providers, and `snapshot` against the live external-controller API.
 
 Use `make same-lan-start-tun` and `make same-lan-adb-check` for the narrow
 same-LAN default-gateway smoke. This gate keeps DHCP disabled, requires TUN, and

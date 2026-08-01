@@ -10,36 +10,21 @@ final class StatusModel: ObservableObject {
     @Published private(set) var serviceNeedsReconnect = false
     @Published private(set) var isChangingServices = false
     @Published private(set) var isUninstalling = false
-    @Published private(set) var isCheckingForUpdate = false
-    @Published private(set) var availableUpdate: AvailableUpdate?
-    @Published private(set) var updateCheckMessage: String?
     @Published var openAtLogin = false
 
     private let client: ControlAPIClient
     private let urlLauncher: WebGUIURLLauncher
-    private let updateChecker: UpdateChecker
-    let currentVersion: String
     private var timer: Timer?
     private var rapidPolling = false
     private var failureCount = 0
     private var isQuitting = false
-    private var lastAutomaticUpdateCheck: Date?
 
     init(
         client: ControlAPIClient = ControlAPIClient(),
-        urlLauncher: WebGUIURLLauncher = WebGUIURLLauncher(),
-        updateChecker: UpdateChecker = UpdateChecker(),
-        currentVersion: String = installedReleaseVersion(
-            releaseTag: Bundle.main.object(forInfoDictionaryKey: "OpenSurgeReleaseTag") as? String,
-            shortVersion: Bundle.main.object(
-                forInfoDictionaryKey: "CFBundleShortVersionString"
-            ) as? String
-        )
+        urlLauncher: WebGUIURLLauncher = WebGUIURLLauncher()
     ) {
         self.client = client
         self.urlLauncher = urlLauncher
-        self.updateChecker = updateChecker
-        self.currentVersion = currentVersion
         self.openAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -52,7 +37,6 @@ final class StatusModel: ObservableObject {
         timer?.invalidate()
         rapidPolling = rapid
         Task { await refresh() }
-        checkForUpdatesAutomaticallyIfNeeded()
     }
 
     func stopRapidPolling() {
@@ -206,40 +190,5 @@ final class StatusModel: ObservableObject {
         let text = status?.diagnosticSummary ?? "OpenSurge Control API: \(error ?? "unreachable")"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
-    }
-
-    func checkForUpdates(manual: Bool = true) async {
-        guard !isQuitting, !isCheckingForUpdate else { return }
-        isCheckingForUpdate = true
-        if manual { updateCheckMessage = nil }
-        defer { isCheckingForUpdate = false }
-
-        do {
-            availableUpdate = try await updateChecker.check(currentVersion: currentVersion)
-            updateCheckMessage = availableUpdate == nil ? "当前已是最新稳定版" : nil
-        } catch {
-            updateCheckMessage = manual
-                ? "检查更新失败：\(error.localizedDescription)"
-                : "自动检查更新失败，可手动重试"
-        }
-    }
-
-    func openUpdateDownloadPage() {
-        guard let availableUpdate else { return }
-        do {
-            try urlLauncher.open(availableUpdate.releasePage)
-        } catch {
-            updateCheckMessage = "无法打开下载页，请前往 OpenSurge GitHub Releases"
-        }
-    }
-
-    private func checkForUpdatesAutomaticallyIfNeeded() {
-        let now = Date()
-        if let lastAutomaticUpdateCheck,
-           now.timeIntervalSince(lastAutomaticUpdateCheck) < 24 * 60 * 60 {
-            return
-        }
-        lastAutomaticUpdateCheck = now
-        Task { await checkForUpdates(manual: false) }
     }
 }

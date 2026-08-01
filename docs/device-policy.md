@@ -1,11 +1,9 @@
 # Per-device policy overlays
 
 OpenSurge runs one mihomo process. Device policy does not create a mihomo
-process or a complete profile per client. In DHCP modes, OpenSurge assigns a
-stable IPv4 lease to each registered MAC address. `same_lan` manual-gateway
-mode also accepts a fixed IPv4 with MAC as optional identity metadata. It
-generates an independent selector group for every active device and routes
-traffic with mihomo `SRC-IP-CIDR` rules.
+process or a complete profile per client. Instead, OpenSurge assigns a stable
+IPv4 lease to each registered MAC address, generates an independent selector
+group for every device, and routes traffic with mihomo `SRC-IP-CIDR` rules.
 
 This feature is optional. Point `device_policy.file` at a JSON document; the
 empty [starter document](../examples/device-policy.example.json) is valid but
@@ -108,8 +106,7 @@ the device ID as their name.
 `egress_mode` is either:
 
 - `inherit_global`: device overrides remain active, then unmatched traffic
-  follows the imported/managed gateway rules and terminal `MATCH`. It does not
-  follow the local-Mac Rule / Global / Direct switch;
+  follows the same global rules and terminal `MATCH` used by the Mac;
 - `dedicated`: unmatched public-Internet traffic uses the device-owned
   `device/<device-id>/default` selector before global rules. Local, private,
   link-local, CGNAT, and multicast destinations remain `DIRECT`.
@@ -136,9 +133,6 @@ proxy/group namespace before start. `DIRECT`, `REJECT`, `REJECT-DROP`, and
 `REJECT-TINYGIF` are the explicit built-ins. OpenSurge reserves `device/` for
 generated groups and `open-surge-ruleset-` for generated rule providers, so an
 imported profile may not occupy those namespaces.
-The `open-surge/mac-*` namespace is reserved for local-Mac routing, so imported
-proxies and groups may not occupy it either. See
-[local Mac routing modes](local-mac-routing.md).
 
 ## Matching and precedence
 
@@ -151,14 +145,12 @@ protocol compile to:
 AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,media.example),(NETWORK,tcp)),device/alice-phone/media
 ```
 
-Generated ordering is deliberate. Source-scoped local-Mac mode rules come
-first, but downstream source addresses cannot match them. All device modes put
-device-specific overrides before gateway rules. `inherit_global` then
-continues through imported/managed gateway rules and the terminal `MATCH`.
-`dedicated` adds source-scoped local/private `DIRECT` guards first, followed by
-device overrides, the device default selector, gateway rules, and the terminal
-`MATCH`. A legacy document keeps its historical device default after gateway
-rules and before `MATCH`.
+Generated ordering is deliberate. All modes put device-specific overrides
+before global rules. `inherit_global` then continues through global rules and
+the terminal `MATCH`. `dedicated` adds source-scoped local/private `DIRECT`
+guards first, followed by device overrides, the device default selector,
+global rules, and the terminal `MATCH`. A legacy document keeps its historical
+device default after global rules and before `MATCH`.
 
 An imported profile must keep `MATCH` terminal. OpenSurge rejects an imported
 profile that places later rules after a terminal `MATCH`, because the device
@@ -247,31 +239,8 @@ Dashboard device traffic combines DHCP leases, applied static devices, and
 currently observed same-LAN source IPv4 addresses, so registered static devices
 retain names, traffic rates, counters, and egress attribution while active
 unregistered sources appear as temporary devices. Traffic and ARP observations
-are not DHCP identity proof. An unresolved MAC can be left empty in `same_lan`,
-but the main router must keep the registered IPv4 stable and unavailable to
-other clients.
-
-When leaving `same_lan` for a DHCP topology, the GUI saves directly if every
-device already has a MAC. For an IP-only registration, it accepts only one
-valid, currently observed neighbor MAC at the registered IPv4 and shows the
-prefilled value for confirmation. Devices that still have no MAC remain in the
-declarative document, but their selectors, `SRC-IP-CIDR` rules, and DHCP
-reservations are omitted from the mode-aware runtime bundle. The GUI marks
-those policies paused until a MAC is supplied or the gateway returns to
-`same_lan`; it never lets a later DHCP lease holder inherit the old IP rule.
-
-When an applied static IPv4 has no traffic and the Devices page observes exactly
-one active source with the same neighbor MAC at a different IPv4, the GUI shows
-the old and current addresses and offers **Use current IP and apply**. Confirmation
-changes only that device IPv4 while preserving its ID, name, profile, rules,
-routing mode, and selector choices. A running gateway performs a safe reload
-after the save; a stopped gateway applies the saved change on its next start.
-Until then, the routing-mode controls and applied selectors are disabled so a
-change against the stale `SRC-IP-CIDR` is not presented as immediate. An offline
-device can still have a selector preset, with an explicit note that it becomes
-effective when the device connects using its registered IP. Multiple active
-IPv4 observations for one MAC, MAC conflicts, and incomplete evidence never
-cause an automatic guess or silent rewrite.
+are not DHCP identity proof; an unresolved MAC still requires manual input, and
+the main router must keep the registered IPv4 stable.
 
 Dashboard traffic and recent-lease summaries join the registered display name
 by normalized MAC and prefer it over the DHCP hostname. This makes a saved

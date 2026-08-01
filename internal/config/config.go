@@ -9,16 +9,15 @@ import (
 )
 
 type Config struct {
-	Gateway          GatewayConfig
-	DHCP             DHCPConfig
-	DevicePolicy     DevicePolicyConfig
-	DNS              DNSConfig
-	Mihomo           MihomoConfig
-	PF               PFConfig
-	Transparent      TransparentConfig
-	LocalSystemProxy LocalSystemProxyConfig
-	UpstreamProxy    UpstreamProxyConfig
-	Runtime          RuntimeConfig
+	Gateway       GatewayConfig
+	DHCP          DHCPConfig
+	DevicePolicy  DevicePolicyConfig
+	DNS           DNSConfig
+	Mihomo        MihomoConfig
+	PF            PFConfig
+	Transparent   TransparentConfig
+	UpstreamProxy UpstreamProxyConfig
+	Runtime       RuntimeConfig
 }
 
 // DevicePolicyConfig points at the optional JSON control-plane file that
@@ -97,13 +96,6 @@ type TransparentConfig struct {
 	TUNStrictRoute         bool
 }
 
-// LocalSystemProxyConfig enables an opt-in compatibility layer for local Mac
-// applications that honor the macOS HTTP/HTTPS proxy settings. The endpoint
-// is derived from Mihomo.MixedPort and is not independently configurable.
-type LocalSystemProxyConfig struct {
-	Enabled bool
-}
-
 func (c TransparentConfig) TUNEnabled() bool {
 	return c.Mode == TransparentModeTUN
 }
@@ -171,7 +163,6 @@ func Default() Config {
 			TUNAutoDetectInterface: false,
 			TUNStrictRoute:         false,
 		},
-		LocalSystemProxy: LocalSystemProxyConfig{Enabled: false},
 		UpstreamProxy: UpstreamProxyConfig{
 			Enabled:     false,
 			Name:        "real-device-egress",

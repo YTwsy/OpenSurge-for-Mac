@@ -31,7 +31,6 @@ TEST_URL="${OMG_LAB_TEST_URL:-https://example.com/}"
 LAB_MIHOMO_PROFILE="${OMG_LAB_MIHOMO_PROFILE:-}"
 LAB_DEVICE_POLICY_FILE=""
 TUN_EGRESS_PROFILE=0
-LOCAL_ROUTING_TEST="${OMG_LAB_LOCAL_ROUTING_TEST:-false}"
 EGRESS_PROBE_PID=""
 
 require_command() {
@@ -248,49 +247,18 @@ write_client_config() {
 }
 
 start_clients() {
-  local client instance_yaml pid failed cold_start
-  local -a start_pids
+  local client instance_yaml
   write_client_config
-  cold_start=0
-  start_pids=()
   for client in $CLIENTS; do
     instance_yaml="$(instance_dir "$client")/lima.yaml"
     if [[ -f "$instance_yaml" ]] && ! cmp -s "$instance_yaml" "$CLIENT_CONFIG"; then
       limactl stop "$client" || true
       limactl delete -f -y "$client"
-      cold_start=1
     fi
     if [[ ! -d "$(instance_dir "$client")" ]]; then
       limactl create -y --name "$client" "$CLIENT_CONFIG"
-      cold_start=1
     fi
-  done
-
-  # Keep cold provisioning sequential so two apt jobs cannot contend for the
-  # same upstream bandwidth and push each VM past Lima's readiness timeout.
-  # Stable, already-provisioned clients have no apt work and can boot in
-  # parallel, which avoids adding two independent guest boot times together.
-  if [[ "$cold_start" == 1 ]]; then
-    for client in $CLIENTS; do
-      limactl start "$client"
-      limactl shell "$client" -- true
-    done
-    return 0
-  fi
-
-  for client in $CLIENTS; do
-    limactl start "$client" &
-    start_pids+=("$!")
-  done
-  failed=0
-  for pid in "${start_pids[@]}"; do
-    wait "$pid" || failed=1
-  done
-  if [[ "$failed" != 0 ]]; then
-    echo "one or more persistent lab clients failed to start" >&2
-    return 1
-  fi
-  for client in $CLIENTS; do
+    limactl start "$client"
     limactl shell "$client" -- true
   done
 }
@@ -315,7 +283,7 @@ destroy_clients() {
 }
 
 collect_artifacts() {
-  local artifact_dir client evidence
+  local artifact_dir client
   artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$artifact_dir"
   cp "$CONFIG" "$artifact_dir/config.yaml" 2>/dev/null || true
@@ -324,15 +292,6 @@ collect_artifacts() {
   cp "$EGRESS_PROVIDER" "$artifact_dir/tun-egress-provider.yaml" 2>/dev/null || true
   cp -R "$STATE_DIR/egress" "$artifact_dir/egress" 2>/dev/null || true
   cp -R "$STATE_DIR/logs" "$artifact_dir/logs" 2>/dev/null || true
-  for evidence in \
-    dnsmasq.conf \
-    mihomo.yaml \
-    device-policy.applied.evidence.json \
-    state.evidence.json \
-    device-policies.json \
-    device-policies-after-reload.json; do
-    cp "$STATE_DIR/$evidence" "$artifact_dir/$evidence" 2>/dev/null || true
-  done
   "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
   "$BINARY" leases --config "$CONFIG" >"$artifact_dir/leases.txt" 2>&1 || true
   /sbin/ifconfig "$(lab_interface)" >"$artifact_dir/interface.txt" 2>&1 || true
@@ -425,22 +384,6 @@ wait_for_tun_action_log() {
   exit 1
 }
 
-wait_for_tun_source_log_after() {
-  local host=$1 source_ip=$2 first_line=$3 i log_file
-  log_file="$STATE_DIR/logs/mihomo.log"
-  for i in {1..20}; do
-    if [[ -f "$log_file" ]] &&
-      tail -n +"$first_line" "$log_file" | grep -F -- "--> $host:443" | grep -Fq -- "$source_ip"; then
-      echo "TUN source log observed for $source_ip -> $host:443"
-      return 0
-    fi
-    sleep 1
-  done
-  echo "mihomo did not log TUN traffic for $source_ip -> $host:443 after line $first_line" >&2
-  tail -160 "$log_file" >&2 || true
-  exit 1
-}
-
 wait_for_tun_udp_reject() {
   local source_ip=$1 target=$2 port=$3 i log_file
   log_file="$STATE_DIR/logs/mihomo.log"
@@ -528,10 +471,8 @@ stop_egress_probe() {
 }
 
 assert_tun_egress_proxy_unused() {
-  local host
-  host="$(url_host "$TEST_URL")"
-  if grep -Fq -- "CONNECT $host:443" "$STATE_DIR/egress/proxy.log" 2>/dev/null; then
-    echo "TunEgress DIRECT unexpectedly proxied CONNECT $host:443" >&2
+  if [[ -s "$STATE_DIR/egress/proxy.log" ]]; then
+    echo "TunEgress DIRECT unexpectedly used the controlled proxy" >&2
     cat "$STATE_DIR/egress/proxy.log" >&2
     exit 1
   fi
@@ -550,11 +491,6 @@ assert_tun_egress_proxy_used() {
 client_mac() {
   local client=$1
   limactl shell "$client" -- cat /sys/class/net/omg0/address | tr -d '\r\n'
-}
-
-client_ipv4() {
-  local client=$1
-  limactl shell "$client" -- bash -lc "ip -4 -o addr show dev omg0 scope global | awk 'NR == 1 { split(\$4, value, \"/\"); print value[1] }'" | tr -d '\r\n'
 }
 
 assert_client_ipv4() {
@@ -591,26 +527,6 @@ assert_device_policy_identity_ready() {
   digest="$(sed -n 's/  "digest": "\([^"]*\)",/\1/p' "$STATE_DIR/device-policy.applied.json" | head -1)"
   [[ -n "$digest" ]] || { echo "applied policy snapshot has no digest" >&2; exit 1; }
   grep -Fq "\"device_policy_digest\": \"$digest\"" "$STATE_DIR/state.json"
-}
-
-assert_ip_only_device_paused() {
-  local output=$1
-  grep -Fq 'paused-ip-only' "$STATE_DIR/device-policy.applied.json" || {
-    echo "DHCP mode did not preserve the raw IP-only policy record" >&2
-    exit 1
-  }
-  if grep -Fq 'paused-ip-only' "$output"; then
-    echo "DHCP mode unexpectedly compiled the IP-only device" >&2
-    exit 1
-  fi
-  if grep -Fq '192.168.50.150' "$STATE_DIR/dnsmasq.conf"; then
-    echo "DHCP mode unexpectedly emitted a reservation for the IP-only device" >&2
-    exit 1
-  fi
-  if grep -Fq '192.168.50.150/32' "$STATE_DIR/mihomo.yaml"; then
-    echo "DHCP mode unexpectedly emitted a routing rule for the IP-only device" >&2
-    exit 1
-  fi
 }
 
 assert_applied_policy_drift() {
@@ -689,12 +605,6 @@ EOF
       "ipv4": "192.168.50.102",
       "profile": "direct-blocked",
       "egress_mode": "inherit_global"
-    },
-    {
-      "id": "paused-ip-only",
-      "ipv4": "192.168.50.150",
-      "profile": "controlled",
-      "egress_mode": "dedicated"
     }
   ]
 }
@@ -737,12 +647,6 @@ write_device_block_rule() {
       "mac": "$mac_two",
       "ipv4": "192.168.50.102",
       "profile": "direct-blocked",
-      "egress_mode": "dedicated"
-    },
-    {
-      "id": "paused-ip-only",
-      "ipv4": "192.168.50.150",
-      "profile": "controlled",
       "egress_mode": "dedicated"
     }
   ]
@@ -801,7 +705,6 @@ run_device_policy_test() {
   grep -Fq '"egress_mode": "dedicated"' "$STATE_DIR/device-policies.json"
   grep -Fq '"egress_mode": "inherit_global"' "$STATE_DIR/device-policies.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies.json"
-  assert_ip_only_device_paused "$STATE_DIR/device-policies.json"
 
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
   wait_for_tun_udp_reject "192.168.50.101" "1.1.1.1" 443
@@ -854,7 +757,6 @@ run_device_policy_test() {
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-after-reload.json"
   assert_applied_policy_synced "$STATE_DIR/device-policies-after-reload.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies-after-reload.json"
-  assert_ip_only_device_paused "$STATE_DIR/device-policies-after-reload.json"
 
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct-after-reload.json"
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-controlled-after-reload.json"
@@ -876,8 +778,6 @@ run_device_policy_test() {
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
   wait_for_tun_udp_reject "192.168.50.102" "1.1.1.1" 443
 
-  cp "$STATE_DIR/device-policy.applied.json" "$STATE_DIR/device-policy.applied.evidence.json"
-  cp "$STATE_DIR/state.json" "$STATE_DIR/state.evidence.json"
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
   stop_egress_probe
@@ -886,72 +786,6 @@ run_device_policy_test() {
   trap - EXIT INT TERM
   collect_artifacts
   echo "virtual LAN device-policy TUN test passed"
-}
-
-run_local_routing_assertions() {
-  local client client_ip host first_line
-  set -- $CLIENTS
-  [[ "$#" -ge 1 ]] || { echo "local-routing lab requires at least one client" >&2; exit 1; }
-  client="$1"
-  client_ip="$(client_ipv4 "$client")"
-  [[ -n "$client_ip" ]] || { echo "could not resolve $client IPv4" >&2; exit 1; }
-  host="$(url_host "$TEST_URL")"
-
-  wait_for_policy_option TunEgress egress-proxy
-
-  "$BINARY" policy-select --config "$CONFIG" --group TunEgress --policy DIRECT --format json >"$STATE_DIR/local-routing-gateway-direct.json"
-  "$BINARY" local-routing-set --config "$CONFIG" --mode rule --format json >"$STATE_DIR/local-routing-rule.json"
-  grep -Fq '"mode": "rule"' "$STATE_DIR/local-routing-rule.json"
-
-  : >"$STATE_DIR/egress/proxy.log"
-  first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-rule-host.out"
-  wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
-  wait_for_tun_policy_log_for_host TunEgress DIRECT "$host"
-  assert_tun_egress_proxy_unused
-
-  "$BINARY" local-routing-set --config "$CONFIG" --mode global --policy egress-proxy --format json >"$STATE_DIR/local-routing-global.json"
-  grep -Fq '"mode": "global"' "$STATE_DIR/local-routing-global.json"
-  grep -Fq '"udp_behavior": "reject"' "$STATE_DIR/local-routing-global.json"
-  : >"$STATE_DIR/egress/proxy.log"
-  first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-global-host.out"
-  wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
-  assert_tun_egress_proxy_used
-
-  : >"$STATE_DIR/egress/proxy.log"
-  limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
-  wait_for_tun_action_log "$host" "TunEgress[DIRECT]" "$client_ip"
-  assert_tun_egress_proxy_unused
-
-  "$BINARY" policy-select --config "$CONFIG" --group TunEgress --policy egress-proxy --format json >"$STATE_DIR/local-routing-gateway-proxy.json"
-  "$BINARY" local-routing-set --config "$CONFIG" --mode direct --format json >"$STATE_DIR/local-routing-direct.json"
-  grep -Fq '"mode": "direct"' "$STATE_DIR/local-routing-direct.json"
-  : >"$STATE_DIR/egress/proxy.log"
-  first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-direct-host.out"
-  wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
-  assert_tun_egress_proxy_unused
-
-  : >"$STATE_DIR/egress/proxy.log"
-  limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
-  wait_for_tun_action_log "$host" "TunEgress[egress-proxy]" "$client_ip"
-  assert_tun_egress_proxy_used
-
-  "$BINARY" local-routing-set --config "$CONFIG" --mode rule --format json >"$STATE_DIR/local-routing-rule-follow.json"
-  : >"$STATE_DIR/egress/proxy.log"
-  first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-rule-follow-host.out"
-  wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
-  assert_tun_egress_proxy_used
-
-  "$BINARY" policies --config "$CONFIG" --format json >"$STATE_DIR/local-routing-visible-policies.json"
-  if grep -Fq '"name": "open-surge/mac-' "$STATE_DIR/local-routing-visible-policies.json"; then
-    echo "generic policies exposed local-routing internal groups" >&2
-    cat "$STATE_DIR/local-routing-visible-policies.json" >&2
-    exit 1
-  fi
-  echo "local Mac routing isolation test passed"
 }
 
 run_test() {
@@ -995,13 +829,7 @@ run_test() {
     limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   done
 
-  if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
-    if [[ "$mode" != "tun" || "$TUN_EGRESS_PROFILE" != 1 ]]; then
-      echo "local-routing lab requires TUN and the imported egress fixture" >&2
-      exit 1
-    fi
-    run_local_routing_assertions
-  elif [[ "$mode" == "tun" && "$TUN_EGRESS_PROFILE" == 1 ]]; then
+  if [[ "$mode" == "tun" && "$TUN_EGRESS_PROFILE" == 1 ]]; then
     wait_for_policy_option TunEgress egress-proxy
     "$BINARY" providers --config "$CONFIG" --format json >"$STATE_DIR/tun-egress-providers.json"
     grep -Fq '"name": "tun-egress-provider"' "$STATE_DIR/tun-egress-providers.json"

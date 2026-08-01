@@ -25,21 +25,17 @@ func TestRenderConfig(t *testing.T) {
 		"geox-url:",
 		"https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb",
 		"enhanced-mode: fake-ip",
-		`name: "open-surge/mac-mode-tcp"`,
-		`name: "open-surge/mac-mode-udp"`,
-		`- "PASS"`,
-		"hidden: true",
 		"- MATCH,DIRECT",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
 		}
 	}
+	if strings.Contains(rendered, "proxy-groups:") {
+		t.Fatalf("rendered config contains an unnecessary DIRECT proxy group:\n%s", rendered)
+	}
 	if strings.Contains(rendered, "open-surge-egress") {
 		t.Fatalf("rendered config enables upstream proxy by default:\n%s", rendered)
-	}
-	if strings.Contains(rendered, LocalRoutingGlobalGroup) {
-		t.Fatalf("rendered config exposes global mode without a proxy candidate:\n%s", rendered)
 	}
 	if strings.Contains(rendered, "redir-port:") {
 		t.Fatalf("rendered config enables redir-port by default:\n%s", rendered)
@@ -516,8 +512,8 @@ func TestRenderConfigSupportsIssue7FlowStyleRules(t *testing.T) {
 			t.Fatalf("rendered %s config is invalid YAML: %v\n%s", style, err, rendered)
 		}
 		decodedRules[style] = decoded.Rules
-		if len(decoded.Rules) < len(want) || strings.Join(decoded.Rules[len(decoded.Rules)-len(want):], "\n") != strings.Join(want, "\n") {
-			t.Fatalf("%s rules do not preserve imported suffix = %#v, want suffix %#v", style, decoded.Rules, want)
+		if strings.Join(decoded.Rules, "\n") != strings.Join(want, "\n") {
+			t.Fatalf("%s rules = %#v, want %#v", style, decoded.Rules, want)
 		}
 	}
 	if strings.Join(decodedRules["flow"], "\n") != strings.Join(decodedRules["block"], "\n") {
@@ -569,7 +565,7 @@ rules: ['RULE-SET,imported,Global', 'MATCH,DIRECT']
 	if err := yaml.Unmarshal([]byte(rendered), &decoded); err != nil {
 		t.Fatalf("rendered config is invalid YAML: %v\n%s", err, rendered)
 	}
-	if len(decoded.ProxyGroups) != 6 {
+	if len(decoded.ProxyGroups) != 3 {
 		t.Fatalf("proxy groups = %#v", decoded.ProxyGroups)
 	}
 	if decoded.ProxyGroups[0].Name != "Global" ||
@@ -579,18 +575,6 @@ rules: ['RULE-SET,imported,Global', 'MATCH,DIRECT']
 	}
 	if decoded.RuleProviders["imported"] == nil || decoded.RuleProviders["open-surge-ruleset-streaming"] == nil {
 		t.Fatalf("rule providers = %#v", decoded.RuleProviders)
-	}
-	for _, name := range []string{LocalRoutingGlobalGroup, LocalRoutingTCPGroup, LocalRoutingUDPGroup, "device/phone/default", "device/phone/streaming"} {
-		found := false
-		for _, group := range decoded.ProxyGroups {
-			if group.Name == name {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Fatalf("proxy groups missing %q: %#v", name, decoded.ProxyGroups)
-		}
 	}
 	assertOrdered(t, strings.Join(decoded.Rules, "\n"),
 		"RULE-SET,open-surge-ruleset-streaming",

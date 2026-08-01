@@ -146,61 +146,6 @@ func TestCompileInheritedDeviceDoesNotReferenceUnusedDefaultPolicies(t *testing.
 	}
 }
 
-func TestCompilePolicySetTreatsMACAsOptionalIdentityForIPOnlyMode(t *testing.T) {
-	set := PolicySet{
-		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT", "Proxy"}}},
-		Devices: []ManagedDevice{
-			{ID: "ip-only", IPv4: "192.168.50.101", Profile: "home", EgressMode: EgressModeDedicated},
-			{ID: "identified", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.50.102", Profile: "home", EgressMode: EgressModeDedicated},
-		},
-	}
-
-	sameLAN, err := CompilePolicySetForIPOnlyMode(set, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(sameLAN.Devices) != 2 || sameLAN.Devices[0].MAC != "" {
-		t.Fatalf("same-LAN devices = %#v", sameLAN.Devices)
-	}
-	if len(sameLAN.Reservations) != 1 || sameLAN.Reservations[0].ID != "identified" {
-		t.Fatalf("same-LAN reservations = %#v", sameLAN.Reservations)
-	}
-	if !containsRule(sameLAN.DedicatedRules, "SRC-IP-CIDR,192.168.50.101/32,device/ip-only/default") {
-		t.Fatalf("same-LAN dedicated rules = %#v", sameLAN.DedicatedRules)
-	}
-
-	dhcp, err := CompilePolicySetForIPOnlyMode(set, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dhcp.Devices) != 1 || dhcp.Devices[0].ID != "identified" {
-		t.Fatalf("DHCP devices = %#v", dhcp.Devices)
-	}
-	if containsRule(dhcp.DedicatedRules, "SRC-IP-CIDR,192.168.50.101/32,device/ip-only/default") {
-		t.Fatalf("DHCP policy retained an unsafe IP-only rule: %#v", dhcp.DedicatedRules)
-	}
-	if _, err := DeviceGroupFromCompiled(dhcp, "ip-only", "default"); err == nil || !strings.Contains(err.Error(), "unknown device") {
-		t.Fatalf("DeviceGroupFromCompiled() error = %v", err)
-	}
-}
-
-func TestValidatePolicySetAllowsMultipleDevicesWithoutMACButStillRejectsInvalidMAC(t *testing.T) {
-	set := PolicySet{
-		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
-		Devices: []ManagedDevice{
-			{ID: "first", IPv4: "192.168.50.101", Profile: "home"},
-			{ID: "second", IPv4: "192.168.50.102", Profile: "home"},
-		},
-	}
-	if err := ValidatePolicySet(set); err != nil {
-		t.Fatalf("ValidatePolicySet() rejected optional MACs: %v", err)
-	}
-	set.Devices[1].MAC = "not-a-mac"
-	if err := ValidatePolicySet(set); err == nil || !strings.Contains(err.Error(), "must be an IEEE 802 6-byte MAC address") {
-		t.Fatalf("ValidatePolicySet() invalid MAC error = %v", err)
-	}
-}
-
 func TestPolicySetValidationRejectsUnsafeOrAmbiguousPolicies(t *testing.T) {
 	base := PolicySet{
 		Profiles: []Profile{{ID: "default", DefaultPolicies: []string{"DIRECT"}}},
@@ -394,19 +339,6 @@ func TestValidatePolicySetForLANRejectsProtectedAddress(t *testing.T) {
 	err := ValidatePolicySetForLANWithProtected(set, "192.168.50.1", []string{"192.168.50.101", "192.168.50.253"})
 	if err == nil || !strings.Contains(err.Error(), "conflicts with a protected") {
 		t.Fatalf("ValidatePolicySetForLANWithProtected() error = %v", err)
-	}
-}
-
-func TestValidatePolicySetForLANSkipsDormantIPOnlyAddressOutsideRuntimeLAN(t *testing.T) {
-	set := PolicySet{
-		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
-		Devices:  []ManagedDevice{{ID: "dormant", IPv4: "192.168.50.101", Profile: "home"}},
-	}
-	if err := ValidatePolicySetForLANWithProtectedForIPOnlyMode(set, "192.168.60.1", nil, false); err != nil {
-		t.Fatalf("dormant IP-only validation error = %v", err)
-	}
-	if err := ValidatePolicySetForLANWithProtectedForIPOnlyMode(set, "192.168.60.1", nil, true); err == nil || !strings.Contains(err.Error(), "must remain in gateway LAN") {
-		t.Fatalf("active IP-only validation error = %v", err)
 	}
 }
 

@@ -28,12 +28,6 @@ HTTPS，以及清理行为。
 要求 `mihomo.log` 中的 TUN 目标连接和受控 proxy 日志同时反映切换结果。这个门槛
 不证明真实订阅节点、真实远端出口 IP 或 real-device/same-LAN 兼容性。
 
-`make lab-test-tun-local-routing` 是 Mac 本机 Rule/Global/Direct 与下游隔离的
-TUN 门槛。它要求本机 TUN source 为 `198.18.0.1`，分别证明本机 Global 使用受控
-proxy 时下游仍走 `TunEgress[DIRECT]`，以及本机 Direct 时下游仍可走
-`TunEgress[egress-proxy]`。HTTP-only 全局出口必须报告 UDP `reject`，普通
-`policies` 不能暴露内部 `open-surge/mac-*` 组。
-
 `make lab-test-tun-device-policy` 是每设备策略的数据面门槛。它让两个 Lima 客户端
 分别获得 `.101` 和 `.102` 的 MAC 绑定租约，先对比 `dedicated` selector 与
 `inherit_global` 的全局 `MATCH` 路径，并要求跟随设备不存在 default slot；再经真实

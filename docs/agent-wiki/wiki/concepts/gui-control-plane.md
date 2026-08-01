@@ -9,14 +9,6 @@ Go gateway、device、mihomo 和 runtime 包中。
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
 演变成第二控制面。
 
-版本发现属于原生 App 生命周期而不是网关控制面。菜单栏 App 打开时至多每 24 小时查询
-一次本仓库 GitHub `releases/latest`，也提供手动检查；只比较稳定版语义版本并校验返回的
-下载页仍位于 `YTwsy/OpenSurge-for-Mac`。发现新版本后只打开对应 Release 页面，不下载
-PKG、不请求管理员权限，也不触发 gateway、Control Service 或 Helper 生命周期动作。
-打包时额外写入完整 `OpenSurgeReleaseTag`；比较遵循
-`0.1.24-rc.1 < 0.1.24`，因此 RC 不会降级到旧 stable，同版本 stable 发布后仍会提示。
-旧包没有该 key 时才回退到 `CFBundleShortVersionString`。
-
 菜单栏 App 使用纯 AppKit `NSApplication` 生命周期，不声明占位的 SwiftUI `Settings`
 Scene；否则这个由系统管理、可恢复的空窗口可能在部分 macOS 环境中被显示。状态面板使用
 AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状态栏图标点击
@@ -38,13 +30,6 @@ SwiftUI 面板显式使用 active control appearance，状态栏按钮以持久 
 推进，不接入高频 `applicationDidUpdate`。`NSPopover.isShown` 只表示调用过 `show`，还必须
 给动画留出 window 创建宽限期并确认真实 window；超时后执行一次非阻塞兜底展示并清除
 pending，不能留下永久卡住状态。macOS 13 仅保留兼容的旧 activation fallback。
-
-不要再尝试"把面板 focus 工作推迟到展开动画结束之后"这一类改法。`codex/release-v0.1.24`
-上曾连续提交四版实现：无条件 activation fallback、把展开推迟到 reopen 激活、用
-`popoverDidShow` 作为动画完成信号、以及用固定 settle 时间窗跳过
-`makeKeyAndOrderFront`。它们都没有修复实际报告的展开异常，反而引入了新的问题，已被
-整体回退到 `0932641`。若要重开这个方向，先给出可复现的 WindowServer 级证据和真机
-验收，不要只依赖单元测试与 `scripts/check-menubar.sh`。
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP
@@ -201,7 +186,7 @@ Mac 执行 `networksetup -setdhcp` 后，DHCP 租约与 router 字段可能短�
 冒充 DHCP 恢复，也不触发任何网络 runner。
 
 网络配置通过 revisioned `GET/PUT /api/v1/config` 修改；只允许 topology、DHCP/DNS、
-TUN、本机系统代理协同和 device-policy 初始化字段，运行中或 `prepared` 之后的 recovery 时拒绝。所有
+TUN 和 device-policy 初始化字段，运行中或 `prepared` 之后的 recovery 时拒绝。所有
 production 写入经 helper 落到 root-owned config。`/events` 发送真实
 config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的短日志尾部。
 上下游接口字段通过只读 `GET /api/v1/network/interfaces` 提供 macOS 网络服务候选，
@@ -211,16 +196,11 @@ config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的�
 配置填写提示应作为表单内的低强调步骤说明，保存区与最后一组字段保持明确间距，并显示
 当前已保存或存在未保存修改，避免按钮紧贴字段卡片。
 
-设备页先显示独立的 Mac 本机模式卡片；它只调用 `GET/POST /api/v1/local-routing`，
-在规则 / 全局 / 直连之间协调 `open-surge/mac-*` 隐藏 selector。卡片必须说明只影响
-TUN/本机显式代理的新连接，且自身不修改 macOS system proxy 或下游设备。系统代理只由
-Desired 网络配置中默认关闭、仅 TUN 可用的独立兼容开关管理。
-
-下游设备交互继续区分绿色“即时生效”和黄色“需重载”。前者只允许切换已应用的
-`device/<id>/<slot>`；后者编辑 desired 设备身份、路由模式、候选与规则。设备路由模式
-是 `inherit_global`（跟随 imported/managed 网关规则，不跟随 Mac 本机开关）或
-`dedicated`（公网流量优先设备 default selector，本地/私网保持直连）；缺失字段显示
-旧版兼容状态并要求显式迁移。DHCP 模式的登记面板复用
+设备页的主交互必须区分绿色“即时生效”和黄色“需重载”。前者只允许切换已应用的非
+`device/` 全局组和 `device/<id>/<slot>`；后者编辑 desired 设备身份、路由模式、候选与规则。
+设备路由模式是 `inherit_global`（跟随本机/全局规则）或 `dedicated`（公网流量优先设备
+default selector，本地/私网保持直连）；缺失字段显示旧版兼容状态并要求显式迁移。
+全局组说明不得暗示 macOS system proxy 或统一 fallback。DHCP 模式的登记面板复用
 OpenSurge lease 自动填写 hostname、MAC 与 IPv4；`same_lan` 则列出 mihomo 当前观察到且
 与 gateway 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补 MAC。只有当前经过 Mac 的
 设备会出现，ARP/流量观察不得显示为 DHCP 验证。登记默认创建 `<device-id>-policy` 私有 Profile；首次
@@ -236,9 +216,7 @@ Mac 上 mihomo 到检测地址的节点可达性，不是下游设备数据面�
 连通性页使用后端固定 catalog，避免把任意 URL 探测变成 SSRF 接口。
 `POST /api/v1/connectivity/tests` 从 Control Service 经 applied runtime mixed-port 发起
 三轮请求，并在请求仍活跃时尽力关联 mihomo connection 的 rule、rule payload 和 chain。
-loopback 来源会进入当前 Mac 本机模式，因此 scope 是 `local_mac_runtime`；它证明
-applied 配置 + 本机运行路径，不证明下游网关规则、设备 `SRC-IP-CIDR`、DHCP、DNS 或
-TUN。页面把
+它能证明 applied 全局规则路径，不证明设备 `SRC-IP-CIDR`、DHCP、DNS 或 TUN。页面把
 Net.Coffee 明确标为浏览器本机外部检测，并把尚无真实客户端发起器的“设备端检测”显示
 为不可用，不能把三种 scope 合并为一个模糊的“网络正常”。
 
@@ -254,11 +232,6 @@ Desired 网络配置默认把 `dns.upstream` 显示为 `127.0.0.1#1053`，形成
 路径。`1.1.1.1` 只作为显式调试预设；TUN 的 `dns-hijack any:53` 仍可能捕获该查询，
 因此 UI 不把它描述为可靠的直连或 TUN bypass。
 
-Desired 网络配置同时提供 `local_system_proxy.enabled`。文案必须说明 SafeDNS、DNS
-Proxy/内容过滤等已知用途、只覆盖遵循系统代理的 Mac 应用、不替代 TUN、不影响下游设备，
-以及已有 HTTP/HTTPS proxy、PAC 或自动发现时启动会 fail closed。关闭 TUN 时前端应同时
-关闭并禁用该开关，后端验证仍作为最终边界。
-
 用户可见产品文案把 `same_wifi_dhcp` 称为“局域网 DHCP 接管”，因为该协作式二层
 拓扑可由 Wi-Fi 或以太网承载；`same_wifi_dhcp` 仅作为现有配置枚举和 runner 名称保留。
 
@@ -270,9 +243,7 @@ bundle identifier 与 launchd label 保持既有技术命名。生产 pkg 把 ap
 `/Library/Application Support/OpenSurge` / `PrivilegedHelperTools` 下；用户级 Control
 Service 只通过 admin 组只读访问 applied 状态，通过 helper 执行固定 privileged 动作。
 打包时 `OPENSURGE_VERSION` 必须同时写入 pkg receipt 与菜单栏 App 的 short version，
-`OPENSURGE_BUILD_NUMBER` 写入 App build number，`OPENSURGE_RELEASE_TAG` 写入完整 stable/RC
-tag；tag 的基础版本必须与 pkg 版本一致，避免新安装包继续携带旧的 bundle 版本标识，或让
-RC 丢失其预发布身份。
+`OPENSURGE_BUILD_NUMBER` 写入 App build number，避免新安装包继续携带旧的 bundle 版本标识。
 没有 Apple Developer 身份的 GitHub tag workflow 会产生 Apple Silicon 与 Intel 两个
 架构专用的 unsigned 正式 Release 安装包：文件名分别带 `arm64-unsigned.pkg` 与
 `x86_64-unsigned.pkg`，发布同时提供合并的 SHA-256 清单和每个 pkg 的 GitHub artifact
@@ -280,11 +251,8 @@ attestation。正式 Release 只表示 GitHub 发布通道稳定，不得把 Git
 Developer ID 签名或 notarization，也不得指导用户全局关闭 Gatekeeper 或递归移除
 quarantine；安装仍使用系统设置针对单个包的“仍要打开”。
 
-pkg 升级必须在覆盖 payload 前执行 recovery 门禁。进程清理必须先终止菜单栏 App，阻断
-其“Control Service 不可用时自动 bootstrap”的恢复路径，再循环 bootout 精确的用户级
-Control Service 并重新扫描已安装可执行文件；等待期间新出现的受信 PID 也必须再次清理，
-避免一次迟到的 `launchctl bootstrap` 令首次安装失败。完成 GUI/Control 清理后，才执行
-旧版 `omg stop` 和 root helper bootout。recovery 非 `idle`/`complete`/
+pkg 升级必须在覆盖 payload 前执行 recovery 门禁，并按 Control Service/菜单栏退出、
+旧版 `omg stop`、root helper bootout 的顺序清理运行进程。recovery 非 `idle`/`complete`/
 `complete_static` 或旧版网关停止失败时直接拒绝升级；`complete_static` 是明确保留 Mac
 静态 IPv4 的终态，不应被误判为恢复未完成。postinstall 不得覆盖已有 `config.yaml`，导入源、
 设备策略和 runtime 记录也必须跨升级保留。
