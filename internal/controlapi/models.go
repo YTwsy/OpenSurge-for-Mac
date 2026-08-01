@@ -119,13 +119,14 @@ type KeepStaticFinishRequest struct {
 }
 
 type ControlConfig struct {
-	SchemaVersion int                     `json:"schema_version"`
-	Revision      string                  `json:"revision"`
-	Gateway       GatewayConfigInput      `json:"gateway"`
-	DHCP          DHCPConfigInput         `json:"dhcp"`
-	DNS           DNSConfigInput          `json:"dns"`
-	Transparent   TransparentConfigInput  `json:"transparent"`
-	DevicePolicy  DevicePolicyConfigInput `json:"device_policy"`
+	SchemaVersion    int                         `json:"schema_version"`
+	Revision         string                      `json:"revision"`
+	Gateway          GatewayConfigInput          `json:"gateway"`
+	DHCP             DHCPConfigInput             `json:"dhcp"`
+	DNS              DNSConfigInput              `json:"dns"`
+	Transparent      TransparentConfigInput      `json:"transparent"`
+	LocalSystemProxy LocalSystemProxyConfigInput `json:"local_system_proxy"`
+	DevicePolicy     DevicePolicyConfigInput     `json:"device_policy"`
 }
 
 type GatewayConfigInput struct {
@@ -151,6 +152,10 @@ type DNSConfigInput struct {
 type TransparentConfigInput struct {
 	Mode        string `json:"mode"`
 	StrictRoute bool   `json:"strict_route"`
+}
+
+type LocalSystemProxyConfigInput struct {
+	Enabled bool `json:"enabled"`
 }
 
 type DevicePolicyConfigInput struct {

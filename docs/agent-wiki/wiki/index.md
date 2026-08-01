@@ -17,6 +17,8 @@
   `SRC-IP-CIDR` 在一个 mihomo 进程中实现独立的设备策略。
 - [Mac 本机流量模式](concepts/local-mac-routing-modes.md)：如何用 source-scoped
   overlay 实现规则 / 全局 / 直连，同时保持下游设备规则不变。
+- [Mac 本机系统代理协同](concepts/local-system-proxy-coordination.md)：默认关闭的
+  TUN HTTP/HTTPS 兼容层、fail-closed 冲突检查和恢复契约。
 - [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、SwiftUI 菜单栏
   launcher、本地 API 与恢复状态的职责边界。
 - 许可证边界：OpenSurge 自有代码采用 `GPL-3.0-only`；随 pkg 分发的独立组件保留
@@ -53,6 +55,8 @@ leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo AP
   `docs/agent-wiki/sources/decisions/mihomo-profile-overlay.md`
 - Mac 本机模式：`internal/mihomo/local_routing.go` 和
   `docs/agent-wiki/sources/decisions/local-mac-routing-modes.md`
+- Mac 本机系统代理：`internal/macosnetwork/system_proxy.go` 和
+  `docs/agent-wiki/sources/decisions/local-system-proxy-coordination.md`
 - Virtual LAN lab：`tests/lab/README.md` 和 `tests/lab/lab.sh`
 - 真实设备 smoke：`tests/real-device/README.md` 和
   `tests/real-device/smoke.sh`

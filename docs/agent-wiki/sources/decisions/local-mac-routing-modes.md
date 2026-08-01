@@ -24,7 +24,9 @@ selected live target reports UDP support; otherwise it selects `REJECT`.
 
 Local/private destination guards remain direct before the mode dispatch.
 Switches affect new connections and use mihomo's stored selector state for
-restart persistence. OpenSurge does not mutate the macOS system-proxy settings.
+restart persistence. The local-routing switch does not mutate macOS
+system-proxy settings; the separate, explicitly enabled compatibility setting
+is governed by `local-system-proxy-coordination.md`.
 
 Generic policy APIs and CLI must hide and reject `open-surge/mac-*`; the
 dedicated local-routing API owns coordinated TCP/UDP/global selection and

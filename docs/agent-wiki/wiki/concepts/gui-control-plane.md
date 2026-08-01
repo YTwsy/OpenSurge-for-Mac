@@ -193,7 +193,7 @@ Mac 执行 `networksetup -setdhcp` 后，DHCP 租约与 router 字段可能短�
 冒充 DHCP 恢复，也不触发任何网络 runner。
 
 网络配置通过 revisioned `GET/PUT /api/v1/config` 修改；只允许 topology、DHCP/DNS、
-TUN 和 device-policy 初始化字段，运行中或 `prepared` 之后的 recovery 时拒绝。所有
+TUN、本机系统代理协同和 device-policy 初始化字段，运行中或 `prepared` 之后的 recovery 时拒绝。所有
 production 写入经 helper 落到 root-owned config。`/events` 发送真实
 config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的短日志尾部。
 上下游接口字段通过只读 `GET /api/v1/network/interfaces` 提供 macOS 网络服务候选，
@@ -205,7 +205,8 @@ config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的�
 
 设备页先显示独立的 Mac 本机模式卡片；它只调用 `GET/POST /api/v1/local-routing`，
 在规则 / 全局 / 直连之间协调 `open-surge/mac-*` 隐藏 selector。卡片必须说明只影响
-TUN/本机显式代理的新连接，不修改 macOS system proxy，也不改变下游设备。
+TUN/本机显式代理的新连接，且自身不修改 macOS system proxy 或下游设备。系统代理只由
+Desired 网络配置中默认关闭、仅 TUN 可用的独立兼容开关管理。
 
 下游设备交互继续区分绿色“即时生效”和黄色“需重载”。前者只允许切换已应用的
 `device/<id>/<slot>`；后者编辑 desired 设备身份、路由模式、候选与规则。设备路由模式
@@ -244,6 +245,11 @@ Desired 网络配置默认把 `dns.upstream` 显示为 `127.0.0.1#1053`，形成
 `dnsmasq -> mihomo fake-IP DNS`。旧配置中的空 upstream 在 dnsmasq 渲染时也迁移到这条
 路径。`1.1.1.1` 只作为显式调试预设；TUN 的 `dns-hijack any:53` 仍可能捕获该查询，
 因此 UI 不把它描述为可靠的直连或 TUN bypass。
+
+Desired 网络配置同时提供 `local_system_proxy.enabled`。文案必须说明 SafeDNS、DNS
+Proxy/内容过滤等已知用途、只覆盖遵循系统代理的 Mac 应用、不替代 TUN、不影响下游设备，
+以及已有 HTTP/HTTPS proxy、PAC 或自动发现时启动会 fail closed。关闭 TUN 时前端应同时
+关闭并禁用该开关，后端验证仍作为最终边界。
 
 用户可见产品文案把 `same_wifi_dhcp` 称为“局域网 DHCP 接管”，因为该协作式二层
 拓扑可由 Wi-Fi 或以太网承载；`same_wifi_dhcp` 仅作为现有配置枚举和 runner 名称保留。

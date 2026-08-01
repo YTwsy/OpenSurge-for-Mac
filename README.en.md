@@ -75,7 +75,9 @@ Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 - Provide transparent proxying through mihomo TUN on macOS.
 - Switch **Rule / Global / Direct** for new local-Mac connections entering
   TUN or the explicit proxy without changing downstream devices. OpenSurge
-  does not rewrite the macOS system-proxy settings.
+  leaves macOS system-proxy settings unchanged by default, with an explicit
+  TUN-only HTTP/HTTPS coordination option for conflicts involving SafeDNS,
+  DNS Proxy, or other Network Extensions.
 - Generate a MAC-backed fixed IPv4 lease in DHCP takeover mode, or use a stable
   main-router IPv4 in same-LAN manual-gateway mode, with an independent egress
   policy available in either topology.

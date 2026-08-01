@@ -49,6 +49,13 @@ Web GUI 中完成。
 **mihomo TUN**；需要为不同设备设置出口时，启用**每设备策略**。完成后点击
 **保存网络配置**。
 
+如果 SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 让 Mac 本机在只开 TUN 时
+出现 DNS/访问异常，可以在同一表单启用**Mac 本机系统代理协同**。OpenSurge 会在网关
+启动后把当前上游网络服务的 HTTP/HTTPS 系统代理指向本机 mihomo mixed-port，并在停止、
+启动回滚或 mihomo 重启失败时恢复启动前状态。这个开关默认关闭，只适用于 TUN 模式和
+遵循系统代理的 Mac 应用；它不替代 TUN，也不改变下游设备。已有 HTTP/HTTPS 代理、PAC
+或自动代理发现时，OpenSurge 会拒绝启动，避免覆盖现有设置。
+
 更完整的拓扑说明见[使用方式与结构图](usage-topologies.zh-CN.md)。
 
 ### 3. 启动 OpenSurge
@@ -82,8 +89,9 @@ OpenSurge 会先探测当前网络是否已有 DHCP server：若已恢复，就�
   和出口链；它不代表下游设备路径。
 - **诊断**：查看近期操作、连接、Provider 和脱敏日志。
 
-设备页中的 Mac 本机模式只影响经 TUN 或本机显式代理进入 OpenSurge 的新连接，不会
-修改 macOS 系统代理，也不会改变下游设备。绿色**即时生效**操作只切换已经应用的出口；
+设备页中的 Mac 本机模式只影响经 TUN 或本机显式代理进入 OpenSurge 的新连接；它本身
+不会修改 macOS 系统代理，也不会改变下游设备。系统代理只由网络设置中的独立兼容开关
+管理。绿色**即时生效**操作只切换已经应用的出口；
 修改设备身份、候选或规则后，需要先保存，再按提示重载网关。详细边界见
 [Mac 本机流量模式](local-mac-routing.zh-CN.md)。
 

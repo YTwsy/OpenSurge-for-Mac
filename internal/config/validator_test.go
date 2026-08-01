@@ -40,6 +40,21 @@ func TestValidateAcceptsTUNTransparentMode(t *testing.T) {
 	}
 }
 
+func TestValidateLocalSystemProxyRequiresTUN(t *testing.T) {
+	cfg := Default()
+	cfg.LocalSystemProxy.Enabled = true
+
+	err := Validate(cfg)
+	if err == nil || !strings.Contains(err.Error(), `requires transparent.mode: "tun"`) {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	cfg.Transparent.Mode = TransparentModeTUN
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("Validate() with TUN error = %v", err)
+	}
+}
+
 func TestValidateAcceptsSameLANGatewayMode(t *testing.T) {
 	cfg := Default()
 	cfg.Gateway.Mode = GatewayModeSameLAN

@@ -97,6 +97,9 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err
 	}
+	if cfg.LocalSystemProxy.Enabled && !cfg.Transparent.TUNEnabled() {
+		return fmt.Errorf("local_system_proxy.enabled requires transparent.mode: \"tun\"")
+	}
 	if cfg.Gateway.SameLAN() {
 		if cfg.Transparent.Mode != TransparentModeTUN {
 			return fmt.Errorf("gateway.mode %s requires transparent.mode: \"tun\"", cfg.Gateway.Mode)

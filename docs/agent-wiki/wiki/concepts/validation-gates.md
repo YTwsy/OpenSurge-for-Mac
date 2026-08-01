@@ -236,6 +236,12 @@ make lab-test-tun
 - gateway 被停止，`runtime/lab/state.json` 被移除；
 - artifacts 写入 `artifacts/lab`。
 
+`make lab-test-tun` 的标准配置保持 `local_system_proxy.enabled: false`，因此它能证明
+TUN 主路径没有回归，但不能证明系统代理协同已应用，也不能证明它解决某个真实 Network
+Extension 冲突。该兼容层需要额外的真实 Mac 验收：记录原 HTTP/HTTPS/PAC/自动发现状态，
+让冲突扩展保持启用，证明 TUN-only 失败、协同开关成功恢复目标应用访问，再停止网关并
+确认原状态恢复。只完成 mock `networksetup` 单元测试时必须明确写为未运行真实兼容验收。
+
 修改 mihomo profile 导入或 OpenSurge gateway overlay 行为时，优先使用：
 
 ```sh

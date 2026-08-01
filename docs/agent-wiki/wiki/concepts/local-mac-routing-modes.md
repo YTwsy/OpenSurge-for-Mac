@@ -42,7 +42,8 @@ UDP 只有在 live `/proxies` 能确认当前目标支持 UDP 时才指向 mac-g
 
 状态来自 mihomo 当前 selector，并依赖 `profile.store-selected: true` 跨重启保存。
 切换只影响新连接，不主动关闭已有连接。Web GUI 必须说明 TUN/本机显式代理作用域，
-不能暗示 OpenSurge 修改了 macOS system proxy。
+不能把 Mac 本机模式开关描述成系统代理控制。独立的可选兼容层见
+[Mac 本机系统代理协同](local-system-proxy-coordination.md)。
 
 ## 验证
 

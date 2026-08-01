@@ -39,6 +39,9 @@ transparent:
   tun_auto_detect_interface: false
   tun_strict_route: false
 
+local_system_proxy:
+  enabled: false
+
 upstream_proxy:
   enabled: false
   name: "same-lan-egress"

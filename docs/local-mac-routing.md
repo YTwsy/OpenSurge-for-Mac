@@ -45,10 +45,22 @@ device egress” are therefore orthogonal controls:
 
 ## TUN and the macOS system proxy
 
-OpenSurge does not enable or rewrite the macOS **System Settings → Network →
-Proxies** configuration. With TUN enabled, routable local IPv4 traffic entering
-the TUN uses this mode. Applications that explicitly use the OpenSurge
-mixed-port enter the same mode.
+The local-Mac Rule / Global / Direct switch does not itself enable or rewrite
+macOS **System Settings → Network → Proxies**. With TUN enabled, routable local
+IPv4 traffic entering the TUN uses this mode. Applications that explicitly use
+the OpenSurge mixed-port enter the same mode.
+
+Network Settings has a separate, off-by-default **local system-proxy
+coordination** compatibility option. In TUN mode it temporarily points the
+current upstream network service's HTTP and HTTPS proxies at
+`127.0.0.1:<mixed-port>`. This covers known TUN-only local-DNS conflicts caused
+by SafeDNS, DNS Proxy, content filters, or other Network Extensions. The
+pre-start settings are persisted in runtime state and restored before stop,
+startup rollback, or after a failed mihomo restart. Existing HTTP/HTTPS proxy,
+PAC, auto-discovery, or authenticated proxy settings make startup fail closed.
+The option affects only Mac apps that honor system proxy settings; it does not
+own SOCKS, PAC, bypass lists, replace TUN, or alter downstream devices.
+
 The Web GUI connectivity probe originates from the local Control Service
 through that mixed-port, so it also reflects the current local mode. It is not
 evidence for a downstream device's gateway-rule path.

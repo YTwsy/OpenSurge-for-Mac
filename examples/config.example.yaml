@@ -50,6 +50,11 @@ transparent:
   tun_auto_detect_interface: false
   tun_strict_route: false
 
+local_system_proxy:
+  # Optional compatibility layer for local Mac apps that honor HTTP/HTTPS
+  # system proxies. Requires TUN and follows mihomo.mixed_port.
+  enabled: false
+
 upstream_proxy:
   # Keep disabled for the default DIRECT gateway. Enable for proxy egress smoke.
   enabled: false

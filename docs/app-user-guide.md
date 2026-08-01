@@ -57,6 +57,17 @@ upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Enable
 **每设备策略** (Per-device policies) if devices need independent egress
 choices, then select **保存网络配置** (Save network configuration).
 
+If SafeDNS, DNS Proxy, content filtering, or another Network Extension causes
+local-Mac DNS or connectivity failures with TUN alone, enable **Mac local
+system-proxy coordination** in the same form. After the gateway is ready,
+OpenSurge points HTTP and HTTPS proxy settings for the current upstream network
+service at the local mihomo mixed-port, then restores the pre-start state on
+stop, startup rollback, or a failed mihomo restart. This option is off by
+default, requires TUN, and affects only Mac applications that honor system
+proxy settings; it does not replace TUN or change downstream devices. Startup
+is rejected when HTTP/HTTPS proxying, PAC, or proxy auto-discovery is already
+active, rather than overwriting those settings.
+
 ### 3. Start OpenSurge
 
 For **Same-LAN DHCP takeover**, gateway start and stop are part of the recovery
@@ -91,8 +102,10 @@ recovery state active until the network has actually been restored.
   redacted logs.
 
 The local-Mac mode affects only new connections entering OpenSurge through TUN
-or the local explicit proxy. It does not rewrite macOS system-proxy settings or
-downstream behavior; see [local Mac routing modes](local-mac-routing.md).
+or the local explicit proxy. The mode switch itself does not rewrite macOS
+system-proxy settings or downstream behavior; the optional network compatibility
+setting above owns system-proxy coordination. See
+[local Mac routing modes](local-mac-routing.md).
 Green **即时生效** (Applies immediately) controls switch an already-applied
 egress. Changes to device identity, candidates, or rules must be saved and then
 applied through a gateway reload.

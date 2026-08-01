@@ -115,7 +115,7 @@ fragment。来源快照仍是用户目录下权限为 `0600` 的按 digest 版�
 继续访问 Keychain 或反复触发授权。旧 Keychain 项不自动删除；迁移失败不阻止 Control
 Service 启动，已有快照仍可使用，刷新地址可通过重新导入补回。
 
-`GET/PUT /api/v1/config` 只暴露 topology、DHCP/DNS、TUN 与 device-policy 开关等
+`GET/PUT /api/v1/config` 只暴露 topology、DHCP/DNS、TUN、本机系统代理协同与 device-policy 开关等
 非敏感字段，并强制 `If-Match` revision。生产环境由 helper 原子写入 root-owned config；
 网关运行或恢复未完成时拒绝 topology 修改。网络页可切换 `same_lan`、
 `same_wifi_dhcp`、`isolated_lan`，并可初始化空 device-policy 文件。
@@ -124,7 +124,9 @@ Service 启动，已有快照仍可使用，刷新地址可通过重新导入补
 `GET/POST /api/v1/local-routing` 切换规则 / 全局 / 直连；后端协调隐藏的
 `open-surge/mac-*` TCP/UDP selector，普通 policies/overview 不展示这些内部组，
 普通 selector API 也拒绝修改。它只影响经 TUN 或本机显式代理进入 mihomo 的新连接，
-不修改 macOS system proxy，不改变下游设备。
+自身不修改 macOS system proxy，也不改变下游设备。系统代理由 Desired 网络配置中默认
+关闭、仅 TUN 可用的独立兼容开关管理；它面向 SafeDNS/DNS Proxy 等冲突场景，启停由
+gateway runtime snapshot 负责恢复。
 
 下游设备继续把 applied 与 desired 分为两层：绿色“即时生效”只切换已经应用的
 `device/<id>/<slot>` selector；黄色“保存后重载”才编辑设备身份、路由方式、selector

@@ -317,11 +317,12 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 	}
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
-		Gateway:      GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
-		DHCP:         DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain},
-		DNS:          DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream},
-		Transparent:  TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute},
-		DevicePolicy: DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
+		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
+		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain},
+		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream},
+		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute},
+		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
+		DevicePolicy:     DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
 	}
 }
 

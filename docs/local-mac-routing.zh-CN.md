@@ -38,9 +38,17 @@ OpenSurge 同时约束 **入口类型** 和 **源地址**：
 
 ## TUN 与 macOS 系统代理
 
-OpenSurge 不会替你开启或改写 macOS“系统设置 → 网络 → 代理”。当 TUN 已启用时，
-可路由的 Mac 本机 IPv4 流量由 TUN 进入这套模式；没有经过 TUN 的流量不在其作用域。
-应用若显式使用 OpenSurge mixed-port，也会进入同一模式。
+Mac 本机的规则 / 全局 / 直连开关本身不会开启或改写 macOS“系统设置 → 网络 → 代理”。
+当 TUN 已启用时，可路由的 Mac 本机 IPv4 流量由 TUN 进入这套模式；没有经过 TUN 的
+流量不在其作用域。应用若显式使用 OpenSurge mixed-port，也会进入同一模式。
+
+网络设置另有一个默认关闭的 **Mac 本机系统代理协同**兼容开关。它只在 TUN 模式下把
+当前上游网络服务的 HTTP/HTTPS 代理临时指向 `127.0.0.1:<mixed-port>`，用于处理
+SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 干扰 TUN-only 本机 DNS 的
+已知场景。启动前状态会写入 runtime state，停止、启动回滚或 mihomo 重启失败时先恢复；
+已有 HTTP/HTTPS 代理、PAC、自动发现或需认证的代理配置时会 fail closed。该开关只覆盖
+遵循系统代理的 Mac 应用，不接管 SOCKS/PAC/绕过列表，不替代 TUN，也不改变下游设备。
+
 Web GUI 的连通性检测由本机 Control Service 经 mixed-port 发起，因此也反映当前本机
 模式；它不能作为下游设备仍按网关规则运行的证据。
 

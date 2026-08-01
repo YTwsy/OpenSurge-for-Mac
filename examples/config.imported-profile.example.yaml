@@ -44,5 +44,8 @@ transparent:
   tun_auto_detect_interface: false
   tun_strict_route: false
 
+local_system_proxy:
+  enabled: false
+
 runtime:
   dir: "./runtime"

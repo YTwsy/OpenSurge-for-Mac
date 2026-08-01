@@ -247,7 +247,13 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
           </ConfigField>
           <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
-            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, mode: event.target.value as 'off' | 'tun' } })}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
+              const mode = event.target.value as 'off' | 'tun'
+              setConfig({ ...config, transparent: { ...config.transparent, mode }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
+            }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+          </ConfigField>
+          <ConfigField label="Mac 本机系统代理协同" setting="local_system_proxy.enabled" hint="启动时把上游网络服务的 macOS Web Proxy（HTTP）和 Secure Web Proxy（HTTPS）指向 127.0.0.1:mihomo.mixed_port，停止、回滚或 mihomo 重启失败时恢复原状态。可用于兼容 SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 干扰仅 TUN 本机 DNS 的问题；只覆盖遵循系统代理的 Mac 应用，不替代 TUN，也不影响下游设备。已有系统代理、PAC 或自动发现时会拒绝启动，避免覆盖用户配置。">
+            <label className="checkbox-field"><input aria-label="同时启用 macOS HTTP/HTTPS 系统代理" type="checkbox" disabled={config.transparent.mode !== 'tun'} checked={config.local_system_proxy.enabled} onChange={event => setConfig({ ...config, local_system_proxy: { ...config.local_system_proxy, enabled: event.target.checked } })} /> 同时启用 macOS HTTP/HTTPS 系统代理</label>
           </ConfigField>
           <ConfigField label="每设备策略" setting="device_policy.file" hint="启用后可在“设备”页为 MAC 固定租约及独立 mihomo 策略；若尚无策略文件，保存时会创建一个空文件。关闭后不再使用此策略文件。">
             <label className="checkbox-field"><input type="checkbox" checked={config.device_policy.enabled} onChange={event => setConfig({ ...config, device_policy: { ...config.device_policy, enabled: event.target.checked } })} /> 启用每设备策略</label>

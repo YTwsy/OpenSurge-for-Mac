@@ -66,7 +66,9 @@ forwarding 提供原生网关路径。
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
 - 在不改变下游设备的前提下，为 Mac 本机经 TUN/显式代理的新连接切换
-  **规则 / 全局 / 直连**；OpenSurge 不修改 macOS 系统代理设置；
+  **规则 / 全局 / 直连**；默认不修改 macOS 系统代理，也可在 TUN 模式下显式启用
+  HTTP/HTTPS 系统代理协同，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰
+  TUN-only 本机 DNS 的场景；
 - DHCP 接管模式为登记设备生成 MAC 绑定的固定 IPv4 租约；旁路由模式（手工网关）
   使用主路由侧保持稳定的静态 IPv4，两者都可使用独立出口策略。
 

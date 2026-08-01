@@ -1266,6 +1266,38 @@ func TestControlConfigShowsMihomoDNSForLegacyEmptyUpstream(t *testing.T) {
 	}
 }
 
+func TestControlConfigRoundTripsLocalSystemProxyCompatibilityMode(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.LocalSystemProxy.Enabled = true
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	if !input.LocalSystemProxy.Enabled {
+		t.Fatal("control config did not expose enabled local system proxy coordination")
+	}
+	input.LocalSystemProxy.Enabled = false
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.LocalSystemProxy.Enabled {
+		t.Fatal("local system proxy coordination remained enabled after control config update")
+	}
+}
+
 func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
 	server := newTestServer(t)
 	state, err := server.stateEvent(t.Context())

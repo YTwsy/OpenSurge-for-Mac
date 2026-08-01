@@ -59,6 +59,11 @@ mihomo 时必须重新核对失败后的 `/configs` 行为并跑真实 TUN Lab�
 所有权是不同信号；不要因为出现 utun scoped/supplemental resolver 就判定 TUN
 冲突。
 
+SafeDNS、DNS Proxy、内容过滤等 Network Extension 可能让 TUN 已 ready，但部分本机
+应用的 DNS/访问路径仍异常。`local_system_proxy.enabled` 提供默认关闭的 HTTP/HTTPS
+系统代理协同，只作为 TUN 兼容层；它不能成为绕过 TUN readiness 的替代路径。生命周期、
+冲突检查与恢复契约见 [Mac 本机系统代理协同](local-system-proxy-coordination.md)。
+
 ## 验证
 
 透明代理相关变更使用 `make lab-test-tun`。

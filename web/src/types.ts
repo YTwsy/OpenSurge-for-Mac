@@ -61,6 +61,7 @@ export type ControlConfig = {
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string }
   dns: { listen: string; upstream: string }
   transparent: { mode: 'off' | 'tun'; strict_route: boolean }
+  local_system_proxy: { enabled: boolean }
   device_policy: { enabled: boolean; protected_ipv4: string[] }
 }
 
