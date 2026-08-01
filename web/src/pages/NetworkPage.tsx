@@ -253,10 +253,21 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
           </ConfigField>
           <ConfigField label="Mac 本机系统代理协同" setting="local_system_proxy.enabled" hint="启动时把上游网络服务的 macOS Web Proxy（HTTP）和 Secure Web Proxy（HTTPS）指向 127.0.0.1:mihomo.mixed_port，停止、回滚或 mihomo 重启失败时恢复原状态。可用于兼容 SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 干扰仅 TUN 本机 DNS 的问题；只覆盖遵循系统代理的 Mac 应用，不替代 TUN，也不影响下游设备。已有系统代理、PAC 或自动发现时会拒绝启动，避免覆盖用户配置。">
-            <label className="checkbox-field"><input aria-label="同时启用 macOS HTTP/HTTPS 系统代理" type="checkbox" disabled={config.transparent.mode !== 'tun'} checked={config.local_system_proxy.enabled} onChange={event => setConfig({ ...config, local_system_proxy: { ...config.local_system_proxy, enabled: event.target.checked } })} /> 同时启用 macOS HTTP/HTTPS 系统代理</label>
+            <ConfigSwitch
+              label="启用 macOS HTTP/HTTPS 系统代理"
+              accessibleLabel="同时启用 macOS HTTP/HTTPS 系统代理"
+              checked={config.local_system_proxy.enabled}
+              disabled={config.transparent.mode !== 'tun'}
+              disabledText="需要 TUN"
+              onChange={enabled => setConfig({ ...config, local_system_proxy: { ...config.local_system_proxy, enabled } })}
+            />
           </ConfigField>
           <ConfigField label="每设备策略" setting="device_policy.file" hint="启用后可在“设备”页为 MAC 固定租约及独立 mihomo 策略；若尚无策略文件，保存时会创建一个空文件。关闭后不再使用此策略文件。">
-            <label className="checkbox-field"><input type="checkbox" checked={config.device_policy.enabled} onChange={event => setConfig({ ...config, device_policy: { ...config.device_policy, enabled: event.target.checked } })} /> 启用每设备策略</label>
+            <ConfigSwitch
+              label="启用每设备策略"
+              checked={config.device_policy.enabled}
+              onChange={enabled => setConfig({ ...config, device_policy: { ...config.device_policy, enabled } })}
+            />
           </ConfigField>
           <ConfigField className="wide" label="受保护的 IPv4" setting="device_policy.protected_ipv4" hint="以逗号分隔的路由器、恢复设备或其他静态主机地址。每设备策略的固定租约不得占用这些地址；仅在启用每设备策略时可编辑。">
             <input aria-label="受保护的 IPv4" disabled={!config.device_policy.enabled} placeholder="192.168.1.1, 192.168.1.21" value={config.device_policy.protected_ipv4.join(', ')} onChange={event => setConfig({ ...config, device_policy: { ...config.device_policy, protected_ipv4: event.target.value.split(',').map(item => item.trim()).filter(Boolean) } })} />
@@ -368,6 +379,15 @@ function isIPv4(value: string) { return ipv4Pattern.test(value) }
 
 function ConfigField({ label, setting, hint, className = '', children }: { label: string; setting: string; hint: string; className?: string; children: ReactNode }) {
   return <div className={`config-field ${className}`}><div className="config-field-title"><strong>{label}</strong><code>{setting}</code></div>{children}<small>{hint}</small></div>
+}
+
+function ConfigSwitch({ label, accessibleLabel = label, checked, disabled = false, disabledText, onChange }: { label: string; accessibleLabel?: string; checked: boolean; disabled?: boolean; disabledText?: string; onChange: (checked: boolean) => void }) {
+  const status = disabled && disabledText ? disabledText : checked ? '已开启' : '已关闭'
+  return <label className={`config-switch ${checked ? 'is-on' : ''} ${disabled ? 'is-disabled' : ''}`}>
+    <input className="config-switch-input" aria-label={accessibleLabel} type="checkbox" disabled={disabled} checked={checked} onChange={event => onChange(event.target.checked)} />
+    <span className="config-switch-copy"><strong>{label}</strong><small>{status}</small></span>
+    <span className="config-switch-toggle" aria-hidden="true"><i /></span>
+  </label>
 }
 
 function actionLabel(stage: string) {

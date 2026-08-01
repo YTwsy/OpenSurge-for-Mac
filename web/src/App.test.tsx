@@ -561,9 +561,15 @@ describe('OpenSurge app shell', () => {
     const systemProxy = await screen.findByRole('checkbox', { name: '同时启用 macOS HTTP/HTTPS 系统代理' })
     expect(systemProxy.hasAttribute('disabled')).toBe(false)
     expect(screen.getByText(/SafeDNS、DNS Proxy、内容过滤/)).toBeTruthy()
+    expect(screen.getAllByText('已关闭').length).toBeGreaterThanOrEqual(2)
     await userEvent.click(systemProxy)
+    expect(systemProxy.closest('label')?.classList.contains('is-on')).toBe(true)
+    const devicePolicy = screen.getByRole('checkbox', { name: '启用每设备策略' })
+    await userEvent.click(devicePolicy)
+    expect(devicePolicy.closest('label')?.classList.contains('is-on')).toBe(true)
+    expect(screen.getAllByText('已开启').length).toBeGreaterThanOrEqual(2)
     await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
-    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ local_system_proxy: { enabled: true } })))
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ local_system_proxy: { enabled: true }, device_policy: { enabled: true, protected_ipv4: [] } })))
   })
 
   it('shows the fixed IPv4 readback warning during recovery step 2', async () => {
