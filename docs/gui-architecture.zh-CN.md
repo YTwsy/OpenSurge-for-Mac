@@ -43,6 +43,12 @@ delegate 与 common run loop 上短时、有界的退避重试推进，不使用
 `NSPopover.isShown` 当成窗口已经真实出现的充分证据；重试期限到达时执行一次非阻塞兜底并
 清除 pending，后续用户点击仍可重新进入展示流程。
 
+菜单栏面板独立查询 GitHub `releases/latest` 发现新的稳定版本：面板首次打开时自动检查，
+同一 App 进程中最多每 24 小时自动请求一次，并保留手动检查入口。版本检查状态不得并入
+Control Service 可达性或网关 indicator。只有远端语义版本更高、且 `html_url` 仍精确指向
+本仓库对应 tag 的 Release 页面时才显示更新按钮；按钮只交给默认浏览器打开下载页，不下载
+或安装 unsigned PKG，也不改变任何网关或后台服务状态。
+
 菜单栏提供两个不同的退出层级。“只退出菜单栏 App”在二次确认后直接结束菜单栏进程，
 不会改变用户级 Control Service、网关数据面或 root Helper。“退出 OpenSurge”只有在
 Gateway、DHCP/DNS、mihomo 与 PF 已确认停止，并且没有待处理网络恢复时

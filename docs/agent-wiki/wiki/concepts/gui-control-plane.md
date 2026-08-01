@@ -9,6 +9,11 @@ Go gateway、device、mihomo 和 runtime 包中。
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
 演变成第二控制面。
 
+版本发现属于原生 App 生命周期而不是网关控制面。菜单栏 App 打开时至多每 24 小时查询
+一次本仓库 GitHub `releases/latest`，也提供手动检查；只比较稳定版语义版本并校验返回的
+下载页仍位于 `YTwsy/OpenSurge-for-Mac`。发现新版本后只打开对应 Release 页面，不下载
+PKG、不请求管理员权限，也不触发 gateway、Control Service 或 Helper 生命周期动作。
+
 菜单栏 App 使用纯 AppKit `NSApplication` 生命周期，不声明占位的 SwiftUI `Settings`
 Scene；否则这个由系统管理、可恢复的空窗口可能在部分 macOS 环境中被显示。状态面板使用
 AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状态栏图标点击

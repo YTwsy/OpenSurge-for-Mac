@@ -25,6 +25,13 @@ CLI and development workflows are intentionally left out.
 The menu bar app shows status and recovery warnings and opens the Web GUI.
 Sources, network settings, devices, and policies are managed in the Web GUI.
 
+The menu bar panel automatically checks once for the latest stable release and
+also provides a manual **检查更新** (Check for Updates) action. When an update is
+available, **打开下载页** opens that version's GitHub Release page. The app does
+not download or install the PKG itself; choose the package for the Mac's
+architecture and follow the installation steps above. Existing configuration
+and data are preserved without uninstalling first.
+
 ## First-time setup
 
 ### 1. Import a source

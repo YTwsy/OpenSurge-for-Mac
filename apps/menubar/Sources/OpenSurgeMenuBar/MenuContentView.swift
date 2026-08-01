@@ -91,6 +91,36 @@ struct MenuContentView: View {
             )).font(.caption)
 
             Divider()
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Text("版本 \(model.currentVersion)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(model.isCheckingForUpdate ? "正在检查…" : "检查更新") {
+                        Task { await model.checkForUpdates() }
+                    }
+                    .font(.caption)
+                    .disabled(model.isCheckingForUpdate)
+                }
+                if let update = model.availableUpdate {
+                    Label("发现稳定版 \(update.version)", systemImage: "arrow.down.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                    Button("打开 \(update.version) 下载页") {
+                        model.openUpdateDownloadPage()
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else if let message = model.updateCheckMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Divider()
             Button("退出 OpenSurge…") { confirmQuit(.openSurge) }
                 .font(.caption)
                 .disabled(!model.canQuitOpenSurge)

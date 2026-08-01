@@ -7,6 +7,7 @@
 <!-- 发布前请更新为当前版本的主要变化，并同步维护 English / Highlights。 -->
 
 - 新增「这台 Mac 的出口方式」控制：网关运行期间可在控制面为本机公网流量切换 **按规则 / 固定出口 / 本机直连** 三种模式，并展示当前全局出口。
+- 菜单栏新增轻量版本发现：打开面板后自动检查最新稳定版，也可手动刷新；发现新版本时只提供打开对应 GitHub Release 下载页的按钮，不自动下载或安装 PKG。
 - 新增默认关闭的「Mac 本机系统代理协同」：TUN 模式下可同时启用 macOS HTTP/HTTPS 系统代理，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰 TUN-only 本机 DNS 的场景；启动冲突会 fail closed，停止、回滚与 mihomo 重启失败时恢复原状态。
 - 同 LAN 设备登记可根据同 MAC 的唯一观测结果安全更新 IPv4，并同步 desired/applied 设备视图与生成规则；歧义或冲突证据保持 fail closed。
 - TUN 启动异常检查：网关现在会校验 TUN 就绪状态并处理 DHCP 放弃（DHCP abandonment），加固就绪恢复路径，容忍更慢的运行时状态读取；移除投机式 TUN 预检，将预检限定到 DHCP 规划。
@@ -58,6 +59,7 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 ### Highlights
 
 - Added a "this Mac" routing control: while the gateway is running, the control plane can switch the local Mac's public traffic between **rule-based / fixed-outlet / direct** modes and shows the current global outlet.
+- Added lightweight update discovery to the menu bar: the panel checks for the latest stable release automatically and supports manual refresh; when a newer version exists it only opens that GitHub Release download page and does not download or install the PKG.
 - Added an off-by-default local system-proxy coordination option: in TUN mode OpenSurge can enable macOS HTTP and HTTPS proxies together for SafeDNS, DNS Proxy, and similar Network Extension conflicts; startup fails closed on existing proxy configuration, and stop, rollback, or failed mihomo restart restores the previous state.
 - Same-LAN device registration can safely update IPv4 from unique same-MAC observations while keeping desired/applied views and generated rules aligned; ambiguous or conflicting evidence remains fail closed.
 - TUN startup anomaly checks: the gateway now verifies TUN readiness and handles DHCP abandonment, hardens the readiness recovery path, tolerates slower runtime state reads, and drops speculative TUN preflight (preflight is now limited to DHCP planning).
