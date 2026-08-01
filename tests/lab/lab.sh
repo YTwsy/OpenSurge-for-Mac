@@ -248,18 +248,49 @@ write_client_config() {
 }
 
 start_clients() {
-  local client instance_yaml
+  local client instance_yaml pid failed cold_start
+  local -a start_pids
   write_client_config
+  cold_start=0
+  start_pids=()
   for client in $CLIENTS; do
     instance_yaml="$(instance_dir "$client")/lima.yaml"
     if [[ -f "$instance_yaml" ]] && ! cmp -s "$instance_yaml" "$CLIENT_CONFIG"; then
       limactl stop "$client" || true
       limactl delete -f -y "$client"
+      cold_start=1
     fi
     if [[ ! -d "$(instance_dir "$client")" ]]; then
       limactl create -y --name "$client" "$CLIENT_CONFIG"
+      cold_start=1
     fi
-    limactl start "$client"
+  done
+
+  # Keep cold provisioning sequential so two apt jobs cannot contend for the
+  # same upstream bandwidth and push each VM past Lima's readiness timeout.
+  # Stable, already-provisioned clients have no apt work and can boot in
+  # parallel, which avoids adding two independent guest boot times together.
+  if [[ "$cold_start" == 1 ]]; then
+    for client in $CLIENTS; do
+      limactl start "$client"
+      limactl shell "$client" -- true
+    done
+    return 0
+  fi
+
+  for client in $CLIENTS; do
+    limactl start "$client" &
+    start_pids+=("$!")
+  done
+  failed=0
+  for pid in "${start_pids[@]}"; do
+    wait "$pid" || failed=1
+  done
+  if [[ "$failed" != 0 ]]; then
+    echo "one or more persistent lab clients failed to start" >&2
+    return 1
+  fi
+  for client in $CLIENTS; do
     limactl shell "$client" -- true
   done
 }
@@ -284,7 +315,7 @@ destroy_clients() {
 }
 
 collect_artifacts() {
-  local artifact_dir client
+  local artifact_dir client evidence
   artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$artifact_dir"
   cp "$CONFIG" "$artifact_dir/config.yaml" 2>/dev/null || true
@@ -293,6 +324,15 @@ collect_artifacts() {
   cp "$EGRESS_PROVIDER" "$artifact_dir/tun-egress-provider.yaml" 2>/dev/null || true
   cp -R "$STATE_DIR/egress" "$artifact_dir/egress" 2>/dev/null || true
   cp -R "$STATE_DIR/logs" "$artifact_dir/logs" 2>/dev/null || true
+  for evidence in \
+    dnsmasq.conf \
+    mihomo.yaml \
+    device-policy.applied.evidence.json \
+    state.evidence.json \
+    device-policies.json \
+    device-policies-after-reload.json; do
+    cp "$STATE_DIR/$evidence" "$artifact_dir/$evidence" 2>/dev/null || true
+  done
   "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
   "$BINARY" leases --config "$CONFIG" >"$artifact_dir/leases.txt" 2>&1 || true
   /sbin/ifconfig "$(lab_interface)" >"$artifact_dir/interface.txt" 2>&1 || true
@@ -553,6 +593,26 @@ assert_device_policy_identity_ready() {
   grep -Fq "\"device_policy_digest\": \"$digest\"" "$STATE_DIR/state.json"
 }
 
+assert_ip_only_device_paused() {
+  local output=$1
+  grep -Fq 'paused-ip-only' "$STATE_DIR/device-policy.applied.json" || {
+    echo "DHCP mode did not preserve the raw IP-only policy record" >&2
+    exit 1
+  }
+  if grep -Fq 'paused-ip-only' "$output"; then
+    echo "DHCP mode unexpectedly compiled the IP-only device" >&2
+    exit 1
+  fi
+  if grep -Fq '192.168.50.150' "$STATE_DIR/dnsmasq.conf"; then
+    echo "DHCP mode unexpectedly emitted a reservation for the IP-only device" >&2
+    exit 1
+  fi
+  if grep -Fq '192.168.50.150/32' "$STATE_DIR/mihomo.yaml"; then
+    echo "DHCP mode unexpectedly emitted a routing rule for the IP-only device" >&2
+    exit 1
+  fi
+}
+
 assert_applied_policy_drift() {
   local output=$1
   grep -Fq '"policy_source": "applied"' "$output"
@@ -629,6 +689,12 @@ EOF
       "ipv4": "192.168.50.102",
       "profile": "direct-blocked",
       "egress_mode": "inherit_global"
+    },
+    {
+      "id": "paused-ip-only",
+      "ipv4": "192.168.50.150",
+      "profile": "controlled",
+      "egress_mode": "dedicated"
     }
   ]
 }
@@ -671,6 +737,12 @@ write_device_block_rule() {
       "mac": "$mac_two",
       "ipv4": "192.168.50.102",
       "profile": "direct-blocked",
+      "egress_mode": "dedicated"
+    },
+    {
+      "id": "paused-ip-only",
+      "ipv4": "192.168.50.150",
+      "profile": "controlled",
       "egress_mode": "dedicated"
     }
   ]
@@ -729,6 +801,7 @@ run_device_policy_test() {
   grep -Fq '"egress_mode": "dedicated"' "$STATE_DIR/device-policies.json"
   grep -Fq '"egress_mode": "inherit_global"' "$STATE_DIR/device-policies.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies.json"
+  assert_ip_only_device_paused "$STATE_DIR/device-policies.json"
 
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
   wait_for_tun_udp_reject "192.168.50.101" "1.1.1.1" 443
@@ -781,6 +854,7 @@ run_device_policy_test() {
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-after-reload.json"
   assert_applied_policy_synced "$STATE_DIR/device-policies-after-reload.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies-after-reload.json"
+  assert_ip_only_device_paused "$STATE_DIR/device-policies-after-reload.json"
 
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct-after-reload.json"
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-controlled-after-reload.json"
@@ -802,6 +876,8 @@ run_device_policy_test() {
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
   wait_for_tun_udp_reject "192.168.50.102" "1.1.1.1" 443
 
+  cp "$STATE_DIR/device-policy.applied.json" "$STATE_DIR/device-policy.applied.evidence.json"
+  cp "$STATE_DIR/state.json" "$STATE_DIR/state.evidence.json"
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
   stop_egress_probe

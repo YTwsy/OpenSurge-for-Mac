@@ -296,6 +296,73 @@ describe('DevicesPage', () => {
     expect((screen.getByLabelText('固定 IPv4') as HTMLInputElement).value).toBe('192.168.1.137')
   })
 
+  it('registers multiple same-LAN devices by fixed IPv4 without inventing a MAC', async () => {
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+
+    await screen.findByText('当前经过 Mac 的设备')
+    expect(screen.getByText('MAC 地址（可选身份信息）')).toBeTruthy()
+    await userEvent.type(screen.getByLabelText('设备名称'), 'IP Only One')
+    await userEvent.type(screen.getByLabelText('固定 IPv4'), '192.168.1.137')
+    expect(screen.getByText(/只按固定 IPv4 匹配/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '按固定 IPv4 登记' }))
+
+    await userEvent.click(screen.getByRole('button', { name: /登记新设备/ }))
+    await userEvent.type(screen.getByLabelText('设备名称'), 'IP Only Two')
+    await userEvent.type(screen.getByLabelText('固定 IPv4'), '192.168.1.138')
+    await userEvent.click(screen.getByRole('button', { name: '按固定 IPv4 登记' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices).toEqual([
+      expect.objectContaining({ id: 'ip-only-one', mac: '', ipv4: '192.168.1.137' }),
+      expect.objectContaining({ id: 'ip-only-two', mac: '', ipv4: '192.168.1.138' }),
+    ])
+  })
+
+  it('shows an IP-only device as active by fixed IPv4 in same-LAN mode', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'speaker', name: 'Speaker', mac: '', ipv4: '192.168.1.137', profile: 'speaker-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'speaker-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'speaker', mac: '', ipv4: '192.168.1.137', profile: 'speaker-policy', egress_mode: 'inherit_global', groups: {} }],
+      observed_devices: [{ ip: '192.168.1.137', mac: 'aa:bb:cc:dd:ee:37', active_connections: 1, neighbor_observed: true }],
+    }))
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+
+    expect(await screen.findByText(/固定 IPv4 已生效/)).toBeTruthy()
+    expect(screen.queryByText(/身份冲突/)).toBeNull()
+  })
+
+  it('keeps an IP-only device visible but paused in DHCP mode', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'speaker', name: 'Speaker', mac: '', ipv4: '192.168.1.137', profile: 'speaker-policy', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'speaker-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    renderPage({ ...overview, topology: 'same_wifi_dhcp' } as unknown as Overview)
+
+    expect(await screen.findByText('部分设备策略已暂停')).toBeTruthy()
+    expect(screen.getByText('等待 MAC')).toBeTruthy()
+    expect(screen.getByText('DHCP 模式下策略已暂停')).toBeTruthy()
+    expect(screen.queryByText('重载后应用')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: /登记新设备/ }))
+    await userEvent.type(screen.getByLabelText('设备名称'), 'Speaker')
+    await userEvent.type(screen.getByLabelText('设备 MAC'), 'aa:bb:cc:dd:ee:37')
+    await userEvent.type(screen.getByLabelText('固定 IPv4'), '192.168.1.137')
+    await userEvent.click(screen.getByRole('button', { name: '登记或更新设备' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices).toEqual([
+      expect.objectContaining({ id: 'speaker', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.137', profile: 'speaker-policy' }),
+    ])
+  })
+
   it('shows observation evidence instead of requiring a DHCP lease in same-LAN mode', async () => {
     const policy: PolicySet = {
       ...basePolicy,

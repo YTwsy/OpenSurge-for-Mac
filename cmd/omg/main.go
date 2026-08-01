@@ -233,7 +233,7 @@ func run(args []string) int {
 		if err != nil {
 			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
 		}
-		group, err := device.DeviceGroup(bundle.Policy, *deviceID, *deviceSlot)
+		group, err := device.DeviceGroupFromCompiled(bundle.Compiled, *deviceID, *deviceSlot)
 		if err != nil {
 			return writeErrorExit(command, jsonOutput, 1, "device-policy-select", err)
 		}
@@ -548,7 +548,7 @@ func loadConfiguredPolicyBundle(cfg config.Config) (device.PolicyBundle, error) 
 	if cfg.DevicePolicy.Bundle != nil {
 		return *cfg.DevicePolicy.Bundle, nil
 	}
-	return device.LoadPolicyBundle(cfg.DevicePolicy.File)
+	return device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 }
 
 func loadAppliedPolicyBundle(cfg config.Config) (device.PolicyBundle, error) {

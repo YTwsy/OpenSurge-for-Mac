@@ -616,6 +616,78 @@ describe('OpenSurge app shell', () => {
     expect(detail?.classList.contains('open')).toBe(false)
   })
 
+  it('switches from same-LAN to DHCP without a migration dialog when every device already has a MAC', async () => {
+    const current = { ...configFor('same_lan'), device_policy: { enabled: true, protected_ipv4: [] } }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: {
+      devices: [{ id: 'phone', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.137', profile: 'home', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [],
+    } })
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    expect(screen.queryByRole('dialog', { name: /确认设备身份/ })).toBeNull()
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
+  })
+
+  it('prefills an observed MAC and asks for confirmation before switching to DHCP', async () => {
+    const current = { ...configFor('same_lan'), device_policy: { enabled: true, protected_ipv4: [] } }
+    const policy = {
+      devices: [{ id: 'speaker', name: 'Speaker', mac: '', ipv4: '192.168.1.137', profile: 'home', egress_mode: 'inherit_global' as const }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [],
+    }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy })
+    vi.mocked(api.devices).mockResolvedValue({ drift: false, applied: false, devices: [], leases: [], observed_devices: [{ ip: '192.168.1.137', mac: 'AA:BB:CC:DD:EE:37', active_connections: 0, neighbor_observed: true }] })
+    vi.mocked(api.saveDevicePolicy).mockImplementation(async next => ({ schema_version: 1, revision: 'policy-next', policy: next }))
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '确认设备身份后切换 DHCP 模式' })
+    expect(dialog.textContent).toContain('Speaker')
+    expect(dialog.textContent).toContain('aa:bb:cc:dd:ee:37')
+    expect(api.saveConfig).not.toHaveBeenCalled()
+    await userEvent.click(within(dialog).getByRole('button', { name: '确认 MAC 并切换' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({ devices: [expect.objectContaining({ id: 'speaker', mac: 'aa:bb:cc:dd:ee:37' })] }), 'policy-r'))
+    expect(api.saveConfig).toHaveBeenCalled()
+  })
+
+  it('offers inspection or an explicit paused-policy switch when an IP-only device has no observed MAC', async () => {
+    const current = { ...configFor('same_lan'), device_policy: { enabled: true, protected_ipv4: [] } }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: {
+      devices: [{ id: 'speaker', name: 'Speaker', mac: '', ipv4: '192.168.1.137', profile: 'home', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [],
+    } })
+    vi.mocked(api.devices).mockResolvedValue({ drift: false, applied: false, devices: [], leases: [], observed_devices: [{ ip: '192.168.1.137', active_connections: 1, neighbor_observed: false }] })
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '确认设备身份后切换 DHCP 模式' })
+    expect(dialog.textContent).toContain('这些设备的策略将在 DHCP 模式下暂停，补充 MAC 后恢复。')
+    expect(within(dialog).getByRole('button', { name: '检查设备' })).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '仍然切换并暂停这些策略' }))
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
+  })
+
   it('selects an isolated topology in the revisioned network editor', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })

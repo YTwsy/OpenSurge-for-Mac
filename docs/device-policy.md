@@ -1,9 +1,11 @@
 # Per-device policy overlays
 
 OpenSurge runs one mihomo process. Device policy does not create a mihomo
-process or a complete profile per client. Instead, OpenSurge assigns a stable
-IPv4 lease to each registered MAC address, generates an independent selector
-group for every device, and routes traffic with mihomo `SRC-IP-CIDR` rules.
+process or a complete profile per client. In DHCP modes, OpenSurge assigns a
+stable IPv4 lease to each registered MAC address. `same_lan` manual-gateway
+mode also accepts a fixed IPv4 with MAC as optional identity metadata. It
+generates an independent selector group for every active device and routes
+traffic with mihomo `SRC-IP-CIDR` rules.
 
 This feature is optional. Point `device_policy.file` at a JSON document; the
 empty [starter document](../examples/device-policy.example.json) is valid but
@@ -245,8 +247,18 @@ Dashboard device traffic combines DHCP leases, applied static devices, and
 currently observed same-LAN source IPv4 addresses, so registered static devices
 retain names, traffic rates, counters, and egress attribution while active
 unregistered sources appear as temporary devices. Traffic and ARP observations
-are not DHCP identity proof; an unresolved MAC still requires manual input, and
-the main router must keep the registered IPv4 stable.
+are not DHCP identity proof. An unresolved MAC can be left empty in `same_lan`,
+but the main router must keep the registered IPv4 stable and unavailable to
+other clients.
+
+When leaving `same_lan` for a DHCP topology, the GUI saves directly if every
+device already has a MAC. For an IP-only registration, it accepts only one
+valid, currently observed neighbor MAC at the registered IPv4 and shows the
+prefilled value for confirmation. Devices that still have no MAC remain in the
+declarative document, but their selectors, `SRC-IP-CIDR` rules, and DHCP
+reservations are omitted from the mode-aware runtime bundle. The GUI marks
+those policies paused until a MAC is supplied or the gateway returns to
+`same_lan`; it never lets a later DHCP lease holder inherit the old IP rule.
 
 When an applied static IPv4 has no traffic and the Devices page observes exactly
 one active source with the same neighbor MAC at a different IPv4, the GUI shows

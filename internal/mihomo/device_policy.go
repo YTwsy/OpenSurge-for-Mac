@@ -20,7 +20,7 @@ type policySections struct {
 }
 
 func renderPolicySections(cfg config.Config, imported *importedProfile) (string, error) {
-	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File)
+	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 	if err != nil {
 		return "", err
 	}
@@ -40,12 +40,12 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 	return composeManagedPolicySections(cfg, sections, localRouting), nil
 }
 
-func loadPolicySections(bundle *device.PolicyBundle, path string) (policySections, error) {
+func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesActive bool) (policySections, error) {
 	if bundle == nil && strings.TrimSpace(path) == "" {
 		return policySections{}, nil
 	}
 	if bundle == nil {
-		loaded, err := device.LoadPolicyBundle(path)
+		loaded, err := device.LoadPolicyBundleForIPOnlyMode(path, ipOnlyDevicesActive)
 		if err != nil {
 			return policySections{}, err
 		}

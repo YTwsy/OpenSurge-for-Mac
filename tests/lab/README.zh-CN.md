@@ -38,11 +38,13 @@ make lab-install
 - 为本项目安装 Lima 2.1.3、dnsmasq 2.93 和 mihomo 1.19.27；
 - 校验并把 socket_vmnet 1.2.2 安装到 `/opt/socket_vmnet`；
 - 把功能固定的网络 helper 安装到 `/opt/open-mihomo-gateway`；
-- 只为 helper 的 `start`、`stop` 和 `status` 命令授予当前用户免密 sudo。
+- 默认不安装免密 sudo 规则。
 
-在安装 sudoers 规则前，helper 会被复制到 root 拥有的路径。该规则绝不会执行来自
-这个可写仓库的脚本或二进制。运行 `make lab-uninstall-root` 可移除 root 拥有的
-helper、socket_vmnet 副本、lab 日志和 sudoers 规则。
+需要无人值守启动/停止隔离网络时，可以明确运行
+`./tests/lab/install-host-deps.sh --root-only --with-sudoers`。它只允许当前用户免密执行
+root-owned helper 的 `start`、`stop` 和 `status`，绝不会执行来自这个可写仓库的脚本
+或二进制；网关二进制本身仍需缓存的 sudo 凭据。运行 `make lab-uninstall-root` 可移除
+root-owned helper、socket_vmnet 副本、lab 日志和 sudoers 规则。
 
 可选代理变量可以放在 `runtime/lab/proxy.env`。安装器和 lab 命令会为主机侧操作
 加载该文件。默认情况下，Lima VM provisioning 不会接收这些代理变量；只有当代理
@@ -51,15 +53,14 @@ helper、socket_vmnet 副本、lab 日志和 sudoers 规则。
 ## 日常流程
 
 ```sh
-make lab-up
-sudo -v
-make lab-test
-make lab-test-tun
-make lab-test-tun-imported-profile
-make lab-test-tun-imported-egress
-make lab-test-tun-local-routing
-make lab-test-tun-device-policy
-make lab-down
+sudo -v && make lab-up
+sudo -v && make lab-test
+sudo -v && make lab-test-tun
+sudo -v && make lab-test-tun-imported-profile
+sudo -v && make lab-test-tun-imported-egress
+sudo -v && make lab-test-tun-local-routing
+sudo -v && make lab-test-tun-device-policy
+sudo -v && make lab-down
 ```
 
 `lab-up` 会启动没有 DHCP 的 host network 和两个客户端。`lab-test` 会构建当前
@@ -68,6 +69,15 @@ make lab-down
 artifact 会写入 `artifacts/lab`。managed mihomo DNS 在 TUN 关闭时仍会返回 fake IP，
 因此直连 HTTPS 的 NAT 证明会向公共 DNS 取得真实 A 记录，再用 `curl --resolve` 固定
 该地址；独立的网关 DNS 断言仍会有意验证 fake-IP 响应。
+
+第一次 `lab-up` 需要下载固定 checksum 的 Ubuntu 镜像，并在两个客户端中安装测试
+工具，所以会明显较慢。`lab-down` 只停止客户端、保留 Lima 磁盘；日常结束应使用它，
+后续 `lab-up` 会复用客户端。只有需要清除损坏状态或有意重建 VM 时才使用
+`make lab-destroy`。每次启动时 provisioning 会先把 guest DNS 恢复到 Lima 控制网关，
+避免上一次测试遗留的 `192.168.50.1` 在测试网关尚未启动时阻塞启动；依赖已经齐全时
+也会跳过 `apt-get update` 和安装。冷重建会串行 provision 两台客户端，避免并发 apt
+争抢上游带宽；配置未变化的持久化客户端会并行启动，避免日常 `lab-up` 累加两次 guest
+boot 时间。
 
 `lab-test-tun` 是 TUN 透明代理门禁。它会把 lab 配置改写成
 `transparent.mode: "tun"`，让 dnsmasq 转发到 mihomo DNS，让客户端不设置显式代理，
@@ -94,7 +104,11 @@ selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJ
 设备路由方式、设备默认出口和设备覆盖的
 数据面门禁；还会验证 applied bundle/state digest、两条精确 DHCP identity、编辑 policy
 文件后的 desired/applied drift，以及选中 HTTP-only 出口时 UDP/443 必须记录为 `REJECT`
-而不能 fall through 到 `DIRECT`。规则、模板和 provider 的编译仍由单元测试覆盖。
+而不能 fall through 到 `DIRECT`。门禁还保留一条没有 MAC 的原始设备记录，验证 DHCP
+模式会把它保存在 applied snapshot 中供以后补充身份，但不会生成租约、mihomo 规则或
+活动 selector。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
+初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
+编译仍由单元测试覆盖。
 
 请把 `make lab-test` 视为高风险网络改动所需的本地门禁：DHCP/DNS 行为、mihomo
 进程或配置生成、pf/NAT 规则、forwarding 和 rollback、网关生命周期清理、lab
@@ -112,7 +126,21 @@ PF TCP 重定向。
 sudo 缓存凭据和终端会话有关，也会过期。如果 agent 或自动化在一个 TTY 里运行
 `sudo -v`，却在另一个 TTY 里运行 `make lab-test`，lab 脚本的 `sudo -n` 预检查
 仍然可能失败。请在同一个终端会话里、紧挨着 root-required lab 目标之前运行
-`sudo -v`。
+`sudo -v`；最稳妥的形式是 `sudo -v && make <lab-target>`，长时间运行多个门禁时每个
+目标都重新验证一次，不要把一次缓存视为整个 Lab 会话永久有效。冷启动的 `lab-up`
+本身可能超过 sudo ticket 的有效期，因此它完成后必须再次执行
+`sudo -v && make lab-test...`；清理前如果已经过了较长时间，也用
+`sudo -v && make lab-down`，否则 VM 可能已停止但 root-owned helper 的状态文件仍残留。
+
+固定大小的 Lima/mihomo 下载采用分段缓存并在合并后校验 checksum。下载因 TLS 或网络
+波动失败时，直接重跑同一条安装命令；安装器会复用完整分段或续传未完成分段，不要手工
+把未校验的文件复制进 `runtime/tools/cache`。
+
+默认客户端规格是 `1 CPU / 512 MiB`。仅凭 `lab-up` 很慢，不要先上调资源；先用
+`limactl shell <client> -- free -m`、`vmstat` 和 guest 的 OOM 日志区分 CPU/内存压力与
+DNS、镜像下载、apt provisioning 等等待。CPU 大部分时间 idle、仍有 available memory
+且没有 OOM 时，提高 CPU/内存不会解决启动慢；只有出现持续高 load、明显内存回收或 OOM
+证据时才调整默认规格。
 
 lab 只应该在 vmnet bridge 上拥有 `192.168.50.1/24`。不要把同一个地址留在其他
 接口上。真实设备 smoke 也会在 `en7` 等接口上使用 `192.168.50.1`；运行

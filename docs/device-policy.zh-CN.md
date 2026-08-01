@@ -1,7 +1,8 @@
 # 每设备策略覆盖
 
 OpenSurge 只运行一个 mihomo 进程；不会为每台设备启动一份 mihomo 或复制完整 profile。
-它会将已登记 MAC 固定到 IPv4 DHCP 租约，为每台设备生成独立 selector group，并用
+DHCP 模式会将已登记 MAC 固定到 IPv4 租约；`same_lan` 旁路由模式也允许只登记固定
+IPv4、把 MAC 作为可选身份信息。OpenSurge 为当前拓扑中有效的设备生成独立 selector group，并用
 mihomo 的 `SRC-IP-CIDR` 规则区分流量。
 
 这是可选功能。在 gateway 配置中指定 JSON 文件：
@@ -184,7 +185,14 @@ Web GUI 将两类操作持续分开：绿色表示 applied selector 的“即时
 Mac 的设备”供登记。总览设备流量会合并 DHCP lease、applied 静态设备和当前观察到的
 same-LAN 源 IPv4：已登记静态 IPv4 可以获得名称、连接、速率、累计流量与出口归属，未登记
 但正在经过 Mac 的 IPv4 也以临时设备显示。ARP 与流量观察不是 DHCP 身份验证；MAC 未解析
-时仍需用户手工填写，且静态设备必须在主路由侧保持稳定 IPv4。
+时仍可只按固定 IPv4 登记，但必须在主路由侧确保该地址稳定且不会分配给其他设备。
+
+从 `same_lan` 切换到 DHCP 拓扑时，已有设备全都带 MAC 则直接保存，不打断用户。若存在
+IP-only 登记，GUI 会按其原固定 IPv4 查找唯一、有效且未被其他登记占用的当前邻居 MAC，
+展示预填结果并让用户确认后写入。仍无法取得 MAC 的设备会列入迁移提示；用户可以检查
+设备、取消，或继续切换。继续切换会保留设备 ID、名称、Profile 和规则，但运行时不生成
+该设备的 selector、`SRC-IP-CIDR` 规则或 DHCP reservation，设备页显示暂停；补全 MAC 或
+切回 `same_lan` 后恢复。
 
 如果 applied 静态 IPv4 已没有流量，而设备页只观察到一个“相同邻居 MAC、不同 IPv4、
 仍有活跃连接”的来源，GUI 会显示原地址与当前地址，并提供“使用当前 IP 并应用”。确认后

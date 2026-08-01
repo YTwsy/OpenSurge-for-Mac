@@ -4,7 +4,7 @@
 mihomo profile 时，先读此页。
 
 OpenSurge 只运行一个 mihomo。可选的 `device_policy.file` JSON 文件为每台设备记录
-MAC、固定 IPv4 与 profile；编译时将它们转换为 DHCP reservation、独立 selector
+固定 IPv4、可选 MAC 与 profile；编译时按拓扑将它们转换为 DHCP reservation、独立 selector
 group，以及以 `SRC-IP-CIDR` 区分来源的 mihomo 规则。它不是“一台设备一份完整
 mihomo YAML”。
 
@@ -39,6 +39,14 @@ Profile，只改变该设备引用；ID 冲突时追加数字后缀。
 则合并 lease、applied 静态设备与当前观察源。证据必须分层显示为 DHCP 已验证、静态登记、
 流量已观察或邻居已观察。ARP/流量只证明近期观察，不是 MAC 身份认证；未经过 Mac、已经
 离线或经 IPv6 绕过的同 LAN 设备不会因此被自动发现。
+
+`same_lan` 的设备主键仍是稳定 `id`，运行规则只需唯一固定 IPv4；MAC 可以为空，仅作为
+身份观察和后续迁移信息。空 MAC 不生成 dnsmasq reservation。离开 `same_lan` 进入 DHCP
+拓扑时，GUI 只按登记 IPv4 接受唯一且格式有效的当前邻居 MAC，并在写入前显示给用户确认；
+全部设备原本已有 MAC 时不弹窗。仍没有 MAC 的设备保持在 declarative policy 中，但
+mode-aware compiled bundle 必须排除其 device、selector、rule 与 reservation，并在设备页
+持续显示“需要 MAC / 策略暂停”。返回 `same_lan` 或补全 MAC 后重新编译即可恢复，禁止删除
+资料、伪造 MAC 或让新 DHCP lease holder 继承旧 `SRC-IP-CIDR` 策略。
 
 same-LAN applied IPv4 没有当前流量时，只有“恰好一个不同 IPv4、相同规范化邻居 MAC、
 `neighbor_observed=true` 且存在活跃连接”的观察项可以进入地址变化提示。GUI 不静默写入：

@@ -1461,11 +1461,11 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if err := device.ValidatePolicySetForLANWithProtected(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4); err != nil {
+	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_validation_failed", err.Error())
 		return
 	}
-	if _, err := device.CompilePolicyBundle(policy); err != nil {
+	if _, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_compile_failed", err.Error())
 		return
 	}
@@ -1490,7 +1490,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, DevicesResponse{SchemaVersion: SchemaVersion, Devices: []device.CompiledDevice{}, Leases: []device.Client{}, ObservedDevices: []ObservedDevice{}})
 		return
 	}
-	desired, err := device.LoadPolicyBundle(cfg.DevicePolicy.File)
+	desired, err := device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "device_policy_invalid", err.Error())
 		return
@@ -1531,7 +1531,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if cfg.Gateway.Mode == config.GatewayModeSameLAN {
 		connections, connectionErr := s.fetchConnections(r.Context(), cfg)
 		neighbors, neighborErr := s.discoverNeighbors(r.Context(), cfg.Gateway.Interface)
-		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP)
+		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP, desired.Policy.Devices...)
 		observationErrors := []string{}
 		if connectionErr != nil {
 			observationErrors = append(observationErrors, "mihomo connections: "+connectionErr.Error())
@@ -1669,7 +1669,7 @@ func (s *Server) handleDeviceSelection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "device_policy_not_applied", err.Error())
 		return
 	}
-	group, err := device.DeviceGroup(bundle.Policy, r.PathValue("device"), r.PathValue("slot"))
+	group, err := device.DeviceGroupFromCompiled(bundle.Compiled, r.PathValue("device"), r.PathValue("slot"))
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_device_slot", err.Error())
 		return

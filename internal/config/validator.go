@@ -162,12 +162,12 @@ func validateDevicePolicy(cfg Config) error {
 	bundle := cfg.DevicePolicy.Bundle
 	if bundle == nil {
 		var err error
-		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File)
+		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File, cfg.Gateway.Mode == GatewayModeSameLAN)
 		if err != nil {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 	}
-	if err := device.ValidatePolicySetForLANWithProtected(bundle.Policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4); err != nil {
+	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(bundle.Policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	return nil
@@ -177,10 +177,22 @@ func validateDevicePolicy(cfg Config) error {
 // instance. Gateway startup, DHCP rendering and mihomo rendering all consume
 // the resulting immutable bundle.
 func PrepareDevicePolicy(cfg *Config) error {
-	if strings.TrimSpace(cfg.DevicePolicy.File) == "" || cfg.DevicePolicy.Bundle != nil {
+	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
 		return nil
 	}
-	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File)
+	ipOnlyDevicesActive := cfg.Gateway.Mode == GatewayModeSameLAN
+	if cfg.DevicePolicy.Bundle != nil && cfg.DevicePolicy.Bundle.IPOnlyDevicesActive == ipOnlyDevicesActive {
+		return nil
+	}
+	if cfg.DevicePolicy.Bundle != nil {
+		bundle, err := device.CompilePolicyBundleForIPOnlyMode(cfg.DevicePolicy.Bundle.Policy, ipOnlyDevicesActive)
+		if err != nil {
+			return fmt.Errorf("device_policy.file: %w", err)
+		}
+		cfg.DevicePolicy.Bundle = &bundle
+		return nil
+	}
+	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File, ipOnlyDevicesActive)
 	if err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
@@ -188,7 +200,7 @@ func PrepareDevicePolicy(cfg *Config) error {
 	return nil
 }
 
-func loadDevicePolicyBundle(path string) (*device.PolicyBundle, error) {
+func loadDevicePolicyBundle(path string, ipOnlyDevicesActive bool) (*device.PolicyBundle, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -196,7 +208,7 @@ func loadDevicePolicyBundle(path string) (*device.PolicyBundle, error) {
 	if info.IsDir() {
 		return nil, fmt.Errorf("must not be a directory")
 	}
-	bundle, err := device.LoadPolicyBundle(path)
+	bundle, err := device.LoadPolicyBundleForIPOnlyMode(path, ipOnlyDevicesActive)
 	if err != nil {
 		return nil, err
 	}

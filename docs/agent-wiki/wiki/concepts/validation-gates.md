@@ -34,6 +34,27 @@ lab 会把 gateway 保持在 macOS 上，并用 socket_vmnet 网络中的 Lima �
 测试它。它验证 DHCP、DNS、ICMP/NAT、直连 HTTPS、通过 mihomo `mixed-port`
 的显式代理 HTTPS，以及清理行为。
 
+root-required Lab 目标应在同一个 TTY 里用 `sudo -v && make <lab-target>` 启动。
+macOS sudo 缓存既会过期，也可能因 TTY/执行上下文不同而无法被脚本中的 `sudo -n`
+复用；长时间连续跑多个门禁时，每个目标前都重新验证。除非运行环境明确需要无人值守，
+不要把临时凭据问题扩大成宽泛的免密 sudo；仓库提供的可选规则也只限 root-owned
+network helper 的三个固定子命令，不能代替网关测试所需的 sudo 缓存。
+冷 `lab-up` 可能比 sudo ticket 活得更久，因此它完成后必须再次验证再启动测试；长门禁
+结束后的 `lab-down` 同理。VM 停止但 helper stop 报 `sudo: a password is required` 时，
+应把它视为不完整清理并重新执行带 `sudo -v` 的 `lab-down`。
+
+第一次 `lab-up` 包含固定镜像下载和 guest 依赖安装，不能和持久化 VM 的后续启动耗时
+直接比较。正常清理使用 `lab-down` 保留磁盘，只有损坏或有意重建时使用 `lab-destroy`。
+guest 的数据面 DNS 在一次测试后会指向 `192.168.50.1`；而下一次 `lab-up` 时被测网关
+尚未运行，所以 provisioning 必须先恢复 Lima 控制面 DNS，并在依赖已齐全时跳过 apt，
+否则会表现为 UDP/53 connection refused 与很慢的 boot scripts。
+冷重建保持串行 provisioning，稳定复用的 VM 则并行启动；这样既不让两个 apt 任务争抢
+上游带宽，又避免日常启动累加两次独立 guest boot 时间。
+
+不要仅凭启动耗时把默认 `1 CPU / 512 MiB` 判定为不足。先采集 guest 的 available
+memory、load、CPU idle/iowait 和 OOM 记录；如果 CPU 主要 idle、内存仍可用且没有 OOM，
+应优先排查 DNS、下载和重复 provisioning，而不是增加 VM 常驻资源。
+
 ## 策略控制面门槛
 
 运行：

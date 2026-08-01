@@ -3,12 +3,20 @@ import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
 import { recoveryLabel } from '../status'
-import type { ControlConfig, GatewayPlan, NetworkInterfaceOption, Overview } from '../types'
+import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
 
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 type NetworkMode = ControlConfig['gateway']['mode']
+type PolicyMigrationDevice = Pick<PolicyDevice, 'id' | 'name' | 'ipv4'> & { mac?: string }
+type PolicyMigration = {
+  target: ControlConfig
+  document: DevicePolicyDocument
+  policy: PolicySet
+  resolved: PolicyMigrationDevice[]
+  unresolved: PolicyMigrationDevice[]
+}
 
-export function NetworkPage({ overview, onChanged }: { overview: Overview | null; onChanged: () => Promise<void> }) {
+export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -25,6 +33,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const [clientIPv4, setClientIPv4] = useState('')
   const [clientConfirmed, setClientConfirmed] = useState(false)
   const [ipv6Acknowledged, setIPv6Acknowledged] = useState(false)
+  const [policyMigration, setPolicyMigration] = useState<PolicyMigration | null>(null)
   const current = overview?.recovery.stage ?? 'idle'
   const clientCheckpoint = overview?.recovery.client_validation_skipped ? 'client_validation_skipped' : 'client_validated'
   const completion = current === 'complete_static' ? 'complete_static' : 'complete'
@@ -89,12 +98,65 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     if (config?.gateway.mode !== mode) selectMode(mode)
   }
 
-  const save = async () => {
-    if (!config) return
+  const persistConfig = async (target: ControlConfig, migration?: PolicyMigration) => {
     setBusy(true); setError(''); setMessage('')
-    try { const updated = await api.saveConfig(config); setConfig(updated); setSavedConfig(updated); await onChanged(); await loadPlan(updated) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    let policySaved = false
+    try {
+      if (migration?.resolved.length) {
+        await api.saveDevicePolicy(migration.policy, migration.document.revision)
+        policySaved = true
+      }
+      const updated = await api.saveConfig(target)
+      setConfig(updated); setSavedConfig(updated); setPolicyMigration(null)
+      await onChanged(); await loadPlan(updated)
+      if (migration) {
+        const messages = []
+        if (migration.resolved.length) messages.push(`已为 ${migration.resolved.length} 台设备补充 MAC`)
+        if (migration.unresolved.length) messages.push(`${migration.unresolved.length} 台设备策略已暂停`)
+        setMessage(`${messages.join('；')}。`)
+      }
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(policySaved ? `设备 MAC 已保存，但网络配置切换失败：${failure}` : failure)
+    }
     finally { setBusy(false) }
+  }
+
+  const save = async () => {
+    if (!config || !savedConfig) return
+    const leavingSameLAN = savedConfig.gateway.mode === 'same_lan' && config.gateway.mode !== 'same_lan' && config.device_policy.enabled
+    if (!leavingSameLAN) {
+      await persistConfig(config)
+      return
+    }
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const document = await api.devicePolicy()
+      const missing = document.policy.devices.filter(device => !device.mac.trim())
+      if (!missing.length) {
+        await persistConfig(config)
+        return
+      }
+      const devices = await api.devices()
+      const usedMACs = new Set(document.policy.devices.map(device => device.mac.trim().toLowerCase()).filter(Boolean))
+      const resolved: PolicyMigrationDevice[] = []
+      const unresolved: PolicyMigrationDevice[] = []
+      const nextPolicy = structuredClone(document.policy)
+      for (const device of missing) {
+        const observations = (devices.observed_devices ?? []).filter(observed => observed.ip === device.ipv4 && validMAC(observed.mac ?? ''))
+        const mac = observations.length === 1 ? observations[0].mac!.trim().toLowerCase() : ''
+        if (!mac || usedMACs.has(mac)) {
+          unresolved.push({ id: device.id, name: device.name, ipv4: device.ipv4 })
+          continue
+        }
+        usedMACs.add(mac)
+        nextPolicy.devices = nextPolicy.devices.map(candidate => candidate.id === device.id ? { ...candidate, mac } : candidate)
+        resolved.push({ id: device.id, name: device.name, ipv4: device.ipv4, mac })
+      }
+      setPolicyMigration({ target: structuredClone(config), document, policy: nextPolicy, resolved, unresolved })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally { setBusy(false) }
   }
 
   const controlGateway = async (action: 'start' | 'stop') => {
@@ -332,7 +394,22 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         </div>
       </section>
     </>}
+    {policyMigration && <PolicyMigrationDialog migration={policyMigration} busy={busy} onInspect={() => { setPolicyMigration(null); onNavigate('devices') }} onCancel={() => setPolicyMigration(null)} onConfirm={() => void persistConfig(policyMigration.target, policyMigration)} />}
   </>
+}
+
+function PolicyMigrationDialog({ migration, busy, onInspect, onCancel, onConfirm }: { migration: PolicyMigration; busy: boolean; onInspect: () => void; onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onCancel() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [busy, onCancel])
+  return <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="policy-migration-title">
+    <h2 id="policy-migration-title">确认设备身份后切换 DHCP 模式</h2>
+    {migration.resolved.length > 0 && <><p>以下设备此前只登记了固定 IPv4；OpenSurge 现在已观察到 MAC，确认后会补充到设备资料：</p><ul>{migration.resolved.map(device => <li key={device.id}><strong>{device.name || device.id}</strong> · <code>{device.ipv4}</code> · <code>{device.mac}</code></li>)}</ul></>}
+    {migration.unresolved.length > 0 && <><div className="notice warn"><strong>这些设备的策略将在 DHCP 模式下暂停，补充 MAC 后恢复。</strong></div><ul>{migration.unresolved.map(device => <li key={device.id}><strong>{device.name || device.id}</strong> · <code>{device.ipv4}</code> · MAC 尚未观察到</li>)}</ul><p>设备登记、Profile 和规则都会保留；DHCP 模式不会继续按旧 IP 匹配它们。</p></>}
+    <div className="dialog-actions">{migration.unresolved.length > 0 && <button type="button" disabled={busy} onClick={onInspect}>检查设备</button>}<button type="button" disabled={busy} onClick={onCancel}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={onConfirm}>{busy ? '正在保存…' : migration.unresolved.length > 0 ? '仍然切换并暂停这些策略' : '确认 MAC 并切换'}</button></div>
+  </dialog>
 }
 
 function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
@@ -376,6 +453,7 @@ function RouterDHCPGuide({ action, router, networkService }: { action: '关闭' 
 }
 
 function isIPv4(value: string) { return ipv4Pattern.test(value) }
+function validMAC(value: string) { return /^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(value.trim()) }
 
 function ConfigField({ label, setting, hint, className = '', children }: { label: string; setting: string; hint: string; className?: string; children: ReactNode }) {
   return <div className={`config-field ${className}`}><div className="config-field-title"><strong>{label}</strong><code>{setting}</code></div>{children}<small>{hint}</small></div>

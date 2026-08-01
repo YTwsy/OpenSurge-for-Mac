@@ -69,8 +69,9 @@ forwarding 提供原生网关路径。
   **规则 / 全局 / 直连**；默认不修改 macOS 系统代理，也可在 TUN 模式下显式启用
   HTTP/HTTPS 系统代理协同，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰
   TUN-only 本机 DNS 的场景；
-- DHCP 接管模式为登记设备生成 MAC 绑定的固定 IPv4 租约；旁路由模式（手工网关）
-  使用主路由侧保持稳定的静态 IPv4，两者都可使用独立出口策略。
+- DHCP 接管模式为带 MAC 的登记设备生成固定 IPv4 租约；旁路由模式（手工网关）
+  允许只按主路由侧保持稳定的静态 IPv4 登记设备，MAC 是可选身份信息，两者都可使用
+  独立出口策略。
 
 **可观测性**
 
@@ -90,10 +91,12 @@ forwarding 提供原生网关路径。
 
 ## 每设备策略
 
-一个 mihomo 进程可以对已登记的 LAN 设备应用独立策略。DHCP 接管模式会为每台设备
-配置 MAC 绑定的固定 IPv4 租约；旁路由模式则使用主路由侧保持稳定的静态
-IPv4，并从当前经过 Mac 的流量与 ARP 邻居观察辅助登记。两种模式都会生成每设备的
-mihomo selector group 和 `SRC-IP-CIDR` 规则。可选 JSON 策略文件让每台设备要么跟随网关规则，要么在
+一个 mihomo 进程可以对已登记的 LAN 设备应用独立策略。DHCP 接管模式会为带 MAC 的设备
+配置固定 IPv4 租约；旁路由模式只需主路由侧保持稳定的静态 IPv4，MAC 可留空，并可从
+当前经过 Mac 的流量与 ARP 邻居观察辅助登记。切换到 DHCP 模式时，GUI 会要求确认当前
+可观察到的 MAC；仍无 MAC 的登记会保留，但设备专属策略暂停，补全 MAC 后恢复。当前拓扑中
+身份信息充分的设备会生成各自的 mihomo selector group 和 `SRC-IP-CIDR` 规则。可选 JSON
+策略文件让每台设备要么跟随网关规则，要么在
 全局规则之前走设备专属 selector；它也支持 `REJECT` 这类设备专属动作，以及按
 域名/IP/协议/端口/rule-provider 叠加的规则覆盖。dedicated 模式下，本地/私有目标
 保持直连。Mac 本机的规则 / 全局 / 直连开关不改变这些下游规则；详见

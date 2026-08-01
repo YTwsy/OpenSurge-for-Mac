@@ -55,6 +55,10 @@ Web GUI 中完成。
 **mihomo TUN**；需要为不同设备设置出口时，启用**每设备策略**。完成后点击
 **保存网络配置**。
 
+旁路由模式登记设备时只需填写固定 IPv4，MAC 是可选身份信息。若以后切换到 DHCP
+模式，OpenSurge 会先让你确认当前能够观察到的 MAC；仍无法取得 MAC 的设备资料和规则会
+保留，但专属策略暂停，补充 MAC 后恢复。已有设备全都登记了 MAC 时不会出现迁移提示。
+
 如果 SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 让 Mac 本机在只开 TUN 时
 出现 DNS/访问异常，可以在同一表单启用**Mac 本机系统代理协同**。OpenSurge 会在网关
 启动后把当前上游网络服务的 HTTP/HTTPS 系统代理指向本机 mihomo mixed-port，并在停止、
