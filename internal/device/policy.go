@@ -252,14 +252,16 @@ func ValidatePolicySet(set PolicySet) error {
 			return fmt.Errorf("duplicate device id %q", managed.ID)
 		}
 		seenIDs[managed.ID] = true
-		mac, err := normalizedMAC(managed.MAC)
-		if err != nil {
-			return fmt.Errorf("device %q mac: %w", managed.ID, err)
+		if strings.TrimSpace(managed.MAC) != "" {
+			mac, err := normalizedMAC(managed.MAC)
+			if err != nil {
+				return fmt.Errorf("device %q mac: %w", managed.ID, err)
+			}
+			if seenMACs[mac] {
+				return fmt.Errorf("duplicate device mac %q", mac)
+			}
+			seenMACs[mac] = true
 		}
-		if seenMACs[mac] {
-			return fmt.Errorf("duplicate device mac %q", mac)
-		}
-		seenMACs[mac] = true
 		ip := net.ParseIP(managed.IPv4).To4()
 		if ip == nil {
 			return fmt.Errorf("device %q ipv4 must be a valid IPv4 address", managed.ID)
@@ -315,6 +317,10 @@ func ValidatePolicySetForLAN(set PolicySet, gatewayIP string) error {
 // intentionally separate from live ARP probing, which belongs to start-time
 // validation on a real L2 network.
 func ValidatePolicySetForLANWithProtected(set PolicySet, gatewayIP string, protected []string) error {
+	return ValidatePolicySetForLANWithProtectedForIPOnlyMode(set, gatewayIP, protected, true)
+}
+
+func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP string, protected []string, ipOnlyDevicesActive bool) error {
 	if err := ValidatePolicySet(set); err != nil {
 		return err
 	}
@@ -334,6 +340,9 @@ func ValidatePolicySetForLANWithProtected(set PolicySet, gatewayIP string, prote
 		protectedIPs[ip.String()] = true
 	}
 	for _, managed := range set.Devices {
+		if !ipOnlyDevicesActive && strings.TrimSpace(managed.MAC) == "" {
+			continue
+		}
 		ip := net.ParseIP(managed.IPv4).To4()
 		if ip[0] != lan[0] || ip[1] != lan[1] || ip[2] != lan[2] {
 			return fmt.Errorf("device %q ipv4 %s must remain in gateway LAN %d.%d.%d.0/24", managed.ID, ip.String(), lan[0], lan[1], lan[2])
@@ -352,6 +361,16 @@ func ValidatePolicySetForLANWithProtected(set PolicySet, gatewayIP string, prote
 }
 
 func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
+	return CompilePolicySetForIPOnlyMode(set, true)
+}
+
+// CompilePolicySetForIPOnlyMode derives the runtime policy for a gateway
+// topology. same_lan can safely identify a manually configured client by its
+// fixed source IPv4 alone. DHCP topologies must omit devices without a MAC so
+// that a later lease holder cannot inherit rules that belonged to another
+// device. The declarative PolicySet remains unchanged and can become active
+// again after a MAC is supplied or the gateway returns to same_lan.
+func CompilePolicySetForIPOnlyMode(set PolicySet, ipOnlyDevicesActive bool) (CompiledPolicy, error) {
 	if err := ValidatePolicySet(set); err != nil {
 		return CompiledPolicy{}, err
 	}
@@ -371,11 +390,17 @@ func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 	compiled := CompiledPolicy{}
 	usedRuleSets := map[string]bool{}
 	for _, managed := range set.Devices {
+		if !ipOnlyDevicesActive && strings.TrimSpace(managed.MAC) == "" {
+			continue
+		}
 		profile, err := resolveProfile(profiles[managed.Profile], templates)
 		if err != nil {
 			return CompiledPolicy{}, err
 		}
-		mac, _ := normalizedMAC(managed.MAC)
+		mac := ""
+		if strings.TrimSpace(managed.MAC) != "" {
+			mac, _ = normalizedMAC(managed.MAC)
+		}
 		ip := net.ParseIP(managed.IPv4).To4().String()
 		device := CompiledDevice{
 			ID:         managed.ID,
@@ -385,7 +410,9 @@ func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 			EgressMode: EffectiveEgressMode(managed.EgressMode),
 			Groups:     map[string]string{},
 		}
-		compiled.Reservations = append(compiled.Reservations, Reservation{ID: device.ID, MAC: mac, IPv4: ip})
+		if mac != "" {
+			compiled.Reservations = append(compiled.Reservations, Reservation{ID: device.ID, MAC: mac, IPv4: ip})
+		}
 
 		defaultGroup := DeviceGroupName(device.ID, "default")
 		if device.EgressMode != EgressModeInheritGlobal {
@@ -473,6 +500,13 @@ func DeviceGroup(set PolicySet, deviceID, slot string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return DeviceGroupFromCompiled(compiled, deviceID, slot)
+}
+
+// DeviceGroupFromCompiled resolves only groups present in the active runtime
+// policy. This prevents a DHCP-paused IP-only source document from exposing a
+// selector that was deliberately omitted from mihomo.
+func DeviceGroupFromCompiled(compiled CompiledPolicy, deviceID, slot string) (string, error) {
 	for _, device := range compiled.Devices {
 		if device.ID != deviceID {
 			continue

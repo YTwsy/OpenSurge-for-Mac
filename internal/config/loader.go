@@ -205,6 +205,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("transparent.tun_strict_route must be a boolean")
 		}
 		cfg.Transparent.TUNStrictRoute = enabled
+	case "local_system_proxy.enabled":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("local_system_proxy.enabled must be a boolean")
+		}
+		cfg.LocalSystemProxy.Enabled = enabled
 	case "upstream_proxy.enabled":
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {

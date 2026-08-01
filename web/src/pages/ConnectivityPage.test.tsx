@@ -12,7 +12,7 @@ import { ConnectivityPage } from './ConnectivityPage'
 const catalog: ConnectivityResponse = {
   schema_version: 1,
   source: 'gateway_mihomo',
-  scope: 'applied_global_rules',
+  scope: 'local_mac_runtime',
   rounds: 3,
   targets: [
     { id: 'baidu', name: '百度', category: 'china', symbol: 'BD', url: 'https://www.baidu.com/favicon.ico', expected_route: 'direct' },

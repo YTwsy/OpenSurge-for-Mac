@@ -234,7 +234,7 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 			continue
 		}
 		if index, exists := byIP[ip]; exists {
-			if strings.EqualFold(rows[index].MAC, managed.MAC) {
+			if (observeLAN && strings.TrimSpace(managed.MAC) == "") || strings.EqualFold(rows[index].MAC, managed.MAC) {
 				rows[index].Name = device.DisplayName(managed)
 			}
 			continue
@@ -437,11 +437,21 @@ func loadAppliedDevicePolicy(paths runtime.Paths) device.PolicySet {
 	return bundle.Policy
 }
 
-func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosnetwork.Neighbor, gatewayIP string) []ObservedDevice {
+func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosnetwork.Neighbor, gatewayIP string, registered ...device.ManagedDevice) []ObservedDevice {
 	neighborByIP := make(map[string]string, len(neighbors))
+	ambiguousNeighborIP := make(map[string]bool)
 	for _, neighbor := range neighbors {
 		if ip := normalizeTrafficIP(neighbor.IP); ip != "" {
-			neighborByIP[ip] = strings.ToLower(strings.TrimSpace(neighbor.MAC))
+			mac := strings.ToLower(strings.TrimSpace(neighbor.MAC))
+			if mac == "" || ambiguousNeighborIP[ip] {
+				continue
+			}
+			if current := neighborByIP[ip]; current != "" && current != mac {
+				delete(neighborByIP, ip)
+				ambiguousNeighborIP[ip] = true
+				continue
+			}
+			neighborByIP[ip] = mac
 		}
 	}
 	byIP := map[string]*ObservedDevice{}
@@ -457,6 +467,23 @@ func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosne
 			byIP[ip] = observed
 		}
 		observed.ActiveConnections++
+	}
+	// A topology migration is configured while the gateway is stopped, so
+	// mihomo may have no active connection to seed the observation list. Expose
+	// neighbor-only evidence solely for already registered IP-only devices;
+	// never turn the whole ARP cache into registration candidates.
+	for _, managed := range registered {
+		if strings.TrimSpace(managed.MAC) != "" {
+			continue
+		}
+		ip := normalizeTrafficIP(managed.IPv4)
+		mac := neighborByIP[ip]
+		if mac == "" || !sameLANSourceIPv4(ip, gatewayIP) {
+			continue
+		}
+		if observed := byIP[ip]; observed == nil {
+			byIP[ip] = &ObservedDevice{IP: ip, MAC: mac, NeighborObserved: true}
+		}
 	}
 	result := make([]ObservedDevice, 0, len(byIP))
 	for _, observed := range byIP {

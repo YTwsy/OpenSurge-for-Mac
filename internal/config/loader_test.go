@@ -43,6 +43,9 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.Transparent.TUNDevice != "utun123" {
 		t.Fatalf("Transparent.TUNDevice = %q", cfg.Transparent.TUNDevice)
 	}
+	if cfg.LocalSystemProxy.Enabled {
+		t.Fatalf("LocalSystemProxy.Enabled = true")
+	}
 	if cfg.UpstreamProxy.Enabled {
 		t.Fatalf("UpstreamProxy.Enabled = true")
 	}

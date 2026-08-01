@@ -1,4 +1,4 @@
-import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, Source } from './types'
+import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -34,6 +34,7 @@ export const api = {
   recovery: (stage: string) => request('/api/v1/recovery', { method: 'POST', body: JSON.stringify({ stage }) }),
   prepareRecovery: () => request('/api/v1/recovery/prepare', { method: 'POST', body: JSON.stringify({}) }),
   discardRecovery: () => request('/api/v1/recovery/discard', { method: 'POST' }),
+  abandonTakeover: () => request('/api/v1/recovery/abandon-takeover', { method: 'POST' }),
   applyStatic: () => request('/api/v1/network/apply-static', { method: 'POST' }),
   probeDHCP: () => request('/api/v1/network/dhcp-probe', { method: 'POST' }),
   confirmRouterRestored: () => request('/api/v1/recovery/router-restored', { method: 'POST' }),
@@ -59,6 +60,8 @@ export const api = {
   saveDevicePolicy: (policy: PolicySet, revision: string) => request<DevicePolicyDocument>('/api/v1/device-policy', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(policy) }),
   policies: () => request<{ groups: ProxyGroup[] }>('/api/v1/policies'),
   selectPolicy: (group: string, policy: string) => request(`/api/v1/policies/${encodeURIComponent(group)}/selection`, { method: 'POST', body: JSON.stringify({ policy }) }),
+  localRouting: () => request<LocalRouting>('/api/v1/local-routing'),
+  setLocalRouting: (mode: LocalRoutingMode, globalPolicy?: string) => request<LocalRouting>('/api/v1/local-routing', { method: 'POST', body: JSON.stringify({ mode, global_policy: globalPolicy }) }),
   selectDevicePolicy: (device: string, slot: string, policy: string) => request(`/api/v1/devices/${encodeURIComponent(device)}/selectors/${encodeURIComponent(slot)}`, { method: 'POST', body: JSON.stringify({ policy }) }),
   proxyHealth: () => request<ProxyHealthSnapshot>('/api/v1/proxy-health'),
   testProxyHealth: (names: string[]) => request<ProxyHealthTestResponse>('/api/v1/proxy-health/tests', { method: 'POST', body: JSON.stringify({ names }) }),

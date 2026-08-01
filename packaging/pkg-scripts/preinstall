@@ -27,24 +27,14 @@ if [[ -f "$RECOVERY" ]]; then
 fi
 
 # Stop processes that can keep old executables open before Installer replaces
-# the payload. The gateway cleanup must use the currently installed CLI and
-# config, so it deliberately runs before the helper is unloaded.
-launchctl bootout "gui/$UID_VALUE/com.opensurge.control" 2>/dev/null || true
-GUI_PIDS="$(opensurge_installed_gui_pids "$UID_VALUE" "$USER_HOME")"
-for pid in $GUI_PIDS; do
-  /bin/kill -TERM "$pid" 2>/dev/null || true
-done
-
-for _ in {1..50}; do
+# the payload. The menu bar must exit before the launchd service is booted out,
+# otherwise its unavailable-service recovery can bootstrap a replacement
+# control process after the original PID snapshot. The gateway cleanup must use
+# the currently installed CLI and config, so it deliberately runs before the
+# helper is unloaded.
+if ! opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"; then
   GUI_PIDS="$(opensurge_installed_gui_pids "$UID_VALUE" "$USER_HOME")"
-  if [[ -z "$GUI_PIDS" ]]; then
-    break
-  fi
-  sleep 0.1
-done
-GUI_PIDS="$(opensurge_installed_gui_pids "$UID_VALUE" "$USER_HOME")"
-if [[ -n "$GUI_PIDS" ]]; then
-  echo "OpenSurge GUI processes did not stop; refusing to replace running executables" >&2
+  echo "OpenSurge GUI processes did not stop; refusing to replace running executables: ${GUI_PIDS//$'\n'/,}" >&2
   exit 3
 fi
 

@@ -25,9 +25,12 @@ imported file 与 HTTP proxy-provider，`omg provider-update` 可以刷新这两
 providers 和 connections。
 它会先验证未知 policy 会以机器可读 JSON 错误被拒绝，再在同一个 runtime 目录内
 重启 mihomo，验证 `profile.store-selected` 能恢复选中的策略。它也会启动本机
-origin 和受控 HTTP CONNECT proxy，证明 `EgressSwitch` 策略选择可以把一次
-mixed-port 请求从 `DIRECT` 切到受控代理。它证明的是 mihomo 控制面契约，不证明全
-LAN 路由、透明代理捕获或真实远端代理出口。
+origin 和受控 HTTP CONNECT proxy，验证本机/私网目标即使在 `EgressSwitch` 选择
+代理后仍被 source-scoped 保护规则保持为 `DIRECT`。它还验证专用
+`local-routing-set` 可协调 Rule/Global/Direct、HTTP-only Global 的 UDP fail-closed，
+以及普通 policies/selector 不能泄露或间接选择内部组。它证明的是 mihomo 控制面契约，
+不证明全 LAN 路由、透明代理捕获或真实远端代理出口；本机/下游真实出口隔离由
+`make lab-test-tun-local-routing` 证明。
 
 透明代理门禁是 `make lab-test-tun`。它比默认 lab 路径更严格，因为客户端不使用
 `mixed-port`；测试必须证明 mihomo 通过 TUN 观察到了客户端 HTTPS 连接。

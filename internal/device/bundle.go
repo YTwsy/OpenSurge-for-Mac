@@ -15,22 +15,31 @@ import (
 // CanonicalJSON and Digest identify the exact declarative source, while
 // Compiled contains the shared DHCP and mihomo representation derived from it.
 type PolicyBundle struct {
-	SchemaVersion int             `json:"schema_version"`
-	Digest        string          `json:"digest"`
-	CanonicalJSON json.RawMessage `json:"canonical_json"`
-	Policy        PolicySet       `json:"policy"`
-	Compiled      CompiledPolicy  `json:"compiled"`
+	SchemaVersion       int             `json:"schema_version"`
+	Digest              string          `json:"digest"`
+	CanonicalJSON       json.RawMessage `json:"canonical_json"`
+	Policy              PolicySet       `json:"policy"`
+	Compiled            CompiledPolicy  `json:"compiled"`
+	IPOnlyDevicesActive bool            `json:"ip_only_devices_active,omitempty"`
 }
 
 func LoadPolicyBundle(path string) (PolicyBundle, error) {
+	return LoadPolicyBundleForIPOnlyMode(path, true)
+}
+
+func LoadPolicyBundleForIPOnlyMode(path string, ipOnlyDevicesActive bool) (PolicyBundle, error) {
 	set, err := LoadPolicySet(path)
 	if err != nil {
 		return PolicyBundle{}, err
 	}
-	return CompilePolicyBundle(set)
+	return CompilePolicyBundleForIPOnlyMode(set, ipOnlyDevicesActive)
 }
 
 func CompilePolicyBundle(set PolicySet) (PolicyBundle, error) {
+	return CompilePolicyBundleForIPOnlyMode(set, true)
+}
+
+func CompilePolicyBundleForIPOnlyMode(set PolicySet, ipOnlyDevicesActive bool) (PolicyBundle, error) {
 	if err := ValidatePolicySet(set); err != nil {
 		return PolicyBundle{}, err
 	}
@@ -38,17 +47,18 @@ func CompilePolicyBundle(set PolicySet) (PolicyBundle, error) {
 	if err != nil {
 		return PolicyBundle{}, fmt.Errorf("canonicalize device policy: %w", err)
 	}
-	compiled, err := CompilePolicySet(set)
+	compiled, err := CompilePolicySetForIPOnlyMode(set, ipOnlyDevicesActive)
 	if err != nil {
 		return PolicyBundle{}, err
 	}
 	digest := sha256.Sum256(canonical)
 	return PolicyBundle{
-		SchemaVersion: 1,
-		Digest:        hex.EncodeToString(digest[:]),
-		CanonicalJSON: append(json.RawMessage(nil), canonical...),
-		Policy:        set,
-		Compiled:      compiled,
+		SchemaVersion:       1,
+		Digest:              hex.EncodeToString(digest[:]),
+		CanonicalJSON:       append(json.RawMessage(nil), canonical...),
+		Policy:              set,
+		Compiled:            compiled,
+		IPOnlyDevicesActive: ipOnlyDevicesActive,
 	}, nil
 }
 
@@ -82,7 +92,7 @@ func LoadPolicyBundleSnapshot(path string) (PolicyBundle, error) {
 	if bundle.Digest != hex.EncodeToString(digest[:]) {
 		return PolicyBundle{}, fmt.Errorf("applied device policy bundle digest mismatch")
 	}
-	compiled, err := CompilePolicySet(bundle.Policy)
+	compiled, err := CompilePolicySetForIPOnlyMode(bundle.Policy, bundle.IPOnlyDevicesActive)
 	if err != nil {
 		return PolicyBundle{}, fmt.Errorf("compile applied device policy bundle: %w", err)
 	}

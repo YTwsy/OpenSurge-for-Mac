@@ -38,8 +38,29 @@ provision:
       set -eux
 __PROXY_EXPORTS__
       export DEBIAN_FRONTEND=noninteractive
+
+      # A previous lab run intentionally leaves the guest resolver pointing at
+      # the gateway under test. Restore the always-available Lima control-plane
+      # DNS before provisioning, because the gateway is not running during
+      # `lab-up`.
+      control_gateway="$(ip -4 route show default | awk 'NR == 1 { print $3 }')"
+      if [ -n "$control_gateway" ]; then
+        rm -f /etc/resolv.conf
+        printf 'nameserver %s\n' "$control_gateway" >/etc/resolv.conf
+      fi
+
+      missing_packages=""
+      for package in bash curl dnsutils iproute2 iputils-ping isc-dhcp-client; do
+        if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q '^install ok installed$'; then
+          missing_packages="$missing_packages $package"
+        fi
+      done
+      if [ -z "$missing_packages" ]; then
+        exit 0
+      fi
       apt-get update
-      apt-get install -y --no-install-recommends bash curl dnsutils iproute2 iputils-ping isc-dhcp-client
+      # shellcheck disable=SC2086
+      apt-get install -y --no-install-recommends $missing_packages
       rm -rf /var/lib/apt/lists/*
 
   - mode: data

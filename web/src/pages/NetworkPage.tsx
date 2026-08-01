@@ -3,12 +3,20 @@ import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
 import { recoveryLabel } from '../status'
-import type { ControlConfig, GatewayPlan, NetworkInterfaceOption, Overview } from '../types'
+import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
 
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 type NetworkMode = ControlConfig['gateway']['mode']
+type PolicyMigrationDevice = Pick<PolicyDevice, 'id' | 'name' | 'ipv4'> & { mac?: string }
+type PolicyMigration = {
+  target: ControlConfig
+  document: DevicePolicyDocument
+  policy: PolicySet
+  resolved: PolicyMigrationDevice[]
+  unresolved: PolicyMigrationDevice[]
+}
 
-export function NetworkPage({ overview, onChanged }: { overview: Overview | null; onChanged: () => Promise<void> }) {
+export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -25,6 +33,7 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
   const [clientIPv4, setClientIPv4] = useState('')
   const [clientConfirmed, setClientConfirmed] = useState(false)
   const [ipv6Acknowledged, setIPv6Acknowledged] = useState(false)
+  const [policyMigration, setPolicyMigration] = useState<PolicyMigration | null>(null)
   const current = overview?.recovery.stage ?? 'idle'
   const clientCheckpoint = overview?.recovery.client_validation_skipped ? 'client_validation_skipped' : 'client_validated'
   const completion = current === 'complete_static' ? 'complete_static' : 'complete'
@@ -89,12 +98,65 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
     if (config?.gateway.mode !== mode) selectMode(mode)
   }
 
-  const save = async () => {
-    if (!config) return
+  const persistConfig = async (target: ControlConfig, migration?: PolicyMigration) => {
     setBusy(true); setError(''); setMessage('')
-    try { const updated = await api.saveConfig(config); setConfig(updated); setSavedConfig(updated); await onChanged(); await loadPlan(updated) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    let policySaved = false
+    try {
+      if (migration?.resolved.length) {
+        await api.saveDevicePolicy(migration.policy, migration.document.revision)
+        policySaved = true
+      }
+      const updated = await api.saveConfig(target)
+      setConfig(updated); setSavedConfig(updated); setPolicyMigration(null)
+      await onChanged(); await loadPlan(updated)
+      if (migration) {
+        const messages = []
+        if (migration.resolved.length) messages.push(`已为 ${migration.resolved.length} 台设备补充 MAC`)
+        if (migration.unresolved.length) messages.push(`${migration.unresolved.length} 台设备策略已暂停`)
+        setMessage(`${messages.join('；')}。`)
+      }
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(policySaved ? `设备 MAC 已保存，但网络配置切换失败：${failure}` : failure)
+    }
     finally { setBusy(false) }
+  }
+
+  const save = async () => {
+    if (!config || !savedConfig) return
+    const leavingSameLAN = savedConfig.gateway.mode === 'same_lan' && config.gateway.mode !== 'same_lan' && config.device_policy.enabled
+    if (!leavingSameLAN) {
+      await persistConfig(config)
+      return
+    }
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const document = await api.devicePolicy()
+      const missing = document.policy.devices.filter(device => !device.mac.trim())
+      if (!missing.length) {
+        await persistConfig(config)
+        return
+      }
+      const devices = await api.devices()
+      const usedMACs = new Set(document.policy.devices.map(device => device.mac.trim().toLowerCase()).filter(Boolean))
+      const resolved: PolicyMigrationDevice[] = []
+      const unresolved: PolicyMigrationDevice[] = []
+      const nextPolicy = structuredClone(document.policy)
+      for (const device of missing) {
+        const observations = (devices.observed_devices ?? []).filter(observed => observed.ip === device.ipv4 && validMAC(observed.mac ?? ''))
+        const mac = observations.length === 1 ? observations[0].mac!.trim().toLowerCase() : ''
+        if (!mac || usedMACs.has(mac)) {
+          unresolved.push({ id: device.id, name: device.name, ipv4: device.ipv4 })
+          continue
+        }
+        usedMACs.add(mac)
+        nextPolicy.devices = nextPolicy.devices.map(candidate => candidate.id === device.id ? { ...candidate, mac } : candidate)
+        resolved.push({ id: device.id, name: device.name, ipv4: device.ipv4, mac })
+      }
+      setPolicyMigration({ target: structuredClone(config), document, policy: nextPolicy, resolved, unresolved })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally { setBusy(false) }
   }
 
   const controlGateway = async (action: 'start' | 'stop') => {
@@ -148,6 +210,17 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
       await api.discardRecovery()
       await onChanged()
       if (config) await loadPlan(config)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+
+  const abandonTakeover = async () => {
+    if (!window.confirm('放弃本次局域网 DHCP 接管？OpenSurge 会先探测可用 DHCP：若有 OFFER，就把 Mac 恢复为自动 DHCP；若没有，就保留当前固定 IPv4 并结束流程。后一种情况不会确认路由器 DHCP 或其他设备的自动获取能力。')) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      await api.abandonTakeover()
+      await onChanged()
+      setMessage('已放弃 DHCP 接管；网关停止后，菜单栏中的“退出 OpenSurge”可用。')
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
@@ -236,10 +309,27 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
             <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
           </ConfigField>
           <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
-            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, mode: event.target.value as 'off' | 'tun' } })}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
+              const mode = event.target.value as 'off' | 'tun'
+              setConfig({ ...config, transparent: { ...config.transparent, mode }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
+            }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+          </ConfigField>
+          <ConfigField label="Mac 本机系统代理协同" setting="local_system_proxy.enabled" hint="启动时把上游网络服务的 macOS Web Proxy（HTTP）和 Secure Web Proxy（HTTPS）指向 127.0.0.1:mihomo.mixed_port，停止、回滚或 mihomo 重启失败时恢复原状态。可用于兼容 SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 干扰仅 TUN 本机 DNS 的问题；只覆盖遵循系统代理的 Mac 应用，不替代 TUN，也不影响下游设备。已有系统代理、PAC 或自动发现时会拒绝启动，避免覆盖用户配置。">
+            <ConfigSwitch
+              label="启用 macOS HTTP/HTTPS 系统代理"
+              accessibleLabel="同时启用 macOS HTTP/HTTPS 系统代理"
+              checked={config.local_system_proxy.enabled}
+              disabled={config.transparent.mode !== 'tun'}
+              disabledText="需要 TUN"
+              onChange={enabled => setConfig({ ...config, local_system_proxy: { ...config.local_system_proxy, enabled } })}
+            />
           </ConfigField>
           <ConfigField label="每设备策略" setting="device_policy.file" hint="启用后可在“设备”页为 MAC 固定租约及独立 mihomo 策略；若尚无策略文件，保存时会创建一个空文件。关闭后不再使用此策略文件。">
-            <label className="checkbox-field"><input type="checkbox" checked={config.device_policy.enabled} onChange={event => setConfig({ ...config, device_policy: { ...config.device_policy, enabled: event.target.checked } })} /> 启用每设备策略</label>
+            <ConfigSwitch
+              label="启用每设备策略"
+              checked={config.device_policy.enabled}
+              onChange={enabled => setConfig({ ...config, device_policy: { ...config.device_policy, enabled } })}
+            />
           </ConfigField>
           <ConfigField className="wide" label="受保护的 IPv4" setting="device_policy.protected_ipv4" hint="以逗号分隔的路由器、恢复设备或其他静态主机地址。每设备策略的固定租约不得占用这些地址；仅在启用每设备策略时可编辑。">
             <input aria-label="受保护的 IPv4" disabled={!config.device_policy.enabled} placeholder="192.168.1.1, 192.168.1.21" value={config.device_policy.protected_ipv4.join(', ')} onChange={event => setConfig({ ...config, device_policy: { ...config.device_policy, protected_ipv4: event.target.value.split(',').map(item => item.trim()).filter(Boolean) } })} />
@@ -297,13 +387,29 @@ export function NetworkPage({ overview, onChanged }: { overview: Overview | null
         <div className="recovery-actions">
           <button ref={gatewayControlRef} id="gateway-control" className="primary" disabled={busy || configDirty || blockedByPlan || (current === 'gateway_active' && (!clientIPv4 || !clientConfirmed || Boolean(plan?.snapshot.ipv6_default && !ipv6Acknowledged)))} onClick={() => void advance()}>{busy ? '正在验证…' : actionLabel(current)}</button>
           {current === 'prepared' && <button className="danger" disabled={busy} onClick={() => void discardRecovery()}>放弃恢复并销毁资料</button>}
+          {(current === 'mac_static' || current === 'router_dhcp_disabled_confirmed') && <button className="danger" disabled={busy} onClick={() => void abandonTakeover()}>放弃 DHCP 接管</button>}
           {current === 'gateway_active' && <button className="danger" disabled={busy} onClick={() => void skipClientValidation()}>跳过客户端验收</button>}
           {current === 'gateway_stopped_waiting_router_dhcp' && <button className="danger" disabled={busy} onClick={() => void finishRecoveryManually()}>跳过 OFFER 探测并恢复 Mac 自动 DHCP</button>}
           {(current === 'gateway_stopped_waiting_router_dhcp' || current === 'router_dhcp_restored') && <button className="danger" disabled={busy} onClick={() => void finishKeepingStatic()}>保留静态 IP 并结束</button>}
         </div>
       </section>
     </>}
+    {policyMigration && <PolicyMigrationDialog migration={policyMigration} busy={busy} onInspect={() => { setPolicyMigration(null); onNavigate('devices') }} onCancel={() => setPolicyMigration(null)} onConfirm={() => void persistConfig(policyMigration.target, policyMigration)} />}
   </>
+}
+
+function PolicyMigrationDialog({ migration, busy, onInspect, onCancel, onConfirm }: { migration: PolicyMigration; busy: boolean; onInspect: () => void; onCancel: () => void; onConfirm: () => void }) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onCancel() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [busy, onCancel])
+  return <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="policy-migration-title">
+    <h2 id="policy-migration-title">确认设备身份后切换 DHCP 模式</h2>
+    {migration.resolved.length > 0 && <><p>以下设备此前只登记了固定 IPv4；OpenSurge 现在已观察到 MAC，确认后会补充到设备资料：</p><ul>{migration.resolved.map(device => <li key={device.id}><strong>{device.name || device.id}</strong> · <code>{device.ipv4}</code> · <code>{device.mac}</code></li>)}</ul></>}
+    {migration.unresolved.length > 0 && <><div className="notice warn"><strong>这些设备的策略将在 DHCP 模式下暂停，补充 MAC 后恢复。</strong></div><ul>{migration.unresolved.map(device => <li key={device.id}><strong>{device.name || device.id}</strong> · <code>{device.ipv4}</code> · MAC 尚未观察到</li>)}</ul><p>设备登记、Profile 和规则都会保留；DHCP 模式不会继续按旧 IP 匹配它们。</p></>}
+    <div className="dialog-actions">{migration.unresolved.length > 0 && <button type="button" disabled={busy} onClick={onInspect}>检查设备</button>}<button type="button" disabled={busy} onClick={onCancel}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={onConfirm}>{busy ? '正在保存…' : migration.unresolved.length > 0 ? '仍然切换并暂停这些策略' : '确认 MAC 并切换'}</button></div>
+  </dialog>
 }
 
 function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
@@ -347,9 +453,19 @@ function RouterDHCPGuide({ action, router, networkService }: { action: '关闭' 
 }
 
 function isIPv4(value: string) { return ipv4Pattern.test(value) }
+function validMAC(value: string) { return /^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(value.trim()) }
 
 function ConfigField({ label, setting, hint, className = '', children }: { label: string; setting: string; hint: string; className?: string; children: ReactNode }) {
   return <div className={`config-field ${className}`}><div className="config-field-title"><strong>{label}</strong><code>{setting}</code></div>{children}<small>{hint}</small></div>
+}
+
+function ConfigSwitch({ label, accessibleLabel = label, checked, disabled = false, disabledText, onChange }: { label: string; accessibleLabel?: string; checked: boolean; disabled?: boolean; disabledText?: string; onChange: (checked: boolean) => void }) {
+  const status = disabled && disabledText ? disabledText : checked ? '已开启' : '已关闭'
+  return <label className={`config-switch ${checked ? 'is-on' : ''} ${disabled ? 'is-disabled' : ''}`}>
+    <input className="config-switch-input" aria-label={accessibleLabel} type="checkbox" disabled={disabled} checked={checked} onChange={event => onChange(event.target.checked)} />
+    <span className="config-switch-copy"><strong>{label}</strong><small>{status}</small></span>
+    <span className="config-switch-toggle" aria-hidden="true"><i /></span>
+  </label>
 }
 
 function actionLabel(stage: string) {

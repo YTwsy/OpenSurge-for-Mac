@@ -167,10 +167,10 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	if err := decoder.Decode(&policy); err != nil {
 		return "", err
 	}
-	if err := device.ValidatePolicySetForLANWithProtected(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4); err != nil {
+	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
 		return "", err
 	}
-	bundle, err := device.CompilePolicyBundle(policy)
+	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 	if err != nil {
 		return "", err
 	}
@@ -189,7 +189,7 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	}
 	validation := cfg
 	validation.DevicePolicy.File = validationPolicy
-	validation.DevicePolicy.Bundle = nil
+	validation.DevicePolicy.Bundle = &bundle
 	validation.Runtime.Dir = temp
 	validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
 	if err := mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig(); err != nil {
@@ -241,6 +241,7 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.DNS.Upstream = input.DNS.Upstream
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
+	cfg.LocalSystemProxy.Enabled = input.LocalSystemProxy.Enabled
 	cfg.DevicePolicy.ProtectedIPv4 = append([]string(nil), input.DevicePolicy.ProtectedIPv4...)
 	createdPolicy := ""
 	if input.DevicePolicy.Enabled && cfg.DevicePolicy.File == "" {
