@@ -35,21 +35,32 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require a release tag on master
+      - name: Validate release tag and source branch
         id: version
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$ ]]; then
             echo "unsupported release tag: $GITHUB_REF_NAME" >&2
             exit 1
           fi
-          git fetch origin master --depth=1
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/master || {
-            echo "release tag is not reachable from origin/master" >&2
+
+          package_version="${BASH_REMATCH[1]}"
+          if [[ -n "${BASH_REMATCH[2]}" ]]; then
+            source_branch="codex/release-v${package_version}"
+            prerelease=true
+          else
+            source_branch=master
+            prerelease=false
+          fi
+
+          git fetch origin "$source_branch" --depth=1
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {
+            echo "release tag is not reachable from origin/$source_branch" >&2
             exit 1
           }
-          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "version=$package_version" >>"$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >>"$GITHUB_OUTPUT"
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -108,7 +119,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish stable GitHub release
+    name: Publish GitHub release
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -128,16 +139,23 @@ jobs:
           cd artifacts/release
           sha256sum OpenSurge-for-Mac-*-unsigned.pkg >SHA256SUMS
 
-      - name: Create stable GitHub release
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           release_dir="$GITHUB_WORKSPACE/artifacts/release"
+          package_version="${GITHUB_REF_NAME#v}"
+          package_version="${package_version%%-rc.*}"
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then
+            channel_flag=--prerelease
+          else
+            channel_flag=--latest
+          fi
           gh release create "$GITHUB_REF_NAME" \
-            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-arm64-unsigned.pkg#Apple Silicon 安装包 / Apple Silicon installer" \
-            "$release_dir/OpenSurge-for-Mac-${GITHUB_REF_NAME#v}-x86_64-unsigned.pkg#Intel 安装包 / Intel installer" \
+            "$release_dir/OpenSurge-for-Mac-${package_version}-arm64-unsigned.pkg#Apple Silicon 安装包 / Apple Silicon installer" \
+            "$release_dir/OpenSurge-for-Mac-${package_version}-x86_64-unsigned.pkg#Intel 安装包 / Intel installer" \
             "$release_dir/SHA256SUMS#SHA-256 校验文件 / SHA-256 checksums" \
             --verify-tag \
-            --latest \
+            "$channel_flag" \
             --title "OpenSurge for Mac $GITHUB_REF_NAME" \
             --notes-file packaging/unsigned-release-notes.md
