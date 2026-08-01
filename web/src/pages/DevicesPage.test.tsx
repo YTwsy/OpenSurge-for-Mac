@@ -314,6 +314,120 @@ describe('DevicesPage', () => {
     expect(screen.queryByText(/需要在线且未过期的精确/)).toBeNull()
   })
 
+  it('rebinds a known same-LAN device to its observed IPv4 and blocks misleading outlet switches until reload', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.101', profile: 'pixel-policy', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'pixel-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.101', profile: 'pixel-policy', egress_mode: 'dedicated', groups: { default: 'device/pixel/default' } }],
+      observed_devices: [{ ip: '192.168.1.137', mac: 'aa:bb:cc:dd:ee:37', active_connections: 2, neighbor_observed: true }],
+    }))
+    const sameLANOverview = {
+      ...overview,
+      topology: 'same_lan',
+      policies: [...overview.policies, { name: 'device/pixel/default', type: 'Selector', selected: 'DIRECT', options: ['DIRECT', 'Proxy-A'] }],
+    } as unknown as Overview
+    renderPage(sameLANOverview)
+
+    expect(await screen.findByText('设备已识别，但 IP 已变化')).toBeTruthy()
+    expect(screen.getByText(/原地址 192\.168\.1\.101/).textContent).toContain('当前地址 192.168.1.137')
+    const outlet = screen.getByLabelText('pixel 独立出口 当前摘要') as HTMLButtonElement
+    expect(outlet.disabled).toBe(true)
+    expect(outlet.textContent).toContain('先更新 IP 绑定')
+    const card = outlet.closest('.device-card') as HTMLElement
+    expect((within(card).getByRole('group', { name: /设备路由方式/ }) as HTMLFieldSetElement).disabled).toBe(true)
+    expect(api.selectDevicePolicy).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: '使用当前 IP 并应用' }))
+    const dialog = screen.getByRole('dialog', { name: '更新 Pixel 的设备 IP？' })
+    expect(dialog.textContent).toContain('192.168.1.101')
+    expect(dialog.textContent).toContain('192.168.1.137')
+    expect(dialog.textContent).toContain('设备 ID、Profile、规则和出口选择都会保留')
+    await userEvent.click(within(dialog).getByRole('button', { name: '更新并重载网关' }))
+
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
+    expect(saved.devices[0]).toEqual({
+      id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.137', profile: 'pixel-policy', egress_mode: 'dedicated',
+    })
+    expect(saved.profiles).toEqual(policy.profiles)
+    expect(api.gateway).toHaveBeenCalledWith('reload')
+    expect(waitForOperation).toHaveBeenCalledWith('reload-1')
+  })
+
+  it('saves an observed IPv4 without trying to reload a stopped gateway', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.101', profile: 'pixel-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'pixel-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.101', profile: 'pixel-policy', egress_mode: 'inherit_global', groups: {} }],
+      observed_devices: [{ ip: '192.168.1.137', mac: 'aa:bb:cc:dd:ee:37', active_connections: 1, neighbor_observed: true }],
+    }))
+    renderPage({ ...overview, topology: 'same_lan', status: { ...overview.status, gateway: 'stopped' } } as unknown as Overview)
+
+    await userEvent.click(await screen.findByRole('button', { name: '使用当前 IP 并应用' }))
+    const dialog = screen.getByRole('dialog', { name: '更新 Pixel 的设备 IP？' })
+    expect(dialog.textContent).toContain('配置会在下次启动时应用')
+    await userEvent.click(within(dialog).getByRole('button', { name: '更新设备 IP' }))
+
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    expect(api.gateway).not.toHaveBeenCalled()
+    expect(waitForOperation).not.toHaveBeenCalled()
+  })
+
+  it('does not guess a new IPv4 when the same MAC has multiple active observations', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.101', profile: 'pixel-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'pixel-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.101', profile: 'pixel-policy', egress_mode: 'inherit_global', groups: {} }],
+      observed_devices: [
+        { ip: '192.168.1.137', mac: 'aa:bb:cc:dd:ee:37', active_connections: 1, neighbor_observed: true },
+        { ip: '192.168.1.138', mac: 'aa:bb:cc:dd:ee:37', active_connections: 1, neighbor_observed: true },
+      ],
+    }))
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+
+    expect(await screen.findByText('静态配置身份：等待该 IPv4 经过 Mac')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '使用当前 IP 并应用' })).toBeNull()
+    expect(screen.getByText('设备按登记 IP 接入后生效')).toBeTruthy()
+  })
+
+  it('allows an offline same-LAN device outlet to be preset with an explicit activation boundary', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'dedicated', groups: { default: 'device/alice/default' } }],
+    }))
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+
+    expect(await screen.findByText('静态配置身份：等待该 IPv4 经过 Mac')).toBeTruthy()
+    expect(screen.getByText('设备按登记 IP 接入后生效')).toBeTruthy()
+    const outlet = screen.getByLabelText('alice 独立出口 当前摘要') as HTMLButtonElement
+    expect(outlet.disabled).toBe(false)
+    expect(outlet.textContent).toContain('独立出口 · 预设')
+    await userEvent.click(outlet)
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Proxy-A/ }))
+    await waitFor(() => expect(api.selectDevicePolicy).toHaveBeenCalledWith('alice', 'default', 'Proxy-A'))
+  })
+
   it('privatizes a shared template profile before adding a validated flat rule', async () => {
     const policy: PolicySet = {
       devices: [

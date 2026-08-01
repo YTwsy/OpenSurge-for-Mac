@@ -17,6 +17,8 @@ type DevicesPageProps = {
   onDirtyChange: (dirty: boolean) => void
 }
 
+type DeviceRebindRequest = { deviceID: string; name: string; fromIPv4: string; toIPv4: string }
+
 export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: DevicesPageProps) {
   const proxyHealth = useProxyHealth()
   const [data, setData] = useState<DevicesResponse | null>(null)
@@ -31,6 +33,8 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
   const [reloadOpen, setReloadOpen] = useState(false)
   const [reloading, setReloading] = useState(false)
   const [revisionConflict, setRevisionConflict] = useState(false)
+  const [rebindRequest, setRebindRequest] = useState<DeviceRebindRequest | null>(null)
+  const [rebinding, setRebinding] = useState(false)
   const dirty = Boolean(document && JSON.stringify(policy) !== JSON.stringify(normalizePolicy(document.policy)))
   const dirtyRef = useRef(dirty)
   dirtyRef.current = dirty
@@ -120,6 +124,70 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
     } finally { setReloading(false) }
   }
 
+  const applyObservedIPv4 = async () => {
+    if (!document || !rebindRequest) return
+    const request = rebindRequest
+    const owner = policy.devices.find(device => device.id !== request.deviceID && device.ipv4 === request.toIPv4)
+    if (owner) {
+      setRebindRequest(null)
+      setError(`当前 IPv4 ${request.toIPv4} 已登记给 ${displayDeviceName(owner)}，请先解决设备身份冲突。`)
+      return
+    }
+    const target = policy.devices.find(device => device.id === request.deviceID)
+    if (!target) {
+      setRebindRequest(null)
+      setError('设备已不在当前配置中，请刷新后重试。')
+      return
+    }
+
+    const next = copyPolicy(policy)
+    next.devices = next.devices.map(device => device.id === request.deviceID ? { ...device, ipv4: request.toIPv4 } : device)
+    const running = overview?.status.gateway === 'running'
+    let saved = false
+    let reloadCompleted = !running
+    dirtyRef.current = true
+    setPolicy(next)
+    setRebinding(true); setMessage(''); setError(''); setRevisionConflict(false)
+    try {
+      const updated = await api.saveDevicePolicy(next, document.revision)
+      saved = true
+      dirtyRef.current = false
+      setDocument(updated)
+      setPolicy(copyPolicy(updated.policy))
+      if (running) {
+        const operation = await api.gateway('reload')
+        await waitForOperation(operation.id)
+        reloadCompleted = true
+      }
+      setRebindRequest(null)
+      await refresh(true)
+      try { await onChanged() } catch { /* Status refresh is best-effort after the completed operation. */ }
+      setMessage(running
+        ? `${request.name} 已改用 ${request.toIPv4}，网关已安全重载；设备 ID、Profile、规则和出口选择均已保留。`
+        : `${request.name} 已改用 ${request.toIPv4}；设备 ID、Profile、规则和出口选择均已保留，下次启动网关时生效。`)
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setRebindRequest(null)
+      if (saved) {
+        dirtyRef.current = false
+        await refresh(true)
+      } else {
+        await refresh()
+      }
+      try { await onChanged() } catch { /* Keep the original operation failure visible. */ }
+      if (!saved && cause instanceof RequestError && cause.code === 'revision_conflict') {
+        setRevisionConflict(true)
+        setError('配置已被其他操作更新。你的本地修改仍保留；如需继续，请先放弃本地修改并加载最新版本。')
+      } else {
+        setError(saved
+          ? reloadCompleted
+            ? `设备 IP 已更新${running ? '且网关已重载' : ''}，但页面状态刷新失败：${failure}`
+            : `设备 IP 已保存，但网关重载失败：${failure}`
+          : failure)
+      }
+    } finally { setRebinding(false) }
+  }
+
   const discardDraft = async () => {
     if (!window.confirm('放弃当前尚未保存的设备修改并加载最新版本吗？')) return
     dirtyRef.current = false
@@ -140,10 +208,10 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
     {document ? <>
       <RegistrationPanel open={registrationOpen} onToggle={() => setRegistrationOpen(value => !value)} onRefresh={refreshDeviceObservation} topology={overview?.topology} leases={overview?.leases?.length ? overview.leases : data?.leases ?? []} observed={data?.observed_devices ?? []} observationError={data?.observation_error} policy={policy} candidates={candidates} onPolicyChange={setPolicy} onRegistered={id => { setSelectedDeviceID(id); setRegistrationOpen(false); setMessage('设备已加入本地草稿；保存后才会写入 desired 配置。') }} />
 
-      <section className="section live-section">
-        <SectionTitle title="设备出口" subtitle="即时生效 · 只切换已经应用的 mihomo selector，不改变规则结构" />
+      <section className="section live-section device-outlet-section">
+        <SectionTitle title="设备出口" subtitle="身份匹配时即时生效 · 离线设备可预设" />
         <div className="device-stack">
-            {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? [])).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} topology={overview?.topology} leases={data?.leases ?? []} observed={data?.observed_devices ?? []} groups={groups} healthByName={proxyHealth.byName} healthTesting={proxyHealth.testing} onHealthTest={proxyHealth.test} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onEgressModeChange={mode => {
+            {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? [])).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} topology={overview?.topology} leases={data?.leases ?? []} observed={data?.observed_devices ?? []} desiredDevices={policy.devices} groups={groups} healthByName={proxyHealth.byName} healthTesting={proxyHealth.testing} onHealthTest={proxyHealth.test} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onUseObservedIPv4={(deviceID, name, fromIPv4, toIPv4) => setRebindRequest({ deviceID, name, fromIPv4, toIPv4 })} onEgressModeChange={mode => {
               if (!view.desired) return
               const next = copyPolicy(policy)
               next.devices = next.devices.map(device => device.id === view.desired!.id ? { ...device, egress_mode: mode } : device)
@@ -158,10 +226,11 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
         : <section className="section"><Empty text="选择一台 desired 设备后，可在这里编辑它的规则。" /></section>}
 
       <AdvancedPolicyTools policy={policy} candidates={candidates} onPolicyChange={setPolicy} />
-      <div className={`sticky-save ${dirty ? 'has-changes' : 'is-saved'}`}><div><strong>{dirty ? '有未保存的设备修改' : '设备配置已保存'}</strong><small>{dirty ? '保存只更新 desired；运行中还需重载' : `revision ${document.revision.slice(0, 10)}`}</small></div><button className="primary" type="button" disabled={!dirty || saving} onClick={() => void save()}>{saving ? '正在验证并保存…' : '保存设备配置'}</button></div>
+      <div className={`sticky-save ${dirty ? 'has-changes' : 'is-saved'}`}><div><strong>{dirty ? '有未保存的设备修改' : '设备配置已保存'}</strong><small>{dirty ? '保存只更新 desired；运行中还需重载' : `revision ${document.revision.slice(0, 10)}`}</small></div><button className="primary" type="button" disabled={!dirty || saving || rebinding} onClick={() => void save()}>{saving ? '正在验证并保存…' : '保存设备配置'}</button></div>
     </> : <section className="section"><Empty text="当前 gateway config 尚未启用设备策略；请先在网络设置中启用。" /></section>}
 
     {reloadOpen && <ReloadDialog busy={reloading} onCancel={() => setReloadOpen(false)} onConfirm={() => void reload()} />}
+    {rebindRequest && <RebindDialog request={rebindRequest} busy={rebinding} running={overview?.status.gateway === 'running'} includesDraft={dirty} onCancel={() => setRebindRequest(null)} onConfirm={() => void applyObservedIPv4()} />}
   </>
 }
 
@@ -178,6 +247,24 @@ function ReloadDialog({ busy, onCancel, onConfirm }: { busy: boolean; onCancel: 
   return <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="reload-title"><h2 id="reload-title">应用设备配置并重载网关？</h2><p>OpenSurge 会先验证完整候选配置。验证通过后，DHCP/DNS、mihomo、PF 与 IPv4 forwarding 会短暂重启。</p><ul><li>当前连接会中断并重新建立。</li><li>改变固定 IPv4 的设备可能需要重新连接网络。</li><li>若候选配置验证失败，现有网关不会被停止。</li></ul><div className="dialog-actions"><button type="button" disabled={busy} onClick={onCancel}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={onConfirm}>{busy ? '正在验证并重载…' : '确认应用并重载'}</button></div></dialog>
 }
 
+function RebindDialog({ request, busy, running, includesDraft, onCancel, onConfirm }: { request: DeviceRebindRequest; busy: boolean; running: boolean; includesDraft: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const titleID = `rebind-${request.deviceID}-title`
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onCancel() }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [busy, onCancel])
+  return <dialog className="reload-dialog rebind-dialog" open aria-modal="true" aria-labelledby={titleID}>
+    <h2 id={titleID}>更新 {request.name} 的设备 IP？</h2>
+    <p>已通过相同 MAC 识别到这台设备，地址将从 <code>{request.fromIPv4}</code> 更新为 <code>{request.toIPv4}</code>。</p>
+    <p>设备 ID、Profile、规则和出口选择都会保留。</p>
+    {includesDraft && <div className="notice warn" role="status">当前页面还有未保存修改；确认后会与本次 IP 更新一起验证、保存{running ? '并应用' : ''}。</div>}
+    <ul><li>不会删除或重新登记设备。</li>{running ? <li>保存成功后会安全重载网关，现有连接会短暂中断。</li> : <li>网关当前未运行，配置会在下次启动时应用。</li>}</ul>
+    <div className="dialog-actions"><button type="button" disabled={busy} onClick={onCancel}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={onConfirm}>{busy ? (running ? '正在更新并重载…' : '正在更新…') : (running ? '更新并重载网关' : '更新设备 IP')}</button></div>
+  </dialog>
+}
+
+type DeviceIdentity = { state: 'ready' | 'observed' | 'conflict' | 'address_changed' | 'waiting'; tone: string; text: string; observedIPv4?: string }
 type DeviceView = { desired?: PolicyDevice; applied?: CompiledDevice; state: 'applied' | 'pending' | 'updated' | 'removing' }
 function deviceViews(desired: PolicyDevice[], applied: CompiledDevice[], changed: Set<string>): DeviceView[] {
   const appliedByID = new Map(applied.map(device => [device.id, device]))
@@ -192,7 +279,7 @@ function deviceViews(desired: PolicyDevice[], applied: CompiledDevice[], changed
   return views
 }
 
-function DeviceCard({ view, topology, leases, observed, groups, healthByName, healthTesting, onHealthTest, selected, onSelect, onEgressModeChange, onChanged }: { view: DeviceView; topology?: string; leases: Lease[]; observed: ObservedDevice[]; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; healthTesting: Set<string>; onHealthTest: (names: string[]) => Promise<void>; selected: boolean; onSelect: () => void; onEgressModeChange: (mode: DeviceEgressMode) => void; onChanged: () => Promise<void> }) {
+function DeviceCard({ view, topology, leases, observed, desiredDevices, groups, healthByName, healthTesting, onHealthTest, selected, onSelect, onUseObservedIPv4, onEgressModeChange, onChanged }: { view: DeviceView; topology?: string; leases: Lease[]; observed: ObservedDevice[]; desiredDevices: PolicyDevice[]; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; healthTesting: Set<string>; onHealthTest: (names: string[]) => Promise<void>; selected: boolean; onSelect: () => void; onUseObservedIPv4: (deviceID: string, name: string, fromIPv4: string, toIPv4: string) => void; onEgressModeChange: (mode: DeviceEgressMode) => void; onChanged: () => Promise<void> }) {
   const [rulesOpen, setRulesOpen] = useState(false)
   const device = view.desired ?? view.applied!
   const applied = view.applied
@@ -202,19 +289,34 @@ function DeviceCard({ view, topology, leases, observed, groups, healthByName, he
   const entries = Object.entries(applied?.groups ?? {})
   const defaultEntry = entries.find(([slot]) => slot === 'default')
   const ruleEntries = entries.filter(([slot]) => slot !== 'default')
+  const observedIPv4 = identity?.state === 'address_changed' ? identity.observedIPv4 : undefined
+  const rebindOwner = observedIPv4 ? desiredDevices.find(item => item.id !== device.id && item.ipv4 === observedIPv4) : undefined
+  const rebindAlreadyDrafted = Boolean(observedIPv4 && view.desired?.ipv4 === observedIPv4)
+  const identityBlocked = identity?.state === 'address_changed' || identity?.state === 'conflict'
   return <article className={`device-card ${selected ? 'selected' : ''}`}>
     <div className="source-head"><button className="device-title" type="button" disabled={!view.desired} aria-pressed={selected} onClick={onSelect}><small>{device.profile}</small><strong>{view.desired ? displayDeviceName(view.desired) : device.id}</strong>{view.desired?.name && <code>{device.id}</code>}</button><span className={`pill ${view.state === 'applied' ? 'ok' : ''}`}>{deviceStateLabel(view.state)}</span></div>
     <div className="device-identity"><code>{device.ipv4}</code><small>{device.mac}</small></div>
-    {identity && <span className={`identity-state ${identity.tone}`}>{identity.text}</span>}
-    {view.desired && <fieldset className="device-routing-mode"><legend>设备路由方式 <span className="effect-badge restart">保存后重载</span></legend><div className="route-options"><label className={desiredMode === 'inherit_global' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'inherit_global'} onChange={() => onEgressModeChange('inherit_global')} /><span><strong>跟随网关规则</strong><small>继续使用订阅或托管的网关规则；不跟随 Mac 本机的规则 / 全局 / 直连开关。</small></span></label><label className={desiredMode === 'dedicated' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'dedicated'} onChange={() => onEgressModeChange('dedicated')} /><span><strong>独立设备出口</strong><small>公网流量优先使用设备出口；局域网和私网地址保持直连。</small></span></label></div></fieldset>}
+    {identity?.state === 'address_changed' ? <div className="identity-rebind"><span className="identity-state changed"><strong>设备已识别，但 IP 已变化</strong><small>原地址 {applied!.ipv4} → 当前地址 {identity.observedIPv4}</small></span>{view.desired && !rebindOwner && !rebindAlreadyDrafted && <button className="primary" type="button" onClick={() => onUseObservedIPv4(view.desired!.id, displayDeviceName(view.desired!), applied!.ipv4, identity.observedIPv4!)}>使用当前 IP 并应用</button>}{rebindAlreadyDrafted && <small className="identity-rebind-note">当前 IP 已写入草稿；保存并重载后生效。</small>}{rebindOwner && <small className="identity-rebind-note conflict">当前地址已登记给 {displayDeviceName(rebindOwner)}，请先解决身份冲突。</small>}</div> : identity && <span className={`identity-state ${identity.tone}`}>{identity.text}</span>}
+    {identity?.state === 'waiting' && <small className="outlet-activation-note">设备按登记 IP 接入后生效</small>}
+    {view.desired && <fieldset className={`device-routing-mode ${identityBlocked ? 'identity-blocked' : ''}`} disabled={identityBlocked}>
+      <legend>设备路由方式 <span className="effect-badge restart">保存后重载</span></legend>
+      {identityBlocked && <small className="identity-routing-blocked">{identity?.state === 'address_changed' ? '当前 IP 尚未绑定；请先使用上方按钮更新设备 IP。' : '当前登记 IP 存在身份冲突；解决冲突后才能切换。'}</small>}
+      <div className="route-options"><label className={desiredMode === 'inherit_global' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'inherit_global'} onChange={() => onEgressModeChange('inherit_global')} /><span><strong>跟随网关规则</strong><small>继续使用订阅或托管的网关规则；不跟随 Mac 本机的规则 / 全局 / 直连开关。</small></span></label><label className={desiredMode === 'dedicated' ? 'active' : ''}><input type="radio" name={`route-${device.id}`} checked={desiredMode === 'dedicated'} onChange={() => onEgressModeChange('dedicated')} /><span><strong>独立设备出口</strong><small>公网流量优先使用设备出口；局域网和私网地址保持直连。</small></span></label></div>
+    </fieldset>}
     {desiredMode === 'legacy_fallback' && <div className="legacy-mode-warning" role="status"><strong>需要选择新的路由方式</strong><small>当前配置使用旧版兼容行为：先匹配全局规则，设备出口仅作兜底。</small></div>}
-    {runningMode === 'inherit_global' && <div className="runtime-route following"><span><strong>当前运行</strong><small>跟随网关规则</small></span><span className="effect-badge live">已应用</span></div>}
-    {(runningMode === 'dedicated' || runningMode === 'legacy_fallback') && <div className={`default-slot ${runningMode === 'legacy_fallback' ? 'legacy' : ''}`}>{defaultEntry ? <DeviceOutletSummary device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} title={runningMode === 'dedicated' ? '独立出口 · 即时切换' : '兼容兜底出口 · 即时切换'} ariaLabel={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'} 当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /> : <button className="outlet-summary unavailable" type="button" disabled><span className="outlet-summary-copy"><small>{runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}</small><strong>重载后可用</strong></span></button>}</div>}
+    {runningMode === 'inherit_global' && (identityBlocked ? <div className="runtime-route identity-blocked"><span><strong>{identity?.state === 'address_changed' ? '当前 IP 尚未绑定' : '当前身份存在冲突'}</strong><small>已应用配置仍对应 {applied!.ipv4}</small></span><span className="effect-badge restart">待修复</span></div> : <div className="runtime-route following"><span><strong>当前运行</strong><small>{identity?.state === 'waiting' ? '跟随网关规则 · 等待设备接入' : '跟随网关规则'}</small></span><span className="effect-badge live">{identity?.state === 'waiting' ? '已预设' : '已应用'}</span></div>)}
+    {(runningMode === 'dedicated' || runningMode === 'legacy_fallback') && <div className={`default-slot ${runningMode === 'legacy_fallback' ? 'legacy' : ''}`}>{defaultEntry ? <DeviceOutletControl identity={identity} device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} title={runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'} ariaLabel={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'} 当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /> : <button className="outlet-summary unavailable" type="button" disabled><span className="outlet-summary-copy"><small>{runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}</small><strong>重载后可用</strong></span></button>}</div>}
     {!runningMode && desiredMode && <div className="runtime-route"><span><strong>重载后应用</strong><small>{egressModeLabel(desiredMode)}</small></span></div>}
     {runningMode && desiredMode && runningMode !== desiredMode && <small className="draft-mode-delta">草稿将改为“{egressModeLabel(desiredMode)}”；保存并重载前仍按“{egressModeLabel(runningMode)}”运行。</small>}
-    {ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <div className="rule-outlet-summary" key={slot}><DeviceOutletSummary device={applied!.id} slot={slot} groupName={groupName} groups={groups} title={slot} ariaLabel={`${device.id} ${slot} 出口当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /></div>)}</div>}
+    {ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <div className="rule-outlet-summary" key={slot}><DeviceOutletControl identity={identity} device={applied!.id} slot={slot} groupName={groupName} groups={groups} title={slot} ariaLabel={`${device.id} ${slot} 出口当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /></div>)}</div>}
     {view.desired && <button className="edit-device" type="button" onClick={onSelect}>{selected ? '正在编辑此设备规则' : '编辑此设备规则'}</button>}
   </article>
+}
+
+function DeviceOutletControl({ identity, device, slot, groupName, groups, title, ariaLabel, healthByName, testing, onTest, onChanged }: { identity: DeviceIdentity | null; device: string; slot: string; groupName: string; groups: ProxyGroup[]; title: string; ariaLabel: string; healthByName: Map<string, ProxyHealthEntry>; testing: Set<string>; onTest: (names: string[]) => Promise<void>; onChanged: () => Promise<void> }) {
+  const blocked = identity?.state === 'address_changed' || identity?.state === 'conflict'
+  if (blocked) return <button className="outlet-summary unavailable" type="button" aria-label={ariaLabel} disabled><span className="outlet-summary-copy"><small>{title}</small><strong>{identity.state === 'address_changed' ? '先更新 IP 绑定' : '先解决身份冲突'}</strong></span></button>
+  return <DeviceOutletSummary device={device} slot={slot} groupName={groupName} groups={groups} title={`${title} · ${identity?.state === 'waiting' ? '预设' : '即时切换'}`} ariaLabel={ariaLabel} healthByName={healthByName} testing={testing} onTest={onTest} onChanged={onChanged} />
 }
 
 function desiredEgressMode(device: PolicyDevice): AppliedDeviceEgressMode {
@@ -238,20 +340,24 @@ function deviceStateLabel(state: DeviceView['state']) {
   return '已应用'
 }
 
-function deviceIdentity(applied: CompiledDevice, topology: string | undefined, leases: Lease[], observed: ObservedDevice[]) {
+function deviceIdentity(applied: CompiledDevice, topology: string | undefined, leases: Lease[], observed: ObservedDevice[]): DeviceIdentity {
   if (topology === 'same_lan') {
     const current = observed.find(item => item.ip === applied.ipv4)
-    if (!current) return { tone: '', text: '静态配置身份：等待该 IPv4 经过 Mac' }
-    if (!current.mac) return { tone: 'observed', text: '当前有流量：固定 IPv4 已观察，MAC 尚未验证' }
-    if (current.mac.toLowerCase() !== applied.mac.toLowerCase()) {
-      return { tone: 'conflict', text: `身份冲突：邻居 MAC ${current.mac} 与登记不一致` }
+    if (current) {
+      if (!current.mac) return { state: 'observed', tone: 'observed', text: '当前有流量：固定 IPv4 已观察，MAC 尚未验证' }
+      if (current.mac.toLowerCase() !== applied.mac.toLowerCase()) {
+        return { state: 'conflict', tone: 'conflict', text: `身份冲突：邻居 MAC ${current.mac} 与登记不一致` }
+      }
+      return { state: 'ready', tone: 'ready', text: '流量与邻居已观察：MAC / IPv4 匹配' }
     }
-    return { tone: 'ready', text: '流量与邻居已观察：MAC / IPv4 匹配' }
+    const sameMAC = observed.filter(item => item.ip !== applied.ipv4 && item.active_connections > 0 && item.neighbor_observed && item.mac?.toLowerCase() === applied.mac.toLowerCase())
+    if (sameMAC.length === 1) return { state: 'address_changed', tone: 'changed', text: '设备已识别，但 IP 已变化', observedIPv4: sameMAC[0].ip }
+    return { state: 'waiting', tone: '', text: '静态配置身份：等待该 IPv4 经过 Mac' }
   }
   const lease = leases.find(item => item.mac.toLowerCase() === applied.mac.toLowerCase() && item.ip === applied.ipv4 && item.online && (!item.expires_at || Date.parse(item.expires_at) > Date.now()))
   return lease
-    ? { tone: 'ready', text: 'DHCP 身份已验证' }
-    : { tone: '', text: '身份待确认：需要在线且未过期的精确 MAC / IPv4 租约' }
+    ? { state: 'ready', tone: 'ready', text: 'DHCP 身份已验证' }
+    : { state: 'waiting', tone: '', text: '身份待确认：需要在线且未过期的精确 MAC / IPv4 租约' }
 }
 
 type RegistrationDraft = { id: string; name: string; mac: string; ipv4: string; profile: string; egress_mode: DeviceEgressMode | '' }

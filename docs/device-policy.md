@@ -248,6 +248,19 @@ unregistered sources appear as temporary devices. Traffic and ARP observations
 are not DHCP identity proof; an unresolved MAC still requires manual input, and
 the main router must keep the registered IPv4 stable.
 
+When an applied static IPv4 has no traffic and the Devices page observes exactly
+one active source with the same neighbor MAC at a different IPv4, the GUI shows
+the old and current addresses and offers **Use current IP and apply**. Confirmation
+changes only that device IPv4 while preserving its ID, name, profile, rules,
+routing mode, and selector choices. A running gateway performs a safe reload
+after the save; a stopped gateway applies the saved change on its next start.
+Until then, the routing-mode controls and applied selectors are disabled so a
+change against the stale `SRC-IP-CIDR` is not presented as immediate. An offline
+device can still have a selector preset, with an explicit note that it becomes
+effective when the device connects using its registered IP. Multiple active
+IPv4 observations for one MAC, MAC conflicts, and incomplete evidence never
+cause an automatic guess or silent rewrite.
+
 Dashboard traffic and recent-lease summaries join the registered display name
 by normalized MAC and prefer it over the DHCP hostname. This makes a saved
 device name visible even when the client does not publish a DHCP hostname.

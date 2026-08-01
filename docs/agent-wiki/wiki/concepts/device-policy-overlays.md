@@ -40,6 +40,13 @@ Profile，只改变该设备引用；ID 冲突时追加数字后缀。
 流量已观察或邻居已观察。ARP/流量只证明近期观察，不是 MAC 身份认证；未经过 Mac、已经
 离线或经 IPv6 绕过的同 LAN 设备不会因此被自动发现。
 
+same-LAN applied IPv4 没有当前流量时，只有“恰好一个不同 IPv4、相同规范化邻居 MAC、
+`neighbor_observed=true` 且存在活跃连接”的观察项可以进入地址变化提示。GUI 不静默写入：
+它先禁用旧 `SRC-IP-CIDR` 对应的路由方式和 applied selectors，再由用户确认一次保存与
+安全重载。更新只替换设备 IPv4，必须保留稳定 ID、名称、Profile、规则、egress mode 与
+selector 选择。无观察证据时 selector 可标成预设；同 MAC 多地址或目标 IPv4 已被其他
+desired 设备占用时必须 fail closed，不提供猜测式更新。
+
 旧文件省略 `egress_mode` 时解析为 `legacy_fallback`，继续保持“设备覆盖 → 全局规则 →
 设备默认兜底 → terminal MATCH”。GUI 会显示兼容提示并要求用户明确迁移到跟随或独立，
 不会静默改变现有流量。

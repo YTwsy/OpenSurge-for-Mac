@@ -319,6 +319,7 @@ button{cursor:pointer}
 .live-section{border-color:#2a5c48;background:linear-gradient(180deg,#0f211b,#0d1b17)}
 .live-section>.section-title{display:flex;align-items:start;justify-content:space-between}
 .live-section>.section-title:after{content:"即时生效";border:1px solid #32765a;border-radius:99px;background:#153b2c;color:#a3f1ca;padding:4px 8px;font-size:10px;font-weight:800}
+.device-outlet-section>.section-title:after{content:"身份匹配时即时生效"}
 .source-head{align-items:flex-start}
 .card-help{display:block!important;margin:9px 0 13px!important;color:#82978f!important;letter-spacing:0!important;font-weight:400!important;line-height:1.5}
 .global-groups{display:grid;gap:9px;margin-top:16px}
@@ -332,10 +333,13 @@ button{cursor:pointer}
 .device-card .source-head{min-width:0}.device-card .source-head>.pill{flex:0 0 auto}
 .device-title{display:grid;gap:4px;min-width:0;max-width:100%;border:0;background:transparent;color:inherit;padding:0;text-align:left}
 .device-title strong,.device-title code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.device-title strong{font-size:17px}.device-title code{color:#71847d;font-size:10px}.device-title:disabled{cursor:default}
-.identity-state{display:block;margin-top:10px;color:#8ba097;font-size:10px;line-height:1.45}.identity-state.ready{color:#83e9b8}.identity-state.observed{color:#8fc7ec}.identity-state.conflict{color:#ff9b91}
+.identity-state{display:block;margin-top:10px;color:#8ba097;font-size:10px;line-height:1.45}.identity-state.ready{color:#83e9b8}.identity-state.observed{color:#8fc7ec}.identity-state.conflict{color:#ff9b91}.identity-state.changed{color:#f1d184}
+.identity-state strong,.identity-state small{display:block}.identity-state small{margin-top:3px;color:#c6ad70;letter-spacing:0}
+.identity-rebind{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;align-items:end;margin-top:10px;padding:11px 12px;border:1px solid #6e5b2f;border-radius:10px;background:#292313}.identity-rebind .identity-state{margin-top:0}.identity-rebind .primary{white-space:nowrap}.identity-rebind-note{grid-column:1/-1;color:#c6ad70;letter-spacing:0;line-height:1.45}.identity-rebind-note.conflict{color:#ff9b91}
 .device-routing-mode,.registration-routing{margin:16px 0 0;padding:0;border:0}
 .device-routing-mode legend,.registration-routing legend{width:100%;margin-bottom:8px;color:#9eb2aa;font-size:11px;font-weight:800;letter-spacing:.08em}
 .device-routing-mode legend .effect-badge{float:right;letter-spacing:0}
+.identity-routing-blocked{display:block;margin:-2px 0 8px;color:#f1d184;letter-spacing:0;line-height:1.45}.device-routing-mode.identity-blocked .route-options{opacity:.55}.device-routing-mode.identity-blocked .route-options label{cursor:not-allowed}
 .route-options,.registration-routing{display:grid;gap:8px}
 .route-options label,.registration-routing>label{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:start;padding:10px;border:1px solid #263c34;border-radius:10px;background:#0a1713;color:#a6b8b1;cursor:pointer}
 .route-options label.active,.registration-routing>label.active{border-color:#5caa89;background:#10271f;color:#e5f0eb}
@@ -350,6 +354,7 @@ button{cursor:pointer}
 .draft-mode-delta{display:block!important;margin-top:8px!important;color:#d6bd79!important;letter-spacing:0!important;line-height:1.5}
 .default-slot{display:grid;grid-template-columns:minmax(90px,.7fr) minmax(0,1.3fr);gap:12px;align-items:center;margin-top:18px;padding:15px;border:1px solid #35634f;border-radius:12px;background:#112a21}
 .default-slot>span strong,.default-slot>span small{display:block}.default-slot>span small{margin-top:4px;color:#70b994}
+.outlet-activation-note{display:block;margin-top:8px;color:#c6ad70;letter-spacing:0;line-height:1.45}
 .default-slot.legacy{border-color:#66582f;background:#211e13}.default-slot.legacy>span small{color:#bca96f}
 .select-with-error{display:grid;gap:5px;min-width:0}.field-error{display:block;color:#ffb2a5!important;font-size:11px!important;line-height:1.45;letter-spacing:0!important;font-weight:600!important}
 .rule-slots{margin-top:10px;border:1px solid #243a32;border-radius:10px;padding:11px 12px}
@@ -499,6 +504,7 @@ html[data-theme="light"] .session-expired{color:#183028}html[data-theme="light"]
 html[data-theme="light"] .live-section{background:#fff;border-color:#87bda6}
 html[data-theme="light"] .device-card.selected{border-color:#54a983}
 html[data-theme="light"] .device-card.selected .edit-device{background:#e5f2ec;border-color:#69b895;color:#215e46}
+html[data-theme="light"] .identity-rebind{background:#fff5dc;border-color:#dabd70}html[data-theme="light"] .identity-state.changed,html[data-theme="light"] .identity-state.changed small,html[data-theme="light"] .identity-rebind-note,html[data-theme="light"] .identity-routing-blocked,html[data-theme="light"] .outlet-activation-note{color:#80601d}
 html[data-theme="light"] .route-options label,html[data-theme="light"] .registration-routing>label{background:#f8fbfa;border-color:#cbded6;color:#36564a}
 html[data-theme="light"] .route-options label.active,html[data-theme="light"] .registration-routing>label.active{background:#e5f2ec;border-color:#69b895;color:#183028}
 html[data-theme="light"] .legacy-mode-warning{background:#fff5dc;border-color:#dabd70;color:#644b15}
