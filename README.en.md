@@ -66,7 +66,9 @@ into the next engineering loop.
 - Follow a recovery state machine through same-LAN DHCP takeover startup,
   client validation, shutdown, and network restoration.
 
-Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
+Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md). For
+common local-network, TUN, and device configuration questions, see the
+[FAQ](docs/faq.md).
 
 **Gateway and proxying**
 
