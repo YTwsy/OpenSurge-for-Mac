@@ -98,20 +98,20 @@ line_of() {
 }
 
 recovery_line="$(line_of 'RECOVERY_STAGE=' "$PREINSTALL")"
-control_line="$(line_of 'bootout "gui/$UID_VALUE/com.opensurge.control"' "$PREINSTALL")"
+gui_stop_line="$(line_of 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL")"
 stop_line="$(line_of '"$ROOT/bin/omg" stop' "$PREINSTALL")"
 helper_line="$(line_of 'bootout system/com.opensurge.helper' "$PREINSTALL")"
 
-[[ -n "$recovery_line" && -n "$control_line" && -n "$stop_line" && -n "$helper_line" ]] || {
+[[ -n "$recovery_line" && -n "$gui_stop_line" && -n "$stop_line" && -n "$helper_line" ]] || {
   echo "preinstall is missing a required upgrade step" >&2
   exit 1
 }
-(( recovery_line < control_line && control_line < stop_line && stop_line < helper_line )) || {
-  echo "unsafe preinstall order: expected recovery check, control bootout, gateway stop, helper bootout" >&2
+(( recovery_line < gui_stop_line && gui_stop_line < stop_line && stop_line < helper_line )) || {
+  echo "unsafe preinstall order: expected recovery check, GUI/control stop, gateway stop, helper bootout" >&2
   exit 1
 }
 
-grep -Fq 'opensurge_installed_gui_pids "$UID_VALUE" "$USER_HOME"' "$PREINSTALL" || {
+grep -Fq 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL" || {
   echo "preinstall must stop installed OpenSurge GUI processes" >&2
   exit 1
 }
@@ -119,6 +119,103 @@ if grep -Eq 'p(kill|grep).*-x (opensurge-control|OpenSurgeMenuBar)' "$PREINSTALL
   echo "preinstall must not block on unrelated same-name developer processes" >&2
   exit 1
 fi
+
+# Reproduce the upgrade race that previously made the first install fail: the
+# menu bar starts a late bootstrap while it is being terminated, and KeepAlive
+# replaces the control PID after the first bootout. The stop helper must bootout
+# the exact service again instead of only observing the replacement forever.
+(
+  test_menu_alive=1
+  test_control_alive=1
+  test_control_registered=1
+  test_late_bootstrap=0
+  test_menu_term_count=0
+  test_control_term_count=0
+  test_control_bootout_count=0
+
+  opensurge_installed_menu_bar_pids() {
+    if [[ "$test_menu_alive" -eq 1 ]]; then
+      printf '%s\n' 101
+    fi
+  }
+  opensurge_installed_gui_pids() {
+    if [[ "$test_control_alive" -eq 1 ]]; then
+      printf '%s\n' 201
+    fi
+    if [[ "$test_menu_alive" -eq 1 ]]; then
+      printf '%s\n' 101
+    fi
+  }
+  opensurge_signal_installed_gui_pid() {
+    local signal_name="$1"
+    local pid="$2"
+    if [[ "$signal_name" == "TERM" && "$pid" == "101" ]]; then
+      test_menu_term_count=$((test_menu_term_count + 1))
+      test_menu_alive=0
+      test_late_bootstrap=1
+    elif [[ "$signal_name" == "TERM" && "$pid" == "201" ]]; then
+      test_control_term_count=$((test_control_term_count + 1))
+      if [[ "$test_control_registered" -eq 0 ]]; then
+        test_control_alive=0
+      fi
+    elif [[ "$signal_name" == "KILL" ]]; then
+      if [[ "$pid" == "101" ]]; then
+        test_menu_alive=0
+      elif [[ "$pid" == "201" && "$test_control_registered" -eq 0 ]]; then
+        test_control_alive=0
+      fi
+    fi
+  }
+  opensurge_bootout_installed_control() {
+    test_control_bootout_count=$((test_control_bootout_count + 1))
+    if [[ "$test_late_bootstrap" -eq 1 ]]; then
+      # Model a bootstrap child completing just after this bootout.
+      test_late_bootstrap=0
+      test_control_registered=1
+      test_control_alive=1
+    else
+      test_control_registered=0
+      test_control_alive=0
+    fi
+  }
+  opensurge_process_wait_tick() { :; }
+
+  opensurge_stop_installed_gui_processes 501 /Users/tester || {
+    echo "preinstall process stop must survive a late Control Service bootstrap" >&2
+    exit 1
+  }
+  [[ "$test_menu_term_count" -eq 1 && "$test_control_term_count" -eq 1 ]] || {
+    echo "preinstall race regression did not terminate the expected installed processes" >&2
+    exit 1
+  }
+  [[ "$test_control_bootout_count" -eq 2 && "$test_control_alive" -eq 0 ]] || {
+    echo "preinstall race regression did not remove the replacement Control Service" >&2
+    exit 1
+  }
+)
+
+# A process at an exact installed path that survives TERM and KILL must still
+# fail closed before the gateway/helper upgrade sequence begins.
+(
+  test_control_bootout_count=0
+  opensurge_installed_menu_bar_pids() { printf '%s\n' 301; }
+  opensurge_installed_gui_pids() { printf '%s\n' 301; }
+  opensurge_signal_installed_gui_pid() { :; }
+  opensurge_bootout_installed_control() {
+    test_control_bootout_count=$((test_control_bootout_count + 1))
+  }
+  opensurge_process_wait_tick() { :; }
+
+  if opensurge_stop_installed_gui_processes 501 /Users/tester; then
+    echo "preinstall must reject an installed menu bar process that cannot be stopped" >&2
+    exit 1
+  fi
+  [[ "$test_control_bootout_count" -eq 0 ]] || {
+    echo "preinstall must stop the menu bar before booting out the Control Service" >&2
+    exit 1
+  }
+)
+
 grep -Fq 'rm -rf "/Applications/OpenSurge Menu Bar.app"' "$POSTINSTALL" || {
   echo "postinstall must remove the legacy menu bar app bundle" >&2
   exit 1

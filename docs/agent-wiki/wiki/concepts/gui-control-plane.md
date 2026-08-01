@@ -280,8 +280,11 @@ attestation。正式 Release 只表示 GitHub 发布通道稳定，不得把 Git
 Developer ID 签名或 notarization，也不得指导用户全局关闭 Gatekeeper 或递归移除
 quarantine；安装仍使用系统设置针对单个包的“仍要打开”。
 
-pkg 升级必须在覆盖 payload 前执行 recovery 门禁，并按 Control Service/菜单栏退出、
-旧版 `omg stop`、root helper bootout 的顺序清理运行进程。recovery 非 `idle`/`complete`/
+pkg 升级必须在覆盖 payload 前执行 recovery 门禁。进程清理必须先终止菜单栏 App，阻断
+其“Control Service 不可用时自动 bootstrap”的恢复路径，再循环 bootout 精确的用户级
+Control Service 并重新扫描已安装可执行文件；等待期间新出现的受信 PID 也必须再次清理，
+避免一次迟到的 `launchctl bootstrap` 令首次安装失败。完成 GUI/Control 清理后，才执行
+旧版 `omg stop` 和 root helper bootout。recovery 非 `idle`/`complete`/
 `complete_static` 或旧版网关停止失败时直接拒绝升级；`complete_static` 是明确保留 Mac
 静态 IPv4 的终态，不应被误判为恢复未完成。postinstall 不得覆盖已有 `config.yaml`，导入源、
 设备策略和 runtime 记录也必须跨升级保留。

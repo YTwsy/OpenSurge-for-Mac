@@ -157,7 +157,8 @@ gh attestation verify OpenSurge-for-Mac-*-x86_64-unsigned.pkg \
 仍保持停止，只有在控制面中明确操作才会启动。
 
 pkg 升级会在同一 LAN DHCP 恢复未完成时拒绝执行。替换 payload 前，preinstall 先停止
-用户级 Control Service 与菜单栏 App，再使用当前已安装的 `omg stop` 清理网关，最后
+菜单栏 App 以阻断 Control Service 自动唤醒，再卸载用户级 Control Service；随后使用
+当前已安装的 `omg stop` 清理网关，最后
 卸载 root helper。升级会保留现有配置、导入源、策略数据和 runtime 历史；只有首次安装
 才会用包内示例生成 `config.yaml`。
 
