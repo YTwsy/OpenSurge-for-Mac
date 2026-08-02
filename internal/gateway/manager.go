@@ -16,6 +16,7 @@ import (
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/pf"
+	"open-mihomo-gateway/internal/process"
 	"open-mihomo-gateway/internal/runtime"
 	"open-mihomo-gateway/internal/sysctl"
 )
@@ -67,6 +68,7 @@ type localSystemProxyService interface {
 	Prepare(context.Context, string, int) (runtime.SystemProxySnapshot, error)
 	Enable(context.Context, runtime.SystemProxySnapshot, int) error
 	Restore(context.Context, runtime.SystemProxySnapshot) error
+	RestoreOwned(context.Context, runtime.SystemProxySnapshot, int) error
 }
 
 type gatewayDeps struct {
@@ -84,6 +86,9 @@ type gatewayDeps struct {
 	interfaceByName     func(string) (*net.Interface, error)
 	interfaceAddrs      func(*net.Interface) ([]net.Addr, error)
 	probeReservationIP  func(ip string, expectedMAC string) error
+	currentBoot         func() (runtime.BootSession, error)
+	processFingerprint  func(int) (string, error)
+	processMatches      func(int, string) (bool, error)
 	now                 func() time.Time
 }
 
@@ -115,6 +120,9 @@ func defaultGatewayDeps() gatewayDeps {
 			return iface.Addrs()
 		},
 		probeReservationIP: probeReservationIPConflict,
+		currentBoot:        runtime.CurrentBootSession,
+		processFingerprint: process.Fingerprint,
+		processMatches:     process.MatchesFingerprint,
 		now:                time.Now,
 	}
 }
@@ -131,6 +139,49 @@ func (m Manager) localSystemProxy(deps gatewayDeps) localSystemProxyService {
 		return deps.newLocalSystemProxy()
 	}
 	return macosnetwork.SystemProxy{}
+}
+
+func currentBoot(deps gatewayDeps) (runtime.BootSession, error) {
+	if deps.currentBoot != nil {
+		return deps.currentBoot()
+	}
+	return runtime.CurrentBootSession()
+}
+
+func processFingerprint(deps gatewayDeps, pid int) (string, error) {
+	if deps.processFingerprint != nil {
+		return deps.processFingerprint(pid)
+	}
+	return process.Fingerprint(pid)
+}
+
+func processMatches(deps gatewayDeps, pid int, fingerprint string) (bool, error) {
+	if deps.processMatches != nil {
+		return deps.processMatches(pid, fingerprint)
+	}
+	return process.MatchesFingerprint(pid, fingerprint)
+}
+
+func stopTrackedProcess(deps gatewayDeps, name string, pid int, fingerprint string, stop func(int) error) error {
+	if strings.TrimSpace(fingerprint) == "" {
+		return stop(pid)
+	}
+	matches, err := processMatches(deps, pid, fingerprint)
+	if err != nil {
+		return fmt.Errorf("verify %s pid %d before stop: %w", name, pid, err)
+	}
+	if !matches {
+		return nil
+	}
+	return stop(pid)
+}
+
+func trackedProcessRunning(deps gatewayDeps, pid int, fingerprint string, running func(int) bool) bool {
+	if strings.TrimSpace(fingerprint) == "" {
+		return running(pid)
+	}
+	matches, err := processMatches(deps, pid, fingerprint)
+	return err == nil && matches && running(pid)
 }
 
 func (m Manager) Start(ctx context.Context) error {
@@ -151,6 +202,10 @@ func (m Manager) Start(ctx context.Context) error {
 	}
 	if err := deps.ensure(m.paths); err != nil {
 		return err
+	}
+	bootSession, err := currentBoot(deps)
+	if err != nil {
+		return fmt.Errorf("determine current boot session: %w", err)
 	}
 
 	dhcpManager := deps.newDHCP(m.cfg, m.paths)
@@ -207,6 +262,7 @@ func (m Manager) Start(ctx context.Context) error {
 
 	state := runtime.State{
 		StartedAt:          deps.now(),
+		BootSessionID:      bootSession.ID,
 		IPForwardingBefore: ipForwardingBefore,
 		PFEnabledBefore:    pfEnabledBefore,
 		ProfileDigest:      profileDigest,
@@ -229,6 +285,13 @@ func (m Manager) Start(ctx context.Context) error {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	state.PIDMihomo = mihomoPID
+	state.MihomoProcessFingerprint, err = processFingerprint(deps, mihomoPID)
+	if err != nil || (mihomoPID > 0 && state.MihomoProcessFingerprint == "") {
+		if err == nil {
+			err = fmt.Errorf("mihomo pid %d disappeared before its identity could be recorded", mihomoPID)
+		}
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
@@ -238,6 +301,13 @@ func (m Manager) Start(ctx context.Context) error {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	state.PIDDNSMasq = pid
+	state.DNSMasqProcessFingerprint, err = processFingerprint(deps, pid)
+	if err != nil || (pid > 0 && state.DNSMasqProcessFingerprint == "") {
+		if err == nil {
+			err = fmt.Errorf("dnsmasq pid %d disappeared before its identity could be recorded", pid)
+		}
+		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
@@ -292,7 +362,16 @@ func (m Manager) Reload(ctx context.Context) error {
 	if !exists {
 		return fmt.Errorf("gateway is not running; run start instead")
 	}
-	if !deps.newDHCP(m.cfg, m.paths).Running(state.PIDDNSMasq) || !deps.newMihomo(m.cfg, m.paths).Running(state.PIDMihomo) {
+	bootSession, err := currentBoot(deps)
+	if err != nil {
+		return fmt.Errorf("determine current boot session: %w", err)
+	}
+	if !state.BelongsToBoot(bootSession) {
+		return fmt.Errorf("gateway runtime was interrupted by a system reboot; run stop to clean the interrupted runtime, then start the gateway")
+	}
+	dhcpManager := deps.newDHCP(m.cfg, m.paths)
+	mihomoManager := deps.newMihomo(m.cfg, m.paths)
+	if !trackedProcessRunning(deps, state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Running) || !trackedProcessRunning(deps, state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Running) {
 		return fmt.Errorf("gateway is degraded; reload requires both DHCP/DNS and mihomo to be running")
 	}
 	if err := m.validateReloadCandidate(); err != nil {
@@ -324,6 +403,13 @@ func (m Manager) RestartMihomo(ctx context.Context) error {
 	if !exists {
 		return fmt.Errorf("gateway is not running; run start instead")
 	}
+	bootSession, err := currentBoot(deps)
+	if err != nil {
+		return fmt.Errorf("determine current boot session: %w", err)
+	}
+	if !state.BelongsToBoot(bootSession) {
+		return fmt.Errorf("gateway runtime was interrupted by a system reboot; run stop to clean the interrupted runtime, then start the gateway")
+	}
 	desiredProfileDigest, err := config.MihomoProfileDigest(m.cfg)
 	if err != nil {
 		return fmt.Errorf("digest current imported mihomo profile: %w", err)
@@ -345,13 +431,16 @@ func (m Manager) RestartMihomo(ctx context.Context) error {
 	}
 
 	previousPID := state.PIDMihomo
+	previousFingerprint := state.MihomoProcessFingerprint
 	state.PIDMihomo = 0
+	state.MihomoProcessFingerprint = ""
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return fmt.Errorf("mark mihomo restart in runtime state: %w", err)
 	}
-	if err := mihomoManager.Stop(previousPID); err != nil {
-		if mihomoManager.Running(previousPID) {
+	if err := stopTrackedProcess(deps, "mihomo", previousPID, previousFingerprint, mihomoManager.Stop); err != nil {
+		if trackedProcessRunning(deps, previousPID, previousFingerprint, mihomoManager.Running) {
 			state.PIDMihomo = previousPID
+			state.MihomoProcessFingerprint = previousFingerprint
 			return errors.Join(fmt.Errorf("stop mihomo pid %d: %w", previousPID, err), deps.saveState(m.paths.StateFile, state))
 		}
 		return errors.Join(fmt.Errorf("stop mihomo pid %d: %w", previousPID, err), restoreSystemProxy(), deps.saveState(m.paths.StateFile, state))
@@ -366,6 +455,15 @@ func (m Manager) RestartMihomo(ctx context.Context) error {
 		return errors.Join(fmt.Errorf("start replacement mihomo process: %w", err), restoreSystemProxy())
 	}
 	state.PIDMihomo = newPID
+	state.MihomoProcessFingerprint, err = processFingerprint(deps, newPID)
+	if err != nil || (newPID > 0 && state.MihomoProcessFingerprint == "") {
+		if err == nil {
+			err = fmt.Errorf("replacement mihomo pid %d disappeared before its identity could be recorded", newPID)
+		}
+		restoreErr := restoreSystemProxy()
+		stopErr := mihomoManager.Stop(newPID)
+		return errors.Join(err, restoreErr, stopErr)
+	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		restoreErr := restoreSystemProxy()
 		stopErr := mihomoManager.Stop(newPID)
@@ -453,6 +551,15 @@ func (m Manager) Stop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if exists {
+		bootSession, bootErr := currentBoot(deps)
+		if bootErr != nil {
+			return fmt.Errorf("determine current boot session: %w", bootErr)
+		}
+		if !state.BelongsToBoot(bootSession) {
+			return m.cleanupInterruptedRuntime(ctx, deps, state)
+		}
+	}
 	var cleanupErr error
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
@@ -463,9 +570,9 @@ func (m Manager) Stop(ctx context.Context) error {
 			}
 		}
 		dhcpManager := deps.newDHCP(m.cfg, m.paths)
-		cleanupErr = errors.Join(cleanupErr, dhcpManager.Stop(state.PIDDNSMasq))
+		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "dnsmasq", state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Stop))
 		mihomoManager := deps.newMihomo(m.cfg, m.paths)
-		cleanupErr = errors.Join(cleanupErr, mihomoManager.Stop(state.PIDMihomo))
+		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "mihomo", state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Stop))
 		if state.PFAnchorLoaded {
 			cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
 		}
@@ -481,6 +588,23 @@ func (m Manager) Stop(ctx context.Context) error {
 	}
 
 	fmt.Println("Gateway stopped and runtime state cleared.")
+	return nil
+}
+
+func (m Manager) cleanupInterruptedRuntime(ctx context.Context, deps gatewayDeps, state runtime.State) error {
+	if state.LocalSystemProxy != nil {
+		if err := m.localSystemProxy(deps).RestoreOwned(ctx, *state.LocalSystemProxy, m.cfg.Mihomo.MixedPort); err != nil {
+			return fmt.Errorf("restore OpenSurge-owned local system proxy after reboot: %w", err)
+		}
+	}
+	cleanupErr := errors.Join(
+		deps.removeState(m.paths.StateFile),
+		device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied),
+	)
+	if cleanupErr != nil {
+		return cleanupErr
+	}
+	fmt.Println("Interrupted gateway runtime from a previous system boot was cleared without signaling stale PIDs or changing current PF/forwarding state.")
 	return nil
 }
 
@@ -585,8 +709,8 @@ func (m Manager) rollback(ctx context.Context, cause error, state runtime.State,
 			return fmt.Errorf("%w; rollback could not restore the local system proxy, so gateway services were left running for recovery: %v", cause, err)
 		}
 	}
-	cleanupErr = errors.Join(cleanupErr, dhcpManager.Stop(state.PIDDNSMasq))
-	cleanupErr = errors.Join(cleanupErr, mihomoManager.Stop(state.PIDMihomo))
+	cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "dnsmasq", state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Stop))
+	cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "mihomo", state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Stop))
 	if state.PFAnchorLoaded {
 		cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
 	}

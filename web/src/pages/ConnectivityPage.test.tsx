@@ -90,4 +90,16 @@ describe('ConnectivityPage', () => {
     expect(waitForOperation).toHaveBeenCalledWith('restart-1')
     await waitFor(() => expect(api.testConnectivity).toHaveBeenCalledWith(['baidu', 'github']))
   })
+
+  it('blocks mihomo-only recovery for a runtime interrupted by system reboot', async () => {
+	const interrupted = {
+	  ...running,
+	  status: { ...running.status, gateway: 'degraded', mihomo: 'stopped', runtime_state: 'interrupted' },
+	} as Overview
+	render(<ConnectivityPage overview={interrupted} />)
+	await screen.findByText('百度')
+	expect(screen.getByText(/系统重启中断/)).toBeTruthy()
+	expect(screen.queryByRole('button', { name: '仅重启 Mihomo' })).toBeNull()
+	expect(api.gateway).not.toHaveBeenCalled()
+  })
 })

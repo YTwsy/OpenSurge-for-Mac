@@ -1,8 +1,17 @@
 # OpenSurge for Mac 常见问题
 
-本文先记录 v0.1.24 中与 Mac 本机联网、TUN 启动、设备身份和每设备出口有关的常见问题。
+本文先记录 v0.1.25 中与系统重启恢复、Mac 本机联网、TUN 启动、设备身份和每设备出口有关的常见问题。
 完整安装与 DHCP 恢复流程仍以
 [OpenSurge for Mac App 使用指南](app-user-guide.zh-CN.md)为准。
+
+## Mac 重启后为什么显示“重启后待清理”？
+
+OpenSurge 不会仅凭重启前留下的 runtime state 自动重新接管网络。Mac 重启会终止
+dnsmasq、mihomo，并重置当次运行的 PF/forwarding；原来的进程 PID 也可能已经被其他
+进程复用。请在**网络设置**点击停止当前模式：OpenSurge 会识别这是上一次开机留下的
+中断状态，不会向旧 PID 发送信号，也不会改动本次开机的 PF/forwarding。清理完成后可
+重新启动完整网关。此时不要使用“仅重启 Mihomo”，因为 DHCP/DNS、PF 与 forwarding
+并未随它一起恢复。
 
 ## 下游设备接管正常，但 Mac 本机无法访问网络怎么办？
 

@@ -1145,6 +1145,25 @@ func TestGatewayRestartMihomoRejectsMissingRuntimeState(t *testing.T) {
 	}
 }
 
+func TestGatewayRestartMihomoRejectsPreviousBootRuntime(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), BootSessionID: "previous-boot", StartedAt: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/restart-mihomo", nil)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "runtime_interrupted") {
+		t.Fatalf("restart-mihomo status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestGatewayStopAcceptsSkippedClientValidation(t *testing.T) {
 	server := newTestServer(t)
 	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryClientValidationSkipped, ClientValidationSkipped: true, Required: true}); err != nil {

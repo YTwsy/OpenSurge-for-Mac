@@ -43,6 +43,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const configDirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
   const gatewayActive = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
   const gatewayStopped = overview?.status.gateway === 'stopped'
+  const gatewayInterrupted = overview?.status.runtime_state === 'interrupted'
   const dhcpRuntimeDisabled = config?.gateway.mode === 'same_lan'
   const configurationEditable = !busy && gatewayStopped && !recoveryBlocksConfig
   const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
@@ -343,7 +344,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       <SectionTitle title="网关运行控制" subtitle="使用已保存的网络配置启动或停止；总览页的按钮只负责导航到这里" />
       <div className="gateway-lifecycle-row">
         <div>
-          <span className={`pill ${gatewayActive ? 'ok' : ''}`}>{gatewayActive ? '运行中' : gatewayStopped ? '已停止' : '状态未知'}</span>
+          <span className={`pill ${gatewayActive && !gatewayInterrupted ? 'ok' : ''}`}>{gatewayInterrupted ? '重启后待清理' : gatewayActive ? '运行中' : gatewayStopped ? '已停止' : '状态未知'}</span>
           <strong>{gatewayModeLabel(config.gateway.mode)}</strong>
           <p>{gatewayModeDescription(config)}</p>
         </div>
@@ -351,6 +352,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       </div>
       {!gatewayActive && configDirty && <div className="notice warn">网络配置有未保存的修改。保存后才能启动网关。</div>}
       {!gatewayActive && !gatewayStopped && <div className="notice warn">当前网关状态无法确认；为避免重复启动，运行控制暂时不可用。</div>}
+      {gatewayInterrupted && <div className="notice warn">上一次网关运行被系统重启中断。请先停止当前旁路由状态；OpenSurge 只会安全清理旧 runtime，不会向上次开机记录的 PID 发送信号，也不会改动本次开机的 PF 或 IPv4 forwarding。</div>}
     </section>}
     {config?.gateway.mode === 'same_wifi_dhcp' && <>
       {plan && <section className="section">

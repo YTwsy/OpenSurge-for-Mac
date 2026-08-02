@@ -179,6 +179,54 @@ func TestSystemProxyEnableAndRestore(t *testing.T) {
 	}
 }
 
+func TestSystemProxyRestoreOwnedRestoresOnlyOpenSurgeEndpoint(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	currentHTTP := runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: 7890}
+	currentHTTPS := runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: 7890}
+	runCommand = func(_ context.Context, _ string, args ...string) (string, error) {
+		switch args[0] {
+		case "-getwebproxy":
+			return proxyOutput(currentHTTP), nil
+		case "-getsecurewebproxy":
+			return proxyOutput(currentHTTPS), nil
+		case "-setwebproxystate":
+			currentHTTP.Enabled = args[2] == "on"
+		case "-setsecurewebproxystate":
+			currentHTTPS.Enabled = args[2] == "on"
+		default:
+			return "", fmt.Errorf("unexpected command %q", args[0])
+		}
+		return "", nil
+	}
+	snapshot := runtime.SystemProxySnapshot{NetworkService: "Wi-Fi"}
+	if err := (SystemProxy{}).RestoreOwned(t.Context(), snapshot, 7890); err != nil {
+		t.Fatal(err)
+	}
+	if currentHTTP.Enabled || currentHTTPS.Enabled {
+		t.Fatalf("owned proxy was not restored: HTTP=%#v HTTPS=%#v", currentHTTP, currentHTTPS)
+	}
+}
+
+func TestSystemProxyRestoreOwnedRejectsUserReplacement(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	runCommand = func(_ context.Context, _ string, args ...string) (string, error) {
+		switch args[0] {
+		case "-getwebproxy":
+			return proxyOutput(runtime.SystemProxySetting{Enabled: true, Server: "user.proxy", Port: 8080}), nil
+		case "-getsecurewebproxy":
+			return proxyOutput(runtime.SystemProxySetting{}), nil
+		default:
+			return "", fmt.Errorf("unexpected write %q", args[0])
+		}
+	}
+	err := (SystemProxy{}).RestoreOwned(t.Context(), runtime.SystemProxySnapshot{NetworkService: "Wi-Fi"}, 7890)
+	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("RestoreOwned() error = %v", err)
+	}
+}
+
 func TestSystemProxyEnableRestoresHTTPWhenHTTPSWriteFails(t *testing.T) {
 	original := runCommand
 	t.Cleanup(func() { runCommand = original })

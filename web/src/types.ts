@@ -1,5 +1,6 @@
 export type GatewayStatus = {
   gateway: string
+  runtime_state?: 'none' | 'active' | 'interrupted'
   interface: string
   lan_ip: string
   dhcp: string

@@ -74,6 +74,25 @@ Stop 应该能容忍部分 runtime pieces 已经缺失。这个项目会修改 h
 device-policy snapshot，避免把仍运行或 degraded 的网关误记为已完全停止，并允许后续
 重试清理。所有清理步骤仍会尽量执行；只有这一轮清理没有错误时才移除 state。
 
+### 系统重启后的中断状态
+
+root Helper 与 Control Service 会由 launchd 在开机后恢复，但 dnsmasq、mihomo、PF anchor
+与 IPv4 forwarding 不会被 runtime state 文件冒充为已经恢复。每次正常 start 都把当前
+boot session 和子进程启动指纹写进 state。Status 发现 state 来自上一次开机时，必须报告
+`runtime_state=interrupted`，不得根据旧 PID 探测 mihomo API；`reload` 与
+`restart-mihomo` 也必须拒绝这份不完整数据面。
+
+对 interrupted runtime 执行 stop 是专门的 reconciliation，不是普通 stop：它不向旧 PID
+发送信号，不卸载本次开机的 PF，不改写本次开机的 IPv4 forwarding；若系统代理仍然是
+OpenSurge 设置的 loopback endpoint，则恢复启动前快照，若已被用户改成其他代理则
+fail closed。最后移除旧 runtime state 与 applied device-policy snapshot，用户随后可显式
+重新启动完整网关。旧版本没有 boot session 字段的 state 通过 `started_at` 与本次系统
+启动时间比较迁移；没有任何 boot 归属证据的 state 不能被当作当前运行态。
+
+即使在同一次开机内，PID 也可能在 dnsmasq/mihomo 异常退出后复用。新 runtime state
+同时保存进程启动指纹；status、stop 与 restart 只有在 PID 和启动指纹都匹配时才把它当作
+OpenSurge 子进程。指纹不匹配表示原子进程已经消失，清理不得终止占用该 PID 的其他进程。
+
 ## Reload 顺序
 
 `reload` 只接受正在健康运行的网关。它先在同级临时 runtime 中使用同一份 desired 配置

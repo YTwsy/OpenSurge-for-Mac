@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/runtime"
@@ -80,7 +81,7 @@ func TestStatusDegradesWhenRunningMihomoReportsTUNDisabled(t *testing.T) {
 	if err := runtime.Ensure(paths); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), PIDDNSMasq: os.Getpid()}); err != nil {
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), PIDDNSMasq: os.Getpid(), StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,7 +117,7 @@ func TestStatusKeepsGatewayRunningWhenTUNRuntimeStateIsTemporarilyUnavailable(t 
 	if err := runtime.Ensure(paths); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), PIDDNSMasq: os.Getpid()}); err != nil {
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), PIDDNSMasq: os.Getpid(), StartedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -126,5 +127,44 @@ func TestStatusKeepsGatewayRunningWhenTUNRuntimeStateIsTemporarilyUnavailable(t 
 	}
 	if status.Gateway != "running" || status.TUN != "unknown" || status.TUNError == "" {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestStatusMarksPreviousBootRuntimeInterruptedWithoutProbingReusedPID(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "must not probe stale runtime", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	cfg.Mihomo.APIAddr = server.URL
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{
+		PIDMihomo:      os.Getpid(),
+		PIDDNSMasq:     os.Getpid(),
+		BootSessionID:  "previous-boot-session",
+		PFAnchorLoaded: true,
+		StartedAt:      time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := New(cfg).Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Gateway != "degraded" || status.RuntimeState != "interrupted" || status.Mihomo != "stopped" || status.PFAnchor != "unloaded" {
+		t.Fatalf("status = %#v", status)
+	}
+	if requests != 0 {
+		t.Fatalf("stale runtime made %d mihomo API requests", requests)
 	}
 }
