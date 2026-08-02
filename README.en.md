@@ -40,9 +40,9 @@ their gateway and DNS to the Mac. For automatic onboarding across an existing
 LAN, choose LAN DHCP takeover; for a separate AP, SSID, or VLAN, use an
 isolated downstream LAN.
 
-Every mode supports independent egress policies for registered devices—for
-example, have the phone and local Mac use proxies, send the game console
-through a US-region node, and use a streaming node for the TV. In LAN DHCP
+Every mode supports independent egress policies for registered devices: use
+rule-based routing for both the phone and local Mac, route the game console
+through a US-region node, and send the TV through a streaming node. In LAN DHCP
 takeover and isolated downstream-LAN modes, phones, TVs, PS5 consoles, and VR
 headsets can automatically obtain DHCP/DNS from the Mac without per-device
 gateway or DNS changes.
