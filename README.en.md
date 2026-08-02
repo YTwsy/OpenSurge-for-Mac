@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App Icon">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>Turn a Mac into an observable, recoverable whole-home gateway with transparent routing and per-device policies.</strong></p>
+  <p><strong>Turn a Mac into a Surge-style whole-home transparent gateway with per-device routing—use it in same-LAN bypass-router mode, or take over DHCP/DNS automatically.</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
@@ -34,12 +34,24 @@
 </div>
 
 OpenSurge for Mac is an open-source, Surge-style macOS gateway and control
-plane. It turns a Mac into the proxy egress for an entire LAN: phones, TVs,
-PS5 and other game consoles, VR headsets, VMs, and other devices on the same
-network can obtain DHCP/DNS from the Mac and share policy-controlled
-connectivity. Each device can also have its own egress policy—send the phone
-through a proxy, keep the game console DIRECT—with no configuration required
-on the device itself.
+plane. Most users can start in same-LAN bypass-router mode: keep the main
+router's DHCP enabled, give selected devices stable IPv4 addresses, and point
+their gateway and DNS to the Mac. For automatic onboarding across an existing
+LAN, choose LAN DHCP takeover; for a separate AP, SSID, or VLAN, use an
+isolated downstream LAN.
+
+Every mode supports independent egress policies for registered devices—for
+example, have the phone and local Mac use proxies, send the game console
+through a US-region node, and use a streaming node for the TV. In LAN DHCP
+takeover and isolated downstream-LAN modes, phones, TVs, PS5 consoles, and VR
+headsets can automatically obtain DHCP/DNS from the Mac without per-device
+gateway or DNS changes.
+
+| Mode | Best for | Effect on the existing network |
+| --- | --- | --- |
+| **Same-LAN bypass-router mode (common; recommended first step)** | Starting with selected phones, TVs, game consoles, or other devices | Main-router DHCP stays enabled; selected devices use stable IPv4 addresses and manually point their gateway and DNS to the Mac |
+| **LAN DHCP takeover (advanced · automatic onboarding)** | Automatically connecting devices on the same LAN to OpenSurge | Follow the guided flow to disable main-router DHCP and restore it when stopping |
+| **Isolated downstream LAN** | A separate AP, SSID, or VLAN | Existing-LAN DHCP stays unchanged; the Mac provides DHCP/DNS and the gateway for the isolated downstream network |
 
 - Import an existing mihomo subscription. OpenSurge takes ownership only of
   gateway-critical fields without replacing its nodes or rules.

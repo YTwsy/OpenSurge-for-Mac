@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App 图标">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>把 Mac 变成可导入规则、可按设备分流的全屋透明代理网关——支持 DHCP/DNS 自动接管</strong></p>
+  <p><strong>把 Mac 变成可按设备分流的 Surge 风格全屋透明代理网关——既可作为旁路由让指定设备手动接入，也支持 DHCP/DNS 自动接管</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
@@ -33,10 +33,21 @@
   </table>
 </div>
 
-OpenSurge for Mac 是一个开源的 Surge 风格 macOS 网关与控制面。它把 Mac 变成
-整个局域网的代理出口：同一网络下的手机、电视、PS5、游戏机、VR 设备、虚拟机等终端，
-都可以从 Mac 获取 DHCP/DNS，并共享由策略控制的网络连接；你也可以为每台设备
-单独配置不同的出口策略：手机走代理、游戏机直连，设备啥都不用配。
+OpenSurge for Mac 是一个开源的 Surge 风格 macOS 网关与控制面。多数用户可以先从
+旁路由模式开始：主路由 DHCP 保持开启，只让需要接入的设备使用稳定 IPv4，并把网关和
+DNS 指向 Mac。需要让同一局域网的设备自动接入时，也可以选择局域网 DHCP 接管；有独立
+AP、SSID 或 VLAN 时，则可以使用独立下游 LAN。
+
+无论采用哪种模式，你都可以为已登记设备配置不同的出口策略：例如让手机和 Mac 本机都
+走代理、游戏机使用美服节点、电视使用流媒体节点。在局域网 DHCP 接管和独立下游 LAN
+模式下，接入相应网络的手机、电视、PS5 和 VR 设备，都可以自动从 Mac 获取 DHCP/DNS，
+无需逐台修改网关和 DNS。
+
+| 模式 | 适合场景 | 对现有网络的影响 |
+| --- | --- | --- |
+| **旁路由模式（常用，推荐首次体验）** | 先接入手机、电视、游戏机等指定设备 | 主路由 DHCP 保持开启；指定设备使用稳定 IPv4，并手工设置网关和 DNS |
+| **局域网 DHCP 接管（进阶 · 自动接入）** | 希望同一 LAN 的设备自动使用 OpenSurge | 需要按引导关闭主路由 DHCP，停止时按恢复流程重新开启 |
+| **独立下游 LAN** | 独立 AP、SSID 或 VLAN | 不改变现有 LAN 的 DHCP；Mac 为独立下游网络提供 DHCP/DNS 和网关 |
 
 - 可导入已有的 mihomo 配置或订阅，保留原有节点、代理组和规则
 - Web GUI 实时展示每台设备的连接、上下行流量和实际出口链；菜单栏随时查看网关状态与恢复提醒。
