@@ -11,6 +11,8 @@
   gateway，以及如何停止并恢复。
 - [macOS TUN 透明代理](concepts/macos-tun-transparent-proxy.md)：为什么
   TUN 是透明代理主线，以及哪些旧旋钮必须保持 inactive。
+- [下游 IPv6 接管](concepts/downstream-ipv6-takeover.md)：独立 LAN 的 RA/SLAAC、
+  无系统 TUN packet ingress、MAC 设备身份和 TCP/UDP 验收边界。
 - [mihomo profile overlay](concepts/mihomo-profile-overlay.md)：如何导入
   mihomo 代理/规则 section，同时保持 OpenSurge 接管网关字段。
 - [每设备策略覆盖](concepts/device-policy-overlays.md)：如何以 DHCP reservation 和
@@ -57,6 +59,8 @@ leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo AP
   `docs/agent-wiki/sources/decisions/local-mac-routing-modes.md`
 - Mac 本机系统代理：`internal/macosnetwork/system_proxy.go` 和
   `docs/agent-wiki/sources/decisions/local-system-proxy-coordination.md`
+- 下游 IPv6 接管：`internal/ipv6packet/`、`internal/macosipv6/` 和
+  `docs/agent-wiki/sources/decisions/downstream-ipv6-takeover.md`
 - Virtual LAN lab：`tests/lab/README.md` 和 `tests/lab/lab.sh`
 - 真实设备 smoke：`tests/real-device/README.md` 和
   `tests/real-device/smoke.sh`

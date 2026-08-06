@@ -239,8 +239,16 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.DHCP.Domain = input.DHCP.Domain
 	cfg.DNS.Listen = input.DNS.Listen
 	cfg.DNS.Upstream = input.DNS.Upstream
+	cfg.DNS.IPv6 = input.DNS.IPv6
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
+	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6
+	if cfg.Transparent.TUNIPv6 == "" {
+		// Schema v1 clients predating the IPv6 control omit this field. Treat
+		// omission as the fail-safe default instead of making an otherwise valid
+		// legacy save fail validation.
+		cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+	}
 	cfg.LocalSystemProxy.Enabled = input.LocalSystemProxy.Enabled
 	cfg.DevicePolicy.ProtectedIPv4 = append([]string(nil), input.DevicePolicy.ProtectedIPv4...)
 	createdPolicy := ""

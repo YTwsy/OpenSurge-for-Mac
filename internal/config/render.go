@@ -32,6 +32,7 @@ dns:
   listen: %s
   port: %d
   upstream: %s
+  ipv6: %t
 
 mihomo:
   binary: %s
@@ -54,6 +55,9 @@ transparent:
   tun_auto_route: %t
   tun_auto_detect_interface: %t
   tun_strict_route: %t
+  tun_ipv6: %s
+  ipv6_packet_broker_binary: %s
+  ipv6_packet_mtu: %d
 
 local_system_proxy:
   enabled: %t
@@ -74,10 +78,11 @@ runtime:
 		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), q(cfg.Gateway.UpstreamInterface),
 		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain),
 		q(cfg.DevicePolicy.File), q(strings.Join(cfg.DevicePolicy.ProtectedIPv4, ",")),
-		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream),
+		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream), cfg.DNS.IPv6,
 		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
 		q(cfg.PF.AnchorName), cfg.PF.RedirectTCPTo,
 		q(cfg.Transparent.Mode), q(cfg.Transparent.TUNDevice), q(cfg.Transparent.TUNStack), cfg.Transparent.TUNAutoRoute, cfg.Transparent.TUNAutoDetectInterface, cfg.Transparent.TUNStrictRoute,
+		q(cfg.Transparent.TUNIPv6), q(cfg.Transparent.IPv6PacketBrokerBinary), cfg.Transparent.IPv6PacketMTU,
 		cfg.LocalSystemProxy.Enabled,
 		cfg.UpstreamProxy.Enabled, q(cfg.UpstreamProxy.Name), q(cfg.UpstreamProxy.Type), q(cfg.UpstreamProxy.Server), cfg.UpstreamProxy.Port, q(cfg.UpstreamProxy.Username), q(cfg.UpstreamProxy.Password), q(cfg.UpstreamProxy.MatchDomain),
 		q(cfg.Runtime.Dir),

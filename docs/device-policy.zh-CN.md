@@ -202,9 +202,11 @@ IP-only 登记，GUI 会按其原固定 IPv4 查找唯一、有效且未被其�
 没有当前观察证据的离线设备仍可预设 selector，但会明确提示“设备按登记 IP 接入后生效”。
 多个同 MAC 活跃 IPv4、MAC 冲突或仅有不完整观察都不会触发自动猜测或静默改写。
 
-当前设备策略仍以 IPv4 `SRC-IP-CIDR` 执行。DHCP 模式提供 MAC 绑定租约的精确身份证据；
-`same_lan` 只提供静态登记、当前流量与可选 ARP 邻居观察，不把这些证据冒充 DHCP 验证。
-尚未提供 IPv6 设备身份、mihomo 内 MAC 匹配或预置第三方规则内容。
+现有系统 TUN 设备策略路径仍以 IPv4 `SRC-IP-CIDR` 执行。DHCP 模式提供 MAC
+绑定租约的精确身份证据；`same_lan` 只提供静态登记、当前流量与可选 ARP 邻居观察，
+不把这些证据冒充 DHCP 验证。独立下游 LAN 的新 IPv6 packet path 会保留
+source MAC，并在 patched Mihomo 中映射为 `IN-USER(device:<id>)` 复用设备规则；
+这项能力不适用于 `same_lan`，也不宣称 MAC 是防伪造认证。当前仍不预置第三方规则内容。
 
 数据面 gate：
 

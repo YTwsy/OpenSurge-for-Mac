@@ -49,8 +49,42 @@ __PROXY_EXPORTS__
         printf 'nameserver %s\n' "$control_gateway" >/etc/resolv.conf
       fi
 
+      # sudo resolves the local hostname before executing a command. Keep that
+      # lookup local so a deliberately stopped gateway cannot turn an expected
+      # Lab cleanup state into a misleading DNS warning.
+      guest_hostname="$(hostname)"
+      if ! grep -Eq "(^|[[:space:]])${guest_hostname}([[:space:]]|$)" /etc/hosts; then
+        printf '127.0.1.1 %s\n' "$guest_hostname" >>/etc/hosts
+      fi
+
+      # Lima's generated netplan unit also matches the data NIC. Install an
+      # earlier, deterministic networkd unit so DHCPv4 and IPv6 RA have one
+      # owner instead of racing netplan, dhclient, and manual sysctl changes.
+      mkdir -p /etc/systemd/network
+      cat >/etc/systemd/network/05-open-mihomo-gateway-lab.network <<'EOF'
+      [Match]
+      Name=omg0
+
+      [Network]
+      DHCP=ipv4
+      IPv6AcceptRA=yes
+      LinkLocalAddressing=ipv6
+
+      [DHCPv4]
+      UseDNS=false
+      UseRoutes=false
+      ClientIdentifier=mac
+
+      [IPv6AcceptRA]
+      UseDNS=false
+      RouteMetric=100
+      EOF
+      systemctl enable --now systemd-networkd >/dev/null 2>&1 || true
+      networkctl reload >/dev/null 2>&1 || true
+      networkctl reconfigure omg0 >/dev/null 2>&1 || true
+
       missing_packages=""
-      for package in bash curl dnsutils iproute2 iputils-ping isc-dhcp-client; do
+      for package in bash curl dnsutils iproute2 iputils-ping isc-dhcp-client python3; do
         if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q '^install ok installed$'; then
           missing_packages="$missing_packages $package"
         fi
@@ -76,7 +110,14 @@ __PROXY_EXPORTS__
       gateway="${2:-192.168.50.1}"
 
       control_interface() {
-        ip -4 route show default | awk 'NR == 1 { print $5 }'
+        ip -4 route show default | awk '$5 != "omg0" { print $5; exit }'
+      }
+
+      control_gateway() {
+        local control
+        control="$(control_interface)"
+        [[ -n "$control" ]] || return 1
+        ip -4 route show default dev "$control" | awk 'NR == 1 { print $3 }'
       }
 
       lab_interface() {
@@ -104,20 +145,6 @@ __PROXY_EXPORTS__
           echo "no DHCP client found and networkctl is unavailable" >&2
           return 1
         }
-        mkdir -p /etc/systemd/network
-        {
-          printf '[Match]\n'
-          printf 'Name=%s\n\n' "$iface"
-          printf '[Network]\n'
-          printf 'DHCP=ipv4\n'
-          printf 'IPv6AcceptRA=no\n'
-          printf 'LinkLocalAddressing=no\n\n'
-          printf '[DHCPv4]\n'
-          printf 'UseDNS=false\n'
-          printf 'UseRoutes=false\n'
-          printf 'ClientIdentifier=mac\n'
-        } >/etc/systemd/network/90-open-mihomo-gateway-lab.network
-        systemctl enable --now systemd-networkd >/dev/null 2>&1 || true
         networkctl reload >/dev/null 2>&1 || true
         networkctl reconfigure "$iface" >/dev/null 2>&1 || true
         networkctl renew "$iface" >/dev/null 2>&1 || true
@@ -134,7 +161,9 @@ __PROXY_EXPORTS__
       request_dhcp() {
         local iface
         iface="$1"
-        if command -v udhcpc >/dev/null 2>&1; then
+        if [[ -f /etc/systemd/network/05-open-mihomo-gateway-lab.network ]] && command -v networkctl >/dev/null 2>&1; then
+          request_dhcp_with_networkd "$iface"
+        elif command -v udhcpc >/dev/null 2>&1; then
           timeout 35 udhcpc -i "$iface" -n -q -t 5 -T 5
         elif command -v dhclient >/dev/null 2>&1; then
           timeout 35 dhclient -4 -v -1 "$iface"
@@ -157,6 +186,60 @@ __PROXY_EXPORTS__
         ip -4 route show default
       }
 
+      renew6() {
+        local dns iface i
+        iface="$(lab_interface)"
+        ip -6 addr flush dev "$iface" scope global || true
+        ip -6 route flush dev "$iface" proto ra || true
+        ip link set dev "$iface" down
+        ip link set dev "$iface" up
+        networkctl reconfigure "$iface" >/dev/null 2>&1 || true
+        for i in {1..20}; do
+          if ip -6 addr show dev "$iface" scope link | grep -q 'inet6 fe80:'; then
+            break
+          fi
+          sleep 0.2
+        done
+        # Linux sends Router Solicitations when the link comes back up. Give
+        # dnsmasq enough time for both solicited and periodic advertisements;
+        # Ubuntu's minimal "main" archive does not ship the optional ndisc6
+        # helper, and the product path must not depend on a test-only package.
+        for i in {1..100}; do
+          if ip -6 -o addr show dev "$iface" scope global | awk '/fdfe:dcba:9878:/ && $0 !~ /tentative|dadfailed/ { ready = 1 } END { exit !ready }' &&
+            ip -6 addr show dev "$iface" scope global | grep -A1 'inet6 fdfe:dcba:9878:' | grep -Eq 'preferred_lft ([1-9][0-9]*sec|forever)' &&
+            ip -6 route show default dev "$iface" | grep -q '^default '; then
+            dns="$(ipv6_dns_server "$iface")"
+            [[ "$dns" == fe80:* ]]
+            resolvectl dns "$iface" | grep -Fq "$dns"
+            printf 'CLIENT_IPV6_READY interface=%s\n' "$iface"
+            printf 'CLIENT_IPV6_DNS=%s%%%s\n' "$dns" "$iface"
+            ip -6 -brief addr show dev "$iface"
+            ip -6 route show dev "$iface"
+            return 0
+          fi
+          sleep 0.2
+        done
+        ip -6 addr show dev "$iface" >&2
+        ip -6 route show dev "$iface" >&2
+        echo "timed out waiting for OpenSurge IPv6 RA on $iface" >&2
+        return 1
+      }
+
+      ipv6_dns_server() {
+        local iface
+        iface="${1:-$(lab_interface)}"
+        ip -6 route show default dev "$iface" | awk '$1 == "default" && $2 == "via" { print $3; exit }'
+      }
+
+      restore_control_dns() {
+        local gateway
+        gateway="$(control_gateway)"
+        [[ -n "$gateway" ]]
+        rm -f /etc/resolv.conf
+        printf 'nameserver %s\n' "$gateway" >/etc/resolv.conf
+        printf 'CLIENT_CONTROL_DNS_RESTORED gateway=%s\n' "$gateway"
+      }
+
       status() {
         local iface
         iface="$(lab_interface)"
@@ -164,7 +247,68 @@ __PROXY_EXPORTS__
         printf 'LAB_INTERFACE=%s\n' "$iface"
         ip -4 -brief address show dev "$iface"
         ip -4 route show default
+        ip -6 -brief address show dev "$iface"
+        ip -6 route show dev "$iface"
         cat /etc/resolv.conf
+      }
+
+      ipv6_transparent_test() {
+        local dns fake host iface port route scheme source test_url
+        iface="$(lab_interface)"
+        dns="$(ipv6_dns_server "$iface")%$iface"
+        test_url="${3:-https://example.com/}"
+        scheme="${test_url%%:*}"
+        host="${test_url#*://}"
+        host="${host%%/*}"
+        if [[ "$host" == *:* ]]; then
+          port="${host##*:}"
+          host="${host%%:*}"
+        elif [[ "$scheme" == "https" ]]; then
+          port=443
+        else
+          port=80
+        fi
+        fake="$(dig +time=5 +tries=1 +short "@$dns" "$host" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
+        [[ -n "$fake" ]]
+        route="$(ip -6 route get "$fake")"
+        grep -q "dev $iface" <<<"$route"
+        source="$(ip -6 -o addr show dev "$iface" scope global | awk '/fdfe:dcba:9878:/ { split($4, value, "/"); print value[1]; exit }')"
+        if [[ "$source" != fdfe:dcba:9878:* ]]; then
+          echo "no owned downstream IPv6 source on $iface: route=$route" >&2
+          return 1
+        fi
+        # Reuse the already verified fake AAAA result so this assertion tests
+        # packet ingress deterministically instead of depending on a second DNS
+        # transaction between the query and curl. Bind the already-validated,
+        # non-deprecated ULA because curl's --resolve path may otherwise select
+        # the interface link-local address for this synthetic off-link target.
+        curl -6 --noproxy '*' --interface "$source" --resolve "$host:$port:[$fake]" --fail --silent --show-error --max-time 20 "$test_url" >/dev/null
+        printf 'CLIENT_IPV6_TRANSPARENT_OK interface=%s source=%s fake=%s host=%s\n' "$iface" "$source" "$fake" "$host"
+      }
+
+      ipv6_udp_test() {
+        local answer dns fake iface port target
+        iface="$(lab_interface)"
+        dns="$(ipv6_dns_server "$iface")%$iface"
+        target="${3:-one.one.one.one}"
+        port="${4:-53}"
+        answer="${5:-example.com}"
+        fake="$(dig +time=5 +tries=1 +short "@$dns" "$target" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
+        [[ -n "$fake" ]]
+        dig -6 +time=8 +tries=1 -p "$port" @"$fake" "$answer" A | grep -Fq '192.0.2.123'
+        printf 'CLIENT_IPV6_UDP_OK interface=%s fake=%s target=%s:%s answer=%s\n' "$iface" "$fake" "$target" "$port" "$answer"
+      }
+
+      ipv6_quic_probe() {
+        local dns fake iface port target
+        iface="$(lab_interface)"
+        dns="$(ipv6_dns_server "$iface")%$iface"
+        target="${3:-example.com}"
+        port="${4:-443}"
+        fake="$(dig +time=5 +tries=1 +short "@$dns" "$target" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
+        [[ -n "$fake" ]]
+        python3 -c 'import os,socket,sys; target=sys.argv[1]; port=int(sys.argv[2]); dcid=os.urandom(8); scid=os.urandom(8); payload=bytes([0xc0])+bytes.fromhex("00000001")+bytes([len(dcid)])+dcid+bytes([len(scid)])+scid+bytes([0,0x40,0x01,0])+os.urandom(1173); s=socket.socket(socket.AF_INET6,socket.SOCK_DGRAM); s.sendto(payload[:1200],(target,port)); s.close()' "$fake" "$port"
+        printf 'CLIENT_IPV6_QUIC_DATAGRAM_SENT interface=%s fake=%s target=%s:%s bytes=1200\n' "$iface" "$fake" "$target" "$port"
       }
 
       test_path() {
@@ -227,9 +371,14 @@ __PROXY_EXPORTS__
 
       case "${1:-}" in
         renew) renew ;;
+        renew6) renew6 ;;
+        restore-control) restore_control_dns ;;
         status) status ;;
         test) test_path ;;
         transparent) transparent_test ;;
         udp) udp_probe "$@" ;;
-        *) echo "usage: omg-lab-client <renew|status|test|transparent|udp> [gateway] [target] [port]" >&2; exit 2 ;;
+        ipv6-transparent) ipv6_transparent_test "$@" ;;
+        ipv6-udp) ipv6_udp_test "$@" ;;
+        ipv6-quic) ipv6_quic_probe "$@" ;;
+        *) echo "usage: omg-lab-client <renew|renew6|restore-control|status|test|transparent|udp|ipv6-transparent|ipv6-udp|ipv6-quic> [gateway] [target] [port]" >&2; exit 2 ;;
       esac

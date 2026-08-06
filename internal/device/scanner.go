@@ -27,6 +27,13 @@ func LoadLeases(path string) ([]Client, error) {
 		if line == "" {
 			continue
 		}
+		// dnsmasq writes the server DUID into the shared lease file when
+		// DHCPv6 is enabled. It is file metadata, not a client lease, and must
+		// not break the existing IPv4 lease/device identity model.
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "duid" {
+			continue
+		}
 		client, err := parseLeaseLine(line)
 		if err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", path, lineNo, err)

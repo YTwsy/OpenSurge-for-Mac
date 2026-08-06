@@ -19,6 +19,9 @@ type Paths struct {
 	PFAnchor            string
 	LeaseFile           string
 	DevicePolicyApplied string
+	IPv6PacketSocket    string
+	IPv6PacketReady     string
+	IPv6PacketLog       string
 }
 
 func NewPaths(cfg config.Config) Paths {
@@ -35,6 +38,9 @@ func NewPaths(cfg config.Config) Paths {
 		PFAnchor:            filepath.Join(dir, "pf.anchor"),
 		LeaseFile:           filepath.Join(dir, "dnsmasq.leases"),
 		DevicePolicyApplied: filepath.Join(dir, "device-policy.applied.json"),
+		IPv6PacketSocket:    filepath.Join(dir, "ipv6-packet.sock"),
+		IPv6PacketReady:     filepath.Join(dir, "ipv6-packet.ready"),
+		IPv6PacketLog:       filepath.Join(dir, "logs", "ipv6-packet.log"),
 	}
 }
 

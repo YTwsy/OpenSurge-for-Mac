@@ -8,6 +8,10 @@ status: accepted
 
 TUN 是 OpenSurge for Mac 在 macOS 上受支持的透明代理路径。
 
+该决策覆盖 IPv4 下游和 Mac 本机透明代理。独立下游 LAN 的 IPv6 packet ingress
+可以使用 BPF + patched Mihomo gVisor 来保留物理 source MAC，但仍要求整体
+`transparent.mode: "tun"`，且不得据此重新启用 redir/PF TCP redirect。
+
 项目曾评估 `mihomo.redir_port` 加 PF TCP redirection 的路线，但这条路线现在
 明确 inactive。当前 Darwin mihomo build 在运行时报告 redir 不受支持，因此
 仓库把 PF TCP redirection 视为已退役的透明代理实现路径。

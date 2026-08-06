@@ -21,6 +21,7 @@ dns:
   port: 53
   # OpenSurge owns DNS even in imported mode so fake-IP and TUN stay aligned.
   upstream: "127.0.0.1#1053"
+  ipv6: false
 
 mihomo:
   binary: "./bin/mihomo"
@@ -43,6 +44,9 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
+  tun_ipv6: "off"
+  ipv6_packet_broker_binary: "opensurge-network"
+  ipv6_packet_mtu: 1500
 
 local_system_proxy:
   enabled: false

@@ -147,11 +147,13 @@ type DHCPConfigInput struct {
 type DNSConfigInput struct {
 	Listen   string `json:"listen"`
 	Upstream string `json:"upstream"`
+	IPv6     bool   `json:"ipv6"`
 }
 
 type TransparentConfigInput struct {
 	Mode        string `json:"mode"`
 	StrictRoute bool   `json:"strict_route"`
+	TUNIPv6     string `json:"tun_ipv6"`
 }
 
 type LocalSystemProxyConfigInput struct {

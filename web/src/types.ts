@@ -11,6 +11,11 @@ export type GatewayStatus = {
   tun_error?: string
   pf_anchor: string
   forwarding: string
+  dns_ipv6: boolean
+  tun_ipv6_requested: 'off' | 'auto' | 'always'
+  ipv6_packet: 'disabled' | 'stopped' | 'ready' | 'failed'
+  native_ipv6_available: boolean
+  ipv6_reason?: string
   client_count: number
 }
 
@@ -60,8 +65,8 @@ export type ControlConfig = {
   schema_version: number; revision: string
   gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; upstream_interface: string }
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string }
-  dns: { listen: string; upstream: string }
-  transparent: { mode: 'off' | 'tun'; strict_route: boolean }
+  dns: { listen: string; upstream: string; ipv6: boolean }
+  transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always' }
   local_system_proxy: { enabled: boolean }
   device_policy: { enabled: boolean; protected_ipv4: string[] }
 }

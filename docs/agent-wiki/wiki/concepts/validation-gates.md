@@ -50,6 +50,31 @@ guest 的数据面 DNS 在一次测试后会指向 `192.168.50.1`；而下一次
 否则会表现为 UDP/53 connection refused 与很慢的 boot scripts。
 冷重建保持串行 provisioning，稳定复用的 VM 则并行启动；这样既不让两个 apt 任务争抢
 上游带宽，又避免日常启动累加两次独立 guest boot 时间。
+修改 `tests/lab/lima/client.yaml` 会使 Lima 按精确配置比较删除并重建对应
+VM，这是有意的冷启动。VZ 冷启动可能在约两分钟内没有新输出，然后从
+vsock SSH 回退到 usernet forwarder 并进入 `READY`；不要只因为这段静默就杀掉进程。
+先看 `runtime/tools/lima/bin/limactl list` 和 `~/.lima/<client>/ha.stderr.log`。
+
+Lab 环境问题必须与数据面失败分开记录：
+
+- 启动和清理会把 guest `/etc/resolv.conf` 恢复到 Lima 控制网关，并保证本机
+  hostname 可解析。如果 provisioning 报 `sudo: unable to resolve host` 或仍向已停止的
+  `192.168.50.1` 查询，先运行 guest helper 的 `restore-control`，不要把它算作
+  IPv6 数据面结果。
+- `omg0` 由 `/etc/systemd/network/05-open-mihomo-gateway-lab.network` 单一接管。
+  `networkctl status omg0` 应显示该文件；重复 IPv4/IPv6 默认路由通常意味着
+  netplan 和手工 DHCP/RA 同时在管理接口。IPv6 READY 信号还必须排除
+  `tentative` / `dadfailed` 地址，并要求正的 `preferred_lft`。
+- `runtime/lab/proxy.env` 中不可达的旧代理和专用 `/private/tmp` Go module
+  cache 残缺都是 patched Mihomo 的构建前故障。脚本会对 Go mirror 绕过旧代理，
+  并在日志确认是该专用 cache 的缺文件后清理并重试一次。先查
+  `runtime/lab/logs/mihomo-build.log`，不要进入数据面调试。
+- agent 沙箱中的 `sysctl kern.bootsessionuuid` / `kern.boottime` 或
+  `sysctl.proc_translated: operation not permitted` 是执行环境权限信号。需要
+  host-network 结论时，在已批准的同一 PTY 重跑对应门槛。
+- Lima 停止 VZ 时可能在红色日志中打印 `use of closed network connection`。
+  如果后续同时出现 `has shut down` 和 `lab network stopped`，这是 hostagent 关闭
+  listener 后的收尾噪声，不是清理失败。
 
 不要仅凭启动耗时把默认 `1 CPU / 512 MiB` 判定为不足。先采集 guest 的 available
 memory、load、CPU idle/iowait 和 OOM 记录；如果 CPU 主要 idle、内存仍可用且没有 OOM，
@@ -72,6 +97,29 @@ local-routing 控制器协调三种模式、HTTP-only Global 的 UDP fail-closed
 policy 接口不泄露内部组。它适合策略组控制、file/HTTP provider 状态读取和刷新、
 机器可读 CLI、mihomo API wrapper 和 `profile.store-selected` 相关改动；不要用它
 宣称 DHCP、DNS 下发、TUN 透明代理、same-LAN、真实设备路径或真实远端代理出口已验证。
+
+## 下游 IPv6 门槛
+
+运行：
+
+```sh
+make lab-test-ipv6-userspace
+```
+
+这条门槛只适用于独立下游 LAN。它要求两台客户端获得
+`fdfe:dcba:9878::/64` SLAAC 地址、OpenSurge IPv6 默认路由和 RDNSS；随后要求无显式
+代理的 IPv6 TCP、受控 UDP request/response 和 1200-byte QUIC Initial-shaped UDP
+carrier 通过本机 fixture 出现在
+patched Mihomo 的 `opensurge-packet` 路径，并按两台客户端各自的 MAC/InUser 命中
+不同设备策略。TCP origin 必须收到实际 HTTP request，UDP fixture 必须返回
+固定答案，不依赖公网上游作为唯一捕获证据。最后必须停止网关，验证
+RA/default route、gateway alias、broker、
+socket/ready file 和 runtime state 被撤销。RFC 4862 允许客户端暂时保留
+deprecated/等待过期的 SLAAC 地址，因此门槛不要求地址瞬间消失。
+
+QUIC 项只证明 UDP carrier 和策略命中，不等于完整 HTTP/3 握手。单元测试或直接
+Unix packet injection 可以证明 gVisor 与设备身份，但不能替代 macOS BPF、真实 RA 和
+停止撤销的 host-network 证据。
 
 ## 真实设备 smoke
 

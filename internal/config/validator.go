@@ -97,6 +97,9 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err
 	}
+	if cfg.Transparent.IPv6Requested() && cfg.Gateway.Mode != GatewayModeIsolatedLAN {
+		return fmt.Errorf("transparent.tun_ipv6 currently requires gateway.mode: \"isolated_lan\"; same-LAN IPv6 needs router RA suppression or RA Guard")
+	}
 	if cfg.LocalSystemProxy.Enabled && !cfg.Transparent.TUNEnabled() {
 		return fmt.Errorf("local_system_proxy.enabled requires transparent.mode: \"tun\"")
 	}
@@ -258,6 +261,22 @@ func validateMihomoProfile(cfg Config) error {
 }
 
 func validateTransparent(cfg TransparentConfig) error {
+	switch cfg.TUNIPv6 {
+	case TUNIPv6Off, TUNIPv6Auto, TUNIPv6Always:
+	default:
+		return fmt.Errorf("transparent.tun_ipv6 must be off, auto, or always")
+	}
+	if cfg.TUNIPv6 != TUNIPv6Off {
+		if cfg.Mode != TransparentModeTUN {
+			return fmt.Errorf("transparent.tun_ipv6 %s requires transparent.mode: \"tun\"", cfg.TUNIPv6)
+		}
+		if strings.TrimSpace(cfg.IPv6PacketBrokerBinary) == "" {
+			return fmt.Errorf("transparent.ipv6_packet_broker_binary is required when downstream IPv6 takeover is enabled")
+		}
+		if cfg.IPv6PacketMTU < 1280 || cfg.IPv6PacketMTU > 9000 {
+			return fmt.Errorf("transparent.ipv6_packet_mtu must be between 1280 and 9000")
+		}
+	}
 	switch cfg.Mode {
 	case TransparentModeOff:
 		return nil

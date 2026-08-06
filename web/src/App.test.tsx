@@ -16,7 +16,7 @@ vi.mock('./api', () => ({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: false, protected_ipv4: [] },
     })),
     networkInterfaces: vi.fn(async () => ({
@@ -86,7 +86,8 @@ const overview: Overview = {
   warnings: [],
   status: {
     gateway: 'stopped', interface: 'en0', lan_ip: '192.168.1.20', dhcp: 'stopped',
-    dhcp_enabled: true, mihomo: 'stopped', pf_anchor: 'unloaded', forwarding: 'disabled', client_count: 0,
+    dhcp_enabled: true, mihomo: 'stopped', pf_anchor: 'unloaded', forwarding: 'disabled',
+    dns_ipv6: false, tun_ipv6_requested: 'off', ipv6_packet: 'disabled', native_ipv6_available: false, client_count: 0,
   },
   doctor: [], doctor_healthy: true, leases: [], policies: [],
   providers: { proxy_providers: [], rule_providers: [] },
@@ -104,7 +105,7 @@ function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
     schema_version: 1, revision: 'config-revision',
     gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
     dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-    dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
+    dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
 }
@@ -700,6 +701,11 @@ describe('OpenSurge app shell', () => {
     expect(within(document.getElementById('network-mode-detail')!).getByText('通过独立 AP、SSID 或 VLAN 接入 OpenSurge')).toBeTruthy()
     expect(screen.getByLabelText('下游 LAN 接口')).toBeTruthy()
     expect(screen.getByLabelText('上游 DNS')).toBeTruthy()
+    const ipv6DNS = screen.getByRole('checkbox', { name: '允许 AAAA / IPv6 DNS 查询' })
+    await userEvent.click(ipv6DNS)
+    expect(ipv6DNS.closest('label')?.classList.contains('is-on')).toBe(true)
+    await userEvent.selectOptions(screen.getByLabelText('下游 IPv6 接管'), 'always')
+    expect((screen.getByLabelText('下游 IPv6 接管') as HTMLSelectElement).value).toBe('always')
     await userEvent.click(screen.getByRole('button', { name: 'mihomo DNS（推荐）' }))
     expect((screen.getByLabelText('上游 DNS') as HTMLInputElement).value).toBe('127.0.0.1#1053')
     await userEvent.click(screen.getByRole('button', { name: '公共 DNS（调试）' }))
@@ -789,7 +795,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
@@ -809,7 +815,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [] } })
@@ -834,7 +840,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })

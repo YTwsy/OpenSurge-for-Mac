@@ -18,6 +18,7 @@ dns:
   listen: "192.168.50.1"
   port: 53
 __DNS_UPSTREAM_LINE__
+  ipv6: __DNS_IPV6__
 
 mihomo:
   binary: "__MIHOMO_BINARY__"
@@ -42,6 +43,9 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
+  tun_ipv6: "__TUN_IPV6__"
+  ipv6_packet_broker_binary: "__IPV6_PACKET_BROKER_BINARY__"
+  ipv6_packet_mtu: 1500
 
 runtime:
   dir: "__RUNTIME_DIR__"

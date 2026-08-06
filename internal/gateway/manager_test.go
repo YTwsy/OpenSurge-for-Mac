@@ -864,6 +864,166 @@ func TestStopProxyRestoreFailureKeepsServicesRunningAndStateRetryable(t *testing
 	}
 }
 
+func TestIPv6TakeoverLifecycleOrdersMihomoBrokerRAAndDNSMasq(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "lan0"
+	cfg.Gateway.UpstreamInterface = "wan0"
+	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	events := []string{}
+	dhcpManager := &fakeDHCP{startPID: 11, events: &events}
+	mihomoManager := &fakeMihomo{startPID: 12, events: &events}
+	packetManager := &fakeIPv6Packet{startPID: 13, events: &events}
+	hostManager := &fakeIPv6Host{events: &events}
+	pfManager := &fakePF{loaded: true, events: &events}
+	var mihomoConfigs []config.Config
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		removeState: runtime.RemoveState, ensure: runtime.Ensure,
+		newDHCP: func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
+		newMihomo: func(cfg config.Config, _ runtime.Paths) mihomoService {
+			mihomoConfigs = append(mihomoConfigs, cfg)
+			return mihomoManager
+		},
+		newPF:              func(config.Config, runtime.Paths) pfService { return pfManager },
+		newSysctl:          func() sysctlService { return &fakeSysctl{current: "0"} },
+		newIPv6Packet:      func(config.Config, runtime.Paths) ipv6PacketService { return packetManager },
+		newIPv6Host:        func(config.Config) ipv6HostService { return hostManager },
+		currentBoot:        func() (runtime.BootSession, error) { return runtime.BootSession{ID: "boot-a"}, nil },
+		processFingerprint: fakeProcessFingerprint,
+		processMatches:     fakeProcessMatches,
+		interfaces: func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil
+		},
+		interfaceByName: func(name string) (*net.Interface, error) { return &net.Interface{Name: name}, nil },
+		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
+			if iface.Name == "lan0" {
+				return []net.Addr{&net.IPNet{IP: net.ParseIP(cfg.Gateway.LANIP), Mask: net.CIDRMask(24, 32)}}, nil
+			}
+			return nil, nil
+		},
+		now: time.Now,
+	}}
+
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	state, exists, err := runtime.LoadState(paths.StateFile)
+	if err != nil || !exists || !state.IPv6PacketEffective || !state.IPv6GatewayAliasOwned || state.PIDIPv6Packet != 13 || state.TUNIPv6Requested != config.TUNIPv6Always {
+		t.Fatalf("IPv6 runtime state = %#v, exists=%v, err=%v", state, exists, err)
+	}
+	assertEventOrder(t, events, "mihomo-start", "ipv6-packet-start", "ipv6-gateway-add", "dhcp-start")
+
+	manager.cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+	if err := manager.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := mihomoConfigs[len(mihomoConfigs)-1].Transparent.TUNIPv6; got != config.TUNIPv6Always {
+		t.Fatalf("stop used desired IPv6 mode %q instead of applied mode", got)
+	}
+	assertEventOrder(t, events, "dhcp-stop", "ipv6-withdraw", "ipv6-gateway-remove", "ipv6-packet-stop", "mihomo-stop")
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || exists {
+		t.Fatalf("runtime state after stop exists=%v err=%v", exists, err)
+	}
+}
+
+func TestIPv6GatewayAddFailureRollsBackOwnedAliasAndPacketBroker(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Interface = "lan0"
+	cfg.Gateway.UpstreamInterface = "wan0"
+	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	events := []string{}
+	dhcpManager := &fakeDHCP{startPID: 11, events: &events}
+	mihomoManager := &fakeMihomo{startPID: 12, events: &events}
+	packetManager := &fakeIPv6Packet{startPID: 13, events: &events}
+	hostManager := &fakeIPv6Host{addErr: errors.New("IPv6 duplicate address detection failed"), events: &events}
+	pfManager := &fakePF{loaded: true, events: &events}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
+		removeState: runtime.RemoveState, ensure: runtime.Ensure,
+		newDHCP:            func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
+		newMihomo:          func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+		newPF:              func(config.Config, runtime.Paths) pfService { return pfManager },
+		newSysctl:          func() sysctlService { return &fakeSysctl{current: "0"} },
+		newIPv6Packet:      func(config.Config, runtime.Paths) ipv6PacketService { return packetManager },
+		newIPv6Host:        func(config.Config) ipv6HostService { return hostManager },
+		currentBoot:        func() (runtime.BootSession, error) { return runtime.BootSession{ID: "boot-a"}, nil },
+		processFingerprint: fakeProcessFingerprint,
+		processMatches:     fakeProcessMatches,
+		interfaces: func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil
+		},
+		interfaceByName: func(name string) (*net.Interface, error) { return &net.Interface{Name: name}, nil },
+		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
+			if iface.Name == "lan0" {
+				return []net.Addr{&net.IPNet{IP: net.ParseIP(cfg.Gateway.LANIP), Mask: net.CIDRMask(24, 32)}}, nil
+			}
+			return nil, nil
+		},
+		now: time.Now,
+	}}
+
+	err := manager.Start(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "IPv6 duplicate address detection failed") {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if dhcpManager.startCalled {
+		t.Fatal("dnsmasq started after the IPv6 gateway alias failed")
+	}
+	assertEventOrder(t, events,
+		"mihomo-start",
+		"ipv6-packet-start",
+		"ipv6-gateway-add",
+		"ipv6-withdraw",
+		"ipv6-gateway-remove",
+		"ipv6-packet-stop",
+		"mihomo-stop",
+	)
+	if _, exists, loadErr := runtime.LoadState(paths.StateFile); loadErr != nil || exists {
+		t.Fatalf("runtime state after rollback exists=%v err=%v", exists, loadErr)
+	}
+}
+
+func TestResolveIPv6AutoFailsClosedWithoutNativeUpstream(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Auto
+	host := &fakeIPv6Host{native: false}
+	manager := Manager{cfg: cfg}
+	resolution := manager.resolveIPv6(gatewayDeps{newIPv6Host: func(config.Config) ipv6HostService { return host }})
+	if resolution.Requested != config.TUNIPv6Auto || resolution.Effective || resolution.Reason != "native_ipv6_unavailable" || manager.cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		t.Fatalf("auto resolution = %#v, effective config=%q", resolution, manager.cfg.Transparent.TUNIPv6)
+	}
+}
+
+func TestResolveIPv6AlwaysReportsNativeStateWithoutFailingClosed(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	host := &fakeIPv6Host{native: true}
+	manager := Manager{cfg: cfg}
+	resolution := manager.resolveIPv6(gatewayDeps{newIPv6Host: func(config.Config) ipv6HostService { return host }})
+	if !resolution.Effective || !resolution.NativeAvailable || resolution.Reason != "forced_userspace_packet_path" || manager.cfg.Transparent.TUNIPv6 != config.TUNIPv6Always {
+		t.Fatalf("always resolution = %#v, effective config=%q", resolution, manager.cfg.Transparent.TUNIPv6)
+	}
+
+	host.native = false
+	host.nativeErr = errors.New("route probe failed")
+	resolution = manager.resolveIPv6(gatewayDeps{newIPv6Host: func(config.Config) ipv6HostService { return host }})
+	if !resolution.Effective || resolution.NativeAvailable || !strings.Contains(resolution.Reason, "native_detection_failed: route probe failed") || manager.cfg.Transparent.TUNIPv6 != config.TUNIPv6Always {
+		t.Fatalf("always detection-error resolution = %#v, effective config=%q", resolution, manager.cfg.Transparent.TUNIPv6)
+	}
+}
+
 type fakeDHCP struct {
 	checkErr    error
 	writeErr    error
@@ -1042,6 +1202,61 @@ type fakeLocalSystemProxy struct {
 	events            *[]string
 }
 
+type fakeIPv6Packet struct {
+	checkErr error
+	startPID int
+	startErr error
+	stopErr  error
+	running  bool
+	events   *[]string
+}
+
+func (f *fakeIPv6Packet) Check() error { return f.checkErr }
+func (f *fakeIPv6Packet) Start() (int, error) {
+	if f.events != nil {
+		*f.events = append(*f.events, "ipv6-packet-start")
+	}
+	return f.startPID, f.startErr
+}
+func (f *fakeIPv6Packet) Stop(int) error {
+	if f.events != nil {
+		*f.events = append(*f.events, "ipv6-packet-stop")
+	}
+	return f.stopErr
+}
+func (f *fakeIPv6Packet) Running(int) bool { return f.running }
+
+type fakeIPv6Host struct {
+	native      bool
+	nativeErr   error
+	checkErr    error
+	addErr      error
+	removeErr   error
+	withdrawErr error
+	events      *[]string
+}
+
+func (f *fakeIPv6Host) NativeAvailable() (bool, error) { return f.native, f.nativeErr }
+func (f *fakeIPv6Host) CheckGatewayAvailable() error   { return f.checkErr }
+func (f *fakeIPv6Host) AddGateway(context.Context) error {
+	if f.events != nil {
+		*f.events = append(*f.events, "ipv6-gateway-add")
+	}
+	return f.addErr
+}
+func (f *fakeIPv6Host) RemoveGateway(context.Context) error {
+	if f.events != nil {
+		*f.events = append(*f.events, "ipv6-gateway-remove")
+	}
+	return f.removeErr
+}
+func (f *fakeIPv6Host) Withdraw(context.Context) error {
+	if f.events != nil {
+		*f.events = append(*f.events, "ipv6-withdraw")
+	}
+	return f.withdrawErr
+}
+
 func (f *fakeLocalSystemProxy) Prepare(_ context.Context, interfaceName string, port int) (runtime.SystemProxySnapshot, error) {
 	f.prepareInterface = interfaceName
 	f.preparePort = port
@@ -1082,6 +1297,18 @@ func indexOfEvent(events []string, target string) int {
 		}
 	}
 	return -1
+}
+
+func assertEventOrder(t *testing.T, events []string, ordered ...string) {
+	t.Helper()
+	position := -1
+	for _, event := range ordered {
+		next := indexOfEvent(events, event)
+		if next <= position {
+			t.Fatalf("event %q did not occur after offset %d: %v", event, position, events)
+		}
+		position = next
+	}
 }
 
 func fakeProcessFingerprint(pid int) (string, error) {

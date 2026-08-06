@@ -6,6 +6,8 @@ SOCKET=/private/var/run/open-mihomo-gateway-lab.sock
 PID_FILE=/private/var/run/open-mihomo-gateway-lab.pid
 INTERFACE_FILE=/private/var/run/open-mihomo-gateway-lab.interface
 LOG_FILE=/private/var/log/open-mihomo-gateway-lab-vmnet.log
+LAUNCH_LABEL=io.opensurge.lab.socket-vmnet
+LAUNCH_PLIST=/Library/LaunchDaemons/io.opensurge.lab.socket-vmnet.plist
 NETWORK_ID=D034049A-52AC-4927-96DB-CF072835A574
 LAN_IP=192.168.50.1
 NETMASK=255.255.255.0
@@ -38,6 +40,11 @@ pid_is_running() {
   case "$pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
+  command=$(/bin/ps -p "$pid" -o command= 2>/dev/null || true)
+  case "$command" in
+    "$SOCKET_VMNET"|"$SOCKET_VMNET "*) ;;
+    *) return 1 ;;
+  esac
   /bin/kill -0 "$pid" 2>/dev/null
 }
 
@@ -47,18 +54,19 @@ start_network() {
     return 0
   fi
 
+  # socket_vmnet installs its own SIGHUP handler, so nohup alone does not keep
+  # it alive after an interactive sudo/PTY session closes. Let system launchd
+  # own the process instead of tying the lab network to the caller's terminal.
+  /bin/launchctl bootout "system/$LAUNCH_LABEL" >/dev/null 2>&1 || true
   /bin/rm -f "$SOCKET" "$PID_FILE" "$INTERFACE_FILE"
   : >"$LOG_FILE"
   before=" $(vmnet_bridges | /usr/bin/tr '\n' ' ') "
 
-  /usr/bin/nohup "$SOCKET_VMNET" \
-    --socket-group=staff \
-    --vmnet-mode=host \
-    --vmnet-network-identifier="$NETWORK_ID" \
-    --vmnet-gateway="$LAN_IP" \
-    --vmnet-mask="$NETMASK" \
-    --pidfile="$PID_FILE" \
-    "$SOCKET" >>"$LOG_FILE" 2>&1 &
+  if [ ! -r "$LAUNCH_PLIST" ]; then
+    echo "lab launchd plist is not installed: $LAUNCH_PLIST" >&2
+    exit 1
+  fi
+  /bin/launchctl bootstrap system "$LAUNCH_PLIST"
 
   attempts=0
   while [ ! -S "$SOCKET" ] && [ "$attempts" -lt 100 ]; do
@@ -95,8 +103,12 @@ start_network() {
 }
 
 stop_network() {
+  pid=""
   if pid_is_running; then
     pid=$(/bin/cat "$PID_FILE")
+  fi
+  /bin/launchctl bootout "system/$LAUNCH_LABEL" >/dev/null 2>&1 || true
+  if [ -n "$pid" ]; then
     /bin/kill -TERM "$pid" 2>/dev/null || true
     attempts=0
     while /bin/kill -0 "$pid" 2>/dev/null && [ "$attempts" -lt 50 ]; do

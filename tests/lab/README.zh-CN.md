@@ -60,6 +60,7 @@ sudo -v && make lab-test-tun-imported-profile
 sudo -v && make lab-test-tun-imported-egress
 sudo -v && make lab-test-tun-local-routing
 sudo -v && make lab-test-tun-device-policy
+sudo -v && make lab-test-ipv6-userspace
 sudo -v && make lab-down
 ```
 
@@ -78,6 +79,10 @@ artifact 会写入 `artifacts/lab`。managed mihomo DNS 在 TUN 关闭时仍会�
 也会跳过 `apt-get update` 和安装。冷重建会串行 provision 两台客户端，避免并发 apt
 争抢上游带宽；配置未变化的持久化客户端会并行启动，避免日常 `lab-up` 累加两次 guest
 boot 时间。
+修改 `tests/lab/lima/client.yaml` 会使 Lima 删除并冷重建对应 VM。VZ 冷启动
+可能静默约两分钟，然后从 vsock SSH 回退到 usernet forwarder 并进入
+`READY`；不要只因为这段静默就中断。先检查
+`runtime/tools/lima/bin/limactl list` 和 `~/.lima/<client>/ha.stderr.log`。
 
 `lab-test-tun` 是 TUN 透明代理门禁。它会把 lab 配置改写成
 `transparent.mode: "tun"`，让 dnsmasq 转发到 mihomo DNS，让客户端不设置显式代理，
@@ -110,6 +115,19 @@ selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJ
 初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
 编译仍由单元测试覆盖。
 
+`lab-test-ipv6-userspace` 是独立下游 LAN 的 IPv6 接管门禁。它构建 OpenSurge
+patched Mihomo 和 BPF broker，让两台客户端通过 dnsmasq RA/SLAAC 获得
+`fdfe:dcba:9878::/64` 地址、IPv6 默认路由和 RDNSS；随后要求第一台客户端的 IPv6
+TCP 命中设备域名 `REJECT`，第二台客户端的 IPv6 TCP、受控 UDP
+request/response 和 1200-byte QUIC Initial-shaped UDP carrier 命中自己的 `DIRECT`
+selector。TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案，
+不把公网上游当作唯一捕获证据。最后会停止网关并
+验证客户端 default route、Mac gateway alias、broker PID、Unix socket、ready file
+和 runtime state 被清理。客户端可能按 RFC 4862 暂时保留 deprecated/等待过期的
+SLAAC 地址；门禁不把“地址立即消失”当成路由撤销条件。QUIC 断言证明的是 UDP
+carrier 与策略命中，不是
+完整 HTTP/3 握手。这个门禁不能用于 same-LAN；主路由器 RA 未被抑制时会形成绕过路径。
+
 请把 `make lab-test` 视为高风险网络改动所需的本地门禁：DHCP/DNS 行为、mihomo
 进程或配置生成、pf/NAT 规则、forwarding 和 rollback、网关生命周期清理、lab
 拓扑或运行时流量默认值。普通 CI 流程有意停在 `make test`；这个 lab 应运行在开发
@@ -131,6 +149,26 @@ sudo 缓存凭据和终端会话有关，也会过期。如果 agent 或自动�
 本身可能超过 sudo ticket 的有效期，因此它完成后必须再次执行
 `sudo -v && make lab-test...`；清理前如果已经过了较长时间，也用
 `sudo -v && make lab-down`，否则 VM 可能已停止但 root-owned helper 的状态文件仍残留。
+
+### 常见基础设施故障
+
+- guest 启动和清理会恢复 Lima 控制面 DNS，并在 `/etc/hosts` 保证本机 hostname
+  可解析。出现 `sudo: unable to resolve host` 或对已停止 `192.168.50.1` 的
+  DNS 请求时，先运行 `sudo /usr/local/bin/omg-lab-client restore-control`。
+- `networkctl status omg0` 应显示
+  `/etc/systemd/network/05-open-mihomo-gateway-lab.network`。重复 IPv4/IPv6
+  default route 表示 netplan 和另一 DHCP/RA client 在竞争接管。`renew6` 只接受
+  非 `tentative` / 非 `dadfailed` 且 `preferred_lft` 为正的 ULA。
+- `runtime/lab/proxy.env` 里过期或不可达的代理会让 patched Mihomo 构建在数据面
+  启动前失败。同样，异常中断可能留下残缺的专用 Go module cache。先看
+  `runtime/lab/logs/mihomo-build.log`；脚本会为 Go mirror 绕过旧代理，并且仅对
+  已确认的 cache 缺文件清理并重试一次。
+- agent 沙箱中的 `sysctl ... operation not permitted` 是权限噪声，不是数据面
+  失败。在已授权的同一 PTY 内重跑对应门禁。
+- VZ 停止时可能以红色打印 `use of closed network connection`。只要紧接着出现
+  `has shut down` 和 `lab network stopped`，它就是 hostagent 收尾噪声，不是失败。
+- 复核失败时只看当次新生成的 `artifacts/lab/<timestamp>`。IPv6 门禁会在
+  运行开始时清理可选 egress fixture 的旧日志，避免历史命中污染新结果。
 
 固定大小的 Lima/mihomo 下载采用分段缓存并在合并后校验 checksum。下载因 TLS 或网络
 波动失败时，直接重跑同一条安装命令；安装器会复用完整分段或续传未完成分段，不要手工
@@ -161,6 +199,7 @@ make lab-test-tun-imported-profile # 使用 imported profile fixture 跑 TUN
 make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
 make lab-test-tun-local-routing # 验证 Mac 本机模式与下游隔离
 make lab-test-tun-device-policy # 验证独立的每设备 TUN 策略
+make lab-test-ipv6-userspace # 验证独立下游 LAN 的 IPv6 TCP/UDP 接管与撤销
 make lab-down     # 停止客户端并移除 host network
 make lab-destroy  # 同时删除持久化的 Lima 客户端磁盘
 ```

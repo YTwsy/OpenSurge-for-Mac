@@ -49,6 +49,7 @@ type DNSConfig struct {
 	Listen   string
 	Port     int
 	Upstream string
+	IPv6     bool
 }
 
 type MihomoConfig struct {
@@ -78,6 +79,25 @@ const (
 	TransparentModeTUN = "tun"
 )
 
+const (
+	TUNIPv6Off    = "off"
+	TUNIPv6Auto   = "auto"
+	TUNIPv6Always = "always"
+)
+
+// The three IPv6 ranges are deliberately disjoint. Downstream clients use the
+// LAN /64, fake-IP answers use another /64 so clients do not attempt on-link
+// neighbour discovery for synthetic destinations, and the host TUN keeps its
+// own tiny point-to-point range.
+const (
+	MihomoFakeIPv6Range        = "fdfe:dcba:9876::/64"
+	MihomoTUNIPv6              = "fdfe:dcba:9877::1/126"
+	DownstreamIPv6Prefix       = "fdfe:dcba:9878::/64"
+	DownstreamIPv6Gateway      = "fdfe:dcba:9878::1"
+	IPv6PacketListenerName     = "opensurge-ipv6"
+	IPv6PacketBrokerSubcommand = "ipv6-packet"
+)
+
 // MihomoDNSUpstream is the dnsmasq upstream that preserves mihomo fake-IP and
 // TUN DNS semantics. An explicit public resolver remains supported for
 // diagnostics, but TUN dns-hijack means it is not a guaranteed bypass path.
@@ -95,6 +115,9 @@ type TransparentConfig struct {
 	TUNAutoRoute           bool
 	TUNAutoDetectInterface bool
 	TUNStrictRoute         bool
+	TUNIPv6                string
+	IPv6PacketBrokerBinary string
+	IPv6PacketMTU          int
 }
 
 // LocalSystemProxyConfig enables an opt-in compatibility layer for local Mac
@@ -106,6 +129,10 @@ type LocalSystemProxyConfig struct {
 
 func (c TransparentConfig) TUNEnabled() bool {
 	return c.Mode == TransparentModeTUN
+}
+
+func (c TransparentConfig) IPv6Requested() bool {
+	return c.TUNIPv6 != TUNIPv6Off
 }
 
 func (c GatewayConfig) SameLAN() bool {
@@ -148,6 +175,7 @@ func Default() Config {
 			Listen:   "192.168.50.1",
 			Port:     53,
 			Upstream: MihomoDNSUpstream,
+			IPv6:     false,
 		},
 		Mihomo: MihomoConfig{
 			Binary:      "./bin/mihomo",
@@ -170,6 +198,9 @@ func Default() Config {
 			TUNAutoRoute:           true,
 			TUNAutoDetectInterface: false,
 			TUNStrictRoute:         false,
+			TUNIPv6:                TUNIPv6Off,
+			IPv6PacketBrokerBinary: "opensurge-network",
+			IPv6PacketMTU:          1500,
 		},
 		LocalSystemProxy: LocalSystemProxyConfig{Enabled: false},
 		UpstreamProxy: UpstreamProxyConfig{

@@ -74,6 +74,9 @@ forwarding 提供原生网关路径。
 - 启停 DHCP/DNS、mihomo、pf NAT 与 IPv4 forwarding，并带 rollback；
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
+- 在实验性的独立下游 LAN 模式中，通过 dnsmasq RA/SLAAC 与无系统 TUN 的
+  BPF → Mihomo gVisor 数据面接管 IPv6 TCP、UDP 和 QUIC carrier，并保留 MAC
+  设备身份用于独立策略；
 - 在不改变下游设备的前提下，为 Mac 本机经 TUN/显式代理的新连接切换
   **规则 / 全局 / 直连**；默认不修改 macOS 系统代理，也可在 TUN 模式下显式启用
   HTTP/HTTPS 系统代理协同，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰
@@ -181,6 +184,25 @@ macOS 上支持的透明代理路径是 TUN。mihomo `redir-port` 和 PF TCP 重
 OpenSurge 不会在启动前根据现有 utun 或公网路由猜测冲突。实际启动会等待 mihomo
 运行时确认 TUN ready；失败时给进程短暂清理窗口、回滚网关运行时，并根据实际
 TUN 错误补充冲突路由的接口/网关信息。默认不支持两个全局 TUN 同时占有公网路由。
+
+### 下游 IPv6 接管（实验性）
+
+网络设置页提供两个独立开关：`dns.ipv6` 决定 OpenSurge DNS 是否回答 AAAA 并生成
+fake IPv6；`transparent.tun_ipv6` 决定是否在下游发布 IPv6 网关、SLAAC/RDNSS 和
+用户态透明数据面，可选 `off`、`auto` 或 `always`。`auto` 只在上游接口有公网全局
+IPv6 地址（不把 ULA 当成公网能力）和 IPv6 默认路由时启用；`always` 即使上游没有
+原生 IPv6 也会建立下游路径。
+
+当前只支持 `gateway.mode: "isolated_lan"` 且要求 `transparent.mode: "tun"`。
+旁路由/同网段模式会因主路由器 RA 产生 IPv6 绕过路径，所以在实现 RA suppression
+或 RA Guard 前配置会直接拒绝。下游 IPv6 入站不经过 macOS 系统 utun：BPF broker
+把物理 Ethernet 上的 IPv6 packet 和 source MAC 送入 patched Mihomo gVisor，并把
+身份映射到原有设备规则。支持边界是 TCP 与 UDP；QUIC 按 UDP/443 承载，不代表任意
+IPv6 协议均可代理。
+
+`always` 也不会凭空提供公网 IPv6。上游无原生 IPv6 时，fake IPv6 目标仍可通过支持
+相应流量的代理出口；真实公网 IPv6 的 `DIRECT` 会因没有上游路由而失败，HTTP-only
+代理也不能承载 UDP/QUIC。
 
 ## mihomo profile
 
@@ -421,6 +443,12 @@ CONNECT proxy，证明 `policy-select` 可以把 TUN 出口路径在 `DIRECT` �
 选择不同的 TUN 出口，并验证设备级域名 `REJECT` 生效。域名/协议规则编译、模板和
 HTTP/MRS rule-provider 配置由单元测试覆盖；不需要为每条操作者规则运行 Lab。
 
+修改下游 IPv6 RA/SLAAC、BPF broker、patched Mihomo packet listener、IPv6 设备身份
+或停止撤销时，使用 `make lab-test-ipv6-userspace`。它要求两台客户端获得 OpenSurge
+IPv6 地址、默认路由与 link-local DNS，并通过本机受控 fixture 分别验证
+TCP、UDP request/response、QUIC-shaped UDP carrier、设备策略和 stop rollback。QUIC 项只
+证明 UDP carrier，不等于完整 HTTP/3 握手。
+
 策略组控制面和机器可读 CLI 改动优先使用 `make policy-control-test`。它会启动真实
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller
 API 检查 `policies`、`policy-select`、mihomo 重启后的策略选择恢复、通过
@@ -464,6 +492,7 @@ make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
+make lab-test-ipv6-userspace
 make lab-down
 ```
 

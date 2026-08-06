@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.opensurge.lab.socket-vmnet</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/socket_vmnet/bin/socket_vmnet</string>
+    <string>--socket-group=staff</string>
+    <string>--vmnet-mode=host</string>
+    <string>--vmnet-network-identifier=D034049A-52AC-4927-96DB-CF072835A574</string>
+    <string>--vmnet-gateway=192.168.50.1</string>
+    <string>--vmnet-mask=255.255.255.0</string>
+    <string>--pidfile=/private/var/run/open-mihomo-gateway-lab.pid</string>
+    <string>/private/var/run/open-mihomo-gateway-lab.sock</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/private/var/log/open-mihomo-gateway-lab-vmnet.log</string>
+  <key>StandardErrorPath</key>
+  <string>/private/var/log/open-mihomo-gateway-lab-vmnet.log</string>
+</dict>
+</plist>

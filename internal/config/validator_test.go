@@ -381,3 +381,37 @@ func TestValidateRejectsInvalidUpstreamProxy(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDownstreamIPv6TakeoverContract(t *testing.T) {
+	valid := Default()
+	valid.Transparent.Mode = TransparentModeTUN
+	valid.Transparent.TUNIPv6 = TUNIPv6Always
+	if err := Validate(valid); err != nil {
+		t.Fatalf("Validate(valid IPv6 takeover) error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{"same LAN without RA suppression", func(cfg *Config) {
+			cfg.Gateway.Mode = GatewayModeSameLAN
+			cfg.DHCP.Enabled = false
+			cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
+		}, "requires gateway.mode"},
+		{"transparent off", func(cfg *Config) { cfg.Transparent.Mode = TransparentModeOff }, "requires transparent.mode"},
+		{"missing broker", func(cfg *Config) { cfg.Transparent.IPv6PacketBrokerBinary = "" }, "ipv6_packet_broker_binary is required"},
+		{"MTU too small", func(cfg *Config) { cfg.Transparent.IPv6PacketMTU = 1279 }, "ipv6_packet_mtu must be between"},
+		{"unknown mode", func(cfg *Config) { cfg.Transparent.TUNIPv6 = "sometimes" }, "tun_ipv6 must be off, auto, or always"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := valid
+			tt.edit(&cfg)
+			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}

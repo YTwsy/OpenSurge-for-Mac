@@ -66,6 +66,7 @@ sudo -v && make lab-test-tun-imported-profile
 sudo -v && make lab-test-tun-imported-egress
 sudo -v && make lab-test-tun-local-routing
 sudo -v && make lab-test-tun-device-policy
+sudo -v && make lab-test-ipv6-userspace
 sudo -v && make lab-down
 ```
 
@@ -88,6 +89,11 @@ running, and skips `apt-get update` and package installation when all required
 tools are already present. Cold rebuilds provision clients sequentially so two
 apt jobs cannot contend for upstream bandwidth; unchanged persistent clients
 start in parallel so routine `lab-up` does not add two guest boot times.
+Changing `tests/lab/lima/client.yaml` makes Lima delete and cold-rebuild the
+affected VMs. A VZ cold boot can be silent for about two minutes before falling
+back from vsock SSH to the usernet forwarder and reaching `READY`; do not abort
+solely because of that quiet interval. Check
+`runtime/tools/lima/bin/limactl list` and `~/.lima/<client>/ha.stderr.log` first.
 
 `lab-test-tun` is the TUN transparent proxy gate. It rewrites the lab config
 with `transparent.mode: "tun"`, forwards dnsmasq to mihomo DNS, leaves the
@@ -131,6 +137,23 @@ dnsmasq/mihomo configuration, and the initial and post-reload device views so
 the boundary remains auditable.
 Rule/template/provider compilation stays in unit tests.
 
+`lab-test-ipv6-userspace` is the isolated-downstream-LAN IPv6 takeover gate.
+It builds the OpenSurge-patched Mihomo and BPF broker, then requires both
+clients to obtain `fdfe:dcba:9878::/64` SLAAC addresses, an IPv6 default route,
+and RDNSS from dnsmasq. Client one must hit its device-domain `REJECT` over
+IPv6 TCP. Client two must hit its own `DIRECT` selector over IPv6 TCP, a
+controlled UDP request/response, and a 1200-byte QUIC Initial-shaped UDP
+carrier. The TCP origin must receive the HTTP request and the UDP fixture must
+return its fixed answer; public upstream services are not the sole capture
+evidence. Shutdown must withdraw
+the OpenSurge default route and remove the Mac gateway alias, broker PID,
+Unix sockets, readiness marker, and runtime state. RFC 4862 may temporarily
+retain a deprecated/expiring SLAAC address, so immediate address deletion is
+not the routing-withdrawal condition. The QUIC assertion proves the UDP carrier
+and policy match, not a complete HTTP/3 handshake. This
+gate does not apply to same-LAN mode, where an unsuppressed main-router RA
+would create a bypass path.
+
 Treat `make lab-test` as the required local gate for high-risk network changes:
 DHCP/DNS behavior, mihomo process or config generation, pf/NAT rules,
 forwarding and rollback, gateway lifecycle cleanup, lab topology, or runtime
@@ -156,6 +179,33 @@ long session instead of treating one credential cache as permanent. A cold
 `sudo -v && make lab-test...` again. If cleanup follows a long gate, also use
 `sudo -v && make lab-down`; otherwise the VMs may stop while stale state for the
 root-owned helper remains.
+
+### Common infrastructure failures
+
+- Guest startup and cleanup restore the Lima control-plane DNS and make the
+  local hostname resolvable through `/etc/hosts`. If provisioning reports
+  `sudo: unable to resolve host` or still queries a stopped `192.168.50.1`, run
+  `sudo /usr/local/bin/omg-lab-client restore-control` in the guest first.
+- `networkctl status omg0` should name
+  `/etc/systemd/network/05-open-mihomo-gateway-lab.network`. Duplicate IPv4 or
+  IPv6 default routes mean netplan and another DHCP/RA client are competing for
+  the interface. `renew6` accepts only a ULA that is neither `tentative` nor
+  `dadfailed` and has a positive `preferred_lft`.
+- A stale or unreachable proxy in `runtime/lab/proxy.env` can fail the patched
+  Mihomo build before the data plane starts. An interrupted build can likewise
+  leave the dedicated Go module cache incomplete. Inspect
+  `runtime/lab/logs/mihomo-build.log` first; the script bypasses the stale proxy
+  for Go mirrors and clears/retries once only for a confirmed missing file in
+  that dedicated cache.
+- `sysctl ... operation not permitted` in an agent sandbox is an execution
+  permission signal, not a data-plane result. Rerun the actual gate in the same
+  approved PTY before drawing a host-network conclusion.
+- VZ shutdown may print `use of closed network connection` in red. It is
+  hostagent teardown noise, not a failure, when it is followed by both
+  `has shut down` and `lab network stopped`.
+- Review only the newly created `artifacts/lab/<timestamp>` for the current
+  run. The IPv6 gate clears stale optional egress-fixture logs at startup so a
+  historical hit cannot satisfy a new assertion.
 
 The fixed-size Lima and mihomo downloads use segmented caches and verify the
 checksum after assembly. If TLS or network instability interrupts an install,
@@ -190,6 +240,7 @@ make lab-test-tun-imported-profile # run TUN with an imported profile fixture
 make lab-test-tun-imported-egress  # switch TUN egress through a controlled proxy
 make lab-test-tun-local-routing # prove local-Mac mode isolation
 make lab-test-tun-device-policy # prove independent per-device TUN policies
+make lab-test-ipv6-userspace # prove isolated-LAN IPv6 TCP/UDP takeover and withdrawal
 make lab-down     # stop clients and remove the host network
 make lab-destroy  # delete the persistent Lima client disks too
 ```

@@ -22,6 +22,8 @@ dns:
   # Recommended: dnsmasq -> mihomo fake-IP DNS. Use 1.1.1.1 only as an
   # explicit diagnostic resolver; TUN dns-hijack may still capture it.
   upstream: "127.0.0.1#1053"
+  # Controls AAAA answers independently from downstream IPv6 takeover.
+  ipv6: false
 
 mihomo:
   binary: "./bin/mihomo"
@@ -49,6 +51,11 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
+  # off | auto | always. Currently requires gateway.mode: "isolated_lan"
+  # and transparent.mode: "tun".
+  tun_ipv6: "off"
+  ipv6_packet_broker_binary: "opensurge-network"
+  ipv6_packet_mtu: 1500
 
 local_system_proxy:
   # Optional compatibility layer for local Mac apps that honor HTTP/HTTPS

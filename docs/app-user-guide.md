@@ -67,6 +67,16 @@ upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Enable
 **每设备策略** (Per-device policies) if devices need independent egress
 choices, then select **保存网络配置** (Save network configuration).
 
+An isolated downstream LAN also exposes two experimental IPv6 settings.
+**IPv6 DNS queries** controls AAAA answers; **Downstream IPv6 takeover**
+publishes SLAAC/default-route information and enables the userspace TCP/UDP
+path. A normal whole-home IPv6 setup enables both. **Auto** takes over only
+when the upstream has a public IPv6 address (ULA does not count) and an IPv6
+default route, while **Always** can establish the downstream path without it;
+real public-IPv6 `DIRECT` traffic still needs an upstream route.
+Same-LAN modes keep takeover locked off because main-router RA could bypass the
+Mac.
+
 If SafeDNS, DNS Proxy, content filtering, or another Network Extension causes
 local-Mac DNS or connectivity failures with TUN alone, enable **Mac local
 system-proxy coordination** in the same form. After the gateway is ready,

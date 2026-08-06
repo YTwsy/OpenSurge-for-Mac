@@ -13,6 +13,8 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/dhcp"
+	"open-mihomo-gateway/internal/ipv6packet"
+	"open-mihomo-gateway/internal/macosipv6"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/pf"
@@ -71,6 +73,21 @@ type localSystemProxyService interface {
 	RestoreOwned(context.Context, runtime.SystemProxySnapshot, int) error
 }
 
+type ipv6PacketService interface {
+	Check() error
+	Start() (int, error)
+	Stop(int) error
+	Running(int) bool
+}
+
+type ipv6HostService interface {
+	NativeAvailable() (bool, error)
+	CheckGatewayAvailable() error
+	AddGateway(context.Context) error
+	RemoveGateway(context.Context) error
+	Withdraw(context.Context) error
+}
+
 type gatewayDeps struct {
 	geteuid             func() int
 	loadState           func(string) (runtime.State, bool, error)
@@ -82,6 +99,8 @@ type gatewayDeps struct {
 	newPF               func(config.Config, runtime.Paths) pfService
 	newSysctl           func() sysctlService
 	newLocalSystemProxy func() localSystemProxyService
+	newIPv6Packet       func(config.Config, runtime.Paths) ipv6PacketService
+	newIPv6Host         func(config.Config) ipv6HostService
 	interfaces          func() ([]net.Interface, error)
 	interfaceByName     func(string) (*net.Interface, error)
 	interfaceAddrs      func(*net.Interface) ([]net.Addr, error)
@@ -114,6 +133,14 @@ func defaultGatewayDeps() gatewayDeps {
 		newLocalSystemProxy: func() localSystemProxyService {
 			return macosnetwork.SystemProxy{}
 		},
+		newIPv6Packet: func(cfg config.Config, paths runtime.Paths) ipv6PacketService {
+			manager := ipv6packet.NewManager(cfg, paths)
+			return manager
+		},
+		newIPv6Host: func(cfg config.Config) ipv6HostService {
+			manager := macosipv6.New(cfg)
+			return manager
+		},
 		interfaces:      net.Interfaces,
 		interfaceByName: net.InterfaceByName,
 		interfaceAddrs: func(iface *net.Interface) ([]net.Addr, error) {
@@ -125,6 +152,72 @@ func defaultGatewayDeps() gatewayDeps {
 		processMatches:     process.MatchesFingerprint,
 		now:                time.Now,
 	}
+}
+
+func (m Manager) ipv6Packet(deps gatewayDeps) ipv6PacketService {
+	if deps.newIPv6Packet != nil {
+		return deps.newIPv6Packet(m.cfg, m.paths)
+	}
+	manager := ipv6packet.NewManager(m.cfg, m.paths)
+	return manager
+}
+
+func (m Manager) ipv6Host(deps gatewayDeps) ipv6HostService {
+	if deps.newIPv6Host != nil {
+		return deps.newIPv6Host(m.cfg)
+	}
+	manager := macosipv6.New(m.cfg)
+	return manager
+}
+
+type ipv6Resolution struct {
+	Requested       string
+	NativeAvailable bool
+	Effective       bool
+	Reason          string
+}
+
+func (m *Manager) resolveIPv6(deps gatewayDeps) ipv6Resolution {
+	resolution := ipv6Resolution{Requested: m.cfg.Transparent.TUNIPv6, Reason: "disabled"}
+	switch m.cfg.Transparent.TUNIPv6 {
+	case config.TUNIPv6Always:
+		resolution.Effective = true
+		resolution.Reason = "forced_userspace_packet_path"
+		available, err := m.ipv6Host(deps).NativeAvailable()
+		if err != nil {
+			// always is an explicit force-on choice: upstream detection remains
+			// observability and must not turn it back off.
+			resolution.Reason += "; native_detection_failed: " + err.Error()
+		} else {
+			resolution.NativeAvailable = available
+		}
+	case config.TUNIPv6Auto:
+		available, err := m.ipv6Host(deps).NativeAvailable()
+		if err != nil {
+			m.cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+			resolution.Reason = "native_detection_failed: " + err.Error()
+			return resolution
+		}
+		resolution.NativeAvailable = available
+		resolution.Effective = available
+		if available {
+			resolution.Reason = "native_ipv6_available"
+		} else {
+			m.cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+			resolution.Reason = "native_ipv6_unavailable"
+		}
+	}
+	return resolution
+}
+
+func appliedConfigFromState(cfg config.Config, state runtime.State) config.Config {
+	cfg.DNS.IPv6 = state.DNSIPv6
+	if state.IPv6PacketEffective {
+		cfg.Transparent.TUNIPv6 = state.TUNIPv6Requested
+	} else {
+		cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+	}
+	return cfg
 }
 
 func (m Manager) gatewayDeps() gatewayDeps {
@@ -200,6 +293,7 @@ func (m Manager) Start(ctx context.Context) error {
 	if err := config.Validate(m.cfg); err != nil {
 		return err
 	}
+	ipv6Resolution := m.resolveIPv6(deps)
 	if err := deps.ensure(m.paths); err != nil {
 		return err
 	}
@@ -213,6 +307,13 @@ func (m Manager) Start(ctx context.Context) error {
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
 	systemProxyManager := m.localSystemProxy(deps)
+	ipv6PacketManager := m.ipv6Packet(deps)
+	ipv6HostManager := m.ipv6Host(deps)
+	if ipv6Resolution.Effective {
+		if err := ipv6HostManager.CheckGatewayAvailable(); err != nil {
+			return err
+		}
+	}
 	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
 		return err
 	}
@@ -261,12 +362,17 @@ func (m Manager) Start(ctx context.Context) error {
 	}
 
 	state := runtime.State{
-		StartedAt:          deps.now(),
-		BootSessionID:      bootSession.ID,
-		IPForwardingBefore: ipForwardingBefore,
-		PFEnabledBefore:    pfEnabledBefore,
-		ProfileDigest:      profileDigest,
-		LocalSystemProxy:   systemProxySnapshot,
+		StartedAt:           deps.now(),
+		BootSessionID:       bootSession.ID,
+		IPForwardingBefore:  ipForwardingBefore,
+		PFEnabledBefore:     pfEnabledBefore,
+		ProfileDigest:       profileDigest,
+		LocalSystemProxy:    systemProxySnapshot,
+		DNSIPv6:             m.cfg.DNS.IPv6,
+		TUNIPv6Requested:    ipv6Resolution.Requested,
+		IPv6PacketEffective: ipv6Resolution.Effective,
+		NativeIPv6Available: ipv6Resolution.NativeAvailable,
+		IPv6Reason:          ipv6Resolution.Reason,
 	}
 	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
 		state.DevicePolicyDigest = bundle.Digest
@@ -294,6 +400,37 @@ func (m Manager) Start(ctx context.Context) error {
 	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+	}
+	if ipv6Resolution.Effective {
+		ipv6PacketPID, startErr := ipv6PacketManager.Start()
+		if startErr != nil {
+			return m.rollback(ctx, startErr, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
+		state.PIDIPv6Packet = ipv6PacketPID
+		state.IPv6PacketFingerprint, err = processFingerprint(deps, ipv6PacketPID)
+		if err != nil || (ipv6PacketPID > 0 && state.IPv6PacketFingerprint == "") {
+			if err == nil {
+				err = fmt.Errorf("IPv6 packet broker pid %d disappeared before its identity could be recorded", ipv6PacketPID)
+			}
+			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
+		// Persist broker identity before changing the host interface. If the
+		// following alias step fails, a failed rollback remains retryable and
+		// never leaves an untracked root packet process behind.
+		if err := deps.saveState(m.paths.StateFile, state); err != nil {
+			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
+		// Persist alias ownership intent before mutating the interface. Removal is
+		// idempotent when the add command never took effect, while a successful add
+		// can no longer fall into an untracked gap if DAD or the next state write
+		// fails.
+		state.IPv6GatewayAliasOwned = true
+		if err := deps.saveState(m.paths.StateFile, state); err != nil {
+			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
+		if err := ipv6HostManager.AddGateway(ctx); err != nil {
+			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
 	}
 
 	pid, err := dhcpManager.Start()
@@ -370,9 +507,16 @@ func (m Manager) Reload(ctx context.Context) error {
 		return fmt.Errorf("gateway runtime was interrupted by a system reboot; run stop to clean the interrupted runtime, then start the gateway")
 	}
 	dhcpManager := deps.newDHCP(m.cfg, m.paths)
-	mihomoManager := deps.newMihomo(m.cfg, m.paths)
+	appliedCfg := appliedConfigFromState(m.cfg, state)
+	mihomoManager := deps.newMihomo(appliedCfg, m.paths)
 	if !trackedProcessRunning(deps, state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Running) || !trackedProcessRunning(deps, state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Running) {
 		return fmt.Errorf("gateway is degraded; reload requires both DHCP/DNS and mihomo to be running")
+	}
+	if state.IPv6PacketEffective {
+		packetManager := Manager{cfg: appliedCfg, paths: m.paths, deps: m.deps}.ipv6Packet(deps)
+		if !trackedProcessRunning(deps, state.PIDIPv6Packet, state.IPv6PacketFingerprint, packetManager.Running) {
+			return fmt.Errorf("gateway is degraded; reload requires the IPv6 packet broker to be running")
+		}
 	}
 	if err := m.validateReloadCandidate(); err != nil {
 		return fmt.Errorf("reload candidate validation failed: %w", err)
@@ -418,7 +562,8 @@ func (m Manager) RestartMihomo(ctx context.Context) error {
 		return fmt.Errorf("desired imported mihomo profile differs from the applied runtime; run reload instead")
 	}
 
-	mihomoManager := deps.newMihomo(m.cfg, m.paths)
+	appliedCfg := appliedConfigFromState(m.cfg, state)
+	mihomoManager := deps.newMihomo(appliedCfg, m.paths)
 	systemProxyManager := m.localSystemProxy(deps)
 	restoreSystemProxy := func() error {
 		if state.LocalSystemProxy == nil {
@@ -517,6 +662,7 @@ func (m Manager) validateReloadCandidate() error {
 	}
 	candidate := Manager{cfg: candidateConfig, paths: runtime.NewPaths(candidateConfig), deps: m.gatewayDeps()}
 	deps := candidate.gatewayDeps()
+	candidate.resolveIPv6(deps)
 	if err := deps.ensure(candidate.paths); err != nil {
 		return err
 	}
@@ -571,7 +717,8 @@ func (m Manager) Stop(ctx context.Context) error {
 		}
 		dhcpManager := deps.newDHCP(m.cfg, m.paths)
 		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "dnsmasq", state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Stop))
-		mihomoManager := deps.newMihomo(m.cfg, m.paths)
+		cleanupErr = errors.Join(cleanupErr, m.cleanupIPv6(ctx, deps, state))
+		mihomoManager := deps.newMihomo(appliedConfigFromState(m.cfg, state), m.paths)
 		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "mihomo", state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Stop))
 		if state.PFAnchorLoaded {
 			cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
@@ -589,6 +736,25 @@ func (m Manager) Stop(ctx context.Context) error {
 
 	fmt.Println("Gateway stopped and runtime state cleared.")
 	return nil
+}
+
+func (m Manager) cleanupIPv6(ctx context.Context, deps gatewayDeps, state runtime.State) error {
+	if !state.IPv6PacketEffective && state.PIDIPv6Packet == 0 && !state.IPv6GatewayAliasOwned {
+		return nil
+	}
+	applied := m
+	applied.cfg = appliedConfigFromState(m.cfg, state)
+	var cleanupErr error
+	if state.IPv6GatewayAliasOwned {
+		host := applied.ipv6Host(deps)
+		cleanupErr = errors.Join(cleanupErr, host.Withdraw(ctx))
+		cleanupErr = errors.Join(cleanupErr, host.RemoveGateway(ctx))
+	}
+	if state.PIDIPv6Packet != 0 {
+		packet := applied.ipv6Packet(deps)
+		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "IPv6 packet broker", state.PIDIPv6Packet, state.IPv6PacketFingerprint, packet.Stop))
+	}
+	return cleanupErr
 }
 
 func (m Manager) cleanupInterruptedRuntime(ctx context.Context, deps gatewayDeps, state runtime.State) error {
@@ -620,6 +786,11 @@ func (m Manager) preflight(dhcpManager dhcpService, mihomoManager mihomoService,
 	}
 	if err := sysctlManager.Check(); err != nil {
 		return err
+	}
+	if m.cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		if err := m.ipv6Packet(deps).Check(); err != nil {
+			return fmt.Errorf("IPv6 packet broker: %w", err)
+		}
 	}
 	sameInterface := strings.TrimSpace(m.cfg.Gateway.Interface) == strings.TrimSpace(m.cfg.Gateway.UpstreamInterface)
 	if m.cfg.Gateway.SameLAN() {
@@ -710,6 +881,7 @@ func (m Manager) rollback(ctx context.Context, cause error, state runtime.State,
 		}
 	}
 	cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "dnsmasq", state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Stop))
+	cleanupErr = errors.Join(cleanupErr, m.cleanupIPv6(ctx, deps, state))
 	cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "mihomo", state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Stop))
 	if state.PFAnchorLoaded {
 		cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))

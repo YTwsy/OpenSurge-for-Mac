@@ -7,6 +7,7 @@ POSTINSTALL="$ROOT/packaging/pkg-scripts/postinstall"
 RECOVERY_STATE="$ROOT/packaging/pkg-scripts/recovery-state.sh"
 INSTALLED_PROCESSES="$ROOT/packaging/pkg-scripts/installed-processes.sh"
 RELEASE_DEPS="$ROOT/scripts/prepare-gui-release-deps.sh"
+MIHOMO_BUILD="$ROOT/scripts/build-opensurge-mihomo.sh"
 RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
 MENUBAR_PACKAGE="$ROOT/apps/menubar/Package.swift"
@@ -21,10 +22,10 @@ MENUBAR_CONTENT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuContentView.swi
 UNINSTALLER="$ROOT/scripts/uninstall-gui.sh"
 
 bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$INSTALLED_PROCESSES" "$ROOT/scripts/uninstall-gui.sh" \
-  "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$RELEASE_VERIFY"
+  "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$MIHOMO_BUILD" "$RELEASE_VERIFY"
 [[ -x "$PREINSTALL" ]] || { echo "preinstall must be executable" >&2; exit 1; }
-[[ -x "$RELEASE_DEPS" && -x "$RELEASE_VERIFY" ]] || {
-  echo "release preparation and verification scripts must be executable" >&2
+[[ -x "$RELEASE_DEPS" && -x "$MIHOMO_BUILD" && -x "$RELEASE_VERIFY" ]] || {
+  echo "release preparation, patched mihomo build, and verification scripts must be executable" >&2
   exit 1
 }
 
@@ -314,12 +315,20 @@ grep -Fq 'lipo "$executable" -verify_arch "$OPENSURGE_APP_ARCH"' "$ROOT/scripts/
   echo "GUI package must verify bundled executable architectures" >&2
   exit 1
 }
+grep -Fq '"$APP_ROOT/bin/opensurge-network" "$APP_ROOT/share/opensurge-control"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "GUI package must sign the IPv6 packet broker with the other bundled executables" >&2
+  exit 1
+}
 grep -Fq 'x86_64) GO_ARCH=amd64' "$ROOT/scripts/build-gui-installer.sh" || {
   echo "GUI package must map the Intel Mach-O architecture to Go amd64" >&2
   exit 1
 }
-grep -Fq 'mihomo-darwin-amd64-compatible' "$RELEASE_DEPS" || {
-  echo "release dependencies must include the compatible Intel mihomo build" >&2
+grep -Fq 'MIHOMO_SOURCE_ARCHIVE="mihomo-${MIHOMO_VERSION}-source.tar.gz"' "$RELEASE_DEPS" && grep -Fq 'MIHOMO_SOURCE_URL="https://github.com/MetaCubeX/mihomo/archive/' "$RELEASE_DEPS" && grep -Fq 'download_and_verify "$MIHOMO_SOURCE_URL"' "$RELEASE_DEPS" && grep -Fq 'build-opensurge-mihomo.sh' "$RELEASE_DEPS" || {
+  echo "release dependencies must build patched mihomo from the pinned source archive" >&2
+  exit 1
+}
+grep -Fq -- '-tags with_gvisor' "$MIHOMO_BUILD" && grep -Fq '0001-opensurge-packet-listener.patch' "$MIHOMO_BUILD" && grep -Fq 'SOURCE_SHA256=bf3a188a' "$MIHOMO_BUILD" && grep -Fq 'SOURCE_URL=https://github.com/MetaCubeX/mihomo/archive/' "$MIHOMO_BUILD" && grep -Fq 'source_archive_valid' "$MIHOMO_BUILD" || {
+  echo "OpenSurge mihomo build must download and verify pinned source before applying the gVisor packet-listener patch" >&2
   exit 1
 }
 grep -Fq 'actions/attest@v4' "$RELEASE_WORKFLOW" || {

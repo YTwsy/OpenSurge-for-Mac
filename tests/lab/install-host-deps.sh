@@ -25,6 +25,7 @@ MIHOMO_ARCHIVE="mihomo-darwin-arm64-v${MIHOMO_VERSION}.gz"
 MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/${MIHOMO_ARCHIVE}"
 INSTALL_ROOT=/opt/open-mihomo-gateway
 NETWORK_HELPER="$INSTALL_ROOT/bin/omg-lab-network"
+LAUNCHD_PLIST=/Library/LaunchDaemons/io.opensurge.lab.socket-vmnet.plist
 SUDOERS_FILE=/private/etc/sudoers.d/open-mihomo-gateway-lab
 MODE="${1:---all}"
 WITH_SUDOERS=0
@@ -255,6 +256,7 @@ install_root_components() {
   as_root install -o root -g wheel -m 0755 "$TOOLS_ROOT/socket_vmnet/bin/socket_vmnet_client" /opt/socket_vmnet/bin/socket_vmnet_client
   as_root install -d -o root -g wheel -m 0755 "$INSTALL_ROOT/bin"
   as_root install -o root -g wheel -m 0755 "$ROOT/tests/lab/host/omg-lab-network" "$NETWORK_HELPER"
+  as_root install -o root -g wheel -m 0644 "$ROOT/tests/lab/host/io.opensurge.lab.socket-vmnet.plist" "$LAUNCHD_PLIST"
   as_root touch /private/var/log/open-mihomo-gateway-lab-vmnet.log
   as_root chown root:wheel /private/var/log/open-mihomo-gateway-lab-vmnet.log
   as_root chmod 0644 /private/var/log/open-mihomo-gateway-lab-vmnet.log
@@ -288,6 +290,7 @@ uninstall_root_components() {
     as_root "$NETWORK_HELPER" stop || true
   fi
   as_root rm -f "$SUDOERS_FILE"
+  as_root rm -f "$LAUNCHD_PLIST"
   as_root rm -f /private/var/log/open-mihomo-gateway-lab-vmnet.log
   as_root rm -rf "$INSTALL_ROOT"
   as_root rm -rf /opt/socket_vmnet

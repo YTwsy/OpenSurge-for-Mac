@@ -1317,6 +1317,63 @@ func TestControlConfigRoundTripsLocalSystemProxyCompatibilityMode(t *testing.T) 
 	}
 }
 
+func TestControlConfigRoundTripsIPv6Controls(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	input.DNS.IPv6 = true
+	input.Transparent.TUNIPv6 = config.TUNIPv6Always
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.DNS.IPv6 || updated.Transparent.TUNIPv6 != config.TUNIPv6Always {
+		t.Fatalf("IPv6 controls were not persisted: DNS=%v takeover=%q", updated.DNS.IPv6, updated.Transparent.TUNIPv6)
+	}
+}
+
+func TestControlConfigAcceptsLegacyPayloadWithoutIPv6TakeoverMode(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	input.Transparent.TUNIPv6 = ""
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		t.Fatalf("legacy payload takeover mode = %q", updated.Transparent.TUNIPv6)
+	}
+}
+
 func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
 	server := newTestServer(t)
 	state, err := server.stateEvent(t.Context())

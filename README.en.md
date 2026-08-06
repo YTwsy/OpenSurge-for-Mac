@@ -75,6 +75,9 @@ common local-network, TUN, and device configuration questions, see the
 - Start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback.
 - Provide explicit proxying through mihomo `mixed-port`.
 - Provide transparent proxying through mihomo TUN on macOS.
+- In the experimental isolated-downstream-LAN mode, publish IPv6 with dnsmasq
+  RA/SLAAC and capture IPv6 TCP, UDP, and the QUIC carrier through a no-system-TUN
+  BPF-to-Mihomo-gVisor path while retaining MAC-backed device identity.
 - Switch **Rule / Global / Direct** for new local-Mac connections entering
   TUN or the explicit proxy without changing downstream devices. OpenSurge
   leaves macOS system-proxy settings unchanged by default, with an explicit
@@ -207,6 +210,30 @@ routes before startup. It waits for mihomo to report the TUN runtime as ready.
 Failure gives the process a short cleanup window, rolls back the gateway
 runtime, and enriches the actual TUN error with the selected route interface
 and gateway. Two full-route TUNs are not supported by default.
+
+### Downstream IPv6 takeover (experimental)
+
+The Network page exposes two independent controls. `dns.ipv6` decides whether
+OpenSurge DNS answers AAAA queries and creates fake IPv6 addresses.
+`transparent.tun_ipv6` controls the downstream IPv6 gateway, SLAAC/RDNSS, and
+userspace packet path, with `off`, `auto`, and `always` modes. `auto` activates
+only when the upstream interface has both a public global IPv6 address (ULA
+does not count as public reachability) and an IPv6 default route. `always`
+establishes the downstream path even without native upstream IPv6.
+
+The current implementation requires `gateway.mode: "isolated_lan"` and
+`transparent.mode: "tun"`. Same-LAN modes are rejected because competing RA
+from the main router would create an IPv6 bypass until RA suppression or RA
+Guard is available. Downstream IPv6 ingress does not enter a macOS system
+utun: a BPF broker carries the physical Ethernet IPv6 packet plus source MAC
+to a patched Mihomo gVisor listener and reuses the existing device rules. The
+supported payload boundary is TCP and UDP. QUIC is covered as UDP/443; this is
+not a claim that arbitrary IPv6 protocols are proxied.
+
+`always` does not invent public IPv6 connectivity. With no native upstream
+IPv6, fake IPv6 destinations can still use a proxy that supports the required
+traffic, while `DIRECT` to a real public IPv6 address has no upstream route.
+An HTTP-only proxy cannot carry UDP/QUIC.
 
 ## Mihomo profiles
 
@@ -472,6 +499,14 @@ egress paths, and enforce a device-level domain `REJECT`. Domain/protocol rule
 compilation, templates, and HTTP/MRS rule-provider configuration are covered by
 unit tests; they do not require one Lab run per operator-defined rule.
 
+Use `make lab-test-ipv6-userspace` when changing downstream RA/SLAAC, the BPF
+broker, the patched Mihomo packet listener, IPv6 device identity, or withdrawal
+on stop. It requires two clients to obtain the OpenSurge IPv6 address, default
+route, and link-local DNS, then uses controlled local fixtures to verify TCP, a
+UDP request/response, a QUIC-shaped UDP carrier, per-device policy, and
+rollback. The QUIC check proves the UDP carrier, not a complete HTTP/3
+handshake.
+
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
 checks `policies`, invalid and valid `policy-select`, persisted selection
@@ -520,6 +555,7 @@ make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
+make lab-test-ipv6-userspace
 make lab-down
 ```
 

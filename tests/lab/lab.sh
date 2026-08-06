@@ -22,9 +22,17 @@ CLIENT_CONFIG="$STATE_DIR/client.yaml"
 BINARY="$ROOT/bin/omg-lab"
 EGRESS_PROBE_BINARY="$STATE_DIR/egress-probe"
 EGRESS_PROVIDER="$STATE_DIR/tun-egress-provider.yaml"
+IPV6_PACKET_BINARY="$STATE_DIR/opensurge-network"
+PATCHED_MIHOMO_BINARY="$STATE_DIR/mihomo-opensurge"
 EGRESS_ORIGIN_PORT="${OMG_LAB_TUN_EGRESS_ORIGIN_PORT:-19093}"
 EGRESS_PROXY_PORT="${OMG_LAB_TUN_EGRESS_PROXY_PORT:-19094}"
 EGRESS_PROVIDER_URL="http://127.0.0.1:$EGRESS_ORIGIN_PORT/tun-egress-provider.yaml"
+IPV6_DNS_FIXTURE_PORT="${OMG_LAB_IPV6_DNS_FIXTURE_PORT:-19095}"
+IPV6_TCP_TEST_HOST="ipv6-tcp.opensurge.test"
+IPV6_TCP_TEST_URL="http://$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT/ipv6-tcp"
+IPV6_UDP_TEST_HOST="ipv6-udp.opensurge.test"
+IPV6_UDP_ANSWER_HOST="udp-answer.opensurge.test"
+IPV6_QUIC_TEST_HOST="ipv6-quic.opensurge.test"
 LAN_IP=192.168.50.1
 CLIENTS="${OMG_LAB_CLIENTS:-omg-lab-client-1 omg-lab-client-2}"
 TEST_URL="${OMG_LAB_TEST_URL:-https://example.com/}"
@@ -33,6 +41,7 @@ LAB_DEVICE_POLICY_FILE=""
 TUN_EGRESS_PROFILE=0
 LOCAL_ROUTING_TEST="${OMG_LAB_LOCAL_ROUTING_TEST:-false}"
 EGRESS_PROBE_PID=""
+IPV6_DNS_FIXTURE_PID=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -173,6 +182,7 @@ render_tun_egress_profile() {
 
 write_config() {
   local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line device_policy_file
+  local transparent_mode dns_ipv6 tun_ipv6 ipv6_packet_binary
   local profile_mode profile_path profile_source
 	mode="${1:-off}"
   TUN_EGRESS_PROFILE=0
@@ -183,6 +193,10 @@ write_config() {
   runtime_dir="$STATE_DIR"
   device_policy_file="$LAB_DEVICE_POLICY_FILE"
   dns_upstream_line=""
+  dns_ipv6=false
+  tun_ipv6=off
+  ipv6_packet_binary=opensurge-network
+  transparent_mode="$mode"
   profile_mode="managed"
   profile_path=""
   if [[ -n "$LAB_MIHOMO_PROFILE" ]]; then
@@ -204,6 +218,14 @@ write_config() {
   case "$mode" in
     off) ;;
     tun) dns_upstream_line='  upstream: "127.0.0.1#1053"' ;;
+    ipv6)
+      transparent_mode=tun
+      dns_upstream_line='  upstream: "127.0.0.1#1053"'
+      dns_ipv6=true
+      tun_ipv6=always
+      ipv6_packet_binary="$IPV6_PACKET_BINARY"
+      mihomo_bin="$PATCHED_MIHOMO_BINARY"
+      ;;
     *) echo "unknown transparent mode: $mode" >&2; exit 2 ;;
   esac
 
@@ -226,7 +248,10 @@ write_config() {
     -e "s|__MIHOMO_PROFILE__|$(sed_escape "$profile_path")|g" \
     -e "s|__DEVICE_POLICY_FILE__|$(sed_escape "$device_policy_file")|g" \
     -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
-    -e "s|__TRANSPARENT_MODE__|$(sed_escape "$mode")|g" \
+    -e "s|__DNS_IPV6__|$(sed_escape "$dns_ipv6")|g" \
+    -e "s|__TUN_IPV6__|$(sed_escape "$tun_ipv6")|g" \
+    -e "s|__IPV6_PACKET_BROKER_BINARY__|$(sed_escape "$ipv6_packet_binary")|g" \
+    -e "s|__TRANSPARENT_MODE__|$(sed_escape "$transparent_mode")|g" \
     -e "s|__RUNTIME_DIR__|$(sed_escape "$runtime_dir")|g" \
     "$CONFIG_TEMPLATE" >"$CONFIG"
 }
@@ -304,6 +329,16 @@ stop_clients() {
   done
 }
 
+restore_client_control_dns() {
+  local client client_state
+  for client in $CLIENTS; do
+    [[ -d "$(instance_dir "$client")" ]] || continue
+    client_state="$(limactl list --format '{{.Status}}' "$client" 2>/dev/null || true)"
+    [[ "$client_state" == "Running" ]] || continue
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client restore-control || true
+  done
+}
+
 destroy_clients() {
   local client
   for client in $CLIENTS; do
@@ -330,7 +365,9 @@ collect_artifacts() {
     device-policy.applied.evidence.json \
     state.evidence.json \
     device-policies.json \
-    device-policies-after-reload.json; do
+    device-policies-after-reload.json \
+    ipv6-status.json \
+    ipv6-state.evidence.json; do
     cp "$STATE_DIR/$evidence" "$artifact_dir/$evidence" 2>/dev/null || true
   done
   "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
@@ -527,6 +564,47 @@ stop_egress_probe() {
   EGRESS_PROBE_PID=""
 }
 
+start_ipv6_dns_fixture() {
+  local log_file i
+  log_file="$STATE_DIR/logs/ipv6-dns-fixture.log"
+  dnsmasq \
+    --no-daemon \
+    --conf-file=/dev/null \
+    --port="$IPV6_DNS_FIXTURE_PORT" \
+    --listen-address=127.0.0.1 \
+    --bind-interfaces \
+    --address="/$IPV6_TCP_TEST_HOST/127.0.0.1" \
+    --address="/$IPV6_UDP_TEST_HOST/127.0.0.1" \
+    --address="/$IPV6_QUIC_TEST_HOST/127.0.0.1" \
+    --address="/$IPV6_UDP_ANSWER_HOST/192.0.2.123" \
+    --log-queries \
+    --log-facility=- >"$log_file" 2>&1 &
+  IPV6_DNS_FIXTURE_PID=$!
+  for i in {1..50}; do
+    if dig +time=1 +tries=1 +short @127.0.0.1 -p "$IPV6_DNS_FIXTURE_PORT" "$IPV6_TCP_TEST_HOST" A | grep -Fxq 127.0.0.1; then
+      echo "IPv6 Lab DNS fixture ready: $IPV6_TCP_TEST_HOST=127.0.0.1"
+      return 0
+    fi
+    if ! kill -0 "$IPV6_DNS_FIXTURE_PID" 2>/dev/null; then
+      echo "IPv6 Lab DNS fixture exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "IPv6 Lab DNS fixture did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_ipv6_dns_fixture() {
+  if [[ -n "$IPV6_DNS_FIXTURE_PID" ]] && kill -0 "$IPV6_DNS_FIXTURE_PID" 2>/dev/null; then
+    kill "$IPV6_DNS_FIXTURE_PID" 2>/dev/null || true
+    wait "$IPV6_DNS_FIXTURE_PID" 2>/dev/null || true
+  fi
+  IPV6_DNS_FIXTURE_PID=""
+}
+
 assert_tun_egress_proxy_unused() {
   local host
   host="$(url_host "$TEST_URL")"
@@ -555,6 +633,108 @@ client_mac() {
 client_ipv4() {
   local client=$1
   limactl shell "$client" -- bash -lc "ip -4 -o addr show dev omg0 scope global | awk 'NR == 1 { split(\$4, value, \"/\"); print value[1] }'" | tr -d '\r\n'
+}
+
+client_ipv6() {
+  local client=$1
+  limactl shell "$client" -- bash -lc "ip -6 -o addr show dev omg0 scope global | awk '/fdfe:dcba:9878:/ { split(\$4, value, \"/\"); print value[1]; exit }'" | tr -d '\r\n'
+}
+
+wait_for_ipv6_policy_log() {
+  local network=$1 source_ip=$2 target=$3 action=$4 i log_file
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..30}; do
+    if [[ -f "$log_file" ]] &&
+      grep -F -- "[$network]" "$log_file" | grep -F -- "$source_ip" | grep -F -- "--> $target" | grep -Fq -- "using $action"; then
+      echo "IPv6 $network policy log observed for $source_ip -> $target using $action"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "mihomo did not log IPv6 $network traffic for $source_ip -> $target using $action" >&2
+  tail -180 "$log_file" >&2 || true
+  exit 1
+}
+
+build_ipv6_lab_binaries() {
+  local build_log go_no_proxy mod_cache
+  require_command go
+  # The optional Lab proxy file may outlive the LAN proxy that created it.
+  # The pinned Go module mirror is directly reachable in the supported setup,
+  # so do not let a stale general-purpose proxy turn a build prerequisite into
+  # a misleading IPv6 data-plane failure.
+  go_no_proxy="${NO_PROXY:+$NO_PROXY,}goproxy.cn,proxy.golang.org,github.com,codeload.github.com,objects.githubusercontent.com"
+  mod_cache="${GOMODCACHE:-/private/tmp/opensurge-ipv6-modcache}"
+  build_log="$STATE_DIR/logs/mihomo-build.log"
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+  NO_PROXY="$go_no_proxy" \
+  no_proxy="$go_no_proxy" \
+    go build -o "$IPV6_PACKET_BINARY" ./cmd/opensurge-network
+  if ! GOCACHE="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}" \
+    GOMODCACHE="$mod_cache" \
+    GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
+    NO_PROXY="$go_no_proxy" \
+    no_proxy="$go_no_proxy" \
+    OPENSURGE_MIHOMO_OUTPUT="$PATCHED_MIHOMO_BINARY" \
+      "$ROOT/scripts/build-opensurge-mihomo.sh" 2>&1 | tee "$build_log"; then
+    if ! grep -F "$mod_cache" "$build_log" | grep -Fq 'no such file or directory'; then
+      return 1
+    fi
+    echo "OpenSurge Mihomo module cache is incomplete; rebuilding the disposable Lab cache"
+    GOMODCACHE="$mod_cache" go clean -modcache
+    GOCACHE="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}" \
+    GOMODCACHE="$mod_cache" \
+    GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
+    NO_PROXY="$go_no_proxy" \
+    no_proxy="$go_no_proxy" \
+    OPENSURGE_MIHOMO_OUTPUT="$PATCHED_MIHOMO_BINARY" \
+      "$ROOT/scripts/build-opensurge-mihomo.sh" 2>&1 | tee "$build_log"
+  fi
+}
+
+write_ipv6_device_policy_fixture() {
+  local client_one client_two mac_one mac_two
+  set -- $CLIENTS
+  [[ "$#" -eq 2 ]] || { echo "IPv6 lab requires exactly two clients" >&2; exit 1; }
+  client_one="$1"
+  client_two="$2"
+  mac_one="$(client_mac "$client_one")"
+  mac_two="$(client_mac "$client_two")"
+  LAB_DEVICE_POLICY_FILE="$STATE_DIR/device-policy.ipv6.json"
+  cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
+{
+  "profiles": [
+    {"id":"blocked","default_policies":["DIRECT"],"rules":[{"id":"block-ipv6-lab","match":{"domains":["$IPV6_TCP_TEST_HOST"]},"action":"REJECT"}]},
+    {"id":"direct","default_policies":["DIRECT"]}
+  ],
+  "devices": [
+    {"id":"$client_one","mac":"$mac_one","ipv4":"192.168.50.101","profile":"blocked","egress_mode":"dedicated"},
+    {"id":"$client_two","mac":"$mac_two","ipv4":"192.168.50.102","profile":"direct","egress_mode":"dedicated"}
+  ]
+}
+EOF
+  LAB_MIHOMO_PROFILE="$STATE_DIR/mihomo-profile.ipv6.yaml"
+  cat >"$LAB_MIHOMO_PROFILE" <<EOF
+dns:
+  nameserver:
+    - 127.0.0.1:$IPV6_DNS_FIXTURE_PORT
+rules:
+  - MATCH,DIRECT
+EOF
+}
+
+assert_client_ipv6_withdrawn() {
+  local client=$1 i
+  for i in {1..30}; do
+    if ! limactl shell "$client" -- bash -lc "ip -6 route show default dev omg0 | grep -q '^default '"; then
+      echo "$client withdrew the OpenSurge IPv6 default route"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "$client retained the OpenSurge IPv6 default route after gateway stop" >&2
+  limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status >&2 || true
+  exit 1
 }
 
 assert_client_ipv4() {
@@ -777,6 +957,7 @@ run_device_policy_test() {
   cleanup_test() {
     status=$?
     collect_artifacts || true
+    restore_client_control_dns
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
     fi
@@ -878,6 +1059,7 @@ run_device_policy_test() {
 
   cp "$STATE_DIR/device-policy.applied.json" "$STATE_DIR/device-policy.applied.evidence.json"
   cp "$STATE_DIR/state.json" "$STATE_DIR/state.evidence.json"
+  restore_client_control_dns
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
   stop_egress_probe
@@ -886,6 +1068,137 @@ run_device_policy_test() {
   trap - EXIT INT TERM
   collect_artifacts
   echo "virtual LAN device-policy TUN test passed"
+}
+
+run_ipv6_userspace_test() {
+  local client_one client_two source_one source_two gateway_started broker_pid iface rdnss
+  local egress_probe_started dns_fixture_started
+  require_installed_lab
+  [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
+  require_cached_sudo
+  ensure_lab_state_writable
+  set -- $CLIENTS
+  [[ "$#" -eq 2 ]] || { echo "IPv6 lab requires exactly two clients" >&2; exit 1; }
+  client_one="$1"
+  client_two="$2"
+  iface="$(lab_interface)"
+
+  rm -f "$STATE_DIR/cache.db" "$STATE_DIR/cache.db-journal" \
+    "$STATE_DIR/ipv6-packet.sock" "$STATE_DIR/ipv6-packet.sock.broker" "$STATE_DIR/ipv6-packet.ready"
+  rm -rf "$STATE_DIR/egress"
+  # Do not carry ad-hoc tcpdump files from an earlier diagnostic session into
+  # a new artifact bundle; managed gateway logs are recreated by start.
+  rm -f "$STATE_DIR/logs/ipv6-packets-bridge102.log" "$STATE_DIR/logs/ipv6-packets-utun123.log"
+  write_ipv6_device_policy_fixture
+  build_ipv6_lab_binaries
+  build_egress_probe
+  write_tun_egress_provider
+  write_config ipv6
+  mkdir -p "$ROOT/bin"
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+    go build -o "$BINARY" ./cmd/omg
+
+  gateway_started=0
+  egress_probe_started=0
+  dns_fixture_started=0
+  cleanup_test() {
+    status=$?
+    collect_artifacts || true
+    restore_client_control_dns
+    if [[ "$gateway_started" == 1 ]]; then
+      sudo -n "$BINARY" stop --config "$CONFIG" || true
+    fi
+    if [[ "$dns_fixture_started" == 1 ]]; then
+      stop_ipv6_dns_fixture || true
+    fi
+    if [[ "$egress_probe_started" == 1 ]]; then
+      stop_egress_probe || true
+    fi
+    exit "$status"
+  }
+  trap cleanup_test EXIT INT TERM
+
+  start_egress_probe
+  egress_probe_started=1
+  start_ipv6_dns_fixture
+  dns_fixture_started=1
+  sudo -n "$BINARY" start --config "$CONFIG"
+  gateway_started=1
+  for client in $CLIENTS; do
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew6 "$LAN_IP"
+  done
+  rdnss="$(/sbin/ifconfig "$iface" | awk '/inet6 fe80:/ { split($2, value, "%"); print value[1]; exit }')"
+  [[ "$rdnss" == fe80:* ]] || { echo "lab interface $iface has no link-local RDNSS address" >&2; exit 1; }
+  grep -F 'option: 23 dns-server' "$STATE_DIR/logs/dnsmasq.log" | grep -Fq "$rdnss" || {
+    echo "dnsmasq did not advertise the link-local RDNSS address $rdnss" >&2
+    tail -180 "$STATE_DIR/logs/dnsmasq.log" >&2 || true
+    exit 1
+  }
+  assert_client_ipv4 "$client_one" "192.168.50.101"
+  assert_client_ipv4 "$client_two" "192.168.50.102"
+  source_one="$(client_ipv6 "$client_one")"
+  source_two="$(client_ipv6 "$client_two")"
+  [[ "$source_one" == fdfe:dcba:9878:* && "$source_two" == fdfe:dcba:9878:* && "$source_one" != "$source_two" ]] || {
+    echo "clients did not receive distinct OpenSurge IPv6 addresses: $source_one $source_two" >&2
+    exit 1
+  }
+
+  "$BINARY" status --config "$CONFIG" --format json >"$STATE_DIR/ipv6-status.json"
+  grep -Fq '"dns_ipv6": true' "$STATE_DIR/ipv6-status.json"
+  grep -Fq '"tun_ipv6_requested": "always"' "$STATE_DIR/ipv6-status.json"
+  grep -Fq '"ipv6_packet": "ready"' "$STATE_DIR/ipv6-status.json"
+  grep -Fq '"gateway": "running"' "$STATE_DIR/ipv6-status.json"
+  grep -Fq 'type: opensurge-packet' "$STATE_DIR/mihomo.yaml"
+  grep -Fq "\"$(client_mac "$client_one")\": \"device:$client_one\"" "$STATE_DIR/mihomo.yaml"
+  grep -Fq "\"$(client_mac "$client_two")\": \"device:$client_two\"" "$STATE_DIR/mihomo.yaml"
+
+  if limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client ipv6-transparent "$LAN_IP" "$IPV6_TCP_TEST_URL"; then
+    echo "$client_one unexpectedly bypassed its IPv6 REJECT rule" >&2
+    exit 1
+  fi
+  wait_for_ipv6_policy_log TCP "$source_one" "$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT" REJECT
+
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client ipv6-transparent "$LAN_IP" "$IPV6_TCP_TEST_URL"
+  wait_for_ipv6_policy_log TCP "$source_two" "$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT" "device/$client_two/default[DIRECT]"
+  grep -Fq 'GET /ipv6-tcp' "$STATE_DIR/egress/origin.log"
+
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client ipv6-udp "$LAN_IP" "$IPV6_UDP_TEST_HOST" "$IPV6_DNS_FIXTURE_PORT" "$IPV6_UDP_ANSWER_HOST"
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_UDP_TEST_HOST:$IPV6_DNS_FIXTURE_PORT" "device/$client_two/default[DIRECT]"
+
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client ipv6-quic "$LAN_IP" "$IPV6_QUIC_TEST_HOST" "$IPV6_DNS_FIXTURE_PORT"
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_QUIC_TEST_HOST:$IPV6_DNS_FIXTURE_PORT" "device/$client_two/default[DIRECT]"
+
+  cp "$STATE_DIR/state.json" "$STATE_DIR/ipv6-state.evidence.json"
+  broker_pid="$(sed -n 's/.*"pid_ipv6_packet": \([0-9][0-9]*\).*/\1/p' "$STATE_DIR/state.json" | head -1)"
+  [[ -n "$broker_pid" ]] || { echo "IPv6 packet broker PID missing from runtime state" >&2; exit 1; }
+  /sbin/ifconfig "$iface" | grep -Fq 'inet6 fdfe:dcba:9878::1'
+
+  restore_client_control_dns
+  sudo -n "$BINARY" stop --config "$CONFIG"
+  gateway_started=0
+  stop_ipv6_dns_fixture
+  dns_fixture_started=0
+  stop_egress_probe
+  egress_probe_started=0
+  [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
+  for path in "$STATE_DIR/ipv6-packet.sock" "$STATE_DIR/ipv6-packet.sock.broker" "$STATE_DIR/ipv6-packet.ready"; do
+    [[ ! -e "$path" ]] || { echo "IPv6 runtime path remained after stop: $path" >&2; exit 1; }
+  done
+  if /bin/kill -0 "$broker_pid" 2>/dev/null; then
+    echo "IPv6 packet broker pid $broker_pid remained alive after stop" >&2
+    exit 1
+  fi
+  if /sbin/ifconfig "$iface" | grep -Fq 'inet6 fdfe:dcba:9878::1'; then
+    echo "OpenSurge IPv6 gateway alias remained on $iface after stop" >&2
+    exit 1
+  fi
+  for client in $CLIENTS; do
+    assert_client_ipv6_withdrawn "$client"
+  done
+  trap - EXIT INT TERM
+  collect_artifacts
+  echo "virtual LAN userspace IPv6 TCP, UDP/QUIC carrier, device identity, and rollback test passed"
 }
 
 run_local_routing_assertions() {
@@ -972,6 +1285,7 @@ run_test() {
   cleanup_test() {
     status=$?
     collect_artifacts || true
+    restore_client_control_dns
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
     fi
@@ -1040,6 +1354,7 @@ run_test() {
     exit 1
   fi
 
+  restore_client_control_dns
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
   if [[ "$egress_probe_started" == 1 ]]; then
@@ -1099,6 +1414,9 @@ case "${1:-}" in
   test-tun-device-policy)
     run_device_policy_test
     ;;
+  test-ipv6-userspace)
+    run_ipv6_userspace_test
+    ;;
   down)
     stop_clients
     if [[ -x "$NETWORK_HELPER" ]]; then
@@ -1112,7 +1430,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|down|destroy>" >&2
+    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|test-ipv6-userspace|down|destroy>" >&2
     exit 2
     ;;
 esac

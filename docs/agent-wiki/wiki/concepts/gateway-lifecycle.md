@@ -3,8 +3,8 @@
 当任务涉及 gateway startup、shutdown、rollback、runtime state 或服务职责边界
 时，先读这个页面。
 
-OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtime path
-协调四类职责：
+OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。当前 runtime path
+协调这些职责：
 
 - dnsmasq 为下游客户端提供 DHCP 和 DNS；
 - mihomo 提供代理能力，并在启用时承担透明 TUN 处理；
@@ -12,6 +12,8 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtim
 - macOS IPv4 forwarding 由 sysctl 管理，并在停止时恢复。
 - 显式启用时，macOS 上游网络服务的 HTTP/HTTPS 系统代理作为 TUN 兼容层，并由
   runtime state 保存启动前快照。
+- 独立 LAN 启用下游 IPv6 接管时，BPF broker、IPv6 gateway alias 和 dnsmasq
+  RA/SLAAC 也纳入同一个 runtime/rollback 所有权。
 
 ## Start 顺序
 
@@ -31,9 +33,11 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtim
 9. 启动 mihomo；
 10. 最多等待 10 秒让 mihomo 运行时确认 TUN ready；若失败，先给 mihomo 3 秒
     SIGTERM 清理窗口，再按需 SIGKILL 并 rollback；
-11. 启动 dnsmasq；
-12. 加载 PF anchor；
-13. 所有网关服务 ready 后，才把上游 network service 的 HTTP/HTTPS 代理指向本机
+11. 若下游 IPv6 生效，启动 BPF broker、记录 PID/fingerprint，再添加并等待 IPv6
+    gateway alias 完成 DAD；
+12. 启动 dnsmasq；此时才开始发布 RA/SLAAC/RDNSS；
+13. 加载 PF anchor；
+14. 所有网关服务 ready 后，才把上游 network service 的 HTTP/HTTPS 代理指向本机
     mihomo mixed-port。
 
 Rollback 是 start 契约的一部分。如果系统代理可能已经写入，会先恢复其启动前状态，
@@ -62,10 +66,12 @@ runtime state 和服务，避免 macOS 继续指向已经停止的本机代理�
 2. 如果存在 runtime state，则加载它；
 3. 若 runtime state 有系统代理快照，先恢复 HTTP/HTTPS 代理；恢复失败则保留服务和 state；
 4. 停止 dnsmasq；
-5. 停止 mihomo；
-6. 如果 PF anchor 已加载，则卸载 PF anchor；
-7. 恢复 IPv4 forwarding 到启动前的值；
-8. 移除 runtime state。
+5. 若拥有下游 IPv6，发送 router/prefix lifetime-zero withdrawal、删除 gateway
+   alias，并停止 BPF broker；
+6. 停止 mihomo；
+7. 如果 PF anchor 已加载，则卸载 PF anchor；
+8. 恢复 IPv4 forwarding 到启动前的值；
+9. 移除 runtime state。
 
 Stop 应该能容忍部分 runtime pieces 已经缺失。这个项目会修改 host network，
 所以清理质量是正确性的一部分。
@@ -150,3 +156,5 @@ macOS“系统设置 → 网络 → 详细信息 → TCP/IP”，并且不得进
 
 用 `make test` 验证代码层行为。宣称真实网关生命周期在 host network 上
 工作前，运行 `make lab-test`。涉及透明代理行为时，运行 `make lab-test-tun`。
+涉及下游 IPv6 alias、RA/SLAAC、BPF packet path 或撤销时，运行
+`make lab-test-ipv6-userspace`。

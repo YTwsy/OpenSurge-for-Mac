@@ -2,6 +2,7 @@ package dhcp
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -152,5 +153,55 @@ func TestRenderConfigSameWiFiDHCP(t *testing.T) {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestRenderConfigWithDownstreamIPv6RAAndRDNSS(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"enable-ra",
+		"dhcp-range=fdfe:dcba:9878::,ra-stateless,64,12h",
+		"dhcp-option=option6:dns-server,[fe80::]",
+		"ra-param=en0,high,20,60",
+		"listen-address=fdfe:dcba:9878::1",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered IPv6 dnsmasq config missing %q:\n%s", want, rendered)
+		}
+	}
+	// dnsmasq replaces [fe80::] with the interface's link-local address for
+	// DHCPv6 and RDNSS. An explicit value is required because its automatic
+	// DHCPv6 option otherwise prefers the downstream ULA when one is present.
+	if strings.Contains(rendered, "option6:dns-server,[fdfe:") {
+		t.Fatalf("rendered IPv6 dnsmasq config advertises a ULA DNS endpoint:\n%s", rendered)
+	}
+}
+
+func TestDNSMasqAcceptsDownstreamIPv6RAConfig(t *testing.T) {
+	binary := os.Getenv("OPENSURGE_TEST_DNSMASQ")
+	if binary == "" {
+		t.Skip("OPENSURGE_TEST_DNSMASQ is not set")
+	}
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	paths := runtime.NewPaths(cfg)
+	rendered, err := RenderConfig(cfg, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(cfg.Runtime.Dir, "dnsmasq.conf")
+	if err := os.WriteFile(conf, []byte(rendered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(binary, "--test", "--conf-file="+conf).CombinedOutput(); err != nil {
+		t.Fatalf("dnsmasq rejected IPv6 RA config: %v: %s", err, strings.TrimSpace(string(output)))
 	}
 }

@@ -687,6 +687,54 @@ rules:
 	}
 }
 
+func TestRenderConfigAddsDownstreamIPv6PacketListenerAndDeviceIdentity(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{"profiles":[{"id":"home","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"dedicated"}]}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Runtime.Dir = dir
+	cfg.Mihomo.Config = filepath.Join(dir, "mihomo.yaml")
+	cfg.DevicePolicy.File = policyPath
+	cfg.DNS.IPv6 = true
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.UpstreamProxy.Enabled = true
+	cfg.UpstreamProxy.Name = "lab-socks"
+	cfg.UpstreamProxy.Type = "socks5"
+	cfg.UpstreamProxy.Server = "127.0.0.1"
+	cfg.UpstreamProxy.Port = 18080
+	cfg.UpstreamProxy.MatchDomain = "example.com"
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"ipv6: true",
+		"fake-ip-range6: " + config.MihomoFakeIPv6Range,
+		"- " + config.MihomoTUNIPv6,
+		"type: opensurge-packet",
+		"name: " + config.IPv6PacketListenerName,
+		`"aa:bb:cc:dd:ee:01": "device:phone"`,
+		"IN-USER,device:phone",
+		"IP-CIDR6," + config.DownstreamIPv6Prefix,
+		"    udp: true",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered IPv6 mihomo config missing %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "IP-CIDR6,fc00::/7") {
+		t.Fatalf("fake IPv6 ULA would be forced DIRECT:\n%s", rendered)
+	}
+	var document map[string]any
+	if err := yaml.Unmarshal([]byte(rendered), &document); err != nil {
+		t.Fatalf("rendered IPv6 config is invalid YAML: %v\n%s", err, rendered)
+	}
+}
+
 func assertOrdered(t *testing.T, value string, ordered ...string) {
 	t.Helper()
 	position := -1

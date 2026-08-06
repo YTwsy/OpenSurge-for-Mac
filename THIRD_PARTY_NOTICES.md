@@ -7,15 +7,15 @@ places this notice and the referenced license texts under
 
 ## mihomo
 
-- Version: `1.19.27`
+- Upstream base version: `1.19.27`
+- Distributed OpenSurge build version: `1.19.27-opensurge.1`
 - License: `GPL-3.0-only`
-- Distributed forms (each architecture-specific installer contains the matching binary):
-  - Apple Silicon: unmodified upstream `mihomo-darwin-arm64-v1.19.27.gz`
-    - Binary SHA-256:
-      `3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1`
-  - Intel: unmodified upstream `mihomo-darwin-amd64-compatible-v1.19.27.gz`
-    - Binary SHA-256:
-      `ddfafe6993e0adf97420d126d5ce7868113174630ccbf36d4a1bee2784085172`
+- Distributed form: architecture-specific binaries compiled from the pinned
+  upstream source with the OpenSurge packet-listener patch stored under
+  `patches/mihomo`. The listener reuses mihomo's existing gVisor/sing-tun data
+  plane for the OpenSurge downstream IPv6 packet broker.
+- Source archive SHA-256:
+  `bf3a188a83475000df235178edf61cd70fda22b884b19a539d0cfd9b89a51e6a`
 - Upstream: <https://github.com/MetaCubeX/mihomo>
 - Corresponding source:
   <https://github.com/MetaCubeX/mihomo/tree/5184081ac327394d9e15fa5d5f9f4a61e723fd94>
