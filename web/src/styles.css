@@ -215,10 +215,10 @@ button{cursor:pointer}
 .local-routing-note{display:flex;flex-wrap:wrap;gap:7px 15px;margin-top:12px;color:#7d938a;font-size:10px;line-height:1.45}
 .local-routing-note .attention{color:#ffc16b}
 .local-routing-warning{margin:12px 0 0;padding:10px 12px}
-.device-metadata{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-top:10px}
-.device-meta-item{display:inline-flex;align-items:baseline;gap:6px;min-width:0;line-height:1.45}
-.device-meta-item small{margin:0;color:#61766e!important;font-size:9px!important;font-weight:700!important;letter-spacing:.08em!important}
-.device-meta-value{min-width:0;overflow-wrap:anywhere;color:#91a49c;font-size:11px;font-weight:500;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.device-metadata{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px;margin-top:10px}
+.device-meta-item{display:inline-flex;align-items:baseline;gap:6px;min-width:0;max-width:100%;padding:5px 8px;border-radius:7px;background:#122720;color:#9af0c7;font-size:10px;line-height:1.4}
+.device-meta-item small{margin:0;color:inherit!important;font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:10px!important;font-weight:600!important;letter-spacing:0!important;opacity:.78}
+.device-meta-value{min-width:0;overflow-wrap:anywhere;color:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",monospace;font-size:10px;font-weight:500;letter-spacing:0;font-variant-numeric:tabular-nums}
 .slots{display:grid;gap:8px;margin-top:18px}
 .slots label{display:grid;grid-template-columns:1fr 1.5fr;align-items:center;font-size:12px;color:#80958d}
 .policy-list{display:grid;gap:10px}
@@ -517,7 +517,7 @@ html[data-theme="light"] .session-expired{color:#183028}html[data-theme="light"]
 html[data-theme="light"] .live-section{background:#fff;border-color:#87bda6}
 html[data-theme="light"] .device-card.selected{border-color:#54a983}
 html[data-theme="light"] .device-card.selected .edit-device{background:#e5f2ec;border-color:#69b895;color:#215e46}
-html[data-theme="light"] .device-meta-item small{color:#73867e!important}html[data-theme="light"] .device-meta-value{color:#536a61}
+html[data-theme="light"] .device-meta-item{background:#e6f2ed;color:#2d6752}
 html[data-theme="light"] .identity-rebind{background:#fff5dc;border-color:#dabd70}html[data-theme="light"] .identity-state.changed,html[data-theme="light"] .identity-state.changed small,html[data-theme="light"] .identity-rebind-note,html[data-theme="light"] .identity-routing-blocked,html[data-theme="light"] .outlet-activation-note{color:#80601d}
 html[data-theme="light"] .route-options label,html[data-theme="light"] .registration-routing>label{background:#f8fbfa;border-color:#cbded6;color:#36564a}
 html[data-theme="light"] .route-options label.active,html[data-theme="light"] .registration-routing>label.active{background:#e5f2ec;border-color:#69b895;color:#183028}
