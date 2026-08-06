@@ -10,9 +10,10 @@ and DHCP recovery workflow.
 OpenSurge does not treat a runtime state file left by the previous boot as an
 automatically restored gateway. A reboot terminates dnsmasq and mihomo and
 resets that run's PF/forwarding state; the recorded PIDs may also have been
-reused by unrelated processes. In **Network Settings**, stop the current mode.
-OpenSurge recognizes the interrupted runtime, does not signal the old PIDs, and
-does not change PF or forwarding owned by the current boot. Start the complete
+reused by unrelated processes. On the dashboard or in **Network Settings**,
+select **Safely Clear Old State**. OpenSurge recognizes the interrupted runtime,
+does not signal the old PIDs, and does not change PF or forwarding owned by the
+current boot. Follow the page to restore the network or start the complete
 gateway again after cleanup. Do not use **Restart Mihomo only** in this state,
 because DHCP/DNS, PF, and forwarding were not restored with it.
 

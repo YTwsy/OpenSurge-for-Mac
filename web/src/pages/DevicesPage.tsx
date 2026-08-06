@@ -206,7 +206,6 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
     </section>
 
     {document ? <>
-      {overview?.topology !== 'same_lan' && policy.devices.some(device => !device.mac.trim()) && <div className="notice warn" role="status"><strong>部分设备策略已暂停</strong><p>{policy.devices.filter(device => !device.mac.trim()).map(displayDeviceName).join('、')} 只有固定 IPv4、尚未登记 MAC。DHCP 模式不会继续按旧 IP 匹配；可在下方“登记新设备”中使用原固定 IPv4 补充 MAC。</p></div>}
       <RegistrationPanel open={registrationOpen} onToggle={() => setRegistrationOpen(value => !value)} onRefresh={refreshDeviceObservation} topology={overview?.topology} leases={overview?.leases?.length ? overview.leases : data?.leases ?? []} observed={data?.observed_devices ?? []} observationError={data?.observation_error} policy={policy} candidates={candidates} onPolicyChange={setPolicy} onRegistered={id => { setSelectedDeviceID(id); setRegistrationOpen(false); setMessage('设备已加入本地草稿；保存后才会写入 desired 配置。') }} />
 
       <section className="section live-section device-outlet-section">
@@ -297,8 +296,7 @@ function DeviceCard({ view, topology, leases, observed, desiredDevices, groups, 
   const identityBlocked = identity?.state === 'address_changed' || identity?.state === 'conflict'
   return <article className={`device-card ${selected ? 'selected' : ''}`}>
     <div className="source-head"><button className="device-title" type="button" disabled={!view.desired} aria-pressed={selected} onClick={onSelect}><small>{device.profile}</small><strong>{view.desired ? displayDeviceName(view.desired) : device.id}</strong>{view.desired?.name && <code>{device.id}</code>}</button><span className={`pill ${view.state === 'applied' ? 'ok' : ''}`}>{deviceStateLabel(view.state)}</span></div>
-    <div className="device-identity"><code>{device.ipv4}</code><small>{device.mac || 'MAC 未填写'}</small></div>
-    {view.state === 'paused' && <div className="notice warn"><strong>DHCP 模式下策略已暂停</strong><p>补充 MAC 后才会生成 DHCP 固定租约和这台设备的专属路由规则。</p></div>}
+    <div className="device-identity"><code>{device.ipv4}</code>{device.mac.trim() ? <small>{device.mac}</small> : <span className="device-mac-missing"><strong>未登记 MAC</strong><small>{view.state === 'paused' ? '策略已暂停 · 补充后恢复' : '当前按固定 IPv4 匹配'}</small></span>}</div>
     {identity?.state === 'address_changed' ? <div className="identity-rebind"><span className="identity-state changed"><strong>设备已识别，但 IP 已变化</strong><small>原地址 {applied!.ipv4} → 当前地址 {identity.observedIPv4}</small></span>{view.desired && !rebindOwner && !rebindAlreadyDrafted && <button className="primary" type="button" onClick={() => onUseObservedIPv4(view.desired!.id, displayDeviceName(view.desired!), applied!.ipv4, identity.observedIPv4!)}>使用当前 IP 并应用</button>}{rebindAlreadyDrafted && <small className="identity-rebind-note">当前 IP 已写入草稿；保存并重载后生效。</small>}{rebindOwner && <small className="identity-rebind-note conflict">当前地址已登记给 {displayDeviceName(rebindOwner)}，请先解决身份冲突。</small>}</div> : identity && <span className={`identity-state ${identity.tone}`}>{identity.text}</span>}
     {identity?.state === 'waiting' && <small className="outlet-activation-note">设备按登记 IP 接入后生效</small>}
     {view.desired && <fieldset className={`device-routing-mode ${identityBlocked ? 'identity-blocked' : ''}`} disabled={identityBlocked}>

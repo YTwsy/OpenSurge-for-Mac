@@ -334,6 +334,8 @@ describe('DevicesPage', () => {
     renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
 
     expect(await screen.findByText(/固定 IPv4 已生效/)).toBeTruthy()
+    expect(screen.getByText('未登记 MAC')).toBeTruthy()
+    expect(screen.getByText('当前按固定 IPv4 匹配')).toBeTruthy()
     expect(screen.queryByText(/身份冲突/)).toBeNull()
   })
 
@@ -346,9 +348,11 @@ describe('DevicesPage', () => {
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
     renderPage({ ...overview, topology: 'same_wifi_dhcp' } as unknown as Overview)
 
-    expect(await screen.findByText('部分设备策略已暂停')).toBeTruthy()
+    expect(await screen.findByText('未登记 MAC')).toBeTruthy()
     expect(screen.getByText('等待 MAC')).toBeTruthy()
-    expect(screen.getByText('DHCP 模式下策略已暂停')).toBeTruthy()
+    expect(screen.getByText('策略已暂停 · 补充后恢复')).toBeTruthy()
+    expect(screen.queryByText('部分设备策略已暂停')).toBeNull()
+    expect(screen.queryByText('DHCP 模式下策略已暂停')).toBeNull()
     expect(screen.queryByText('重载后应用')).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: /登记新设备/ }))

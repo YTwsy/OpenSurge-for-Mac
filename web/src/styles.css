@@ -217,6 +217,9 @@ button{cursor:pointer}
 .local-routing-warning{margin:12px 0 0;padding:10px 12px}
 .device-identity{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .device-identity code,.device-identity small{margin:0}
+.device-mac-missing{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px;min-width:0;color:#899d95;font-size:11px;line-height:1.45}
+.device-mac-missing strong{font-size:11px;color:#a6b8b1}
+.device-mac-missing small{color:#71847d!important;font-size:10px!important;font-weight:500!important;letter-spacing:0!important}
 .slots{display:grid;gap:8px;margin-top:18px}
 .slots label{display:grid;grid-template-columns:1fr 1.5fr;align-items:center;font-size:12px;color:#80958d}
 .policy-list{display:grid;gap:10px}
@@ -515,6 +518,7 @@ html[data-theme="light"] .session-expired{color:#183028}html[data-theme="light"]
 html[data-theme="light"] .live-section{background:#fff;border-color:#87bda6}
 html[data-theme="light"] .device-card.selected{border-color:#54a983}
 html[data-theme="light"] .device-card.selected .edit-device{background:#e5f2ec;border-color:#69b895;color:#215e46}
+html[data-theme="light"] .device-mac-missing{color:#6b7f77}html[data-theme="light"] .device-mac-missing strong{color:#536a61}html[data-theme="light"] .device-mac-missing small{color:#7a8d85!important}
 html[data-theme="light"] .identity-rebind{background:#fff5dc;border-color:#dabd70}html[data-theme="light"] .identity-state.changed,html[data-theme="light"] .identity-state.changed small,html[data-theme="light"] .identity-rebind-note,html[data-theme="light"] .identity-routing-blocked,html[data-theme="light"] .outlet-activation-note{color:#80601d}
 html[data-theme="light"] .route-options label,html[data-theme="light"] .registration-routing>label{background:#f8fbfa;border-color:#cbded6;color:#36564a}
 html[data-theme="light"] .route-options label.active,html[data-theme="light"] .registration-routing>label.active{background:#e5f2ec;border-color:#69b895;color:#183028}

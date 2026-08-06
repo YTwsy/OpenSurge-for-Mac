@@ -8,10 +8,10 @@
 
 OpenSurge 不会仅凭重启前留下的 runtime state 自动重新接管网络。Mac 重启会终止
 dnsmasq、mihomo，并重置当次运行的 PF/forwarding；原来的进程 PID 也可能已经被其他
-进程复用。请在**网络设置**点击停止当前模式：OpenSurge 会识别这是上一次开机留下的
-中断状态，不会向旧 PID 发送信号，也不会改动本次开机的 PF/forwarding。清理完成后可
-重新启动完整网关。此时不要使用“仅重启 Mihomo”，因为 DHCP/DNS、PF 与 forwarding
-并未随它一起恢复。
+进程复用。请在总览或**网络设置**点击**安全清理旧状态**：OpenSurge 会识别这是上一
+次开机留下的中断状态，不会向旧 PID 发送信号，也不会改动本次开机的
+PF/forwarding。清理完成后可按页面提示恢复网络或重新启动完整网关。此时不要使用
+“仅重启 Mihomo”，因为 DHCP/DNS、PF 与 forwarding 并未随它一起恢复。
 
 ## 下游设备接管正常，但 Mac 本机无法访问网络怎么办？
 
