@@ -295,8 +295,12 @@ function DeviceCard({ view, topology, leases, observed, desiredDevices, groups, 
   const rebindAlreadyDrafted = Boolean(observedIPv4 && view.desired?.ipv4 === observedIPv4)
   const identityBlocked = identity?.state === 'address_changed' || identity?.state === 'conflict'
   return <article className={`device-card ${selected ? 'selected' : ''}`}>
-    <div className="source-head"><button className="device-title" type="button" disabled={!view.desired} aria-pressed={selected} onClick={onSelect}><small>{device.profile}</small><strong>{view.desired ? displayDeviceName(view.desired) : device.id}</strong>{view.desired?.name && <code>{device.id}</code>}</button><span className={`pill ${view.state === 'applied' ? 'ok' : ''}`}>{deviceStateLabel(view.state)}</span></div>
-    <div className="device-identity"><code>{device.ipv4}</code>{device.mac.trim() ? <small>{device.mac}</small> : <span className="device-mac-missing"><strong>未登记 MAC</strong><small>{view.state === 'paused' ? '策略已暂停 · 补充后恢复' : '当前按固定 IPv4 匹配'}</small></span>}</div>
+    <div className="source-head"><button className="device-title" type="button" disabled={!view.desired} aria-pressed={selected} onClick={onSelect}><small>{device.profile}</small><strong>{view.desired ? displayDeviceName(view.desired) : device.id}</strong></button><span className={`pill ${view.state === 'applied' ? 'ok' : ''}`}>{deviceStateLabel(view.state)}</span></div>
+    <div className="device-metadata">
+      {view.desired?.name && <span className="device-meta-item"><small>设备 ID</small><span className="device-meta-value">{device.id}</span></span>}
+      <span className="device-meta-item"><small>IPv4</small><span className="device-meta-value">{device.ipv4}</span></span>
+      <span className="device-meta-item"><small>MAC</small><span className="device-meta-value">{device.mac.trim() || (view.state === 'paused' ? '未登记 · 策略已暂停，补充后恢复' : '未登记 · 当前按固定 IPv4 匹配')}</span></span>
+    </div>
     {identity?.state === 'address_changed' ? <div className="identity-rebind"><span className="identity-state changed"><strong>设备已识别，但 IP 已变化</strong><small>原地址 {applied!.ipv4} → 当前地址 {identity.observedIPv4}</small></span>{view.desired && !rebindOwner && !rebindAlreadyDrafted && <button className="primary" type="button" onClick={() => onUseObservedIPv4(view.desired!.id, displayDeviceName(view.desired!), applied!.ipv4, identity.observedIPv4!)}>使用当前 IP 并应用</button>}{rebindAlreadyDrafted && <small className="identity-rebind-note">当前 IP 已写入草稿；保存并重载后生效。</small>}{rebindOwner && <small className="identity-rebind-note conflict">当前地址已登记给 {displayDeviceName(rebindOwner)}，请先解决身份冲突。</small>}</div> : identity && <span className={`identity-state ${identity.tone}`}>{identity.text}</span>}
     {identity?.state === 'waiting' && <small className="outlet-activation-note">设备按登记 IP 接入后生效</small>}
     {view.desired && <fieldset className={`device-routing-mode ${identityBlocked ? 'identity-blocked' : ''}`} disabled={identityBlocked}>

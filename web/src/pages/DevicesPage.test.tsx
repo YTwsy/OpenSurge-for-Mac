@@ -334,8 +334,8 @@ describe('DevicesPage', () => {
     renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
 
     expect(await screen.findByText(/固定 IPv4 已生效/)).toBeTruthy()
-    expect(screen.getByText('未登记 MAC')).toBeTruthy()
-    expect(screen.getByText('当前按固定 IPv4 匹配')).toBeTruthy()
+    expect(screen.getByText('MAC')).toBeTruthy()
+    expect(screen.getByText('未登记 · 当前按固定 IPv4 匹配')).toBeTruthy()
     expect(screen.queryByText(/身份冲突/)).toBeNull()
   })
 
@@ -348,9 +348,13 @@ describe('DevicesPage', () => {
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
     renderPage({ ...overview, topology: 'same_wifi_dhcp' } as unknown as Overview)
 
-    expect(await screen.findByText('未登记 MAC')).toBeTruthy()
+    expect(await screen.findByText('设备 ID')).toBeTruthy()
+    expect(screen.getByText('speaker')).toBeTruthy()
+    expect(screen.getByText('IPv4')).toBeTruthy()
+    expect(screen.getByText('192.168.1.137')).toBeTruthy()
+    expect(screen.getByText('MAC')).toBeTruthy()
     expect(screen.getByText('等待 MAC')).toBeTruthy()
-    expect(screen.getByText('策略已暂停 · 补充后恢复')).toBeTruthy()
+    expect(screen.getByText('未登记 · 策略已暂停，补充后恢复')).toBeTruthy()
     expect(screen.queryByText('部分设备策略已暂停')).toBeNull()
     expect(screen.queryByText('DHCP 模式下策略已暂停')).toBeNull()
     expect(screen.queryByText('重载后应用')).toBeNull()
@@ -382,6 +386,11 @@ describe('DevicesPage', () => {
     renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
 
     expect(await screen.findByText('流量与邻居已观察：MAC / IPv4 匹配')).toBeTruthy()
+    const card = screen.getByText('Pixel').closest('.device-card') as HTMLElement
+    expect(within(card).getByText('设备 ID')).toBeTruthy()
+    expect(within(card).getByText('pixel')).toBeTruthy()
+    expect(within(card).getByText('192.168.1.137')).toBeTruthy()
+    expect(within(card).getByText('aa:bb:cc:dd:ee:37')).toBeTruthy()
     expect(screen.queryByText(/需要在线且未过期的精确/)).toBeNull()
   })
 
