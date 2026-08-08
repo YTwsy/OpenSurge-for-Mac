@@ -343,13 +343,13 @@ grep -Fq 'arm64' "$RELEASE_WORKFLOW" && grep -Fq 'x86_64' "$RELEASE_WORKFLOW" ||
   exit 1
 }
 grep -Fq 'source_branch="codex/release-v${package_version}"' "$RELEASE_WORKFLOW" || {
-  echo "release candidates must be built from their release integration branch" >&2
+  echo "release tags must be built from their versioned release branch" >&2
   exit 1
 }
-grep -Fq 'source_branch=master' "$RELEASE_WORKFLOW" || {
-  echo "stable releases must be built from master" >&2
+if grep -Fq 'source_branch=master' "$RELEASE_WORKFLOW"; then
+  echo "stable releases must not bypass their verified versioned release branch" >&2
   exit 1
-}
+fi
 grep -Fq 'channel_flag=--prerelease' "$RELEASE_WORKFLOW" || {
   echo "release-candidate tags must publish a GitHub prerelease" >&2
   exit 1
