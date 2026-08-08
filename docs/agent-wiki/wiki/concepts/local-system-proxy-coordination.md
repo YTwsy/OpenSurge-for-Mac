@@ -22,10 +22,10 @@ forwarding 都 ready 后才启用 HTTP/HTTPS 代理。Stop 必须先恢复系统
 mihomo；start rollback 和 `restart-mihomo` 失败也遵循同一顺序。恢复失败时保留 runtime
 state，并避免主动停止仍可承接代理连接的服务，让后续 stop 可以重试恢复。
 
-runtime snapshot 同时保存 OpenSurge 实际写入的 loopback endpoint，不用当前配置中的
-`mixed_port` 猜测所有权。系统重启后的 reconciliation 会分别检查 HTTP 与 HTTPS：仍匹配
-该 endpoint 的项目恢复启动前快照；用户已修改的项目保持不变，但不再阻止旧 runtime
-清理。只有读取失败或 OpenSurge 仍拥有的项目恢复失败时才继续 fail closed 并保留 state。
+这个开关代表明确的临时接管契约。系统重启后的 reconciliation 与普通 Stop、rollback
+使用同一份启动前快照，无条件恢复 HTTP/HTTPS；接管期间手动修改的 HTTP/HTTPS 设置也会
+被该快照替换。恢复失败时继续 fail closed 并保留 state，避免把未完成的恢复误记为清理
+成功。
 
 ## 证明边界
 

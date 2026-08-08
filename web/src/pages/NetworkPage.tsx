@@ -179,7 +179,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
 
   const cleanupInterruptedRuntime = async () => {
     if (!config || !gatewayInterrupted) return
-    if (!window.confirm('确认安全清理上次运行留下的状态吗？OpenSurge 不会向旧 PID 发送信号，也不会更改本次开机的 PF 或 IPv4 forwarding。仍由 OpenSurge 设置的系统代理会恢复；你已经修改的代理设置会保留。')) return
+    if (!window.confirm('确认安全清理上次运行留下的状态吗？OpenSurge 不会向旧 PID 发送信号，也不会更改本次开机的 PF 或 IPv4 forwarding。如果上次运行启用了系统代理协同，将恢复为 OpenSurge 启动前保存的状态。')) return
     setBusy(true); setError(''); setMessage('')
     try {
       const operation = await api.gateway('stop')
@@ -365,7 +365,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
         </div>
         <button ref={gatewayControlRef} id="gateway-control" className="primary" type="button" disabled={busy || !overview} onClick={() => void cleanupInterruptedRuntime()}>{busy ? '正在安全清理…' : '安全清理旧状态'}</button>
       </div>
-      <div className="notice">仍由 OpenSurge 设置的 macOS 系统代理会按所有权记录恢复；你已经修改的代理设置会保留，并且不会阻止旧 runtime 清理。</div>
+      <div className="notice">如果上次运行启用了系统代理协同，HTTP/HTTPS 会恢复为 OpenSurge 启动前保存的状态；接管期间的手动修改也会被该快照替换。</div>
     </section>}
     {config && !gatewayInterrupted && config.gateway.mode !== 'same_wifi_dhcp' && <section className="section gateway-lifecycle-control">
       <SectionTitle title="网关运行控制" subtitle="使用已保存的网络配置启动或停止；总览页的按钮只负责导航到这里" />

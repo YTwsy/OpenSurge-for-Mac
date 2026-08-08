@@ -13,7 +13,6 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
-	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -754,8 +753,8 @@ func TestStopClearsPreviousBootRuntimeWithoutTouchingStalePIDsOrKernelState(t *t
 	if dhcpManager.stopCalled || mihomoManager.stopCalled || pfManager.unloadCalled || sysctlManager.restoreValue != "" {
 		t.Fatalf("stale cleanup touched runtime pieces: dhcp=%v mihomo=%v pf=%v forwarding=%q", dhcpManager.stopCalled, mihomoManager.stopCalled, pfManager.unloadCalled, sysctlManager.restoreValue)
 	}
-	if systemProxyManager.restoreOwnedCalls != 1 || systemProxyManager.restoreCalls != 0 {
-		t.Fatalf("proxy restore calls owned=%d ordinary=%d", systemProxyManager.restoreOwnedCalls, systemProxyManager.restoreCalls)
+	if systemProxyManager.restoreCalls != 1 {
+		t.Fatalf("proxy restore calls = %d", systemProxyManager.restoreCalls)
 	}
 	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || exists {
 		t.Fatalf("runtime state exists=%v err=%v", exists, err)
@@ -765,7 +764,7 @@ func TestStopClearsPreviousBootRuntimeWithoutTouchingStalePIDsOrKernelState(t *t
 	}
 }
 
-func TestStopClearsPreviousBootRuntimeWhenUserChangedSystemProxy(t *testing.T) {
+func TestStopKeepsPreviousBootRuntimeWhenSystemProxyRestoreFails(t *testing.T) {
 	cfg := config.Default()
 	cfg.Runtime.Dir = t.TempDir()
 	paths := runtime.NewPaths(cfg)
@@ -780,42 +779,7 @@ func TestStopClearsPreviousBootRuntimeWhenUserChangedSystemProxy(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	systemProxyManager := &fakeLocalSystemProxy{restoreOwnedErr: macosnetwork.ErrSystemProxyOwnershipChanged}
-	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
-		geteuid:             func() int { return 0 },
-		loadState:           runtime.LoadState,
-		removeState:         runtime.RemoveState,
-		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
-		currentBoot:         func() (runtime.BootSession, error) { return runtime.BootSession{ID: "current-boot"}, nil },
-	}}
-
-	if err := manager.Stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if systemProxyManager.restoreOwnedCalls != 1 {
-		t.Fatalf("owned restore calls = %d", systemProxyManager.restoreOwnedCalls)
-	}
-	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || exists {
-		t.Fatalf("runtime state exists=%v err=%v", exists, err)
-	}
-}
-
-func TestStopKeepsPreviousBootRuntimeWhenSystemProxyInspectionFails(t *testing.T) {
-	cfg := config.Default()
-	cfg.Runtime.Dir = t.TempDir()
-	paths := runtime.NewPaths(cfg)
-	if err := runtime.Ensure(paths); err != nil {
-		t.Fatal(err)
-	}
-	snapshot := &runtime.SystemProxySnapshot{NetworkService: "Wi-Fi", Interface: "en0"}
-	if err := runtime.SaveState(paths.StateFile, runtime.State{
-		LocalSystemProxy: snapshot,
-		BootSessionID:    "previous-boot",
-		StartedAt:        time.Now().Add(-time.Hour),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	systemProxyManager := &fakeLocalSystemProxy{restoreOwnedErr: errors.New("networksetup failed")}
+	systemProxyManager := &fakeLocalSystemProxy{restoreErr: errors.New("networksetup failed")}
 	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
 		geteuid:             func() int { return 0 },
 		loadState:           runtime.LoadState,
@@ -1099,17 +1063,15 @@ func (f *fakeSysctl) Restore(value string) error {
 }
 
 type fakeLocalSystemProxy struct {
-	snapshot          runtime.SystemProxySnapshot
-	prepareErr        error
-	enableErr         error
-	restoreErr        error
-	restoreOwnedErr   error
-	prepareInterface  string
-	preparePort       int
-	enableCalls       int
-	restoreCalls      int
-	restoreOwnedCalls int
-	events            *[]string
+	snapshot         runtime.SystemProxySnapshot
+	prepareErr       error
+	enableErr        error
+	restoreErr       error
+	prepareInterface string
+	preparePort      int
+	enableCalls      int
+	restoreCalls     int
+	events           *[]string
 }
 
 func (f *fakeLocalSystemProxy) Prepare(_ context.Context, interfaceName string, port int) (runtime.SystemProxySnapshot, error) {
@@ -1135,14 +1097,6 @@ func (f *fakeLocalSystemProxy) Restore(_ context.Context, _ runtime.SystemProxyS
 		*f.events = append(*f.events, "system-proxy-restore")
 	}
 	return f.restoreErr
-}
-
-func (f *fakeLocalSystemProxy) RestoreOwned(_ context.Context, _ runtime.SystemProxySnapshot, _ int) error {
-	f.restoreOwnedCalls++
-	if f.events != nil {
-		*f.events = append(*f.events, "system-proxy-restore-owned")
-	}
-	return f.restoreOwnedErr
 }
 
 func indexOfEvent(events []string, target string) int {

@@ -13,10 +13,10 @@ dnsmasq、mihomo，并重置当次运行的 PF/forwarding；原来的进程 PID 
 PF/forwarding。清理完成后可按页面提示恢复网络或重新启动完整网关。系统重启后的中断
 状态不会显示“恢复 Mihomo”，因为 DHCP/DNS、PF 与 forwarding 并未随它一起恢复。
 
-如果曾启用 Mac 本机系统代理协同，清理会逐项检查 HTTP/HTTPS 所有权：仍指向
-OpenSurge 保存端点的设置会恢复到启动前状态；你已经修改或替换的代理设置会保留，并且
-不会让旧 runtime 一直卡在“待清理”。若 macOS 无法读取设置，清理仍会失败关闭并保留
-state，以便排查后重试。
+如果上一次运行启用了 Mac 本机系统代理协同，清理会把 HTTP/HTTPS 恢复为 OpenSurge
+启动前保存的状态。这个开关是明确的临时接管：接管期间手动修改的 HTTP/HTTPS 设置也会
+被启动前快照替换。若 macOS 无法恢复设置，清理会失败关闭并保留 state，以便排查后
+重试。
 
 ## Mac 睡眠唤醒后为什么提示 Mihomo 连接被拒绝？
 

@@ -68,7 +68,6 @@ type localSystemProxyService interface {
 	Prepare(context.Context, string, int) (runtime.SystemProxySnapshot, error)
 	Enable(context.Context, runtime.SystemProxySnapshot, int) error
 	Restore(context.Context, runtime.SystemProxySnapshot) error
-	RestoreOwned(context.Context, runtime.SystemProxySnapshot, int) error
 }
 
 type gatewayDeps struct {
@@ -593,11 +592,8 @@ func (m Manager) Stop(ctx context.Context) error {
 
 func (m Manager) cleanupInterruptedRuntime(ctx context.Context, deps gatewayDeps, state runtime.State) error {
 	if state.LocalSystemProxy != nil {
-		if err := m.localSystemProxy(deps).RestoreOwned(ctx, *state.LocalSystemProxy, m.cfg.Mihomo.MixedPort); err != nil {
-			if !errors.Is(err, macosnetwork.ErrSystemProxyOwnershipChanged) {
-				return fmt.Errorf("restore OpenSurge-owned local system proxy after reboot: %w", err)
-			}
-			fmt.Println("Current user-managed system proxy settings were preserved while clearing the interrupted OpenSurge runtime.")
+		if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
+			return fmt.Errorf("restore local system proxy snapshot after reboot: %w", err)
 		}
 	}
 	cleanupErr := errors.Join(

@@ -15,8 +15,6 @@ write SOCKS, PAC, proxy auto-discovery, or bypass-domain settings.
 
 Before any host-network mutation, startup reads the HTTP/HTTPS, PAC, and
 auto-discovery state and persists an HTTP/HTTPS snapshot in runtime state.
-The snapshot also records the exact loopback endpoint OpenSurge applied, so a
-later config change does not make ownership depend on the current mixed port.
 Startup fails closed if HTTP or HTTPS proxying is already active, PAC or
 auto-discovery is enabled, or either proxy is authenticated. Credentials are
 not readable through `networksetup`, so authenticated settings cannot be
@@ -28,11 +26,12 @@ startup rollback or failed `restart-mihomo` also restores the snapshot first.
 If restoration fails, runtime state is retained and gateway services are not
 intentionally stopped, avoiding a system proxy that points at a dead listener.
 
-When reconciling a runtime interrupted by a system reboot, HTTP and HTTPS are
-checked independently. An enabled endpoint that still matches the persisted
-OpenSurge endpoint is restored from its snapshot. A user-replaced endpoint is
-preserved and does not prevent stale runtime cleanup. Failure to inspect or
-restore an owned endpoint still fails closed and keeps runtime state retryable.
+The coordination toggle is an explicit temporary takeover contract. When
+reconciling a runtime interrupted by a system reboot, OpenSurge restores the
+same startup snapshot unconditionally, just as it does for an ordinary stop or
+rollback. HTTP/HTTPS changes made while the takeover was active are therefore
+replaced by that snapshot. A restore failure still fails closed and keeps
+runtime state retryable.
 
 Command-level tests can prove parsing, write scope, ordering, rollback, and
 state retention. Existing TUN labs with the setting disabled prove regression
