@@ -1,10 +1,14 @@
 package process
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -48,6 +52,46 @@ func IsAlive(pid int) bool {
 		return false
 	}
 	return signalErrMeansAlive(proc.Signal(syscall.Signal(0)))
+}
+
+// Fingerprint hashes the kernel-recorded process start time and command for a
+// PID. A PID alone is not an identity: it can be reused after a child exits or
+// after the host reboots. Persisting this value lets callers fail closed before
+// sending a signal to a process that OpenSurge did not start without copying
+// its command line into runtime state.
+func Fingerprint(pid int) (string, error) {
+	if pid <= 0 {
+		return "", nil
+	}
+	cmd := exec.Command("/bin/ps", "-ww", "-p", strconv.Itoa(pid), "-o", "lstart=", "-o", "command=")
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		if !IsAlive(pid) {
+			return "", nil
+		}
+		return "", fmt.Errorf("inspect pid %d identity: %w", pid, err)
+	}
+	identity := strings.Join(strings.Fields(string(out)), " ")
+	if identity == "" {
+		if !IsAlive(pid) {
+			return "", nil
+		}
+		return "", fmt.Errorf("inspect pid %d identity: empty output", pid)
+	}
+	digest := sha256.Sum256([]byte(identity))
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func MatchesFingerprint(pid int, expected string) (bool, error) {
+	if strings.TrimSpace(expected) == "" {
+		return IsAlive(pid), nil
+	}
+	actual, err := Fingerprint(pid)
+	if err != nil {
+		return false, err
+	}
+	return actual != "" && actual == expected, nil
 }
 
 func signalErrMeansAlive(err error) bool {

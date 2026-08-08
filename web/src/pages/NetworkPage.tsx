@@ -43,6 +43,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const configDirty = Boolean(config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig))
   const gatewayActive = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
   const gatewayStopped = overview?.status.gateway === 'stopped'
+  const gatewayInterrupted = overview?.status.runtime_state === 'interrupted'
   const dhcpRuntimeDisabled = config?.gateway.mode === 'same_lan'
   const configurationEditable = !busy && gatewayStopped && !recoveryBlocksConfig
   const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
@@ -172,6 +173,21 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       await waitForOperation(operation.id)
       await onChanged()
       setMessage(action === 'start' ? `${gatewayModeLabel(config.gateway.mode)}已启动。` : `${gatewayModeLabel(config.gateway.mode)}已停止。`)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setBusy(false) }
+  }
+
+  const cleanupInterruptedRuntime = async () => {
+    if (!config || !gatewayInterrupted) return
+    if (!window.confirm('确认安全清理上次运行留下的状态吗？OpenSurge 不会向旧 PID 发送信号，也不会更改本次开机的 PF 或 IPv4 forwarding。如果上次运行启用了系统代理协同，将恢复为 OpenSurge 启动前保存的状态。')) return
+    setBusy(true); setError(''); setMessage('')
+    try {
+      const operation = await api.gateway('stop')
+      await waitForOperation(operation.id)
+      await onChanged()
+      setMessage(config.gateway.mode === 'same_wifi_dhcp'
+        ? '旧状态已安全清理。请继续完成路由器 DHCP 与 Mac 网络恢复。'
+        : `旧状态已安全清理。现在可以重新启动${gatewayModeLabel(config.gateway.mode)}。`)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusy(false) }
   }
@@ -339,7 +355,19 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
         <div className="network-save-bar" aria-live="polite"><span className={configDirty ? 'dirty' : ''}><i aria-hidden="true">{configDirty ? '•' : '✓'}</i>{configDirty ? '有未保存的修改' : '当前配置已保存'}</span><button className="primary" disabled={!configurationEditable} onClick={() => void save()}>{busy ? <><span className="button-spinner" aria-hidden="true" />正在保存…</> : '保存网络配置'}</button></div>
       </section>
     </>}
-    {config && config.gateway.mode !== 'same_wifi_dhcp' && <section className="section gateway-lifecycle-control">
+    {config && gatewayInterrupted && <section className="section gateway-lifecycle-control interrupted-runtime-control">
+      <SectionTitle title="安全清理旧状态" subtitle="Mac 重启已经结束上一次网关运行；清理磁盘上的旧运行记录后，才能继续恢复或重新启动。" />
+      <div className="gateway-lifecycle-row">
+        <div>
+          <span className="pill">重启后待清理</span>
+          <strong>上一次网关运行已中断</strong>
+          <p>此操作只清理上次开机留下的状态，不会停止本次开机的其他进程，也不会更改本次开机的 PF 或 IPv4 forwarding。</p>
+        </div>
+        <button ref={gatewayControlRef} id="gateway-control" className="primary" type="button" disabled={busy || !overview} onClick={() => void cleanupInterruptedRuntime()}>{busy ? '正在安全清理…' : '安全清理旧状态'}</button>
+      </div>
+      <div className="notice">如果上次运行启用了系统代理协同，HTTP/HTTPS 会恢复为 OpenSurge 启动前保存的状态；接管期间的手动修改也会被该快照替换。</div>
+    </section>}
+    {config && !gatewayInterrupted && config.gateway.mode !== 'same_wifi_dhcp' && <section className="section gateway-lifecycle-control">
       <SectionTitle title="网关运行控制" subtitle="使用已保存的网络配置启动或停止；总览页的按钮只负责导航到这里" />
       <div className="gateway-lifecycle-row">
         <div>
@@ -352,7 +380,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       {!gatewayActive && configDirty && <div className="notice warn">网络配置有未保存的修改。保存后才能启动网关。</div>}
       {!gatewayActive && !gatewayStopped && <div className="notice warn">当前网关状态无法确认；为避免重复启动，运行控制暂时不可用。</div>}
     </section>}
-    {config?.gateway.mode === 'same_wifi_dhcp' && <>
+    {config?.gateway.mode === 'same_wifi_dhcp' && !gatewayInterrupted && <>
       {plan && <section className="section">
         <SectionTitle title="当前网络快照" subtitle={`${plan.snapshot.network_service} · ${plan.snapshot.interface}`} />
         <div className="inventory"><span>Mac {plan.snapshot.ipv4}</span>{plan.snapshot.router && <span>Router <RouterAddress router={plan.snapshot.router} showHint /></span>}<span>{plan.snapshot.ipv6_default ? 'IPv6 default active' : 'No IPv6 default'}</span><span>{plan.protected_ipv4.length} protected IPv4</span></div>

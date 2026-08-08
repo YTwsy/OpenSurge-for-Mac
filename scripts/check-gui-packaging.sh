@@ -99,7 +99,7 @@ line_of() {
 
 recovery_line="$(line_of 'RECOVERY_STAGE=' "$PREINSTALL")"
 gui_stop_line="$(line_of 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL")"
-stop_line="$(line_of '"$ROOT/bin/omg" stop' "$PREINSTALL")"
+stop_line="$(line_of '"$RECOVERY_CLI" stop' "$PREINSTALL")"
 helper_line="$(line_of 'bootout system/com.opensurge.helper' "$PREINSTALL")"
 
 [[ -n "$recovery_line" && -n "$gui_stop_line" && -n "$stop_line" && -n "$helper_line" ]] || {
@@ -113,6 +113,10 @@ helper_line="$(line_of 'bootout system/com.opensurge.helper' "$PREINSTALL")"
 
 grep -Fq 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL" || {
   echo "preinstall must stop installed OpenSurge GUI processes" >&2
+  exit 1
+}
+grep -Fq 'RECOVERY_CLI="$SCRIPT_DIR/omg-recovery"' "$PREINSTALL" || {
+  echo "preinstall must use the current package recovery CLI" >&2
   exit 1
 }
 if grep -Eq 'p(kill|grep).*-x (opensurge-control|OpenSurgeMenuBar)' "$PREINSTALL"; then
@@ -232,8 +236,12 @@ grep -Fq 'if [[ ! -f "$ROOT/config.yaml" ]]' "$POSTINSTALL" || {
   echo "postinstall must preserve an existing config during upgrade" >&2
   exit 1
 }
-grep -Fq -- '--scripts "$ROOT/packaging/pkg-scripts"' "$ROOT/scripts/build-gui-installer.sh" || {
-  echo "pkgbuild must include the packaging scripts directory" >&2
+grep -Fq 'install -m 0755 "$ROOT/bin/omg" "$PKG_SCRIPTS/omg-recovery"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "GUI package must stage its current omg as the preinstall recovery CLI" >&2
+  exit 1
+}
+grep -Fq -- '--scripts "$PKG_SCRIPTS"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "pkgbuild must include the staged packaging scripts directory" >&2
   exit 1
 }
 grep -Fq 'plutil -replace CFBundleShortVersionString' "$ROOT/scripts/build-menubar-app.sh" || {
@@ -335,13 +343,13 @@ grep -Fq 'arm64' "$RELEASE_WORKFLOW" && grep -Fq 'x86_64' "$RELEASE_WORKFLOW" ||
   exit 1
 }
 grep -Fq 'source_branch="codex/release-v${package_version}"' "$RELEASE_WORKFLOW" || {
-  echo "release candidates must be built from their release integration branch" >&2
+  echo "release tags must be built from their versioned release branch" >&2
   exit 1
 }
-grep -Fq 'source_branch=master' "$RELEASE_WORKFLOW" || {
-  echo "stable releases must be built from master" >&2
+if grep -Fq 'source_branch=master' "$RELEASE_WORKFLOW"; then
+  echo "stable releases must not bypass their verified versioned release branch" >&2
   exit 1
-}
+fi
 grep -Fq 'channel_flag=--prerelease' "$RELEASE_WORKFLOW" || {
   echo "release-candidate tags must publish a GitHub prerelease" >&2
   exit 1

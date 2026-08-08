@@ -9,15 +9,18 @@ import (
 )
 
 type State struct {
-	PIDDNSMasq         int                  `json:"pid_dnsmasq,omitempty"`
-	PIDMihomo          int                  `json:"pid_mihomo,omitempty"`
-	IPForwardingBefore string               `json:"ip_forwarding_before,omitempty"`
-	PFEnabledBefore    bool                 `json:"pf_enabled_before"`
-	PFAnchorLoaded     bool                 `json:"pf_anchor_loaded"`
-	DevicePolicyDigest string               `json:"device_policy_digest,omitempty"`
-	ProfileDigest      string               `json:"profile_digest,omitempty"`
-	LocalSystemProxy   *SystemProxySnapshot `json:"local_system_proxy,omitempty"`
-	StartedAt          time.Time            `json:"started_at"`
+	PIDDNSMasq                int                  `json:"pid_dnsmasq,omitempty"`
+	DNSMasqProcessFingerprint string               `json:"dnsmasq_process_fingerprint,omitempty"`
+	PIDMihomo                 int                  `json:"pid_mihomo,omitempty"`
+	MihomoProcessFingerprint  string               `json:"mihomo_process_fingerprint,omitempty"`
+	BootSessionID             string               `json:"boot_session_id,omitempty"`
+	IPForwardingBefore        string               `json:"ip_forwarding_before,omitempty"`
+	PFEnabledBefore           bool                 `json:"pf_enabled_before"`
+	PFAnchorLoaded            bool                 `json:"pf_anchor_loaded"`
+	DevicePolicyDigest        string               `json:"device_policy_digest,omitempty"`
+	ProfileDigest             string               `json:"profile_digest,omitempty"`
+	LocalSystemProxy          *SystemProxySnapshot `json:"local_system_proxy,omitempty"`
+	StartedAt                 time.Time            `json:"started_at"`
 }
 
 // SystemProxySnapshot is the macOS network-service proxy state captured before

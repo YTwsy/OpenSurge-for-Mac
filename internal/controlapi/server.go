@@ -534,6 +534,9 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if status.TUNError != "" {
 		warnings = append(warnings, "mihomo TUN: "+status.TUNError)
 	}
+	if status.RuntimeState == "interrupted" {
+		warnings = append(warnings, "gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again")
+	}
 	return Overview{
 		SchemaVersion:        SchemaVersion,
 		Revision:             fileDigest(s.configPath),
@@ -647,6 +650,10 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 	}
 	if action == "reload" {
 		status, statusErr := gateway.New(cfg).Status(r.Context())
+		if statusErr == nil && status.RuntimeState == "interrupted" {
+			writeError(w, http.StatusConflict, "runtime_interrupted", "gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again")
+			return
+		}
 		if statusErr != nil || status.Gateway != "running" {
 			writeError(w, http.StatusConflict, "gateway_not_running", "reload requires a running gateway; use start instead")
 			return
@@ -657,13 +664,22 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if action == "restart-mihomo" {
-		_, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
+		state, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
 		if stateErr != nil {
 			writeError(w, http.StatusInternalServerError, "runtime_state_invalid", stateErr.Error())
 			return
 		}
 		if !exists {
 			writeError(w, http.StatusConflict, "gateway_not_running", "restart-mihomo requires an active gateway runtime; use start instead")
+			return
+		}
+		bootSession, bootErr := runtime.CurrentBootSession()
+		if bootErr != nil {
+			writeError(w, http.StatusInternalServerError, "runtime_state_invalid", bootErr.Error())
+			return
+		}
+		if !state.BelongsToBoot(bootSession) {
+			writeError(w, http.StatusConflict, "runtime_interrupted", "gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again")
 			return
 		}
 		if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated && recovery.Stage != RecoveryClientValidationSkipped {

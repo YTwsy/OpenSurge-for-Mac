@@ -6,12 +6,10 @@
 
 <!-- 发布前请更新为当前版本的主要变化，并同步维护 English / Highlights。 -->
 
-- 新增「这台 Mac 的出口方式」控制：网关运行期间可在控制面为本机公网流量切换 **按规则 / 固定出口 / 本机直连** 三种模式，并展示当前全局出口。
-- 菜单栏新增轻量版本发现：打开面板后自动检查最新稳定版，也可手动刷新；发现新版本时只提供打开对应 GitHub Release 下载页的按钮，不自动下载或安装 PKG。RC 构建保留完整预发布 tag，不会降级到旧稳定版，同版本正式版发布后仍会提示。
-- 新增默认关闭的「Mac 本机系统代理协同」：TUN 模式下可同时启用 macOS HTTP/HTTPS 系统代理，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰 TUN-only 本机 DNS 的场景；启动冲突会 fail closed，停止、回滚与 mihomo 重启失败时恢复原状态；Desired 网络配置中的本机系统代理与每设备策略改用紧凑的状态开关。
-- 每设备策略与身份迁移增强：旁路由模式允许只登记固定 IPv4，MAC 作为可选身份信息；每台设备可选择跟随网关规则或使用独立出口。切换到 DHCP 接管时可确认当前唯一观测到的 MAC，暂时无法识别的设备会保留但暂停策略，补充 MAC 后恢复；已登记设备仍可根据同 MAC 的唯一观测结果安全更新 IPv4，歧义或冲突证据保持 fail closed。
-- TUN 启动异常检查：网关在实际启动时校验 TUN 就绪状态，失败会回滚并尽量报告冲突路由的接口/网关；同时处理 DHCP 放弃（DHCP abandonment），加固就绪恢复路径，容忍更慢的运行时状态读取，并移除投机式 TUN 预检。
-- 修复 pkg 升级偶发需要安装两次：preinstall 先终止会自动唤醒 Control Service 的菜单栏 App，再循环卸载精确的用户级服务并处理迟到的替代进程；仍保留 recovery 门禁、旧网关清理和配置数据跨版本保留。
+- 修复 Mac 重启后旧 runtime 阻塞再次启动的问题（Issue #22）：OpenSurge 现在记录开机 session 与 dnsmasq/mihomo 进程指纹，将上一次开机留下的状态明确标记为「重启后待清理」。控制面提供「安全清理旧状态」，不会向旧 PID 发送信号，也不会改动本次开机的 PF 或 IPv4 forwarding；若上次运行启用了本机系统代理协同，则恢复 OpenSurge 启动前保存的 HTTP/HTTPS 状态。
+- 修复 PKG 升级偶发需要安装两次：preinstall 会先停止可能重新唤醒 Control Service 的菜单栏 App，持续卸载精确的用户服务，并使用新安装包内置的当前版本恢复 CLI 清理网关，不再依赖正在被替换的旧版 `omg stop`。
+- 改进睡眠唤醒与 Wi-Fi 重连恢复（Issue #23）：只有本次开机的网关 runtime 仍有效、且 Mihomo 已停止或本地 controller 明确拒绝连接时，连通性页才显示「恢复 Mihomo」；健康运行和完整重启后的中断状态不会显示该入口。
+- 优化设备出口卡片：设备 ID、IPv4 与 MAC 统一为紧凑的绿色代码标签并使用适合中文的字体；未登记 MAC 与「策略已暂停」合并显示在 MAC 位置，不再额外展示突兀的棕色警告块。
 
 ### 选择安装包
 
@@ -59,12 +57,10 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ### Highlights
 
-- Added a "this Mac" routing control: while the gateway is running, the control plane can switch the local Mac's public traffic between **rule-based / fixed-outlet / direct** modes and shows the current global outlet.
-- Added lightweight update discovery to the menu bar: the panel checks for the latest stable release automatically and supports manual refresh; when a newer version exists it only opens that GitHub Release download page and does not download or install the PKG. RC builds retain their full prerelease tag, avoid older stable downgrades, and still discover the stable release with the same base version.
-- Added an off-by-default local system-proxy coordination option: in TUN mode OpenSurge can enable macOS HTTP and HTTPS proxies together for SafeDNS, DNS Proxy, and similar Network Extension conflicts; startup fails closed on existing proxy configuration, and stop, rollback, or failed mihomo restart restores the previous state; the local system-proxy and per-device-policy controls now use compact status switches in Desired Network Configuration.
-- Per-device policy and identity migration improvements: manual-gateway mode permits registration by fixed IPv4 alone, with MAC as optional identity metadata, and each device can either follow gateway rules or use an independent egress. When switching to DHCP takeover, a uniquely observed current MAC can be confirmed; unresolved devices are preserved with their policies paused until a MAC is added. Existing registrations can still update IPv4 from a unique same-MAC observation, while ambiguous or conflicting evidence remains fail closed.
-- TUN startup anomaly checks now verify readiness during the real start, roll back on failure, and try to report the conflicting route's interface or gateway. The release also handles DHCP abandonment, hardens readiness recovery, tolerates slower runtime-state reads, and removes speculative TUN preflight.
-- Fixed an intermittent pkg-upgrade failure that required a second install attempt: preinstall now stops the menu bar app that can wake the Control Service, repeatedly unloads the exact user service, and handles a late replacement process while preserving recovery gates, old-gateway cleanup, and existing configuration data.
+- Fixed stale runtime state blocking startup after a Mac reboot (Issue #22): OpenSurge now records the boot session and dnsmasq/mihomo process fingerprints, and clearly marks state left by an earlier boot as **Interrupted after restart**. The control plane provides **Safely clear old state** without signaling stale PIDs or changing PF or IPv4 forwarding for the current boot. If local system-proxy coordination was active, cleanup restores the saved pre-OpenSurge HTTP/HTTPS state.
+- Fixed an intermittent PKG upgrade failure that required a second installation attempt: preinstall now stops the menu bar app that can wake the Control Service, repeatedly unloads the exact user service, and uses the current recovery CLI embedded in the new package instead of relying on the old `omg stop` being replaced.
+- Improved wake and Wi-Fi reconnect recovery (Issue #23): Connectivity shows **Recover Mihomo** only when the current-boot gateway runtime is still valid and Mihomo has stopped or its local controller explicitly refuses connections. Healthy runtimes and runtimes interrupted by a full reboot do not show the action.
+- Refined device outlet cards: device ID, IPv4, and MAC now use consistent compact green code tags with Chinese-friendly typography. Missing MAC and **policy paused** status are shown together in the MAC slot instead of a separate prominent brown warning block.
 
 ### Choose a package
 

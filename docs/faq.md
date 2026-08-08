@@ -1,9 +1,21 @@
 # OpenSurge for Mac FAQ
 
-This page records common v0.1.24 questions about local-Mac connectivity, TUN
-startup, device identity, and per-device egress. Follow the
+This page records common v0.1.25 questions about reboot recovery, local-Mac
+connectivity, TUN startup, device identity, and per-device egress. Follow the
 [OpenSurge for Mac App User Guide](app-user-guide.md) for the complete install
 and DHCP recovery workflow.
+
+## Why does OpenSurge require cleanup after macOS reboots?
+
+OpenSurge does not treat a runtime state file left by the previous boot as an
+automatically restored gateway. A reboot terminates dnsmasq and mihomo and
+resets that run's PF/forwarding state; the recorded PIDs may also have been
+reused by unrelated processes. On the dashboard or in **Network Settings**,
+select **Safely Clear Old State**. OpenSurge recognizes the interrupted runtime,
+does not signal the old PIDs, and does not change PF or forwarding owned by the
+current boot. Follow the page to restore the network or start the complete
+gateway again after cleanup. Do not use **Restart Mihomo only** in this state,
+because DHCP/DNS, PF, and forwarding were not restored with it.
 
 ## Downstream devices work, but the Mac itself has no network access
 

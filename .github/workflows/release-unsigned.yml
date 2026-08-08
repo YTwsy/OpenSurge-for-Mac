@@ -46,11 +46,10 @@ jobs:
           fi
 
           package_version="${BASH_REMATCH[1]}"
+          source_branch="codex/release-v${package_version}"
           if [[ -n "${BASH_REMATCH[2]}" ]]; then
-            source_branch="codex/release-v${package_version}"
             prerelease=true
           else
-            source_branch=master
             prerelease=false
           fi
 

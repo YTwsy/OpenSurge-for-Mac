@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -338,6 +339,8 @@ func TestStartAndStopCoordinateLocalSystemProxyAroundGatewayServices(t *testing.
 		newPF:               func(config.Config, runtime.Paths) pfService { return pfManager },
 		newSysctl:           func() sysctlService { return &fakeSysctl{current: "0"} },
 		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
+		processFingerprint:  fakeProcessFingerprint,
+		processMatches:      fakeProcessMatches,
 		interfaces: func() ([]net.Interface, error) {
 			return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil
 		},
@@ -464,10 +467,11 @@ func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
 	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
 		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
 		removeState: runtime.RemoveState, ensure: runtime.Ensure,
-		newDHCP:   func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
-		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
-		newPF:     func(config.Config, runtime.Paths) pfService { return &fakePF{loaded: true} },
-		newSysctl: func() sysctlService { return &fakeSysctl{current: "0"} },
+		newDHCP:            func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
+		newMihomo:          func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+		newPF:              func(config.Config, runtime.Paths) pfService { return &fakePF{loaded: true} },
+		newSysctl:          func() sysctlService { return &fakeSysctl{current: "0"} },
+		processFingerprint: fakeProcessFingerprint,
 		interfaces: func() ([]net.Interface, error) {
 			return []net.Interface{{Name: "lan0"}, {Name: "wan0"}}, nil
 		},
@@ -586,7 +590,7 @@ func TestRestartMihomoReplacesOnlyProxyEngineAndArchivesLog(t *testing.T) {
 	mihomoManager := &fakeMihomo{startPID: 22}
 	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
 		geteuid: func() int { return 0 }, loadState: runtime.LoadState, saveState: runtime.SaveState,
-		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, now: func() time.Time { return restartedAt },
+		newMihomo: func(config.Config, runtime.Paths) mihomoService { return mihomoManager }, processFingerprint: fakeProcessFingerprint, now: func() time.Time { return restartedAt },
 	}}
 
 	if err := manager.RestartMihomo(context.Background()); err != nil {
@@ -703,6 +707,161 @@ func TestStopFailureRetainsRuntimeStateForRetryAndRecovery(t *testing.T) {
 	}
 }
 
+func TestStopClearsPreviousBootRuntimeWithoutTouchingStalePIDsOrKernelState(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &runtime.SystemProxySnapshot{NetworkService: "Wi-Fi", Interface: "en0"}
+	bootedAt := time.Now().Add(-30 * time.Minute)
+	if err := runtime.SaveState(paths.StateFile, runtime.State{
+		PIDDNSMasq:         11,
+		PIDMihomo:          12,
+		PFAnchorLoaded:     true,
+		IPForwardingBefore: "0",
+		LocalSystemProxy:   snapshot,
+		StartedAt:          bootedAt.Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.DevicePolicyApplied, []byte("stale\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dhcpManager := &fakeDHCP{}
+	mihomoManager := &fakeMihomo{}
+	pfManager := &fakePF{}
+	sysctlManager := &fakeSysctl{}
+	systemProxyManager := &fakeLocalSystemProxy{}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, removeState: runtime.RemoveState,
+		newDHCP:             func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
+		newMihomo:           func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+		newPF:               func(config.Config, runtime.Paths) pfService { return pfManager },
+		newSysctl:           func() sysctlService { return sysctlManager },
+		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
+		currentBoot: func() (runtime.BootSession, error) {
+			return runtime.BootSession{ID: "current-boot", StartedAt: bootedAt}, nil
+		},
+	}}
+
+	if err := manager.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if dhcpManager.stopCalled || mihomoManager.stopCalled || pfManager.unloadCalled || sysctlManager.restoreValue != "" {
+		t.Fatalf("stale cleanup touched runtime pieces: dhcp=%v mihomo=%v pf=%v forwarding=%q", dhcpManager.stopCalled, mihomoManager.stopCalled, pfManager.unloadCalled, sysctlManager.restoreValue)
+	}
+	if systemProxyManager.restoreCalls != 1 {
+		t.Fatalf("proxy restore calls = %d", systemProxyManager.restoreCalls)
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || exists {
+		t.Fatalf("runtime state exists=%v err=%v", exists, err)
+	}
+	if _, err := os.Stat(paths.DevicePolicyApplied); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("applied policy snapshot still exists: %v", err)
+	}
+}
+
+func TestStopKeepsPreviousBootRuntimeWhenSystemProxyRestoreFails(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &runtime.SystemProxySnapshot{NetworkService: "Wi-Fi", Interface: "en0"}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{
+		LocalSystemProxy: snapshot,
+		BootSessionID:    "previous-boot",
+		StartedAt:        time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	systemProxyManager := &fakeLocalSystemProxy{restoreErr: errors.New("networksetup failed")}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid:             func() int { return 0 },
+		loadState:           runtime.LoadState,
+		removeState:         runtime.RemoveState,
+		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
+		currentBoot:         func() (runtime.BootSession, error) { return runtime.BootSession{ID: "current-boot"}, nil },
+	}}
+
+	err := manager.Stop(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "networksetup failed") {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || !exists {
+		t.Fatalf("runtime state exists=%v err=%v", exists, err)
+	}
+}
+
+func TestStopDoesNotSignalCurrentBootPIDWithDifferentFingerprint(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{
+		PIDDNSMasq:                11,
+		DNSMasqProcessFingerprint: "dnsmasq-original",
+		PIDMihomo:                 12,
+		MihomoProcessFingerprint:  "mihomo-original",
+		BootSessionID:             "current-boot",
+		StartedAt:                 time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	dhcpManager := &fakeDHCP{}
+	mihomoManager := &fakeMihomo{}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState, removeState: runtime.RemoveState,
+		newDHCP:        func(config.Config, runtime.Paths) dhcpService { return dhcpManager },
+		newMihomo:      func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+		newPF:          func(config.Config, runtime.Paths) pfService { return &fakePF{} },
+		newSysctl:      func() sysctlService { return &fakeSysctl{} },
+		currentBoot:    func() (runtime.BootSession, error) { return runtime.BootSession{ID: "current-boot"}, nil },
+		processMatches: func(int, string) (bool, error) { return false, nil },
+	}}
+
+	if err := manager.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if dhcpManager.stopCalled || mihomoManager.stopCalled {
+		t.Fatalf("reused PID was signaled: dhcp=%v mihomo=%v", dhcpManager.stopCalled, mihomoManager.stopCalled)
+	}
+}
+
+func TestRestartMihomoRejectsPreviousBootRuntimeBeforeProcessValidation(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: 12, BootSessionID: "previous-boot", StartedAt: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	mihomoManager := &fakeMihomo{}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid: func() int { return 0 }, loadState: runtime.LoadState,
+		newMihomo:   func(config.Config, runtime.Paths) mihomoService { return mihomoManager },
+		currentBoot: func() (runtime.BootSession, error) { return runtime.BootSession{ID: "current-boot"}, nil },
+	}}
+
+	err := manager.RestartMihomo(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "interrupted by a system reboot") {
+		t.Fatalf("RestartMihomo() error = %v", err)
+	}
+	if mihomoManager.validateCalled || mihomoManager.stopCalled || mihomoManager.startCalled {
+		t.Fatal("restart touched mihomo for a previous-boot runtime")
+	}
+}
+
 func TestStopProxyRestoreFailureKeepsServicesRunningAndStateRetryable(t *testing.T) {
 	cfg := config.Default()
 	cfg.Runtime.Dir = t.TempDir()
@@ -780,17 +939,18 @@ func (f *fakeDHCP) Stop(int) error {
 func (f *fakeDHCP) Running(int) bool { return f.running }
 
 type fakeMihomo struct {
-	checkErr    error
-	writeErr    error
-	validateErr error
-	startPID    int
-	startErr    error
-	stopErr     error
-	startCalled bool
-	stopCalled  bool
-	stoppedPID  int
-	running     bool
-	events      *[]string
+	checkErr       error
+	writeErr       error
+	validateErr    error
+	startPID       int
+	startErr       error
+	stopErr        error
+	startCalled    bool
+	stopCalled     bool
+	validateCalled bool
+	stoppedPID     int
+	running        bool
+	events         *[]string
 }
 
 func (f *fakeMihomo) Check() error {
@@ -805,6 +965,7 @@ func (f *fakeMihomo) WriteConfig() error {
 }
 
 func (f *fakeMihomo) ValidateWrittenConfig() error {
+	f.validateCalled = true
 	if f.events != nil {
 		*f.events = append(*f.events, "mihomo-validate")
 	}
@@ -945,4 +1106,16 @@ func indexOfEvent(events []string, target string) int {
 		}
 	}
 	return -1
+}
+
+func fakeProcessFingerprint(pid int) (string, error) {
+	if pid <= 0 {
+		return "", nil
+	}
+	return fmt.Sprintf("pid-%d-start", pid), nil
+}
+
+func fakeProcessMatches(pid int, fingerprint string) (bool, error) {
+	expected, _ := fakeProcessFingerprint(pid)
+	return expected != "" && fingerprint == expected, nil
 }

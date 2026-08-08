@@ -166,6 +166,8 @@ func TestSystemProxyEnableAndRestore(t *testing.T) {
 	if !currentHTTP.Enabled || !currentHTTPS.Enabled || currentHTTP.Server != localSystemProxyHost || currentHTTPS.Port != 7890 {
 		t.Fatalf("enabled HTTP=%#v HTTPS=%#v", currentHTTP, currentHTTPS)
 	}
+	currentHTTP = runtime.SystemProxySetting{Enabled: true, Server: "user-changed.proxy", Port: 8081}
+	currentHTTPS = runtime.SystemProxySetting{Enabled: true, Server: "user-changed.proxy", Port: 8082}
 	if err := manager.Restore(t.Context(), snapshot); err != nil {
 		t.Fatal(err)
 	}

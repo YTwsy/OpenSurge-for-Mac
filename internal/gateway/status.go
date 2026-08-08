@@ -16,6 +16,7 @@ import (
 
 type Status struct {
 	Gateway      string `json:"gateway"`
+	RuntimeState string `json:"runtime_state,omitempty"`
 	Interface    string `json:"interface"`
 	LANIP        string `json:"lan_ip"`
 	DHCP         string `json:"dhcp"`
@@ -49,50 +50,61 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		tunStatus = "stopped"
 	}
 	pfStatus := "unloaded"
+	runtimeState := "none"
 	if exists {
-		dhcpRunning := false
-		mihomoRunning := false
-		mihomoManager := mihomo.New(m.cfg, m.paths)
-		if mihomoManager.Running(state.PIDMihomo) {
-			mihomoRunning = true
-			mihomoStatus = "running"
-			version, versionErr, runtimeTUN, tunErr := fetchMihomoRuntime(ctx, m.cfg)
-			if versionErr == nil && version.Version != "" {
-				mihomoStatus = "running (" + version.Version + ")"
-			}
-			if m.cfg.Transparent.TUNEnabled() {
-				switch {
-				case tunErr != nil:
-					tunStatus = "unknown"
-					tunError = tunErr.Error()
-				case runtimeTUN.Enabled:
-					tunStatus = "ready"
-					tunInterface = runtimeTUN.Device
-				default:
-					tunStatus = "failed"
-					tunInterface = runtimeTUN.Device
-					tunError = "mihomo runtime config reports TUN disabled"
+		bootSession, bootErr := runtime.CurrentBootSession()
+		if bootErr != nil {
+			return Status{}, fmt.Errorf("determine current boot session: %w", bootErr)
+		}
+		if !state.BelongsToBoot(bootSession) {
+			gatewayStatus = "degraded"
+			runtimeState = "interrupted"
+		} else {
+			runtimeState = "active"
+			dhcpRunning := false
+			mihomoRunning := false
+			mihomoManager := mihomo.New(m.cfg, m.paths)
+			if trackedProcessRunning(m.gatewayDeps(), state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Running) {
+				mihomoRunning = true
+				mihomoStatus = "running"
+				version, versionErr, runtimeTUN, tunErr := fetchMihomoRuntime(ctx, m.cfg)
+				if versionErr == nil && version.Version != "" {
+					mihomoStatus = "running (" + version.Version + ")"
+				}
+				if m.cfg.Transparent.TUNEnabled() {
+					switch {
+					case tunErr != nil:
+						tunStatus = "unknown"
+						tunError = tunErr.Error()
+					case runtimeTUN.Enabled:
+						tunStatus = "ready"
+						tunInterface = runtimeTUN.Device
+					default:
+						tunStatus = "failed"
+						tunInterface = runtimeTUN.Device
+						tunError = "mihomo runtime config reports TUN disabled"
+					}
 				}
 			}
-		}
-		dhcpManager := dhcp.New(m.cfg, m.paths)
-		if dhcpManager.Running(state.PIDDNSMasq) {
-			dhcpRunning = true
-			dhcpStatus = "running"
-		}
-		// A failed runtime read is an observability warning, not evidence that
-		// the already-running TUN data plane stopped. An explicit disabled
-		// response remains a real degraded condition.
-		tunReady := !m.cfg.Transparent.TUNEnabled() || tunStatus == "ready" || tunStatus == "unknown"
-		if dhcpRunning && mihomoRunning && tunReady {
-			gatewayStatus = "running"
-		} else {
-			gatewayStatus = "degraded"
-		}
-		if state.PFAnchorLoaded {
-			pfStatus = "loaded"
-			if loaded, err := pf.New(m.cfg, m.paths).Loaded(); err == nil && !loaded {
-				pfStatus = "unloaded"
+			dhcpManager := dhcp.New(m.cfg, m.paths)
+			if trackedProcessRunning(m.gatewayDeps(), state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Running) {
+				dhcpRunning = true
+				dhcpStatus = "running"
+			}
+			// A failed runtime read is an observability warning, not evidence that
+			// the already-running TUN data plane stopped. An explicit disabled
+			// response remains a real degraded condition.
+			tunReady := !m.cfg.Transparent.TUNEnabled() || tunStatus == "ready" || tunStatus == "unknown"
+			if dhcpRunning && mihomoRunning && tunReady {
+				gatewayStatus = "running"
+			} else {
+				gatewayStatus = "degraded"
+			}
+			if state.PFAnchorLoaded {
+				pfStatus = "loaded"
+				if loaded, err := pf.New(m.cfg, m.paths).Loaded(); err == nil && !loaded {
+					pfStatus = "unloaded"
+				}
 			}
 		}
 	}
@@ -103,6 +115,7 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 
 	return Status{
 		Gateway:      gatewayStatus,
+		RuntimeState: runtimeState,
 		Interface:    m.cfg.Gateway.Interface,
 		LANIP:        m.cfg.Gateway.LANIP,
 		DHCP:         dhcpStatus,
@@ -161,6 +174,7 @@ func (s Status) Format() string {
 	}
 	lines := []string{
 		fmt.Sprintf("Gateway: %s", s.Gateway),
+		fmt.Sprintf("Runtime state: %s", s.RuntimeState),
 		fmt.Sprintf("Interface: %s", s.Interface),
 		fmt.Sprintf("LAN IP: %s", s.LANIP),
 		fmt.Sprintf("%s: %s", dnsmasqLabel, s.DHCP),

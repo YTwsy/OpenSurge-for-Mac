@@ -26,6 +26,13 @@ startup rollback or failed `restart-mihomo` also restores the snapshot first.
 If restoration fails, runtime state is retained and gateway services are not
 intentionally stopped, avoiding a system proxy that points at a dead listener.
 
+The coordination toggle is an explicit temporary takeover contract. When
+reconciling a runtime interrupted by a system reboot, OpenSurge restores the
+same startup snapshot unconditionally, just as it does for an ordinary stop or
+rollback. HTTP/HTTPS changes made while the takeover was active are therefore
+replaced by that snapshot. A restore failure still fails closed and keeps
+runtime state retryable.
+
 Command-level tests can prove parsing, write scope, ordering, rollback, and
 state retention. Existing TUN labs with the setting disabled prove regression
 coverage only. Product-level resolution of a Network Extension conflict still
