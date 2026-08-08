@@ -85,7 +85,9 @@ boot session 和子进程启动指纹写进 state。Status 发现 state 来自�
 对 interrupted runtime 执行 stop 是专门的 reconciliation，不是普通 stop：它不向旧 PID
 发送信号，不卸载本次开机的 PF，不改写本次开机的 IPv4 forwarding；若系统代理仍然是
 OpenSurge 设置的 loopback endpoint，则恢复启动前快照，若已被用户改成其他代理则
-fail closed。最后移除旧 runtime state 与 applied device-policy snapshot，用户随后可显式
+保留用户设置并继续清理；HTTP 与 HTTPS 分别判断，仍由 OpenSurge 持有的项目照常恢复。
+若无法读取代理设置，或恢复仍由 OpenSurge 持有的项目失败，才 fail closed 并保留 state。
+最后移除旧 runtime state 与 applied device-policy snapshot，用户随后可显式
 重新启动完整网关。旧版本没有 boot session 字段的 state 通过 `started_at` 与本次系统
 启动时间比较迁移；没有任何 boot 归属证据的 state 不能被当作当前运行态。
 

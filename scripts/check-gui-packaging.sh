@@ -99,7 +99,7 @@ line_of() {
 
 recovery_line="$(line_of 'RECOVERY_STAGE=' "$PREINSTALL")"
 gui_stop_line="$(line_of 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL")"
-stop_line="$(line_of '"$ROOT/bin/omg" stop' "$PREINSTALL")"
+stop_line="$(line_of '"$RECOVERY_CLI" stop' "$PREINSTALL")"
 helper_line="$(line_of 'bootout system/com.opensurge.helper' "$PREINSTALL")"
 
 [[ -n "$recovery_line" && -n "$gui_stop_line" && -n "$stop_line" && -n "$helper_line" ]] || {
@@ -113,6 +113,10 @@ helper_line="$(line_of 'bootout system/com.opensurge.helper' "$PREINSTALL")"
 
 grep -Fq 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL" || {
   echo "preinstall must stop installed OpenSurge GUI processes" >&2
+  exit 1
+}
+grep -Fq 'RECOVERY_CLI="$SCRIPT_DIR/omg-recovery"' "$PREINSTALL" || {
+  echo "preinstall must use the current package recovery CLI" >&2
   exit 1
 }
 if grep -Eq 'p(kill|grep).*-x (opensurge-control|OpenSurgeMenuBar)' "$PREINSTALL"; then
@@ -232,8 +236,12 @@ grep -Fq 'if [[ ! -f "$ROOT/config.yaml" ]]' "$POSTINSTALL" || {
   echo "postinstall must preserve an existing config during upgrade" >&2
   exit 1
 }
-grep -Fq -- '--scripts "$ROOT/packaging/pkg-scripts"' "$ROOT/scripts/build-gui-installer.sh" || {
-  echo "pkgbuild must include the packaging scripts directory" >&2
+grep -Fq 'install -m 0755 "$ROOT/bin/omg" "$PKG_SCRIPTS/omg-recovery"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "GUI package must stage its current omg as the preinstall recovery CLI" >&2
+  exit 1
+}
+grep -Fq -- '--scripts "$PKG_SCRIPTS"' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "pkgbuild must include the staged packaging scripts directory" >&2
   exit 1
 }
 grep -Fq 'plutil -replace CFBundleShortVersionString' "$ROOT/scripts/build-menubar-app.sh" || {

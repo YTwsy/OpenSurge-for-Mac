@@ -13,6 +13,7 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -764,6 +765,74 @@ func TestStopClearsPreviousBootRuntimeWithoutTouchingStalePIDsOrKernelState(t *t
 	}
 }
 
+func TestStopClearsPreviousBootRuntimeWhenUserChangedSystemProxy(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &runtime.SystemProxySnapshot{NetworkService: "Wi-Fi", Interface: "en0"}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{
+		LocalSystemProxy: snapshot,
+		BootSessionID:    "previous-boot",
+		StartedAt:        time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	systemProxyManager := &fakeLocalSystemProxy{restoreOwnedErr: macosnetwork.ErrSystemProxyOwnershipChanged}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid:             func() int { return 0 },
+		loadState:           runtime.LoadState,
+		removeState:         runtime.RemoveState,
+		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
+		currentBoot:         func() (runtime.BootSession, error) { return runtime.BootSession{ID: "current-boot"}, nil },
+	}}
+
+	if err := manager.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if systemProxyManager.restoreOwnedCalls != 1 {
+		t.Fatalf("owned restore calls = %d", systemProxyManager.restoreOwnedCalls)
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || exists {
+		t.Fatalf("runtime state exists=%v err=%v", exists, err)
+	}
+}
+
+func TestStopKeepsPreviousBootRuntimeWhenSystemProxyInspectionFails(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := &runtime.SystemProxySnapshot{NetworkService: "Wi-Fi", Interface: "en0"}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{
+		LocalSystemProxy: snapshot,
+		BootSessionID:    "previous-boot",
+		StartedAt:        time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	systemProxyManager := &fakeLocalSystemProxy{restoreOwnedErr: errors.New("networksetup failed")}
+	manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+		geteuid:             func() int { return 0 },
+		loadState:           runtime.LoadState,
+		removeState:         runtime.RemoveState,
+		newLocalSystemProxy: func() localSystemProxyService { return systemProxyManager },
+		currentBoot:         func() (runtime.BootSession, error) { return runtime.BootSession{ID: "current-boot"}, nil },
+	}}
+
+	err := manager.Stop(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "networksetup failed") {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || !exists {
+		t.Fatalf("runtime state exists=%v err=%v", exists, err)
+	}
+}
+
 func TestStopDoesNotSignalCurrentBootPIDWithDifferentFingerprint(t *testing.T) {
 	cfg := config.Default()
 	cfg.Runtime.Dir = t.TempDir()
@@ -1034,6 +1103,7 @@ type fakeLocalSystemProxy struct {
 	prepareErr        error
 	enableErr         error
 	restoreErr        error
+	restoreOwnedErr   error
 	prepareInterface  string
 	preparePort       int
 	enableCalls       int
@@ -1072,7 +1142,7 @@ func (f *fakeLocalSystemProxy) RestoreOwned(_ context.Context, _ runtime.SystemP
 	if f.events != nil {
 		*f.events = append(*f.events, "system-proxy-restore-owned")
 	}
-	return f.restoreErr
+	return f.restoreOwnedErr
 }
 
 func indexOfEvent(events []string, target string) int {

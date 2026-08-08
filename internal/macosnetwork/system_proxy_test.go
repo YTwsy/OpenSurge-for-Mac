@@ -56,6 +56,9 @@ func TestSystemProxyPrepareCapturesDisabledService(t *testing.T) {
 	if snapshot.NetworkService != "Wi-Fi" || snapshot.Interface != "en0" || snapshot.HTTP.Server != "old.proxy" || snapshot.HTTP.Port != 8080 {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
+	if snapshot.AppliedEndpoint == nil || *snapshot.AppliedEndpoint != (runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: 7890}) {
+		t.Fatalf("applied endpoint = %#v", snapshot.AppliedEndpoint)
+	}
 }
 
 func TestSystemProxyPrepareRejectsConflictingProxyState(t *testing.T) {
@@ -199,8 +202,11 @@ func TestSystemProxyRestoreOwnedRestoresOnlyOpenSurgeEndpoint(t *testing.T) {
 		}
 		return "", nil
 	}
-	snapshot := runtime.SystemProxySnapshot{NetworkService: "Wi-Fi"}
-	if err := (SystemProxy{}).RestoreOwned(t.Context(), snapshot, 7890); err != nil {
+	snapshot := runtime.SystemProxySnapshot{
+		NetworkService:  "Wi-Fi",
+		AppliedEndpoint: &runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: 7890},
+	}
+	if err := (SystemProxy{}).RestoreOwned(t.Context(), snapshot, 9090); err != nil {
 		t.Fatal(err)
 	}
 	if currentHTTP.Enabled || currentHTTPS.Enabled {
@@ -211,19 +217,54 @@ func TestSystemProxyRestoreOwnedRestoresOnlyOpenSurgeEndpoint(t *testing.T) {
 func TestSystemProxyRestoreOwnedRejectsUserReplacement(t *testing.T) {
 	original := runCommand
 	t.Cleanup(func() { runCommand = original })
+	currentHTTPS := runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: 7890}
 	runCommand = func(_ context.Context, _ string, args ...string) (string, error) {
 		switch args[0] {
 		case "-getwebproxy":
 			return proxyOutput(runtime.SystemProxySetting{Enabled: true, Server: "user.proxy", Port: 8080}), nil
 		case "-getsecurewebproxy":
-			return proxyOutput(runtime.SystemProxySetting{}), nil
+			return proxyOutput(currentHTTPS), nil
+		case "-setsecurewebproxystate":
+			currentHTTPS.Enabled = args[2] == "on"
+			return "", nil
 		default:
 			return "", fmt.Errorf("unexpected write %q", args[0])
 		}
 	}
-	err := (SystemProxy{}).RestoreOwned(t.Context(), runtime.SystemProxySnapshot{NetworkService: "Wi-Fi"}, 7890)
-	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+	err := (SystemProxy{}).RestoreOwned(t.Context(), runtime.SystemProxySnapshot{
+		NetworkService:  "Wi-Fi",
+		AppliedEndpoint: &runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: 7890},
+	}, 9090)
+	if !errors.Is(err, ErrSystemProxyOwnershipChanged) {
 		t.Fatalf("RestoreOwned() error = %v", err)
+	}
+	if currentHTTPS.Enabled {
+		t.Fatal("still-owned HTTPS proxy was not restored")
+	}
+}
+
+func TestSystemProxyRestoreOwnedSupportsLegacyPortFallback(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	currentHTTP := runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: 7890}
+	runCommand = func(_ context.Context, _ string, args ...string) (string, error) {
+		switch args[0] {
+		case "-getwebproxy":
+			return proxyOutput(currentHTTP), nil
+		case "-getsecurewebproxy":
+			return proxyOutput(runtime.SystemProxySetting{}), nil
+		case "-setwebproxystate":
+			currentHTTP.Enabled = args[2] == "on"
+			return "", nil
+		default:
+			return "", fmt.Errorf("unexpected command %q", args[0])
+		}
+	}
+	if err := (SystemProxy{}).RestoreOwned(t.Context(), runtime.SystemProxySnapshot{NetworkService: "Wi-Fi"}, 7890); err != nil {
+		t.Fatal(err)
+	}
+	if currentHTTP.Enabled {
+		t.Fatal("legacy OpenSurge proxy was not restored")
 	}
 }
 

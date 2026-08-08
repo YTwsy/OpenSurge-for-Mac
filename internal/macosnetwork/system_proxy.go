@@ -12,6 +12,12 @@ import (
 
 const localSystemProxyHost = "127.0.0.1"
 
+// ErrSystemProxyOwnershipChanged means the user replaced at least one enabled
+// HTTP/HTTPS endpoint after OpenSurge saved its runtime snapshot. Callers must
+// preserve that endpoint rather than treating the ownership change as a failed
+// networksetup operation.
+var ErrSystemProxyOwnershipChanged = errors.New("system proxy ownership changed")
+
 // SystemProxy manages only the HTTP and HTTPS proxy settings for the network
 // service associated with the configured upstream interface. SOCKS, PAC,
 // auto-discovery, and bypass domains remain outside its write scope.
@@ -49,6 +55,7 @@ func (SystemProxy) Prepare(ctx context.Context, interfaceName string, port int) 
 		Interface:            interfaceName,
 		HTTP:                 httpSetting,
 		HTTPS:                httpsSetting,
+		AppliedEndpoint:      &runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: port},
 		AutoConfigEnabled:    autoConfigEnabled,
 		AutoDiscoveryEnabled: autoDiscoveryEnabled,
 	}
@@ -101,12 +108,19 @@ func (SystemProxy) Restore(ctx context.Context, snapshot runtime.SystemProxySnap
 
 // RestoreOwned is used when a persisted gateway runtime survived a system
 // reboot. Proxy settings persist across reboots, unlike the child processes
-// and kernel networking state. Restore only when every still-enabled endpoint
-// is the loopback proxy OpenSurge applied; a user change must never be
-// overwritten merely because an old runtime state file still exists.
+// and kernel networking state. Restore each still-owned loopback endpoint and
+// preserve each user-changed endpoint; an old runtime state file alone never
+// authorizes overwriting current user settings.
 func (SystemProxy) RestoreOwned(ctx context.Context, snapshot runtime.SystemProxySnapshot, port int) error {
 	if strings.TrimSpace(snapshot.NetworkService) == "" {
 		return fmt.Errorf("system proxy snapshot is missing its network service")
+	}
+	expected := runtime.SystemProxySetting{Enabled: true, Server: localSystemProxyHost, Port: port}
+	if snapshot.AppliedEndpoint != nil {
+		expected = *snapshot.AppliedEndpoint
+	}
+	if !expected.Enabled || expected.Server == "" || expected.Port < 1 || expected.Port > 65535 || expected.Authenticated {
+		return fmt.Errorf("system proxy snapshot has an invalid applied endpoint")
 	}
 	httpSetting, err := readSystemProxySetting(ctx, "-getwebproxy", snapshot.NetworkService)
 	if err != nil {
@@ -120,12 +134,31 @@ func (SystemProxy) RestoreOwned(ctx context.Context, snapshot runtime.SystemProx
 		return nil
 	}
 	owned := func(setting runtime.SystemProxySetting) bool {
-		return !setting.Enabled || (!setting.Authenticated && setting.Server == localSystemProxyHost && setting.Port == port)
+		return setting.Enabled && !setting.Authenticated && setting.Server == expected.Server && setting.Port == expected.Port
 	}
-	if !owned(httpSetting) || !owned(httpsSetting) {
-		return fmt.Errorf("network service %q proxy settings no longer match the OpenSurge endpoint; refusing to overwrite current user settings", snapshot.NetworkService)
+	ownershipChanged := false
+	var restoreErr error
+	if httpSetting.Enabled {
+		if owned(httpSetting) {
+			restoreErr = errors.Join(restoreErr, restoreSystemProxySetting(ctx, "-setwebproxy", "-setwebproxystate", snapshot.NetworkService, snapshot.HTTP))
+		} else {
+			ownershipChanged = true
+		}
 	}
-	return (SystemProxy{}).Restore(ctx, snapshot)
+	if httpsSetting.Enabled {
+		if owned(httpsSetting) {
+			restoreErr = errors.Join(restoreErr, restoreSystemProxySetting(ctx, "-setsecurewebproxy", "-setsecurewebproxystate", snapshot.NetworkService, snapshot.HTTPS))
+		} else {
+			ownershipChanged = true
+		}
+	}
+	if restoreErr != nil {
+		return restoreErr
+	}
+	if ownershipChanged {
+		return fmt.Errorf("%w for network service %q; preserved current user settings", ErrSystemProxyOwnershipChanged, snapshot.NetworkService)
+	}
+	return nil
 }
 
 func readSystemProxySetting(ctx context.Context, command, service string) (runtime.SystemProxySetting, error) {

@@ -26,12 +26,13 @@ type State struct {
 // SystemProxySnapshot is the macOS network-service proxy state captured before
 // OpenSurge enables its local HTTP/HTTPS compatibility layer.
 type SystemProxySnapshot struct {
-	NetworkService       string             `json:"network_service"`
-	Interface            string             `json:"interface"`
-	HTTP                 SystemProxySetting `json:"http"`
-	HTTPS                SystemProxySetting `json:"https"`
-	AutoConfigEnabled    bool               `json:"auto_config_enabled,omitempty"`
-	AutoDiscoveryEnabled bool               `json:"auto_discovery_enabled,omitempty"`
+	NetworkService       string              `json:"network_service"`
+	Interface            string              `json:"interface"`
+	HTTP                 SystemProxySetting  `json:"http"`
+	HTTPS                SystemProxySetting  `json:"https"`
+	AppliedEndpoint      *SystemProxySetting `json:"applied_endpoint,omitempty"`
+	AutoConfigEnabled    bool                `json:"auto_config_enabled,omitempty"`
+	AutoDiscoveryEnabled bool                `json:"auto_discovery_enabled,omitempty"`
 }
 
 type SystemProxySetting struct {

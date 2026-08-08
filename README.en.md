@@ -190,7 +190,8 @@ start it from the control plane.
 Package upgrades refuse to run while same-LAN DHCP recovery is incomplete.
 Before replacing payload files, preinstall stops the menu bar app so it cannot
 wake the Control Service, then unloads the user Control Service, runs the
-installed `omg stop`, and unloads the root helper. The existing config,
+current-version recovery CLI embedded in the new package against the installed
+config, and unloads the root helper. The existing config,
 imported sources, policy data, and runtime history are kept;
 only a first installation seeds `config.yaml` from the packaged example.
 

@@ -151,7 +151,7 @@ export function App() {
           {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
           {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
           {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
-          {page === 'connectivity' && <ConnectivityPage overview={overview} />}
+          {page === 'connectivity' && <ConnectivityPage overview={overview} onChanged={refresh} />}
           {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
         </PageErrorBoundary>
       </>}
