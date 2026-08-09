@@ -38,6 +38,7 @@ trap 'rm -rf "$work_dir"' EXIT
 expanded="$work_dir/expanded"
 payload="$work_dir/payload"
 pkgutil --expand "$PKG" "$expanded"
+scripts="$expanded/Scripts"
 
 package_info="$expanded/PackageInfo"
 grep -Fq "version=\"$EXPECTED_VERSION\"" "$package_info" || {
@@ -59,8 +60,13 @@ grep -Fq "CFBundleShortVersionString=\"$EXPECTED_VERSION\"" "$package_info" || {
 
 mkdir -p "$payload"
 (cd "$payload" && gzip -dc "$expanded/Payload" | cpio -idm --quiet)
+[[ -d "$scripts" ]] || {
+  echo "installer package scripts are missing" >&2
+  exit 1
+}
 
 executables=(
+  "$scripts/omg-recovery"
   "$payload/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar"
   "$payload/Library/Application Support/OpenSurge/bin/omg"
   "$payload/Library/Application Support/OpenSurge/bin/mihomo"

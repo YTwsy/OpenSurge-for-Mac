@@ -22,6 +22,11 @@ forwarding 都 ready 后才启用 HTTP/HTTPS 代理。Stop 必须先恢复系统
 mihomo；start rollback 和 `restart-mihomo` 失败也遵循同一顺序。恢复失败时保留 runtime
 state，并避免主动停止仍可承接代理连接的服务，让后续 stop 可以重试恢复。
 
+这个开关代表明确的临时接管契约。系统重启后的 reconciliation 与普通 Stop、rollback
+使用同一份启动前快照，无条件恢复 HTTP/HTTPS；接管期间手动修改的 HTTP/HTTPS 设置也会
+被该快照替换。恢复失败时继续 fail closed 并保留 state，避免把未完成的恢复误记为清理
+成功。
+
 ## 证明边界
 
 单元测试可以证明 `networksetup` 解析、窄写入范围、生命周期顺序、回滚和 state 保留。

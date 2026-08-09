@@ -284,8 +284,9 @@ pkg 升级必须在覆盖 payload 前执行 recovery 门禁。进程清理必须
 其“Control Service 不可用时自动 bootstrap”的恢复路径，再循环 bootout 精确的用户级
 Control Service 并重新扫描已安装可执行文件；等待期间新出现的受信 PID 也必须再次清理，
 避免一次迟到的 `launchctl bootstrap` 令首次安装失败。完成 GUI/Control 清理后，才执行
-旧版 `omg stop` 和 root helper bootout。recovery 非 `idle`/`complete`/
-`complete_static` 或旧版网关停止失败时直接拒绝升级；`complete_static` 是明确保留 Mac
+新安装包脚本目录内携带的当前版本 recovery CLI 和 root helper bootout；不得依赖即将被
+替换版本的 `omg stop` 处理跨重启 runtime。recovery 非 `idle`/`complete`/
+`complete_static` 或网关安全清理失败时直接拒绝升级；`complete_static` 是明确保留 Mac
 静态 IPv4 的终态，不应被误判为恢复未完成。postinstall 不得覆盖已有 `config.yaml`，导入源、
 设备策略和 runtime 记录也必须跨升级保留。
 

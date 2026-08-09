@@ -70,7 +70,6 @@ type localSystemProxyService interface {
 	Prepare(context.Context, string, int) (runtime.SystemProxySnapshot, error)
 	Enable(context.Context, runtime.SystemProxySnapshot, int) error
 	Restore(context.Context, runtime.SystemProxySnapshot) error
-	RestoreOwned(context.Context, runtime.SystemProxySnapshot, int) error
 }
 
 type ipv6PacketService interface {
@@ -759,8 +758,8 @@ func (m Manager) cleanupIPv6(ctx context.Context, deps gatewayDeps, state runtim
 
 func (m Manager) cleanupInterruptedRuntime(ctx context.Context, deps gatewayDeps, state runtime.State) error {
 	if state.LocalSystemProxy != nil {
-		if err := m.localSystemProxy(deps).RestoreOwned(ctx, *state.LocalSystemProxy, m.cfg.Mihomo.MixedPort); err != nil {
-			return fmt.Errorf("restore OpenSurge-owned local system proxy after reboot: %w", err)
+		if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
+			return fmt.Errorf("restore local system proxy snapshot after reboot: %w", err)
 		}
 	}
 	cleanupErr := errors.Join(

@@ -8,10 +8,27 @@
 
 OpenSurge 不会仅凭重启前留下的 runtime state 自动重新接管网络。Mac 重启会终止
 dnsmasq、mihomo，并重置当次运行的 PF/forwarding；原来的进程 PID 也可能已经被其他
-进程复用。请在**网络设置**点击停止当前模式：OpenSurge 会识别这是上一次开机留下的
-中断状态，不会向旧 PID 发送信号，也不会改动本次开机的 PF/forwarding。清理完成后可
-重新启动完整网关。此时不要使用“仅重启 Mihomo”，因为 DHCP/DNS、PF 与 forwarding
-并未随它一起恢复。
+进程复用。请在总览或**网络设置**点击**安全清理旧状态**：OpenSurge 会识别这是上一
+次开机留下的中断状态，不会向旧 PID 发送信号，也不会改动本次开机的
+PF/forwarding。清理完成后可按页面提示恢复网络或重新启动完整网关。系统重启后的中断
+状态不会显示“恢复 Mihomo”，因为 DHCP/DNS、PF 与 forwarding 并未随它一起恢复。
+
+如果上一次运行启用了 Mac 本机系统代理协同，清理会把 HTTP/HTTPS 恢复为 OpenSurge
+启动前保存的状态。这个开关是明确的临时接管：接管期间手动修改的 HTTP/HTTPS 设置也会
+被启动前快照替换。若 macOS 无法恢复设置，清理会失败关闭并保留 state，以便排查后
+重试。
+
+## Mac 睡眠唤醒后为什么提示 Mihomo 连接被拒绝？
+
+如果诊断显示访问 `127.0.0.1:9090` 为 `connection refused`，说明本机 Mihomo controller
+当时没有监听，不是普通的代理节点超时。若**连通性**页显示“恢复 Mihomo”，表示本次开机
+的网关 runtime 仍有效，但 Mihomo 已停止或本地 controller 已拒绝连接；点击后只会验证
+applied 配置、归档旧日志并重启 Mihomo，以重建 TUN 和出站 socket，不会停止 DHCP/DNS、
+卸载 PF 或修改 IPv4 forwarding。
+
+健康运行时不会显示这个入口；若页面显示“重启后待清理”，应先安全清理旧状态并重新启动
+完整网关。若睡眠唤醒后反复发生，请在重启 Mihomo 前从**诊断**页保存当前状态和 Mihomo
+日志，用于区分进程崩溃、被系统终止或其他唤醒路径问题。
 
 ## 下游设备接管正常，但 Mac 本机无法访问网络怎么办？
 

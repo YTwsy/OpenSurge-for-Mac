@@ -219,6 +219,72 @@ describe('OpenSurge app shell', () => {
     expect(api.gateway).not.toHaveBeenCalled()
   })
 
+  it('offers one safe cleanup action for a runtime interrupted by reboot', async () => {
+    const interrupted = {
+      ...overviewFor('same_lan', 'degraded'),
+      warnings: ['gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again'],
+      status: {
+        ...overview.status,
+        gateway: 'degraded',
+        runtime_state: 'interrupted' as const,
+        dhcp_enabled: false,
+        mihomo: 'stopped',
+      },
+    }
+    vi.mocked(api.overview).mockResolvedValueOnce(interrupted).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'cleanup-interrupted', kind: 'stop', state: 'running' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    expect(await screen.findByText('重启后待清理')).toBeTruthy()
+    expect(screen.queryByText(/gateway runtime was interrupted by a system reboot/)).toBeNull()
+    const dashboardCleanup = screen.getByRole('button', { name: '安全清理旧状态' })
+    expect(dashboardCleanup.classList.contains('primary')).toBe(true)
+    expect(dashboardCleanup.classList.contains('danger')).toBe(false)
+    await userEvent.click(dashboardCleanup)
+
+    expect(await screen.findByRole('heading', { name: '安全清理旧状态' })).toBeTruthy()
+    expect(window.location.hash).toBe('#gateway-control')
+    const cleanup = screen.getByRole('button', { name: '安全清理旧状态' })
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }))
+    expect(document.activeElement).toBe(cleanup)
+    await userEvent.click(cleanup)
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('不会向旧 PID 发送信号'))
+    expect(api.gateway).toHaveBeenCalledWith('stop')
+    expect(waitForOperation).toHaveBeenCalledWith('cleanup-interrupted')
+    expect(await screen.findByText('旧状态已安全清理。现在可以重新启动旁路由模式。')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '启动旁路由模式' })).toBeTruthy()
+  })
+
+  it('bypasses client acceptance when a DHCP takeover runtime only needs reboot cleanup', async () => {
+    window.history.replaceState({}, '', '/network')
+    const interrupted = {
+      ...overviewFor('same_wifi_dhcp', 'degraded'),
+      status: { ...overview.status, gateway: 'degraded', runtime_state: 'interrupted' as const, mihomo: 'stopped' },
+      recovery: { ...overview.recovery, stage: 'gateway_active', required: true },
+    }
+    const stopped = {
+      ...overviewFor('same_wifi_dhcp', 'stopped'),
+      recovery: { ...overview.recovery, stage: 'gateway_stopped_waiting_router_dhcp', required: true },
+    }
+    vi.mocked(api.overview).mockResolvedValueOnce(interrupted).mockResolvedValue(stopped)
+    vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'cleanup-takeover', kind: 'stop', state: 'running' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    const cleanup = await screen.findByRole('button', { name: '安全清理旧状态' })
+    expect(screen.queryByRole('button', { name: '验证客户端 DHCP、DNS 与 TUN 证据' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '跳过客户端验收' })).toBeNull()
+    await userEvent.click(cleanup)
+
+    expect(api.gateway).toHaveBeenCalledWith('stop')
+    expect(waitForOperation).toHaveBeenCalledWith('cleanup-takeover')
+    expect(await screen.findByText('旧状态已安全清理。请继续完成路由器 DHCP 与 Mac 网络恢复。')).toBeTruthy()
+  })
+
   it('scrolls to the recovery action when already on Network Settings', async () => {
     window.history.replaceState({}, '', '/network')
     vi.mocked(api.overview).mockResolvedValue({

@@ -12,6 +12,7 @@ RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v$VERSION}"
 APP_ARCH="${OPENSURGE_APP_ARCH:-$(uname -m)}"
 ARTIFACTS="$ROOT/artifacts/gui-installer"
 PAYLOAD="$ARTIFACTS/payload"
+PKG_SCRIPTS="$ARTIFACTS/pkg-scripts"
 APP_ROOT="$PAYLOAD/Library/Application Support/OpenSurge"
 LICENSE_ROOT="$APP_ROOT/share/licenses"
 GO_BIN="${GO_BIN:-$(command -v go || true)}"
@@ -51,7 +52,9 @@ GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/
 "$ROOT/scripts/build-menubar-app.sh"
 
 rm -rf "$ARTIFACTS"
-mkdir -p "$APP_ROOT/bin" "$APP_ROOT/share" "$LICENSE_ROOT" "$PAYLOAD/Library/PrivilegedHelperTools" "$PAYLOAD/Applications"
+mkdir -p "$APP_ROOT/bin" "$APP_ROOT/share" "$LICENSE_ROOT" "$PAYLOAD/Library/PrivilegedHelperTools" "$PAYLOAD/Applications" "$PKG_SCRIPTS"
+ditto --norsrc --noextattr "$ROOT/packaging/pkg-scripts" "$PKG_SCRIPTS"
+install -m 0755 "$ROOT/bin/omg" "$PKG_SCRIPTS/omg-recovery"
 install -m 0755 "$MIHOMO" "$APP_ROOT/bin/mihomo"
 install -m 0755 "$DNSMASQ" "$APP_ROOT/bin/dnsmasq"
 install -m 0755 "$ROOT/bin/omg" "$APP_ROOT/bin/omg"
@@ -74,6 +77,7 @@ xattr -cr "$PAYLOAD"
 
 for executable in \
   "$PAYLOAD/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar" \
+  "$PKG_SCRIPTS/omg-recovery" \
   "$APP_ROOT/bin/omg" \
   "$APP_ROOT/bin/opensurge-install-config" \
   "$APP_ROOT/bin/opensurge-network" \
@@ -89,14 +93,14 @@ done
 
 if [[ -n "${OPENSURGE_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Library/PrivilegedHelperTools/com.opensurge.helper"
-  codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$APP_ROOT/bin/omg" "$APP_ROOT/bin/opensurge-install-config" "$APP_ROOT/bin/opensurge-network" "$APP_ROOT/share/opensurge-control"
+  codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PKG_SCRIPTS/omg-recovery" "$APP_ROOT/bin/omg" "$APP_ROOT/bin/opensurge-install-config" "$APP_ROOT/bin/opensurge-network" "$APP_ROOT/share/opensurge-control"
   codesign --force --deep --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Applications/OpenSurge.app"
 fi
 
 PKG_ARGS=(
   --root "$PAYLOAD"
   --component-plist "$ROOT/packaging/gui-components.plist"
-  --scripts "$ROOT/packaging/pkg-scripts"
+  --scripts "$PKG_SCRIPTS"
   --identifier com.opensurge.installer
   --version "$VERSION"
   --install-location /

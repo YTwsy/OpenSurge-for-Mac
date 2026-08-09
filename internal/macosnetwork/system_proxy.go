@@ -99,35 +99,6 @@ func (SystemProxy) Restore(ctx context.Context, snapshot runtime.SystemProxySnap
 	return restoreErr
 }
 
-// RestoreOwned is used when a persisted gateway runtime survived a system
-// reboot. Proxy settings persist across reboots, unlike the child processes
-// and kernel networking state. Restore only when every still-enabled endpoint
-// is the loopback proxy OpenSurge applied; a user change must never be
-// overwritten merely because an old runtime state file still exists.
-func (SystemProxy) RestoreOwned(ctx context.Context, snapshot runtime.SystemProxySnapshot, port int) error {
-	if strings.TrimSpace(snapshot.NetworkService) == "" {
-		return fmt.Errorf("system proxy snapshot is missing its network service")
-	}
-	httpSetting, err := readSystemProxySetting(ctx, "-getwebproxy", snapshot.NetworkService)
-	if err != nil {
-		return err
-	}
-	httpsSetting, err := readSystemProxySetting(ctx, "-getsecurewebproxy", snapshot.NetworkService)
-	if err != nil {
-		return err
-	}
-	if !httpSetting.Enabled && !httpsSetting.Enabled {
-		return nil
-	}
-	owned := func(setting runtime.SystemProxySetting) bool {
-		return !setting.Enabled || (!setting.Authenticated && setting.Server == localSystemProxyHost && setting.Port == port)
-	}
-	if !owned(httpSetting) || !owned(httpsSetting) {
-		return fmt.Errorf("network service %q proxy settings no longer match the OpenSurge endpoint; refusing to overwrite current user settings", snapshot.NetworkService)
-	}
-	return (SystemProxy{}).Restore(ctx, snapshot)
-}
-
 func readSystemProxySetting(ctx context.Context, command, service string) (runtime.SystemProxySetting, error) {
 	output, err := runCommand(ctx, "/usr/sbin/networksetup", command, service)
 	if err != nil {
