@@ -767,11 +767,15 @@ describe('OpenSurge app shell', () => {
     expect(within(document.getElementById('network-mode-detail')!).getByText('通过独立 AP、SSID 或 VLAN 接入 OpenSurge')).toBeTruthy()
     expect(screen.getByLabelText('下游 LAN 接口')).toBeTruthy()
     expect(screen.getByLabelText('上游 DNS')).toBeTruthy()
-    const ipv6DNS = screen.getByRole('checkbox', { name: '允许 AAAA / IPv6 DNS 查询' })
+    const ipv6Card = screen.getByRole('article', { name: '下游 IPv6' })
+    const ipv6DNS = within(ipv6Card).getByRole('checkbox', { name: '解析 IPv6 域名' })
     await userEvent.click(ipv6DNS)
     expect(ipv6DNS.closest('label')?.classList.contains('is-on')).toBe(true)
-    await userEvent.selectOptions(screen.getByLabelText('下游 IPv6 接管'), 'always')
-    expect((screen.getByLabelText('下游 IPv6 接管') as HTMLSelectElement).value).toBe('always')
+    const always = within(ipv6Card).getByRole('button', { name: /总是开启/ })
+    await userEvent.click(always)
+    expect(always.getAttribute('aria-pressed')).toBe('true')
+    expect(within(ipv6Card).getByText('OpenSurge ULA')).toBeTruthy()
+    expect(within(ipv6Card).getByText('经此 Mac')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'mihomo DNS（推荐）' }))
     expect((screen.getByLabelText('上游 DNS') as HTMLInputElement).value).toBe('127.0.0.1#1053')
     await userEvent.click(screen.getByRole('button', { name: '公共 DNS（调试）' }))
@@ -780,6 +784,89 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByText(/保存不会立即改动网络/)).toBeTruthy()
     expect(screen.getByText('有未保存的修改')).toBeTruthy()
     expect(screen.getByRole('button', { name: '保存网络配置' })).toBeTruthy()
+  })
+
+  it('saves the downstream IPv6 card without changing IPv4 settings', async () => {
+    const current = {
+      ...configFor('isolated_lan'),
+      gateway: { ...configFor('isolated_lan').gateway, interface: 'en7', upstream_interface: 'en0' },
+    }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    const ipv6Card = await screen.findByRole('article', { name: '下游 IPv6' })
+    await userEvent.click(within(ipv6Card).getByRole('button', { name: /自动.*推荐/ }))
+    await userEvent.click(within(ipv6Card).getByRole('checkbox', { name: '解析 IPv6 域名' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveConfig).mock.calls[0][0]
+    expect(saved.transparent.tun_ipv6).toBe('auto')
+    expect(saved.dns.ipv6).toBe(true)
+    expect(saved.gateway).toEqual(current.gateway)
+    expect(saved.dhcp).toEqual(current.dhcp)
+    expect(saved.dns.listen).toBe(current.dns.listen)
+    expect(saved.dns.upstream).toBe(current.dns.upstream)
+  })
+
+  it('safely closes both IPv6 settings when switching back to a same-LAN topology', async () => {
+    const base = configFor('isolated_lan')
+    const current = {
+      ...base,
+      gateway: { ...base.gateway, interface: 'en7', upstream_interface: 'en0' },
+      dns: { ...base.dns, ipv6: true },
+      transparent: { ...base.transparent, tun_ipv6: 'always' as const },
+    }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /旁路由模式/ }))
+    const ipv6Card = screen.getByRole('article', { name: '下游 IPv6' })
+    expect(within(ipv6Card).getByText('OpenSurge IPv6 在当前拓扑中保持关闭')).toBeTruthy()
+    expect(within(ipv6Card).queryByRole('checkbox', { name: '解析 IPv6 域名' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveConfig).mock.calls[0][0]
+    expect(saved.transparent.tun_ipv6).toBe('off')
+    expect(saved.dns.ipv6).toBe(false)
+    expect(saved.gateway.interface).toBe(current.gateway.interface)
+    expect(saved.gateway.lan_ip).toBe(current.gateway.lan_ip)
+    expect(saved.dhcp.range_start).toBe(current.dhcp.range_start)
+  })
+
+  it('shows the active IPv6 provider path in user-facing runtime terms', async () => {
+    const base = configFor('isolated_lan')
+    vi.mocked(api.config).mockResolvedValue({
+      ...base,
+      gateway: { ...base.gateway, interface: 'en7', upstream_interface: 'en0' },
+      dns: { ...base.dns, ipv6: true },
+      transparent: { ...base.transparent, tun_ipv6: 'auto' },
+    })
+    vi.mocked(api.overview).mockResolvedValue({
+      ...overviewFor('isolated_lan', 'running'),
+      status: {
+        ...overviewFor('isolated_lan', 'running').status,
+        dns_ipv6: true,
+        tun_ipv6_requested: 'auto',
+        ipv6_packet: 'ready',
+        native_ipv6_available: true,
+        ipv6_reason: 'native_ipv6_available',
+      },
+    })
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    const ipv6Card = await screen.findByRole('article', { name: '下游 IPv6' })
+    expect(within(ipv6Card).getAllByText('正在接管').length).toBeGreaterThan(0)
+    expect(within(ipv6Card).getByText('已检测到上游原生 IPv6')).toBeTruthy()
+    expect(within(ipv6Card).getByText('已接管')).toBeTruthy()
   })
 
   it('imports an HTTPS source as a draft', async () => {

@@ -33,6 +33,13 @@
 这两个开关可以独立设置。常规全屋 IPv6 应同时开启；只开启接管时，IPv6 字面地址
 仍可进入路径，但普通域名不会从 OpenSurge DNS 获得 AAAA。
 
+Web GUI 将这两个设置组合在“下游 IPv6”卡片中，但不改变配置语义。卡片只在独立
+下游 LAN 且 TUN 开启时提供 `off / auto / always` 与 AAAA 控件；旁路由和同网段 DHCP
+模式只显示安全关闭原因，不展示一个看似可用的禁用开关。用户切回同 LAN 拓扑或关闭
+TUN 时，界面同时把 `transparent.tun_ipv6` 与 `dns.ipv6` 设为关闭，IPv4 配置保持原样。
+卡片应优先解释设备会获得的地址、默认路由和 DNS，再显示运行时探测细节，不使用
+`RA Override` 作为用户概念。
+
 ## 支持边界
 
 - 当前只允许 `gateway.mode: "isolated_lan"` 和

@@ -44,7 +44,6 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const gatewayActive = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
   const gatewayStopped = overview?.status.gateway === 'stopped'
   const gatewayInterrupted = overview?.status.runtime_state === 'interrupted'
-  const runtimeIPv6Requested = overview?.status.tun_ipv6_requested ?? 'off'
   const dhcpRuntimeDisabled = config?.gateway.mode === 'same_lan'
   const configurationEditable = !busy && gatewayStopped && !recoveryBlocksConfig
   const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
@@ -95,6 +94,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       ...currentConfig,
       gateway: { ...currentConfig.gateway, mode },
       dhcp: { ...currentConfig.dhcp, enabled: mode !== 'same_lan' },
+      dns: { ...currentConfig.dns, ipv6: sameLAN ? false : currentConfig.dns.ipv6 },
       transparent: {
         ...currentConfig.transparent,
         mode: sameLAN ? 'tun' : currentConfig.transparent.mode,
@@ -334,34 +334,20 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
             <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
             <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
           </ConfigField>
-          <ConfigField label="IPv6 DNS 查询" setting="dns.ipv6" hint="决定 OpenSurge DNS 是否回答 AAAA 查询。关闭时普通域名不会得到 IPv6 地址；开启后 mihomo 可以生成 fake IPv6。它只控制 DNS，不会单独建立下游 IPv6 路由。">
-            <ConfigSwitch
-              label="允许 AAAA / IPv6 DNS 查询"
-              checked={config.dns.ipv6}
-              onChange={ipv6 => setConfig({ ...config, dns: { ...config.dns, ipv6 } })}
-            />
-          </ConfigField>
           <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
             <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
               const mode = event.target.value as 'off' | 'tun'
-              setConfig({ ...config, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
+              setConfig({ ...config, dns: { ...config.dns, ipv6: mode === 'tun' && config.dns.ipv6 }, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
             }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
           </ConfigField>
-          <ConfigField label="下游 IPv6 接管" setting="transparent.tun_ipv6" hint="让 OpenSurge 在独立下游 LAN 发布自己的 IPv6 网关与 DNS，并由用户态数据面捕获 TCP、UDP 和 QUIC。自动：仅在上游有原生 IPv6 时启用；总是启用：即使上游没有原生 IPv6，也强制建立下游接管路径。">
-            <select aria-label="下游 IPv6 接管" value={config.transparent.tun_ipv6} disabled={config.gateway.mode !== 'isolated_lan' || config.transparent.mode !== 'tun'} onChange={event => setConfig({ ...config, transparent: { ...config.transparent, tun_ipv6: event.target.value as 'off' | 'auto' | 'always' } })}>
-              <option value="off">关闭</option>
-              <option value="auto">自动（检测上游 IPv6）</option>
-              <option value="always">总是启用</option>
-            </select>
-            {config.gateway.mode !== 'isolated_lan' && <small>当前仅支持独立下游 LAN。旁路由和同网段 DHCP 模式无法阻止主路由器 RA 形成绕过路径。</small>}
-          </ConfigField>
-          {config.dns.ipv6 && config.transparent.tun_ipv6 === 'off' && <div className="notice warn">IPv6 DNS 查询已开启，但下游 IPv6 接管关闭。客户端可能得到 AAAA 结果，却没有 OpenSurge 提供的完整 IPv6 透明路径。</div>}
-          {config.transparent.tun_ipv6 !== 'off' && !config.dns.ipv6 && <div className="notice">下游 IPv6 接管已开启，但 IPv6 DNS 查询关闭。IPv6 字面地址仍可进入接管路径，普通域名不会从 OpenSurge DNS 获得 AAAA 结果。</div>}
-          {gatewayActive && overview && <div className="network-config-guide">
-            <strong>IPv6 运行状态</strong>
-            <p>DNS 查询：{overview.status.dns_ipv6 ? '开启' : '关闭'} · 接管请求：{ipv6ModeLabel(runtimeIPv6Requested)} · 数据面：{ipv6PacketLabel(overview.status.ipv6_packet)}</p>
-            {runtimeIPv6Requested !== 'off' && <small>上游原生 IPv6：{ipv6NativeLabel(overview.status.native_ipv6_available, overview.status.ipv6_reason)}{overview.status.ipv6_reason ? ` · ${ipv6ReasonLabel(overview.status.ipv6_reason)}` : ''}</small>}
-          </div>}
+          <DownstreamIPv6Card
+            config={config}
+            editable={configurationEditable}
+            gatewayActive={gatewayActive}
+            runtimeStatus={overview?.status ?? null}
+            onDNSChange={ipv6 => setConfig({ ...config, dns: { ...config.dns, ipv6 } })}
+            onTakeoverChange={tun_ipv6 => setConfig({ ...config, transparent: { ...config.transparent, tun_ipv6 } })}
+          />
           <ConfigField label="Mac 本机系统代理协同" setting="local_system_proxy.enabled" hint="启动时把上游网络服务的 macOS Web Proxy（HTTP）和 Secure Web Proxy（HTTPS）指向 127.0.0.1:mihomo.mixed_port，停止、回滚或 mihomo 重启失败时恢复原状态。可用于兼容 SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 干扰仅 TUN 本机 DNS 的问题；只覆盖遵循系统代理的 Mac 应用，不替代 TUN，也不影响下游设备。已有系统代理、PAC 或自动发现时会拒绝启动，避免覆盖用户配置。">
             <ConfigSwitch
               label="启用 macOS HTTP/HTTPS 系统代理"
@@ -458,6 +444,87 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   </>
 }
 
+function DownstreamIPv6Card({ config, editable, gatewayActive, runtimeStatus, onDNSChange, onTakeoverChange }: {
+  config: ControlConfig
+  editable: boolean
+  gatewayActive: boolean
+  runtimeStatus: Overview['status'] | null
+  onDNSChange: (enabled: boolean) => void
+  onTakeoverChange: (mode: ControlConfig['transparent']['tun_ipv6']) => void
+}) {
+  const isolated = config.gateway.mode === 'isolated_lan'
+  const tunReady = config.transparent.mode === 'tun'
+  const available = isolated && tunReady
+  const enabled = available && config.transparent.tun_ipv6 !== 'off'
+  const interfacesSeparated = config.gateway.interface.trim() !== '' && config.gateway.upstream_interface.trim() !== '' && config.gateway.interface !== config.gateway.upstream_interface
+  const status = ipv6CardStatus(available, gatewayActive, runtimeStatus, config.transparent.tun_ipv6)
+
+  return <article className={`downstream-ipv6-card ${available ? 'is-available' : 'is-safe-closed'}`} aria-labelledby="downstream-ipv6-title">
+    <header className="ipv6-card-header">
+      <div className="ipv6-card-identity"><span aria-hidden="true">6</span><div><small>IPV6 GATEWAY</small><h3 id="downstream-ipv6-title">下游 IPv6</h3><p>由 OpenSurge 为独立下游网络完整提供 IPv6 地址、默认路由和 DNS，并接管 TCP、UDP 与 QUIC。</p></div></div>
+      <span className={`pill ${status.tone}`.trim()}>{status.label}</span>
+    </header>
+
+    {!available ? <div className="ipv6-safe-state" role="status">
+      <span aria-hidden="true">✓</span>
+      <div><strong>{isolated ? '先启用 mihomo TUN' : 'OpenSurge IPv6 在当前拓扑中保持关闭'}</strong><p>{isolated ? '透明代理关闭时不会建立下游 IPv6 数据面。先在上方选择 mihomo TUN，再配置此卡片。' : '现有局域网中的主路由器仍可能发布 IPv6 默认路由。OpenSurge 不在这里开启第二条路由，避免设备绕过 Mac。切换到“独立下游 LAN”后可用。'}</p></div>
+    </div> : <>
+      <div className="ipv6-card-step">
+        <div className="ipv6-step-copy"><span>1</span><div><small>接管策略</small><strong>何时为下游启用 IPv6</strong><p>推荐自动检测；需要依赖代理节点承载 IPv6 时再使用“总是开启”。</p></div></div>
+        <fieldset className="ipv6-mode-options" disabled={!editable} aria-label="下游 IPv6 接管策略">
+          <legend className="sr-only">下游 IPv6 接管策略</legend>
+          <IPv6ModeOption mode="off" current={config.transparent.tun_ipv6} title="关闭" description="不发布下游 IPv6" onSelect={onTakeoverChange} />
+          <IPv6ModeOption mode="auto" current={config.transparent.tun_ipv6} title="自动" badge="推荐" description="上游原生 IPv6 可用时启用" onSelect={onTakeoverChange} />
+          <IPv6ModeOption mode="always" current={config.transparent.tun_ipv6} title="总是开启" description="无论上游状态都建立接管路径" onSelect={onTakeoverChange} />
+        </fieldset>
+      </div>
+
+      <div className="ipv6-card-step ipv6-dns-step">
+        <div className="ipv6-step-copy"><span>2</span><div><small>域名解析</small><strong>解析 IPv6 域名</strong><p>开启后 OpenSurge DNS 回答 AAAA 并可生成 fake IPv6；它不会单独建立下游路由。</p></div></div>
+        <ConfigSwitch label="允许 AAAA 查询" accessibleLabel="解析 IPv6 域名" checked={config.dns.ipv6} disabled={!editable} onChange={onDNSChange} />
+      </div>
+
+      <div className={`ipv6-result ${enabled ? 'is-enabled' : ''}`}>
+        <div className="ipv6-result-heading"><div><small>设备最终获得</small><strong>{enabled ? '一条由 OpenSurge 完整提供的 IPv6 路径' : '不使用 OpenSurge 下游 IPv6'}</strong></div><span>{enabled ? ipv6ModeLabel(config.transparent.tun_ipv6) : '已关闭'}</span></div>
+        <dl>
+          <div><dt>IPv6 地址</dt><dd>{enabled ? 'OpenSurge ULA' : '不发布'}</dd></div>
+          <div><dt>默认路由</dt><dd>{enabled ? '经此 Mac' : '不发布'}</dd></div>
+          <div><dt>DNS</dt><dd>{enabled ? (config.dns.ipv6 ? 'OpenSurge · AAAA 开启' : 'OpenSurge · 仅 IPv4') : '不发布'}</dd></div>
+        </dl>
+        {enabled && <p>下游设备不需要运营商 Prefix Delegation；公网出口由 Mac 的原生 IPv6 或所选代理节点完成。</p>}
+      </div>
+
+      {enabled && <div className="ipv6-readiness">
+        <strong>启动前确认</strong>
+        <ul>
+          <li className={interfacesSeparated ? 'ready' : 'warn'}><span>{interfacesSeparated ? '✓' : '!'}</span><div><b>上游与下游使用不同接口</b><small>{interfacesSeparated ? `${config.gateway.upstream_interface} → ${config.gateway.interface}` : '当前接口相同，请先修正接口配置'}</small></div></li>
+          <li className="ready"><span>✓</span><div><b>mihomo TUN 已开启</b><small>IPv4 原有透明代理路径保持不变</small></div></li>
+          <li><span>•</span><div><b>下游没有其他 IPv6 路由器</b><small>请确认 AP、VLAN 或独立 LAN 不会发布竞争默认路由</small></div></li>
+        </ul>
+      </div>}
+
+      {enabled && config.dns.ipv6 === false && <div className="notice">接管路径已开启，但普通域名不会获得 AAAA；IPv6 字面地址仍可进入 OpenSurge。</div>}
+      {config.transparent.tun_ipv6 === 'always' && <div className="notice warn">“总是开启”只保证下游接管路径存在。若上游没有原生 IPv6，DIRECT IPv6 不可用，UDP/QUIC 还需要代理节点支持相应流量。</div>}
+      {gatewayActive && runtimeStatus && <div className="ipv6-runtime" role="status">
+        <div><small>当前运行</small><strong>{status.label}</strong>{runtimeStatus.ipv6_reason && <p>{ipv6ReasonLabel(runtimeStatus.ipv6_reason)}</p>}</div>
+        <dl><div><dt>AAAA</dt><dd>{runtimeStatus.dns_ipv6 ? '开启' : '关闭'}</dd></div><div><dt>接管请求</dt><dd>{ipv6ModeLabel(runtimeStatus.tun_ipv6_requested)}</dd></div><div><dt>数据面</dt><dd>{ipv6PacketLabel(runtimeStatus.ipv6_packet)}</dd></div><div><dt>上游原生 IPv6</dt><dd>{ipv6NativeLabel(runtimeStatus.native_ipv6_available, runtimeStatus.ipv6_reason)}</dd></div></dl>
+      </div>}
+    </>}
+  </article>
+}
+
+function IPv6ModeOption({ mode, current, title, badge, description, onSelect }: {
+  mode: ControlConfig['transparent']['tun_ipv6']
+  current: ControlConfig['transparent']['tun_ipv6']
+  title: string
+  badge?: string
+  description: string
+  onSelect: (mode: ControlConfig['transparent']['tun_ipv6']) => void
+}) {
+  const active = current === mode
+  return <button type="button" className={active ? 'active' : ''} aria-pressed={active} onClick={() => onSelect(mode)}><span><strong>{title}</strong>{badge && <em>{badge}</em>}</span><small>{description}</small></button>
+}
+
 function PolicyMigrationDialog({ migration, busy, onInspect, onCancel, onConfirm }: { migration: PolicyMigration; busy: boolean; onInspect: () => void; onCancel: () => void; onConfirm: () => void }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onCancel() }
@@ -474,6 +541,18 @@ function PolicyMigrationDialog({ migration, busy, onInspect, onCancel, onConfirm
 
 function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
   return mode === 'same_lan' ? '旁路由模式' : '独立下游 LAN'
+}
+
+function ipv6CardStatus(available: boolean, gatewayActive: boolean, runtimeStatus: Overview['status'] | null, desired: ControlConfig['transparent']['tun_ipv6']) {
+  if (!available) return { label: '安全关闭', tone: '' }
+  if (!gatewayActive || !runtimeStatus) return desired === 'off'
+    ? { label: '已关闭', tone: '' }
+    : { label: `${ipv6ModeLabel(desired)} · 待启动`, tone: 'ok' }
+  if (runtimeStatus.ipv6_packet === 'ready') return { label: '正在接管', tone: 'ok' }
+  if (runtimeStatus.ipv6_packet === 'failed') return { label: '运行异常', tone: 'bad' }
+  if (runtimeStatus.ipv6_reason === 'native_ipv6_unavailable') return { label: '等待上游 IPv6', tone: '' }
+  if (runtimeStatus.tun_ipv6_requested === 'off' || runtimeStatus.ipv6_packet === 'disabled') return { label: '已关闭', tone: '' }
+  return { label: '尚未建立', tone: '' }
 }
 
 function ipv6ModeLabel(mode: ControlConfig['transparent']['tun_ipv6']) {

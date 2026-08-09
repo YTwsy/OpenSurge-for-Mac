@@ -244,6 +244,12 @@ DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
 Web GUI 的侧边栏提供浅色 / 深色主题切换，选择保存在浏览器本地存储中，不进入 Control
 API 配置或 root-owned gateway 配置。
 
+网络页把 `dns.ipv6` 与 `transparent.tun_ipv6` 集中在“下游 IPv6”卡片中。只有独立
+下游 LAN + TUN 能配置完整提供者模式；旁路由与局域网 DHCP 接管显示安全关闭解释，
+避免让用户误以为同一二层网络已经阻止主路由 IPv6 绕过。卡片先展示下游设备获得的
+IPv6 地址、经 Mac 的默认路由与 OpenSurge DNS，再展示 `auto` 上游探测或运行时数据面
+状态。切换到同 LAN 拓扑或关闭 TUN 只安全关闭这两个 IPv6 设置，不修改 IPv4 字段。
+
 启动后推荐先输入验收客户端 IPv4，后端要求活跃租约、
 DHCPACK、该源 IP 的 DNS 查询和 mihomo TUN 日志，同时操作者确认客户端网关/DNS 指向
 Mac 且无显式代理；若快照存在 IPv6 default，还必须确认绕过警告。紧急 stop API 始终
