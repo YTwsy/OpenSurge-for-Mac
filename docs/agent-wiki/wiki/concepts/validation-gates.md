@@ -121,6 +121,30 @@ QUIC 项只证明 UDP carrier 和策略命中，不等于完整 HTTP/3 握手。
 Unix packet injection 可以证明 gVisor 与设备身份，但不能替代 macOS BPF、真实 RA 和
 停止撤销的 host-network 证据。
 
+真实订阅和公网 IPv6 出口使用独立的补充门槛：
+
+```sh
+sudo -v && \
+  OMG_LAB_IPV6_REAL_PROFILE=/absolute/path/to/profile.yaml \
+  make lab-test-ipv6-imported-egress
+```
+
+它不能取代 `lab-test-ipv6-userspace` 的受控 origin/UDP fixture。补充门槛把订阅复制到
+mode `0600` 的 Lab runtime，使用 `tun_ipv6: auto` 并要求
+`native_ipv6_available: true` / `ipv6_reason: native_ipv6_available`；先证明一台 VM 的
+MAC/InUser 域名 `REJECT`，再让它完成 IPv6-only HTTPS、IPv6 UDP DNS 回包和 QUIC
+形态 UDP 的 `DIRECT` 命中，并要求 Mac 基线和 VM HTTPS 回显分别属于当前上游接口的
+GUA；不同 socket 允许选择不同的 IPv6 隐私地址。之后选择一个不泄露名称、且已通过
+SOCKS5 UDP ASSOCIATE 公网 IPv6 DNS 回包的真实叶子节点，让另一台 VM 完成
+fake-AAAA HTTPS、真实 IPv6 字面地址 HTTPS、IPv6 UDP DNS 回包和 QUIC 形态 UDP 的
+`GLOBAL` 命中。VM 的 ULA 是真实下游 IPv6 包，但不是运营商委派的 GUA；`DIRECT` 是
+Mihomo/gVisor 从 Mac 发起新 socket，不是 ULA 原样转发。
+
+这个门槛只能输出脱敏 artifact。订阅副本、生成的 Mihomo 配置、原始 Mihomo 日志、
+selector/API 输出和 cache 都不得进入 artifact；保留文件必须再接受订阅 server、凭据和
+较长节点名 marker 扫描。只有确认网关停止成功后才删除 runtime secret；停止失败时保留
+mode `0600` 的恢复材料并把门槛判为失败。
+
 ## 真实设备 smoke
 
 虚拟 LAN lab 通过后，真实设备 smoke 的推荐入口是：

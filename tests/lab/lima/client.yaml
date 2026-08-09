@@ -311,6 +311,66 @@ __PROXY_EXPORTS__
         printf 'CLIENT_IPV6_QUIC_DATAGRAM_SENT interface=%s fake=%s target=%s:%s bytes=1200\n' "$iface" "$fake" "$target" "$port"
       }
 
+      ipv6_public_https_test() {
+        local iface route source target test_url
+        iface="$(lab_interface)"
+        target="${3:-2606:4700:4700::1111}"
+        test_url="${4:-https://[2606:4700:4700::1111]/cdn-cgi/trace}"
+        route="$(ip -6 route get "$target")"
+        grep -q "dev $iface" <<<"$route"
+        source="$(ip -6 -o addr show dev "$iface" scope global | awk '/fdfe:dcba:9878:/ { split($4, value, "/"); print value[1]; exit }')"
+        [[ "$source" == fdfe:dcba:9878:* ]]
+        curl -6 --noproxy '*' --interface "$source" --insecure \
+          --fail --silent --show-error --max-time 25 "$test_url" >/dev/null
+        printf 'CLIENT_IPV6_PUBLIC_HTTPS_OK interface=%s source=%s target=%s\n' "$iface" "$source" "$target"
+      }
+
+      ipv6_native_https_exit_test() {
+        local dns exit_address fake host iface port route source test_url
+        iface="$(lab_interface)"
+        dns="$(ipv6_dns_server "$iface")%$iface"
+        test_url="${3:-https://api6.ipify.org/}"
+        host="${test_url#*://}"
+        host="${host%%/*}"
+        port=443
+        fake="$(dig +time=5 +tries=1 +short "@$dns" "$host" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
+        [[ -n "$fake" ]]
+        route="$(ip -6 route get "$fake")"
+        grep -q "dev $iface" <<<"$route"
+        source="$(ip -6 -o addr show dev "$iface" scope global | awk '/fdfe:dcba:9878:/ { split($4, value, "/"); print value[1]; exit }')"
+        [[ "$source" == fdfe:dcba:9878:* ]]
+        exit_address="$(curl -6 --noproxy '*' --interface "$source" \
+          --resolve "$host:$port:[$fake]" --fail --silent --show-error --max-time 25 "$test_url" | tr -d '[:space:]')"
+        python3 -c 'import ipaddress,sys; address=ipaddress.ip_address(sys.argv[1]); assert address.version == 6' "$exit_address"
+        printf '%s\n' "$exit_address"
+      }
+
+      ipv6_public_udp_test() {
+        local iface query response route source target
+        iface="$(lab_interface)"
+        target="${3:-2606:4700:4700::1111}"
+        query="${4:-cloudflare.com}"
+        route="$(ip -6 route get "$target")"
+        grep -q "dev $iface" <<<"$route"
+        source="$(ip -6 -o addr show dev "$iface" scope global | awk '/fdfe:dcba:9878:/ { split($4, value, "/"); print value[1]; exit }')"
+        [[ "$source" == fdfe:dcba:9878:* ]]
+        response="$(dig -6 -b "$source" +time=12 +tries=1 @"$target" "$query" AAAA)"
+        grep -Eq '[[:space:]]IN[[:space:]]+AAAA[[:space:]]' <<<"$response"
+        printf 'CLIENT_IPV6_PUBLIC_UDP_OK interface=%s source=%s target-port=53 answers=yes\n' "$iface" "$source"
+      }
+
+      ipv6_public_quic_probe() {
+        local iface route source target
+        iface="$(lab_interface)"
+        target="${3:-2606:4700:4700::1111}"
+        route="$(ip -6 route get "$target")"
+        grep -q "dev $iface" <<<"$route"
+        source="$(ip -6 -o addr show dev "$iface" scope global | awk '/fdfe:dcba:9878:/ { split($4, value, "/"); print value[1]; exit }')"
+        [[ "$source" == fdfe:dcba:9878:* ]]
+        python3 -c 'import os,socket,sys; source=sys.argv[1]; target=sys.argv[2]; dcid=os.urandom(8); scid=os.urandom(8); payload=bytes([0xc0])+bytes.fromhex("00000001")+bytes([len(dcid)])+dcid+bytes([len(scid)])+scid+bytes([0,0x40,0x01,0])+os.urandom(1173); s=socket.socket(socket.AF_INET6,socket.SOCK_DGRAM); s.bind((source,0)); s.sendto(payload[:1200],(target,443)); s.close()' "$source" "$target"
+        printf 'CLIENT_IPV6_PUBLIC_QUIC_DATAGRAM_SENT interface=%s source=%s target-port=443 bytes=1200\n' "$iface" "$source"
+      }
+
       test_path() {
         local host iface port proxy_url real_ip route scheme test_url
         iface="$(lab_interface)"
@@ -380,5 +440,9 @@ __PROXY_EXPORTS__
         ipv6-transparent) ipv6_transparent_test "$@" ;;
         ipv6-udp) ipv6_udp_test "$@" ;;
         ipv6-quic) ipv6_quic_probe "$@" ;;
-        *) echo "usage: omg-lab-client <renew|renew6|restore-control|status|test|transparent|udp|ipv6-transparent|ipv6-udp|ipv6-quic> [gateway] [target] [port]" >&2; exit 2 ;;
+        ipv6-public-https) ipv6_public_https_test "$@" ;;
+        ipv6-native-https-exit) ipv6_native_https_exit_test "$@" ;;
+        ipv6-public-udp) ipv6_public_udp_test "$@" ;;
+        ipv6-public-quic) ipv6_public_quic_probe "$@" ;;
+        *) echo "usage: omg-lab-client <renew|renew6|restore-control|status|test|transparent|udp|ipv6-transparent|ipv6-udp|ipv6-quic|ipv6-public-https|ipv6-native-https-exit|ipv6-public-udp|ipv6-public-quic> [gateway] [target] [port]" >&2; exit 2 ;;
       esac

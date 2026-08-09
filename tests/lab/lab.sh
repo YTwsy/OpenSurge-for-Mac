@@ -33,6 +33,17 @@ IPV6_TCP_TEST_URL="http://$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT/ipv6-tcp"
 IPV6_UDP_TEST_HOST="ipv6-udp.opensurge.test"
 IPV6_UDP_ANSWER_HOST="udp-answer.opensurge.test"
 IPV6_QUIC_TEST_HOST="ipv6-quic.opensurge.test"
+IPV6_REAL_PROFILE_SOURCE="${OMG_LAB_IPV6_REAL_PROFILE:-}"
+IPV6_REAL_PROFILE="$STATE_DIR/mihomo-profile.ipv6-real.yaml"
+IPV6_REAL_TCP_HOST="${OMG_LAB_IPV6_REAL_TCP_HOST:-api64.ipify.org}"
+IPV6_REAL_TCP_URL="${OMG_LAB_IPV6_REAL_TCP_URL:-https://api64.ipify.org/}"
+IPV6_REAL_TARGET="${OMG_LAB_IPV6_REAL_TARGET:-2606:4700:4700::1111}"
+IPV6_REAL_TARGET_URL="${OMG_LAB_IPV6_REAL_TARGET_URL:-https://[2606:4700:4700::1111]/cdn-cgi/trace}"
+IPV6_REAL_UDP_TARGET="${OMG_LAB_IPV6_REAL_UDP_TARGET:-2001:4860:4860::8888}"
+IPV6_REAL_UDP_QUERY="${OMG_LAB_IPV6_REAL_UDP_QUERY:-cloudflare.com}"
+IPV6_NATIVE_DIRECT_HOST="${OMG_LAB_IPV6_NATIVE_DIRECT_HOST:-api6.ipify.org}"
+IPV6_NATIVE_DIRECT_URL="${OMG_LAB_IPV6_NATIVE_DIRECT_URL:-https://api6.ipify.org/}"
+IPV6_NATIVE_DIRECT_TARGET="${OMG_LAB_IPV6_NATIVE_DIRECT_TARGET:-2001:4860:4860::8888}"
 LAN_IP=192.168.50.1
 CLIENTS="${OMG_LAB_CLIENTS:-omg-lab-client-1 omg-lab-client-2}"
 TEST_URL="${OMG_LAB_TEST_URL:-https://example.com/}"
@@ -42,6 +53,11 @@ TUN_EGRESS_PROFILE=0
 LOCAL_ROUTING_TEST="${OMG_LAB_LOCAL_ROUTING_TEST:-false}"
 EGRESS_PROBE_PID=""
 IPV6_DNS_FIXTURE_PID=""
+LAST_LAB_ARTIFACT_DIR=""
+REAL_PROXY_TYPE=""
+REAL_PROXY_INDEX=""
+REAL_PROXY_EXIT_FAMILY=""
+SUDO_KEEPALIVE_PID=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -72,6 +88,23 @@ require_cached_sudo() {
   fi
   echo "gateway test requires a cached sudo credential; run 'sudo -v' in a terminal, then retry" >&2
   exit 1
+}
+
+start_sudo_keepalive() {
+  [[ -z "$SUDO_KEEPALIVE_PID" ]] || return 0
+  (
+    while sudo -n -v 2>/dev/null; do
+      sleep 15
+    done
+  ) &
+  SUDO_KEEPALIVE_PID=$!
+}
+
+stop_sudo_keepalive() {
+  [[ -n "$SUDO_KEEPALIVE_PID" ]] || return 0
+  /bin/kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  SUDO_KEEPALIVE_PID=""
 }
 
 ensure_lab_state_writable() {
@@ -218,11 +251,15 @@ write_config() {
   case "$mode" in
     off) ;;
     tun) dns_upstream_line='  upstream: "127.0.0.1#1053"' ;;
-    ipv6)
+    ipv6|ipv6-auto)
       transparent_mode=tun
       dns_upstream_line='  upstream: "127.0.0.1#1053"'
       dns_ipv6=true
-      tun_ipv6=always
+      if [[ "$mode" == "ipv6-auto" ]]; then
+        tun_ipv6=auto
+      else
+        tun_ipv6=always
+      fi
       ipv6_packet_binary="$IPV6_PACKET_BINARY"
       mihomo_bin="$PATCHED_MIHOMO_BINARY"
       ;;
@@ -378,6 +415,65 @@ collect_artifacts() {
       >"$artifact_dir/$client.txt" 2>&1 || true
   done
   echo "Lab artifacts: $artifact_dir"
+}
+
+collect_ipv6_real_artifacts() {
+  local artifact_dir client evidence
+  artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)-ipv6-real"
+  mkdir -p "$artifact_dir"
+  for evidence in ipv6-real-status.json ipv6-real-egress.txt dnsmasq.conf; do
+    cp "$STATE_DIR/$evidence" "$artifact_dir/$evidence" 2>/dev/null || true
+  done
+  "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
+  /sbin/ifconfig "$(lab_interface)" >"$artifact_dir/interface.txt" 2>&1 || true
+  for client in $CLIENTS; do
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status \
+      >"$artifact_dir/$client.txt" 2>&1 || true
+  done
+  LAST_LAB_ARTIFACT_DIR="$artifact_dir"
+  echo "Secret-safe IPv6 real-egress artifacts: $artifact_dir"
+}
+
+assert_ipv6_real_artifacts_safe() {
+  local artifact_dir=$1 profile=$2
+  case "$artifact_dir" in
+    "$ROOT"/artifacts/lab/*-ipv6-real) ;;
+    *) echo "refusing to inspect unexpected artifact directory: $artifact_dir" >&2; return 1 ;;
+  esac
+  for forbidden in config.yaml mihomo.yaml device-policy-profile.yaml cache.db mihomo.log; do
+    if find "$artifact_dir" -name "$forbidden" -print -quit | grep -q .; then
+      echo "secret-bearing file was copied into IPv6 real-egress artifacts: $forbidden" >&2
+      return 1
+    fi
+  done
+  /usr/bin/ruby -ryaml -rdate -e '
+    profile_path, artifact_dir = ARGV
+    profile = YAML.safe_load(File.read(profile_path), permitted_classes: [Date, Time], aliases: true)
+    proxies = profile.is_a?(Hash) ? Array(profile["proxies"]) : []
+    markers = proxies.flat_map do |proxy|
+      next [] unless proxy.is_a?(Hash)
+      values = %w[server password uuid token].map { |key| proxy[key].to_s unless proxy[key].to_s.empty? }.compact
+      name = proxy["name"].to_s
+      values << name if name.bytesize >= 12
+      values
+    end.uniq.select { |value| value.bytesize >= 4 }
+    Dir.glob(File.join(artifact_dir, "**", "*"), File::FNM_DOTMATCH).each do |path|
+      next unless File.file?(path)
+      body = File.binread(path)
+      if markers.any? { |marker| body.include?(marker.b) }
+        warn "subscription marker found in secret-safe artifact #{File.basename(path)}"
+        exit 1
+      end
+    end
+  ' "$profile" "$artifact_dir"
+}
+
+cleanup_ipv6_real_secrets() {
+  rm -f "$IPV6_REAL_PROFILE" \
+    "$STATE_DIR/mihomo.yaml" \
+    "$STATE_DIR/cache.db" \
+    "$STATE_DIR/cache.db-journal" \
+    "$STATE_DIR/logs/mihomo.log"
 }
 
 url_host() {
@@ -721,6 +817,296 @@ dns:
 rules:
   - MATCH,DIRECT
 EOF
+}
+
+write_ipv6_real_profile_and_policy() {
+  local client_one client_two mac_one mac_two profile_source
+  [[ -n "$IPV6_REAL_PROFILE_SOURCE" ]] || {
+    echo "OMG_LAB_IPV6_REAL_PROFILE is required for the real-subscription IPv6 gate" >&2
+    exit 1
+  }
+  profile_source="$(resolve_lab_profile "$IPV6_REAL_PROFILE_SOURCE")"
+  [[ -f "$profile_source" ]] || { echo "real IPv6 mihomo profile not found" >&2; exit 1; }
+  [[ "$IPV6_REAL_TCP_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "invalid real IPv6 TCP host" >&2; exit 1; }
+  [[ "$IPV6_NATIVE_DIRECT_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "invalid native IPv6 DIRECT host" >&2; exit 1; }
+  /usr/bin/ruby -ripaddr -e 'IPAddr.new(ARGV.fetch(0)).ipv6? or exit 1' "$IPV6_REAL_TARGET" || {
+    echo "invalid real IPv6 target" >&2
+    exit 1
+  }
+  /usr/bin/ruby -ripaddr -e 'IPAddr.new(ARGV.fetch(0)).ipv6? or exit 1' "$IPV6_REAL_UDP_TARGET" || {
+    echo "invalid real IPv6 UDP target" >&2
+    exit 1
+  }
+  /usr/bin/ruby -ripaddr -e 'IPAddr.new(ARGV.fetch(0)).ipv6? or exit 1' "$IPV6_NATIVE_DIRECT_TARGET" || {
+    echo "invalid native IPv6 DIRECT target" >&2
+    exit 1
+  }
+
+  set -- $CLIENTS
+  [[ "$#" -eq 2 ]] || { echo "IPv6 lab requires exactly two clients" >&2; exit 1; }
+  client_one="$1"
+  client_two="$2"
+  mac_one="$(client_mac "$client_one")"
+  mac_two="$(client_mac "$client_two")"
+
+  install -m 0600 "$profile_source" "$IPV6_REAL_PROFILE"
+  LAB_MIHOMO_PROFILE="$IPV6_REAL_PROFILE"
+  LAB_DEVICE_POLICY_FILE="$STATE_DIR/device-policy.ipv6-real.json"
+  cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
+{
+  "profiles": [
+    {
+      "id":"blocked",
+      "default_policies":["DIRECT"],
+      "rules":[
+        {"id":"block-real-ipv6","match":{"domains":["$IPV6_REAL_TCP_HOST"]},"action":"REJECT"},
+        {"id":"native-direct-https","match":{"domains":["$IPV6_NATIVE_DIRECT_HOST"]},"action":"DIRECT"},
+        {"id":"native-direct-udp","match":{"protocols":["udp"],"ports":["53","443"]},"action":"DIRECT"}
+      ]
+    },
+    {"id":"inherit","default_policies":["DIRECT"]}
+  ],
+  "devices": [
+    {"id":"$client_one","mac":"$mac_one","ipv4":"192.168.50.101","profile":"blocked","egress_mode":"inherit_global"},
+    {"id":"$client_two","mac":"$mac_two","ipv4":"192.168.50.102","profile":"inherit","egress_mode":"inherit_global"}
+  ]
+}
+EOF
+}
+
+native_ipv6_exit_address() {
+  local iface
+  iface="$(upstream_interface)"
+  env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+    -u http_proxy -u https_proxy -u all_proxy \
+    /usr/bin/curl -6 --noproxy '*' --interface "$iface" \
+      --connect-timeout 8 --max-time 20 --fail --silent --show-error \
+      "$IPV6_NATIVE_DIRECT_URL"
+}
+
+assert_native_ipv6_exit_on_upstream() {
+  local exit_address=$1 iface
+  /usr/bin/ruby -ripaddr -e 'IPAddr.new(ARGV.fetch(0)).ipv6? or exit 1' "$exit_address" || {
+    echo "native IPv6 DIRECT probe did not return an IPv6 address" >&2
+    return 1
+  }
+  iface="$(upstream_interface)"
+  /sbin/ifconfig "$iface" | awk -v expected="$exit_address" '
+    $1 == "inet6" {
+      address = $2
+      sub(/%.*/, "", address)
+      if (address == expected) found = 1
+    }
+    END { exit(found ? 0 : 1) }
+  ' || {
+    echo "native IPv6 DIRECT exit was not assigned to the selected Mac upstream interface" >&2
+    return 1
+  }
+}
+
+profile_proxy_records() {
+  /usr/bin/ruby -ryaml -rdate -rbase64 -e '
+    data = YAML.safe_load(File.read(ARGV.fetch(0)), permitted_classes: [Date, Time], aliases: true)
+    Array(data["proxies"]).each do |proxy|
+      next unless proxy.is_a?(Hash) && proxy["name"] && proxy["type"]
+      name = proxy["name"].to_s.encode("UTF-8")
+      type = proxy["type"].to_s.encode("UTF-8")
+      STDOUT.write(type, "\t", Base64.strict_encode64(name), "\n")
+    end
+  ' "$IPV6_REAL_PROFILE"
+}
+
+socks5_ipv6_udp_dns_probe() {
+  /usr/bin/python3 -c '
+import ipaddress
+import os
+import socket
+import struct
+import sys
+
+proxy_host, proxy_port, target, query_name = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+
+def recv_exact(sock, size):
+    body = b""
+    while len(body) < size:
+        chunk = sock.recv(size - len(body))
+        if not chunk:
+            raise RuntimeError("SOCKS5 control connection closed")
+        body += chunk
+    return body
+
+control = socket.create_connection((proxy_host, proxy_port), timeout=8)
+control.settimeout(8)
+control.sendall(b"\x05\x01\x00")
+if recv_exact(control, 2) != b"\x05\x00":
+    raise RuntimeError("SOCKS5 proxy rejected no-auth negotiation")
+control.sendall(b"\x05\x03\x00\x01\x00\x00\x00\x00\x00\x00")
+version, reply, _, atyp = recv_exact(control, 4)
+if version != 5 or reply != 0:
+    raise RuntimeError("SOCKS5 UDP ASSOCIATE failed")
+if atyp == 1:
+    relay_host = socket.inet_ntop(socket.AF_INET, recv_exact(control, 4))
+elif atyp == 4:
+    relay_host = socket.inet_ntop(socket.AF_INET6, recv_exact(control, 16))
+elif atyp == 3:
+    relay_host = recv_exact(control, recv_exact(control, 1)[0]).decode("ascii")
+else:
+    raise RuntimeError("SOCKS5 UDP relay returned an unknown address type")
+relay_port = struct.unpack("!H", recv_exact(control, 2))[0]
+try:
+    if ipaddress.ip_address(relay_host).is_unspecified:
+        relay_host = proxy_host
+except ValueError:
+    pass
+
+transaction = os.urandom(2)
+qname = b"".join(bytes([len(label)]) + label.encode("ascii") for label in query_name.rstrip(".").split(".")) + b"\x00"
+dns_query = transaction + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + qname + b"\x00\x1c\x00\x01"
+udp_family = socket.AF_INET6 if ":" in relay_host else socket.AF_INET
+udp = socket.socket(udp_family, socket.SOCK_DGRAM)
+udp.settimeout(12)
+request = b"\x00\x00\x00\x04" + socket.inet_pton(socket.AF_INET6, target) + struct.pack("!H", 53) + dns_query
+udp.sendto(request, (relay_host, relay_port))
+response, _ = udp.recvfrom(65535)
+if response[:3] != b"\x00\x00\x00":
+    raise RuntimeError("invalid SOCKS5 UDP response header")
+response_atyp = response[3]
+if response_atyp == 1:
+    offset = 10
+elif response_atyp == 4:
+    offset = 22
+elif response_atyp == 3:
+    offset = 7 + response[4]
+else:
+    raise RuntimeError("unknown SOCKS5 UDP response address type")
+dns_response = response[offset:]
+if len(dns_response) < 12 or dns_response[:2] != transaction or not (dns_response[2] & 0x80):
+    raise RuntimeError("invalid DNS response through SOCKS5 UDP")
+if struct.unpack("!H", dns_response[6:8])[0] < 1:
+    raise RuntimeError("SOCKS5 UDP DNS response had no answers")
+udp.close()
+control.close()
+' 127.0.0.1 17890 "$IPV6_REAL_UDP_TARGET" "$IPV6_REAL_UDP_QUERY"
+}
+
+select_working_real_proxy() {
+  local direct_exit=$1 api proxy_url attempted proxy_type encoded_name proxy_name payload proxy_exit exit_family literal_code
+  api="http://127.0.0.1:19090"
+  proxy_url="http://127.0.0.1:17890"
+  /usr/bin/curl --fail --silent --show-error --request PATCH \
+    --header 'Content-Type: application/json' \
+    --data '{"mode":"global","log-level":"info"}' "$api/configs" >/dev/null
+
+  attempted=0
+  while IFS=$'\t' read -r proxy_type encoded_name; do
+    [[ "$attempted" -lt 8 ]] || break
+    attempted=$((attempted + 1))
+    proxy_name="$(printf '%s' "$encoded_name" | /usr/bin/base64 -D)"
+    payload="$(/usr/bin/ruby -rjson -e 'name=ARGV.fetch(0).dup.force_encoding("UTF-8"); print JSON.generate({name: name})' "$proxy_name")"
+    if ! /usr/bin/curl --fail --silent --request PUT \
+      --header 'Content-Type: application/json' --data "$payload" \
+      "$api/proxies/GLOBAL" >/dev/null 2>&1; then
+      echo "real subscription candidate $attempted ($proxy_type) could not be selected"
+      continue
+    fi
+    proxy_exit="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+      -u http_proxy -u https_proxy -u all_proxy \
+      /usr/bin/curl --proxy "$proxy_url" --connect-timeout 8 --max-time 20 \
+        --fail --silent "$IPV6_REAL_TCP_URL" 2>/dev/null || true)"
+    if [[ "$proxy_exit" == *:* ]]; then
+      exit_family=ipv6
+    elif [[ "$proxy_exit" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      exit_family=ipv4
+    else
+      echo "real subscription candidate $attempted ($proxy_type) failed HTTPS"
+      continue
+    fi
+    literal_code="$(env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+      -u http_proxy -u https_proxy -u all_proxy \
+      /usr/bin/curl --proxy "$proxy_url" --connect-timeout 8 --max-time 20 \
+        --silent --insecure --output /dev/null --write-out '%{http_code}' \
+        "$IPV6_REAL_TARGET_URL" 2>/dev/null || true)"
+    if [[ "$proxy_exit" == "$direct_exit" ]] || [[ ! "$literal_code" =~ ^[1-5][0-9][0-9]$ ]]; then
+      echo "real subscription candidate $attempted ($proxy_type) did not prove a distinct IPv6-capable egress"
+      continue
+    fi
+    if ! socks5_ipv6_udp_dns_probe >/dev/null 2>&1; then
+      echo "real subscription candidate $attempted ($proxy_type) did not provide IPv6 UDP DNS egress"
+      continue
+    fi
+    REAL_PROXY_TYPE="$proxy_type"
+    REAL_PROXY_INDEX="$attempted"
+    REAL_PROXY_EXIT_FAMILY="$exit_family"
+    echo "real subscription candidate $attempted ($proxy_type) passed HTTPS, IPv6-literal, and UDP egress"
+    return 0
+  done < <(profile_proxy_records)
+  echo "no tested real subscription candidate provided distinct HTTPS, IPv6-literal, and UDP egress" >&2
+  return 1
+}
+
+wait_for_ipv6_global_log() {
+  local network=$1 source_ip=$2 target=$3 port=$4 i log_file
+  log_file="$STATE_DIR/logs/mihomo.log"
+  [[ -n "$REAL_PROXY_INDEX" ]] || {
+    echo "real subscription proxy selection is unavailable for log verification" >&2
+    return 1
+  }
+  for i in {1..40}; do
+    if [[ -f "$log_file" ]] &&
+      grep -F -- "[$network]" "$log_file" | grep -F -- "$source_ip" |
+        grep -F -- "$target" | grep -F -- ":$port" | grep -Fq -- 'using GLOBAL'; then
+      echo "IPv6 $network real subscription egress observed for device source on port $port"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "mihomo did not record the selected real subscription egress for IPv6 $network on port $port" >&2
+  print_sanitized_ipv6_log_context "$source_ip"
+  return 1
+}
+
+wait_for_ipv6_direct_log() {
+  local network=$1 source_ip=$2 target=$3 port=$4 i log_file
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..40}; do
+    if [[ -f "$log_file" ]] &&
+      grep -F -- "[$network]" "$log_file" | grep -F -- "$source_ip" |
+        grep -F -- "$target" | grep -F -- ":$port" | grep -Fq -- 'using DIRECT'; then
+      echo "IPv6 $network native DIRECT egress observed for device source on port $port"
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "mihomo did not record native IPv6 $network DIRECT egress on port $port" >&2
+  print_sanitized_ipv6_log_context "$source_ip"
+  return 1
+}
+
+print_sanitized_ipv6_log_context() {
+  local source_ip=$1 log_file
+  log_file="$STATE_DIR/logs/mihomo.log"
+  [[ -f "$log_file" && -f "$IPV6_REAL_PROFILE" ]] || return 0
+  /usr/bin/ruby -ryaml -rdate -e '
+    profile_path, log_path, source = ARGV
+    profile = YAML.safe_load(File.read(profile_path), permitted_classes: [Date, Time], aliases: true)
+    markers = []
+    Array(profile["proxies"]).each do |proxy|
+      next unless proxy.is_a?(Hash)
+      proxy.each_value { |value| markers << value.to_s if value.is_a?(String) && value.bytesize >= 4 }
+    end
+    Array(profile["proxy-groups"]).each do |group|
+      next unless group.is_a?(Hash)
+      name = group["name"].to_s
+      markers << name if name.bytesize >= 4
+    end
+    lines = File.binread(log_path).lines.select { |line| line.include?(source.b) }.last(12)
+    exit 0 if lines.empty?
+    warn "sanitized Mihomo context for the device source follows:"
+    markers.uniq.sort_by { |marker| -marker.bytesize }.each do |marker|
+      lines.each { |line| line.gsub!(marker.b, "[subscription-redacted]") }
+    end
+    lines.each { |line| STDERR.write(line) }
+  ' "$IPV6_REAL_PROFILE" "$log_file" "$source_ip"
 }
 
 assert_client_ipv6_withdrawn() {
@@ -1201,6 +1587,196 @@ run_ipv6_userspace_test() {
   echo "virtual LAN userspace IPv6 TCP, UDP/QUIC carrier, device identity, and rollback test passed"
 }
 
+run_ipv6_imported_egress_test() {
+  local client_one client_two source_one source_two gateway_started broker_pid iface rdnss
+  local direct_native_exit vm_direct_exit cleanup_complete status
+  require_installed_lab
+  require_command curl
+  require_command python3
+  require_command ruby
+  [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
+  require_cached_sudo
+  ensure_lab_state_writable
+  set -- $CLIENTS
+  [[ "$#" -eq 2 ]] || { echo "IPv6 lab requires exactly two clients" >&2; exit 1; }
+  client_one="$1"
+  client_two="$2"
+  iface="$(lab_interface)"
+
+  gateway_started=0
+  cleanup_complete=1
+  cleanup_test() {
+    status=$?
+    trap - EXIT INT TERM
+    restore_client_control_dns
+    if [[ "$gateway_started" == 1 ]]; then
+      if sudo -n "$BINARY" stop --config "$CONFIG"; then
+        gateway_started=0
+      else
+        cleanup_complete=0
+        status=1
+      fi
+    fi
+    stop_sudo_keepalive
+    collect_ipv6_real_artifacts || true
+    if [[ -n "$LAST_LAB_ARTIFACT_DIR" && -f "$IPV6_REAL_PROFILE" ]]; then
+      assert_ipv6_real_artifacts_safe "$LAST_LAB_ARTIFACT_DIR" "$IPV6_REAL_PROFILE" || status=1
+    fi
+    if [[ "$cleanup_complete" == 1 ]]; then
+      cleanup_ipv6_real_secrets
+    else
+      echo "gateway cleanup was incomplete; the private runtime profile was retained for recovery" >&2
+    fi
+    exit "$status"
+  }
+  trap cleanup_test EXIT INT TERM
+  start_sudo_keepalive
+
+  rm -f "$STATE_DIR/cache.db" "$STATE_DIR/cache.db-journal" \
+    "$STATE_DIR/ipv6-packet.sock" "$STATE_DIR/ipv6-packet.sock.broker" "$STATE_DIR/ipv6-packet.ready" \
+    "$STATE_DIR/ipv6-real-status.json" "$STATE_DIR/ipv6-real-egress.txt"
+  rm -f "$STATE_DIR/logs/ipv6-packets-bridge102.log" "$STATE_DIR/logs/ipv6-packets-utun123.log"
+  write_ipv6_real_profile_and_policy
+  build_ipv6_lab_binaries
+  write_config ipv6-auto
+  mkdir -p "$ROOT/bin"
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+    go build -o "$BINARY" ./cmd/omg
+
+  direct_native_exit="$(native_ipv6_exit_address)"
+  [[ "$direct_native_exit" == *:* ]] || {
+    echo "the selected upstream interface did not provide a direct native IPv6 HTTPS exit" >&2
+    exit 1
+  }
+  assert_native_ipv6_exit_on_upstream "$direct_native_exit"
+  echo "native IPv6 upstream HTTPS preflight passed"
+
+  sudo -n "$BINARY" start --config "$CONFIG"
+  gateway_started=1
+  for client in $CLIENTS; do
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew6 "$LAN_IP"
+  done
+
+  rdnss="$(/sbin/ifconfig "$iface" | awk '/inet6 fe80:/ { split($2, value, "%"); print value[1]; exit }')"
+  [[ "$rdnss" == fe80:* ]] || { echo "lab interface $iface has no link-local RDNSS address" >&2; exit 1; }
+  grep -F 'option: 23 dns-server' "$STATE_DIR/logs/dnsmasq.log" | grep -Fq "$rdnss" || {
+    echo "dnsmasq did not advertise its link-local RDNSS address" >&2
+    exit 1
+  }
+  assert_client_ipv4 "$client_one" "192.168.50.101"
+  assert_client_ipv4 "$client_two" "192.168.50.102"
+  source_one="$(client_ipv6 "$client_one")"
+  source_two="$(client_ipv6 "$client_two")"
+  [[ "$source_one" == fdfe:dcba:9878:* && "$source_two" == fdfe:dcba:9878:* && "$source_one" != "$source_two" ]] || {
+    echo "clients did not receive distinct OpenSurge IPv6 addresses" >&2
+    exit 1
+  }
+
+  "$BINARY" status --config "$CONFIG" --format json >"$STATE_DIR/ipv6-real-status.json"
+  grep -Fq '"dns_ipv6": true' "$STATE_DIR/ipv6-real-status.json"
+  grep -Fq '"tun_ipv6_requested": "auto"' "$STATE_DIR/ipv6-real-status.json"
+  grep -Fq '"native_ipv6_available": true' "$STATE_DIR/ipv6-real-status.json"
+  grep -Fq '"ipv6_reason": "native_ipv6_available"' "$STATE_DIR/ipv6-real-status.json"
+  grep -Fq '"ipv6_packet": "ready"' "$STATE_DIR/ipv6-real-status.json"
+  grep -Fq '"gateway": "running"' "$STATE_DIR/ipv6-real-status.json"
+  grep -Fq 'type: opensurge-packet' "$STATE_DIR/mihomo.yaml"
+  grep -Fq "\"$(client_mac "$client_one")\": \"device:$client_one\"" "$STATE_DIR/mihomo.yaml"
+  grep -Fq "\"$(client_mac "$client_two")\": \"device:$client_two\"" "$STATE_DIR/mihomo.yaml"
+  grep -F -- "IN-USER,device:$client_one" "$STATE_DIR/mihomo.yaml" |
+    grep -F -- "$IPV6_NATIVE_DIRECT_HOST" | grep -Fq -- 'DIRECT'
+  grep -F -- "IN-USER,device:$client_one" "$STATE_DIR/mihomo.yaml" |
+    grep -F -- 'NETWORK,udp' | grep -F -- 'DST-PORT,53' | grep -Fq -- 'DIRECT'
+  grep -F -- "IN-USER,device:$client_one" "$STATE_DIR/mihomo.yaml" |
+    grep -F -- 'NETWORK,udp' | grep -F -- 'DST-PORT,443' | grep -Fq -- 'DIRECT'
+
+  /usr/bin/curl --fail --silent --show-error --request PATCH \
+    --header 'Content-Type: application/json' \
+    --data '{"mode":"rule","log-level":"info"}' \
+    http://127.0.0.1:19090/configs >/dev/null
+
+  if limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client ipv6-transparent "$LAN_IP" "$IPV6_REAL_TCP_URL"; then
+    echo "$client_one unexpectedly bypassed its real-profile IPv6 REJECT rule" >&2
+    exit 1
+  fi
+  wait_for_ipv6_policy_log TCP "$source_one" "$IPV6_REAL_TCP_HOST:443" REJECT
+
+  vm_direct_exit="$(limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client \
+    ipv6-native-https-exit "$LAN_IP" "$IPV6_NATIVE_DIRECT_URL" | tr -d '\r\n')"
+  assert_native_ipv6_exit_on_upstream "$vm_direct_exit"
+  wait_for_ipv6_direct_log TCP "$source_one" "$IPV6_NATIVE_DIRECT_HOST" 443
+
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client \
+    ipv6-public-udp "$LAN_IP" "$IPV6_NATIVE_DIRECT_TARGET" "$IPV6_REAL_UDP_QUERY"
+  wait_for_ipv6_direct_log UDP "$source_one" "$IPV6_NATIVE_DIRECT_TARGET" 53
+
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client \
+    ipv6-public-quic "$LAN_IP" "$IPV6_NATIVE_DIRECT_TARGET"
+  wait_for_ipv6_direct_log UDP "$source_one" "$IPV6_NATIVE_DIRECT_TARGET" 443
+
+  select_working_real_proxy "$direct_native_exit"
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client ipv6-transparent "$LAN_IP" "$IPV6_REAL_TCP_URL"
+  wait_for_ipv6_global_log TCP "$source_two" "$IPV6_REAL_TCP_HOST" 443
+
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client \
+    ipv6-public-https "$LAN_IP" "$IPV6_REAL_TARGET" "$IPV6_REAL_TARGET_URL"
+  wait_for_ipv6_global_log TCP "$source_two" "$IPV6_REAL_TARGET" 443
+
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client \
+    ipv6-public-udp "$LAN_IP" "$IPV6_REAL_UDP_TARGET" "$IPV6_REAL_UDP_QUERY"
+  wait_for_ipv6_global_log UDP "$source_two" "$IPV6_REAL_UDP_TARGET" 53
+
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client \
+    ipv6-public-quic "$LAN_IP" "$IPV6_REAL_UDP_TARGET"
+  wait_for_ipv6_global_log UDP "$source_two" "$IPV6_REAL_UDP_TARGET" 443
+
+  broker_pid="$(sed -n 's/.*"pid_ipv6_packet": \([0-9][0-9]*\).*/\1/p' "$STATE_DIR/state.json" | head -1)"
+  [[ -n "$broker_pid" ]] || { echo "IPv6 packet broker PID missing from runtime state" >&2; exit 1; }
+  /sbin/ifconfig "$iface" | grep -Fq 'inet6 fdfe:dcba:9878::1'
+  {
+    echo "native_ipv6_auto=passed"
+    echo "subscription_import=passed"
+    echo "device_identity_reject=passed"
+    echo "vm_native_direct_https=passed"
+    echo "vm_native_direct_exit_is_mac_gua=passed"
+    echo "vm_native_direct_udp=passed"
+    echo "vm_native_direct_quic_carrier=passed"
+    echo "selected_candidate_index=$REAL_PROXY_INDEX"
+    echo "selected_proxy_type=$REAL_PROXY_TYPE"
+    echo "selected_proxy_exit_family=$REAL_PROXY_EXIT_FAMILY"
+    echo "vm_fake_aaaa_https=passed"
+    echo "vm_public_ipv6_https=passed"
+    echo "vm_public_ipv6_udp=passed"
+    echo "vm_public_ipv6_quic_carrier=passed"
+  } >"$STATE_DIR/ipv6-real-egress.txt"
+
+  restore_client_control_dns
+  sudo -n "$BINARY" stop --config "$CONFIG"
+  gateway_started=0
+  stop_sudo_keepalive
+  [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
+  for path in "$STATE_DIR/ipv6-packet.sock" "$STATE_DIR/ipv6-packet.sock.broker" "$STATE_DIR/ipv6-packet.ready"; do
+    [[ ! -e "$path" ]] || { echo "IPv6 runtime path remained after stop: $path" >&2; exit 1; }
+  done
+  if /bin/kill -0 "$broker_pid" 2>/dev/null; then
+    echo "IPv6 packet broker remained alive after stop" >&2
+    exit 1
+  fi
+  if /sbin/ifconfig "$iface" | grep -Fq 'inet6 fdfe:dcba:9878::1'; then
+    echo "OpenSurge IPv6 gateway alias remained after stop" >&2
+    exit 1
+  fi
+  for client in $CLIENTS; do
+    assert_client_ipv6_withdrawn "$client"
+  done
+
+  collect_ipv6_real_artifacts
+  assert_ipv6_real_artifacts_safe "$LAST_LAB_ARTIFACT_DIR" "$IPV6_REAL_PROFILE"
+  cleanup_ipv6_real_secrets
+  trap - EXIT INT TERM
+  echo "virtual LAN native IPv6 DIRECT, real subscription GLOBAL, identity, and rollback test passed"
+}
+
 run_local_routing_assertions() {
   local client client_ip host first_line
   set -- $CLIENTS
@@ -1417,6 +1993,9 @@ case "${1:-}" in
   test-ipv6-userspace)
     run_ipv6_userspace_test
     ;;
+  test-ipv6-imported-egress)
+    run_ipv6_imported_egress_test
+    ;;
   down)
     stop_clients
     if [[ -x "$NETWORK_HELPER" ]]; then
@@ -1430,7 +2009,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|test-ipv6-userspace|down|destroy>" >&2
+    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|test-ipv6-userspace|test-ipv6-imported-egress|down|destroy>" >&2
     exit 2
     ;;
 esac

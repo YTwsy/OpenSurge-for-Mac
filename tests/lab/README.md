@@ -154,6 +154,43 @@ and policy match, not a complete HTTP/3 handshake. This
 gate does not apply to same-LAN mode, where an unsuppressed main-router RA
 would create a bypass path.
 
+`lab-test-ipv6-imported-egress` complements that deterministic gate; it does
+not replace the local fixtures. Supply an actual mihomo profile explicitly:
+
+```sh
+sudo -v && \
+  OMG_LAB_IPV6_REAL_PROFILE=/absolute/path/to/profile.yaml \
+  make lab-test-ipv6-imported-egress
+```
+
+The runner copies the profile to a mode-`0600` file under `runtime/lab`, uses
+`tun_ipv6: auto`, and requires status to prove native upstream IPv6 is
+available. Client one first hits a MAC/InUser-scoped domain `REJECT`, then in
+rule mode completes IPv6-only HTTPS, a public IPv6 UDP DNS response, and a
+1200-byte QUIC-shaped UDP `DIRECT` egress. Both the Mac baseline and VM HTTPS
+echo must be GUAs currently assigned to the selected Mac upstream interface.
+Independent sockets may legitimately select different IPv6 privacy addresses
+on that interface, so literal equality is not required. Without printing proxy
+names, the runner then selects a real profile leaf that has a distinct exit,
+can reach an IPv6 literal, and returns a public IPv6 DNS answer through SOCKS5
+UDP ASSOCIATE.
+Client two must complete fake-AAAA HTTPS, public IPv6-literal HTTPS, a public
+IPv6 UDP DNS response, and a QUIC-shaped UDP `GLOBAL` egress.
+
+The VM address remains an OpenSurge ULA rather than an ISP-delegated public
+prefix. `DIRECT` here means that Mihomo/gVisor originates a native IPv6 socket
+from the Mac; it is not native forwarding of the VM ULA. The Mac's native IPv6
+upstream and GUA, subscription node, and public IPv6 targets are the real
+components.
+
+Secret-safe artifacts deliberately omit the copied profile, generated
+`mihomo.yaml`, selector/API output, raw Mihomo log, and cache. The gate scans
+the retained artifact files for profile server, credential, and sufficiently
+long proxy-name markers. Successful cleanup removes the runtime profile,
+generated config, log, and selection cache; an incomplete gateway rollback
+retains the mode-`0600` runtime material for recovery instead of hiding the
+failure.
+
 Treat `make lab-test` as the required local gate for high-risk network changes:
 DHCP/DNS behavior, mihomo process or config generation, pf/NAT rules,
 forwarding and rollback, gateway lifecycle cleanup, lab topology, or runtime
@@ -179,6 +216,10 @@ long session instead of treating one credential cache as permanent. A cold
 `sudo -v && make lab-test...` again. If cleanup follows a long gate, also use
 `sudo -v && make lab-down`; otherwise the VMs may stop while stale state for the
 root-owned helper remains.
+The real-profile IPv6 gate periodically runs `sudo -n -v` to refresh an
+already valid ticket and stops that keepalive on exit; it never prompts for,
+stores, or passes a password. If the ticket still expires, a failed gateway
+stop makes the gate fail closed and retain its mode-`0600` recovery material.
 
 ### Common infrastructure failures
 
@@ -197,6 +238,10 @@ root-owned helper remains.
   `runtime/lab/logs/mihomo-build.log` first; the script bypasses the stale proxy
   for Go mirrors and clears/retries once only for a confirmed missing file in
   that dedicated cache.
+- A Go compile error immediately after `patching file` is a patched-Mihomo
+  build-gate failure, not an IPv6 data-plane result. Run
+  `scripts/build-opensurge-mihomo.sh` independently first. Any patch or pinned
+  source revision change must pass an apply/build check against the pinned SHA.
 - `sysctl ... operation not permitted` in an agent sandbox is an execution
   permission signal, not a data-plane result. Rerun the actual gate in the same
   approved PTY before drawing a host-network conclusion.
@@ -241,6 +286,7 @@ make lab-test-tun-imported-egress  # switch TUN egress through a controlled prox
 make lab-test-tun-local-routing # prove local-Mac mode isolation
 make lab-test-tun-device-policy # prove independent per-device TUN policies
 make lab-test-ipv6-userspace # prove isolated-LAN IPv6 TCP/UDP takeover and withdrawal
+make lab-test-ipv6-imported-egress # supplement with an actual profile and public IPv6
 make lab-down     # stop clients and remove the host network
 make lab-destroy  # delete the persistent Lima client disks too
 ```

@@ -1,7 +1,7 @@
 diff --git a/listener/parse.go b/listener/parse.go
 --- a/listener/parse.go
 +++ b/listener/parse.go
-@@ -69,0 +70,7 @@ func ParseListener(mapping map[string]any) (C.InboundListener, error) {
+@@ -74,0 +75,7 @@ func ParseListener(mapping map[string]any) (C.InboundListener, error) {
 +	case "opensurge-packet":
 +		packetOption := &IN.OpenSurgePacketOption{MTU: 1500}
 +		err = decoder.Decode(mapping, packetOption)

@@ -128,6 +128,37 @@ SLAAC 地址；门禁不把“地址立即消失”当成路由撤销条件。QU
 carrier 与策略命中，不是
 完整 HTTP/3 握手。这个门禁不能用于 same-LAN；主路由器 RA 未被抑制时会形成绕过路径。
 
+`lab-test-ipv6-imported-egress` 是上述确定性门禁的外部补充，不替代本机 fixture。
+它要求显式提供一个真实 mihomo 订阅：
+
+```sh
+sudo -v && \
+  OMG_LAB_IPV6_REAL_PROFILE=/absolute/path/to/profile.yaml \
+  make lab-test-ipv6-imported-egress
+```
+
+脚本把订阅复制为 `runtime/lab` 下的 `0600` 临时文件，使用 `tun_ipv6: auto`，并要求
+状态明确记录上游公网 IPv6 可用和 `native_ipv6_available`。第一台 VM 先按
+MAC/InUser 命中设备级域名 `REJECT`，再以 `rule` 模式完成 IPv6-only HTTPS、真实
+IPv6 UDP DNS 回包和 1200-byte QUIC 形态 UDP 的 `DIRECT` 命中；Mac 基线和 VM HTTPS
+回显都必须是所选上游接口当前拥有的 GUA。不同 socket 可以合法选择该接口的不同
+IPv6 隐私地址，因此门槛不要求二者字面相等。随后脚本在不打印
+节点名称的前提下从订阅中选择一个能提供不同出口、可连接 IPv6 字面地址且通过
+SOCKS5 UDP ASSOCIATE 获得公网 IPv6 DNS 回包的真实节点，
+让第二台 VM 无显式代理完成 fake-AAAA HTTPS、真实 IPv6 字面地址 HTTPS、真实 IPv6
+UDP DNS 回包和 QUIC 形态 UDP 的 `GLOBAL` 命中。
+
+VM 获得的是 OpenSurge ULA，而不是运营商委派的公网前缀。`DIRECT` 在这里表示
+Mihomo/gVisor 从 Mac 重新建立原生 IPv6 socket，不是把 VM ULA 原样转发到公网；真实
+部分是 Mac 的原生 IPv6 上游与 GUA、订阅节点和公网 IPv6 目标。
+
+这个门禁的 artifacts 有意不包含订阅副本、生成的 `mihomo.yaml`、selector/API
+输出、Mihomo 原始日志或 cache。脚本还会用订阅中的 server/credential/较长节点名
+扫描安全 artifact，命中即失败；只有脱敏状态、接口、客户端路由、dnsmasq 配置和
+布尔验收结果会被保留。正常停止后会删除 runtime 中的订阅副本、Mihomo 配置、日志和
+选择缓存；如果网关清理失败，则保留权限受限的 runtime 文件供恢复，不以删除证据掩盖
+未完成的回滚。
+
 请把 `make lab-test` 视为高风险网络改动所需的本地门禁：DHCP/DNS 行为、mihomo
 进程或配置生成、pf/NAT 规则、forwarding 和 rollback、网关生命周期清理、lab
 拓扑或运行时流量默认值。普通 CI 流程有意停在 `make test`；这个 lab 应运行在开发
@@ -149,6 +180,9 @@ sudo 缓存凭据和终端会话有关，也会过期。如果 agent 或自动�
 本身可能超过 sudo ticket 的有效期，因此它完成后必须再次执行
 `sudo -v && make lab-test...`；清理前如果已经过了较长时间，也用
 `sudo -v && make lab-down`，否则 VM 可能已停止但 root-owned helper 的状态文件仍残留。
+真实订阅 IPv6 门槛会在运行期间以 `sudo -n -v` 定期刷新已经存在的 ticket，并在退出
+时终止保活进程；它不会提示、保存或传递密码。若 ticket 仍然失效，网关停止失败会让
+门槛 fail closed 并保留 mode `0600` 的恢复材料。
 
 ### 常见基础设施故障
 
@@ -163,6 +197,9 @@ sudo 缓存凭据和终端会话有关，也会过期。如果 agent 或自动�
   启动前失败。同样，异常中断可能留下残缺的专用 Go module cache。先看
   `runtime/lab/logs/mihomo-build.log`；脚本会为 Go mirror 绕过旧代理，并且仅对
   已确认的 cache 缺文件清理并重试一次。
+- 如果日志在 `patching file` 之后出现 Go 编译错误，这是 patched Mihomo 构建门槛
+  失败，不是 IPv6 数据面结果。先单独运行 `scripts/build-opensurge-mihomo.sh`；修改
+  补丁或固定源码版本时，必须先对固定 SHA 的源码做 apply/build 验证。
 - agent 沙箱中的 `sysctl ... operation not permitted` 是权限噪声，不是数据面
   失败。在已授权的同一 PTY 内重跑对应门禁。
 - VZ 停止时可能以红色打印 `use of closed network connection`。只要紧接着出现
@@ -200,6 +237,7 @@ make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
 make lab-test-tun-local-routing # 验证 Mac 本机模式与下游隔离
 make lab-test-tun-device-policy # 验证独立的每设备 TUN 策略
 make lab-test-ipv6-userspace # 验证独立下游 LAN 的 IPv6 TCP/UDP 接管与撤销
+make lab-test-ipv6-imported-egress # 使用真实订阅与公网 IPv6 补充验证
 make lab-down     # 停止客户端并移除 host network
 make lab-destroy  # 同时删除持久化的 Lima 客户端磁盘
 ```

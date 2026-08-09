@@ -54,6 +54,23 @@ default route、gateway alias、broker 和 runtime paths；RFC 4862 允许 SLAAC
 以 deprecated/等待过期状态保留。QUIC 项只证明 UDP carrier，不宣称完成 HTTP/3
 握手。
 
+`make lab-test-ipv6-imported-egress` 是真实订阅与公网 IPv6 的非确定性补充门槛，不能
+替代上面的本机受控 fixture。它要求通过 `OMG_LAB_IPV6_REAL_PROFILE` 显式提供 profile，
+将其复制为 Lab runtime 下的 mode `0600` 文件，并以 `tun_ipv6: auto` 要求宿主机状态
+证明原生公网 IPv6 可用。门槛先用第一台 VM 的 MAC/InUser 域名 `REJECT` 保留身份断言，
+再要求它用 `DIRECT` 完成 IPv6-only HTTPS、IPv6 UDP DNS 回包和 QUIC 形态 UDP；HTTPS
+回显与 Mac 基线都必须分别属于所选上游接口的 GUA；不同 socket 允许选择不同的 IPv6
+隐私地址。随后从 profile 选择不打印名称、且已通过 SOCKS5 UDP ASSOCIATE 公网 IPv6
+DNS 回包的实际叶子节点，要求第二台 VM 完成 fake-AAAA HTTPS、公网 IPv6 字面地址
+HTTPS、IPv6 UDP DNS 回包和 QUIC 形态 UDP 的 `GLOBAL` 命中。VM 的 ULA 是真实下游
+IPv6 包，但不代表运营商 Prefix Delegation/GUA；`DIRECT` 是 Mihomo/gVisor 从 Mac
+重新发起连接，不是将 ULA 原样转发到公网。
+
+真实 profile 门槛的 artifact 契约是 fail closed：不得复制订阅、生成的 `mihomo.yaml`、
+原始 Mihomo 日志、selector/API 输出或 cache，并要用 profile 中的 server、credential 和
+较长节点名 marker 扫描保留文件。正常回滚后删除 runtime secret；若 stop 失败则保留
+mode `0600` 的恢复材料并让门槛失败。
+
 ## 什么时候必须跑 lab
 
 宣称下列改动具备 runtime 覆盖前，应运行 `make lab-test`：
