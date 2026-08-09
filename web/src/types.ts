@@ -6,6 +6,7 @@ export type GatewayStatus = {
   dhcp: string
   dhcp_enabled: boolean
   mihomo: string
+  mihomo_error?: string
   tun?: string
   tun_interface?: string
   tun_error?: string
@@ -56,6 +57,8 @@ export type NetworkInterfacesResponse = { schema_version: number; interfaces: Ne
 export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string; network_snapshot?: NetworkSnapshot; client_validation_skipped?: boolean }
 export type GatewayPlan = { schema_version: number; revision: string; topology: string; snapshot: NetworkSnapshot; protected_ipv4: string[]; dhcp_servers: string[]; warnings: string[]; blockers: string[] }
 export type Operation = { id: string; kind: string; state: string; error?: string }
+export type MihomoRecoveryStatus = { state: 'idle' | 'observing' | 'recovering' | 'failed'; reason?: 'process_missing' | 'controller_refused'; error?: string }
+export type SleepPreventionStatus = { enabled: boolean; active: boolean; error?: string }
 export type ControlConfig = {
   schema_version: number; revision: string
   gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; upstream_interface: string }
@@ -84,6 +87,8 @@ export type Overview = {
   policies: ProxyGroup[]
   providers: { proxy_providers: ProxyProvider[]; rule_providers: RuleProvider[] }
   recovery: Recovery
+  mihomo_recovery?: MihomoRecoveryStatus
+  sleep_prevention?: SleepPreventionStatus
 }
 
 export type Source = {

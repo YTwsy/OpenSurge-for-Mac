@@ -41,28 +41,45 @@ type Overview struct {
 	Policies             []mihomo.ProxyGroup      `json:"policies"`
 	Providers            mihomo.ProvidersSnapshot `json:"providers"`
 	Recovery             RecoveryState            `json:"recovery"`
+	MihomoRecovery       MihomoRecoveryStatus     `json:"mihomo_recovery"`
+	SleepPrevention      SleepPreventionStatus    `json:"sleep_prevention"`
 }
 
 type MenuBarStatus struct {
-	SchemaVersion int      `json:"schema_version"`
-	Revision      string   `json:"revision"`
-	Gateway       string   `json:"gateway"`
-	Topology      string   `json:"topology"`
-	LANIP         string   `json:"lan_ip"`
-	DHCP          string   `json:"dhcp"`
-	Mihomo        string   `json:"mihomo"`
-	TUN           string   `json:"tun"`
-	TUNInterface  string   `json:"tun_interface,omitempty"`
-	TUNError      string   `json:"tun_error,omitempty"`
-	PFAnchor      string   `json:"pf_anchor"`
-	Forwarding    string   `json:"forwarding"`
-	ClientCount   int      `json:"client_count"`
-	Drift         bool     `json:"drift"`
-	DoctorHealthy bool     `json:"doctor_healthy"`
-	Recovery      bool     `json:"recovery_required"`
-	RecoveryStage string   `json:"recovery_stage,omitempty"`
-	Warnings      []string `json:"warnings"`
-	ErrorCode     string   `json:"error_code,omitempty"`
+	SchemaVersion   int                   `json:"schema_version"`
+	Revision        string                `json:"revision"`
+	Gateway         string                `json:"gateway"`
+	Topology        string                `json:"topology"`
+	LANIP           string                `json:"lan_ip"`
+	DHCP            string                `json:"dhcp"`
+	Mihomo          string                `json:"mihomo"`
+	MihomoError     string                `json:"mihomo_error,omitempty"`
+	TUN             string                `json:"tun"`
+	TUNInterface    string                `json:"tun_interface,omitempty"`
+	TUNError        string                `json:"tun_error,omitempty"`
+	PFAnchor        string                `json:"pf_anchor"`
+	Forwarding      string                `json:"forwarding"`
+	ClientCount     int                   `json:"client_count"`
+	Drift           bool                  `json:"drift"`
+	DoctorHealthy   bool                  `json:"doctor_healthy"`
+	Recovery        bool                  `json:"recovery_required"`
+	RecoveryStage   string                `json:"recovery_stage,omitempty"`
+	Warnings        []string              `json:"warnings"`
+	ErrorCode       string                `json:"error_code,omitempty"`
+	MihomoRecovery  MihomoRecoveryStatus  `json:"mihomo_recovery"`
+	SleepPrevention SleepPreventionStatus `json:"sleep_prevention"`
+}
+
+type MihomoRecoveryStatus struct {
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+type SleepPreventionStatus struct {
+	Enabled bool   `json:"enabled"`
+	Active  bool   `json:"active"`
+	Error   string `json:"error,omitempty"`
 }
 
 type RecoveryState struct {

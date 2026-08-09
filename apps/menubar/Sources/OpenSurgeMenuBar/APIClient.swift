@@ -43,6 +43,13 @@ struct ControlAPIClient {
         return try decoder().decode(BootstrapResponse.self, from: data).url
     }
 
+    func setSleepPrevention(_ enabled: Bool) async throws -> SleepPreventionStatus {
+        let endpoint = try descriptor().url.appending(path: "api/v1/sleep-prevention")
+        let body = try JSONEncoder().encode(["enabled": enabled])
+        let data = try await request(endpoint, method: "PUT", body: body)
+        return try decoder().decode(SleepPreventionStatus.self, from: data)
+    }
+
     private func descriptor() throws -> EndpointDescriptor {
         let url = applicationSupport.appending(path: "control-endpoint.json")
         guard let data = try? Data(contentsOf: url),

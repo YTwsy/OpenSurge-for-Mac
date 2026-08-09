@@ -45,6 +45,10 @@ GATEWAY_STATE="$(printf '%s' "$STATUS_JSON" | /usr/bin/plutil -extract gateway r
 # Do not terminate OpenSurgeMenuBar here or the authorization result cannot be
 # reported to the caller.
 launchctl bootout "gui/$UID_VALUE/com.opensurge.control" 2>/dev/null || true
+if [[ -f "$SYSTEM_ROOT/runtime/sleep-prevention-owned" ]]; then
+  /usr/bin/pmset -a disablesleep 0
+  rm -f "$SYSTEM_ROOT/runtime/sleep-prevention-owned"
+fi
 launchctl bootout system/com.opensurge.helper 2>/dev/null || true
 
 rm -f "$USER_HOME/Library/LaunchAgents/com.opensurge.control.plist"

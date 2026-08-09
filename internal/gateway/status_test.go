@@ -130,6 +130,34 @@ func TestStatusKeepsGatewayRunningWhenTUNRuntimeStateIsTemporarilyUnavailable(t 
 	}
 }
 
+func TestStatusExposesControllerRefusalForRunningMihomo(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	apiAddr := server.URL
+	server.Close()
+
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	cfg.Mihomo.APIAddr = apiAddr
+	cfg.Transparent.Mode = config.TransparentModeOff
+	cfg.DHCP.Enabled = true
+	paths := runtime.NewPaths(cfg)
+	if err := runtime.Ensure(paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), PIDDNSMasq: os.Getpid(), StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	status, err := New(cfg).Status(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Mihomo != "running" || !strings.Contains(status.MihomoError, "connection refused") {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
 func TestStatusMarksPreviousBootRuntimeInterruptedWithoutProbingReusedPID(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

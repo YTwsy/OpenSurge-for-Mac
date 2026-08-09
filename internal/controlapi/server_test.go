@@ -788,6 +788,9 @@ func TestHelperAllowlistIncludesNamedLifecycleActions(t *testing.T) {
 	if !helperActionAllowed("restart-mihomo") {
 		t.Fatal("restart-mihomo is not available to the privileged helper")
 	}
+	if !helperActionAllowed("sleep-prevention-hold") {
+		t.Fatal("sleep-prevention-hold is not available to the privileged helper")
+	}
 	for _, action := range []string{"hot-reload", "restart", "shell"} {
 		if helperActionAllowed(action) {
 			t.Fatalf("unexpected helper action %q", action)
@@ -1142,6 +1145,16 @@ func TestGatewayRestartMihomoRejectsMissingRuntimeState(t *testing.T) {
 	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/restart-mihomo", nil)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "gateway_not_running") {
 		t.Fatalf("restart-mihomo status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGatewayLifecycleActionRejectsConcurrentOperation(t *testing.T) {
+	server := newTestServer(t)
+	server.lifecycleMu.Lock()
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/stop", nil)
+	server.lifecycleMu.Unlock()
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "operation_in_progress") {
+		t.Fatalf("concurrent lifecycle status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

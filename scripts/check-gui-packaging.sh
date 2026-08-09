@@ -101,15 +101,27 @@ recovery_line="$(line_of 'RECOVERY_STAGE=' "$PREINSTALL")"
 gui_stop_line="$(line_of 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL")"
 stop_line="$(line_of '"$RECOVERY_CLI" stop' "$PREINSTALL")"
 helper_line="$(line_of 'bootout system/com.opensurge.helper' "$PREINSTALL")"
+sleep_release_line="$(line_of 'sleep-prevention-owned' "$PREINSTALL")"
 
-[[ -n "$recovery_line" && -n "$gui_stop_line" && -n "$stop_line" && -n "$helper_line" ]] || {
+[[ -n "$recovery_line" && -n "$gui_stop_line" && -n "$stop_line" && -n "$sleep_release_line" && -n "$helper_line" ]] || {
   echo "preinstall is missing a required upgrade step" >&2
   exit 1
 }
-(( recovery_line < gui_stop_line && gui_stop_line < stop_line && stop_line < helper_line )) || {
-  echo "unsafe preinstall order: expected recovery check, GUI/control stop, gateway stop, helper bootout" >&2
+(( recovery_line < gui_stop_line && gui_stop_line < stop_line && stop_line < sleep_release_line && sleep_release_line < helper_line )) || {
+  echo "unsafe preinstall order: expected recovery check, GUI/control stop, gateway stop, sleep release, helper bootout" >&2
   exit 1
 }
+
+for cleanup in "$PREINSTALL" "$UNINSTALLER"; do
+  grep -Fq 'runtime/sleep-prevention-owned' "$cleanup" || {
+    echo "sleep prevention cleanup must use the persistent installed-runtime ownership marker: $cleanup" >&2
+    exit 1
+  }
+  grep -Fq '/usr/bin/pmset -a disablesleep 0' "$cleanup" || {
+    echo "sleep prevention cleanup must restore system sleep before removing the Helper: $cleanup" >&2
+    exit 1
+  }
+done
 
 grep -Fq 'opensurge_stop_installed_gui_processes "$UID_VALUE" "$USER_HOME"' "$PREINSTALL" || {
   echo "preinstall must stop installed OpenSurge GUI processes" >&2

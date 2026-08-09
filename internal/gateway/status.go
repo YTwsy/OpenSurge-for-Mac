@@ -22,6 +22,7 @@ type Status struct {
 	DHCP         string `json:"dhcp"`
 	DHCPEnabled  bool   `json:"dhcp_enabled"`
 	Mihomo       string `json:"mihomo"`
+	MihomoError  string `json:"mihomo_error,omitempty"`
 	TUN          string `json:"tun"`
 	TUNInterface string `json:"tun_interface,omitempty"`
 	TUNError     string `json:"tun_error,omitempty"`
@@ -43,6 +44,7 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 	gatewayStatus := "stopped"
 	dhcpStatus := "stopped"
 	mihomoStatus := "stopped"
+	mihomoError := ""
 	tunStatus := "disabled"
 	tunInterface := ""
 	tunError := ""
@@ -70,6 +72,8 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 				version, versionErr, runtimeTUN, tunErr := fetchMihomoRuntime(ctx, m.cfg)
 				if versionErr == nil && version.Version != "" {
 					mihomoStatus = "running (" + version.Version + ")"
+				} else if versionErr != nil {
+					mihomoError = versionErr.Error()
 				}
 				if m.cfg.Transparent.TUNEnabled() {
 					switch {
@@ -121,6 +125,7 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		DHCP:         dhcpStatus,
 		DHCPEnabled:  m.cfg.DHCP.Enabled,
 		Mihomo:       mihomoStatus,
+		MihomoError:  mihomoError,
 		TUN:          tunStatus,
 		TUNInterface: tunInterface,
 		TUNError:     tunError,

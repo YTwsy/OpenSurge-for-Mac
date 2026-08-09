@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/user"
@@ -180,6 +181,15 @@ func ServeHelper(ctx context.Context, socketPath, allowedRoot, socketGroup strin
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o755); err != nil {
 		return err
 	}
+	// The marker must survive a reboot because pmset's SleepDisabled setting
+	// does. Keeping it under the installed root lets the restarted helper undo
+	// an interrupted lease before accepting new requests.
+	sleepManager := newSystemSleepLeaseManager(filepath.Join(allowedRoot, "runtime", "sleep-prevention-owned"))
+	reconcileCtx, reconcileCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer reconcileCancel()
+	if err := sleepManager.Reconcile(reconcileCtx); err != nil {
+		return err
+	}
 	_ = os.Remove(socketPath)
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -215,11 +225,15 @@ func ServeHelper(ctx context.Context, socketPath, allowedRoot, socketGroup strin
 			}
 			return err
 		}
-		go handleHelperConn(ctx, conn, allowedRoot)
+		go handleHelperConnWithSleep(ctx, conn, allowedRoot, sleepManager)
 	}
 }
 
 func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
+	handleHelperConnWithSleep(ctx, conn, allowedRoot, nil)
+}
+
+func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot string, sleepManager *systemSleepLeaseManager) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Minute))
 	var request HelperRequest
@@ -263,6 +277,38 @@ func handleHelperConn(ctx context.Context, conn net.Conn, allowedRoot string) {
 	}
 	if err == nil && request.Action == "config-apply-device-policy" {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
+	}
+	if request.Action == "sleep-prevention-hold" {
+		if err == nil && sleepManager == nil {
+			err = fmt.Errorf("sleep prevention lease manager is unavailable")
+		}
+		if err == nil {
+			acquireCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			err = sleepManager.Acquire(acquireCtx)
+			cancel()
+		}
+		response := HelperResponse{OK: err == nil}
+		if err != nil {
+			response.Error = err.Error()
+		}
+		if encodeErr := json.NewEncoder(conn).Encode(response); err != nil || encodeErr != nil {
+			if err == nil {
+				_ = sleepManager.Release()
+			}
+			return
+		}
+		_ = conn.SetDeadline(time.Time{})
+		disconnected := make(chan struct{})
+		go func() {
+			_, _ = io.Copy(io.Discard, conn)
+			close(disconnected)
+		}()
+		select {
+		case <-ctx.Done():
+		case <-disconnected:
+		}
+		_ = sleepManager.Release()
+		return
 	}
 	response := HelperResponse{}
 	if err == nil {
@@ -315,7 +361,7 @@ func loadHelperConfig(action, configPath string) (config.Config, error) {
 
 func helperActionAllowed(action string) bool {
 	switch action {
-	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control":
+	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "sleep-prevention-hold":
 		return true
 	default:
 		return false

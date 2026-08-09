@@ -415,7 +415,20 @@ button{cursor:pointer}
 .gateway-lifecycle-row{align-items:stretch;flex-direction:column}.gateway-lifecycle-row>button{width:100%}
 .registration-body{grid-template-columns:1fr}
 }
-.theme-toggle{margin-top:auto;border:1px solid #2b433b;background:#12241e;color:#cfe0d9;border-radius:10px;padding:10px 12px;text-align:left;display:flex;align-items:center;gap:10px;font-weight:700}
+.sidebar-controls{margin-top:auto;display:grid;gap:8px}
+.sidebar-switch{border:1px solid #2b433b;background:#12241e;color:#cfe0d9;border-radius:10px;padding:10px 11px;display:flex;align-items:center;gap:9px;cursor:pointer}
+.sidebar-switch.active{border-color:#69c99f;background:#173229}
+.sidebar-switch input{appearance:none;position:relative;flex:0 0 30px;width:30px;height:18px;margin:0;border:1px solid #536a61;border-radius:999px;background:#0b1915;cursor:pointer;transition:.18s ease}
+.sidebar-switch input::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#82958d;transition:.18s ease}
+.sidebar-switch input:checked{border-color:#79e6b3;background:#285f49}
+.sidebar-switch input:checked::after{left:14px;background:#e2fff1}
+.sidebar-switch input:disabled{cursor:default}
+.sidebar-switch span,.sidebar-switch strong,.sidebar-switch small{display:block;min-width:0}
+.sidebar-switch strong{font-size:12px}
+.sidebar-switch small{margin-top:2px;color:#789087;font-size:10px;line-height:1.3}
+.sidebar-switch:has(input:disabled){cursor:default;opacity:.6}
+.sidebar-control-error{color:#ef9b8c;font-size:10px;line-height:1.35;padding:0 4px}
+.theme-toggle{border:1px solid #2b433b;background:#12241e;color:#cfe0d9;border-radius:10px;padding:10px 12px;text-align:left;display:flex;align-items:center;gap:10px;font-weight:700}
 .theme-toggle:hover{border-color:#6fcfa6;background:#172f27}
 .theme-toggle span{width:20px;text-align:center}
 .sidebar-status{margin-top:12px}
@@ -443,6 +456,11 @@ html[data-theme="light"] .sidebar nav button:hover,html[data-theme="light"] .sid
 html[data-theme="light"] .sidebar-status{border-color:#cbded6}
 html[data-theme="light"] .theme-toggle{background:#edf6f2;border-color:#bed6cc;color:#254c3e}
 html[data-theme="light"] .theme-toggle:hover{background:#dcece5;border-color:#69b895}
+html[data-theme="light"] .sidebar-switch{background:#edf6f2;border-color:#bed6cc;color:#254c3e}
+html[data-theme="light"] .sidebar-switch.active{background:#dcece5;border-color:#69b895}
+html[data-theme="light"] .sidebar-switch input{border-color:#9ab7aa;background:#d7e4de}
+html[data-theme="light"] .sidebar-switch input:checked{border-color:#4ba47f;background:#69c99f}
+html[data-theme="light"] .sidebar-switch input:checked::after{background:#fff}
 html[data-theme="light"] .gateway-card,html[data-theme="light"] .metric,html[data-theme="light"] .section,html[data-theme="light"] .mode,html[data-theme="light"] .this-mac,html[data-theme="light"] .device-card,html[data-theme="light"] .policy-list article{background:#fff;border-color:#cbded6}
 html[data-theme="light"] .local-mode-switch{background:#f2f8f5;border-color:#b9d3c8}
 html[data-theme="light"] .local-mode-switch button{color:#60776e}

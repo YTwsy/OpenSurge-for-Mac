@@ -28,6 +28,7 @@ vi.mock('./api', () => ({
     })),
     saveConfig: vi.fn(),
     gateway: vi.fn(),
+    setSleepPrevention: vi.fn(),
     operation: vi.fn(),
     gatewayPlan: vi.fn(async () => ({
       schema_version: 1,
@@ -97,6 +98,7 @@ const overview: Overview = {
       router: '192.168.1.1', dns: ['192.168.1.1', '1.1.1.1'], ipv6_default: false,
     },
   },
+  sleep_prevention: { enabled: false, active: false },
 }
 
 function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
@@ -181,6 +183,19 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('img', { name: '上传最近 60 秒趋势' }).querySelector('.rate-line')?.getAttribute('d')).toContain(' C ')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('button', { name: '启动网关' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('controls non-persistent lid-closed sleep prevention independently of gateway state', async () => {
+    const enabled = { ...overview, sleep_prevention: { enabled: true, active: true } }
+    vi.mocked(api.setSleepPrevention).mockResolvedValue(enabled.sleep_prevention)
+    vi.mocked(api.overview).mockResolvedValueOnce(overview).mockResolvedValue(enabled)
+    render(<App />)
+    const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
+    expect((toggle as HTMLInputElement).checked).toBe(false)
+    await userEvent.click(toggle)
+    await waitFor(() => expect(api.setSleepPrevention).toHaveBeenCalledWith(true))
+    await waitFor(() => expect((screen.getByRole('checkbox', { name: /合盖保持运行/ }) as HTMLInputElement).checked).toBe(true))
+    expect(screen.getByText('系统睡眠已临时禁用')).toBeTruthy()
   })
 
   it('routes the dashboard start button to network settings without starting the gateway', async () => {
