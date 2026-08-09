@@ -1,13 +1,22 @@
 # GUI 控制面
 
 OpenSurge 的完整 GUI 是 `web/` 中的 React 应用，菜单栏 App 是
-`apps/menubar/` 中由 AppKit 管理生命周期和状态项、由 SwiftUI 渲染状态面板的只读
+`apps/menubar/` 中由 AppKit 管理生命周期和状态项、由 SwiftUI 渲染状态面板的轻量
 launcher。两者都只访问 `cmd/opensurge-control` 提供的 loopback API；业务规则继续位于
 Go gateway、device、mihomo 和 runtime 包中。
 
 菜单栏 App 不提供 start/stop 或策略切换。它只消费 `/api/v1/menubar`，显示网关、
-客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
-演变成第二控制面。
+客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。唯一独立动作是
+与网关状态无关的临时“合盖保持运行”开关；不要借此把菜单栏演变成第二套网关控制面。
+
+睡眠开关默认关闭、不写 preference，只由 Control Service 内存中的 lease 表示本次运行
+意图。菜单栏与 Web GUI 都调用 `PUT /api/v1/sleep-prevention`；Control Service 保持到 root
+Helper 的长连接，连接 EOF、完整退出或服务崩溃都会释放。普通 `caffeinate` 的 idle sleep
+assertion 不能覆盖 lid close，因此 Helper 使用系统级 `pmset -a disablesleep`。启用前若
+`SleepDisabled` 已由外部设置为 1，Helper 拒绝接管；只有创建了 root-owned marker 后才
+会在释放时写回 0。marker 位于持久的系统 runtime 目录，必须先于 `pmset` 写入，确保系统
+重启、Helper 重启、pkg 升级和卸载能识别并恢复 OpenSurge 遗留的临时接管。UI 必须提示
+耗电、发热和不要放入不通风包内。
 
 版本发现属于原生 App 生命周期而不是网关控制面。菜单栏 App 打开时至多每 24 小时查询
 一次本仓库 GitHub `releases/latest`，也提供手动检查；只比较稳定版语义版本并校验返回的

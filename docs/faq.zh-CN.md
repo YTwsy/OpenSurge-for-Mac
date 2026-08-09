@@ -1,6 +1,7 @@
 # OpenSurge for Mac 常见问题
 
-本文先记录 v0.1.25 中与系统重启恢复、Mac 本机联网、TUN 启动、设备身份和每设备出口有关的常见问题。
+本文先记录 v0.1.26 中与系统重启恢复、Mihomo 自动恢复、合盖运行、Mac 本机联网、
+TUN 启动、设备身份和每设备出口有关的常见问题。
 完整安装与 DHCP 恢复流程仍以
 [OpenSurge for Mac App 使用指南](app-user-guide.zh-CN.md)为准。
 
@@ -21,14 +22,27 @@ PF/forwarding。清理完成后可按页面提示恢复网络或重新启动完�
 ## Mac 睡眠唤醒后为什么提示 Mihomo 连接被拒绝？
 
 如果诊断显示访问 `127.0.0.1:9090` 为 `connection refused`，说明本机 Mihomo controller
-当时没有监听，不是普通的代理节点超时。若**连通性**页显示“恢复 Mihomo”，表示本次开机
-的网关 runtime 仍有效，但 Mihomo 已停止或本地 controller 已拒绝连接；点击后只会验证
-applied 配置、归档旧日志并重启 Mihomo，以重建 TUN 和出站 socket，不会停止 DHCP/DNS、
-卸载 PF 或修改 IPv4 forwarding。
+当时没有监听，不是普通的代理节点超时。只要本次开机的网关 runtime 仍有效，v0.1.26
+会自动尝试一次 Mihomo-only 恢复：验证 applied 配置、归档旧日志并重启 Mihomo，以重建
+TUN 和出站 socket；不会停止 DHCP/DNS、卸载 PF 或修改 IPv4 forwarding。进程缺失会
+立即触发，本地 controller 拒绝连接则需要连续两次探测确认，避免短暂波动误触发。
 
-健康运行时不会显示这个入口；若页面显示“重启后待清理”，应先安全清理旧状态并重新启动
-完整网关。若睡眠唤醒后反复发生，请在重启 Mihomo 前从**诊断**页保存当前状态和 Mihomo
-日志，用于区分进程崩溃、被系统终止或其他唤醒路径问题。
+健康、观察和自动恢复期间都不会显示手动入口；只有这次自动恢复未成功时，**连通性**页
+才显示“恢复 Mihomo”作为手动兜底。若页面显示“重启后待清理”，应先安全清理旧状态并
+重新启动完整网关。若睡眠唤醒后反复发生，请从**诊断**页保存当前状态和 Mihomo 日志，
+用于区分进程崩溃、被系统终止或其他唤醒路径问题。
+
+## 如何让 Mac 合盖后继续运行 OpenSurge？
+
+在菜单栏面板或 Web GUI 侧栏打开**合盖保持运行**。这个开关临时禁用整机睡眠，包括
+空闲和合盖睡眠；它不依赖网关是否启动，也不改变 DHCP、DNS、PF、forwarding 或 Mihomo
+状态。开关默认关闭且不保存偏好；选择**退出 OpenSurge**、Control Service 意外退出或
+Mac 重启后，root Helper 会释放本次临时接管。
+
+普通 `caffeinate` 只能阻止空闲睡眠，不能满足合盖继续运行，因此 OpenSurge 使用 macOS
+系统级 `pmset disablesleep`，并以存活租约和持久 ownership marker 确保异常退出或重启后
+恢复正常睡眠。若睡眠已被其他工具全局禁用，OpenSurge 会拒绝接管，不会在关闭开关时
+破坏其他工具的状态。合盖运行会增加耗电与发热，请勿把仍在运行的 Mac 放入不通风的包内。
 
 ## 下游设备接管正常，但 Mac 本机无法访问网络怎么办？
 

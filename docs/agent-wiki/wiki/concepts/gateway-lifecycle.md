@@ -132,8 +132,16 @@ router 或 DNS。若已启用系统代理协同，替代进程失败时先恢复
 client validated 或明确跳过客户端验收的接管阶段执行，且成功或失败都不改变 DHCP 恢复
 状态机。替代进程必须通过 TUN readiness。
 
-这是一条显式恢复路径，不是自动 watchdog。只有真实 same-WiFi 链路断开/重连门槛证明
-触发条件不会误判、恢复后本机 DIRECT 和代理出口均重新可用，才应增加自动触发。
+Control Service 会在当前 boot、有效 active runtime 和允许的 DHCP 接管阶段内监测这条
+恢复路径。Mihomo 进程缺失立即触发一次自动恢复；controller 的 `connection refused`
+需要连续两次观测才触发。每个未恢复 incident 最多自动尝试一次；命令完成后仍要等新的
+健康 status 才算恢复，持续异常会转为 `failed` 并在连通性页显示手动兜底。上次开机留下
+的 interrupted runtime、配置读取失败和尚未 active 的 DHCP 接管阶段都不会触发。
+
+start、stop、reload、手动/自动 `restart-mihomo` 和运行中 source apply 共享 Control
+Service 生命周期互斥锁，避免两个 helper 动作同时修改 runtime。这个自动化只实现了窄的
+Mihomo-only 重启边界；在真实 same-WiFi 断开/重连门槛完成前，不得把单元测试描述成物理
+链路恢复已经验收。
 
 ## same-WiFi 固定 IPv4 确认
 

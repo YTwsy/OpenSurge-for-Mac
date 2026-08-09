@@ -111,6 +111,12 @@ recovery state active until the network has actually been restored.
 - **诊断** (Diagnostics) shows recent operations, connections, providers, and
   redacted logs.
 
+The menu bar panel and Web GUI sidebar both provide **合盖保持运行** (Keep
+Running with Lid Closed). It is off by default, applies only to the current
+OpenSurge run, and is independent of gateway state. Quitting OpenSurge or
+rebooting the Mac releases it. Lid-closed operation increases heat and battery
+use; never place a running Mac in an unventilated bag.
+
 The local-Mac mode affects only new connections entering OpenSurge through TUN
 or the local explicit proxy. The mode switch itself does not rewrite macOS
 system-proxy settings or downstream behavior; the optional network compatibility

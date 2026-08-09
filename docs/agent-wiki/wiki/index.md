@@ -21,6 +21,8 @@
   TUN HTTP/HTTPS 兼容层、fail-closed 冲突检查和恢复契约。
 - [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、SwiftUI 菜单栏
   launcher、本地 API 与恢复状态的职责边界。
+- [合盖运行临时接管](../sources/decisions/lid-closed-sleep-prevention.md)：为什么
+  `caffeinate` 不满足合盖需求，以及 Helper lease、ownership marker 和恢复边界。
 - 许可证边界：OpenSurge 自有代码采用 `GPL-3.0-only`；随 pkg 分发的独立组件保留
   各自许可证与对应源码链接，见根目录 `LICENSE` 和 `THIRD_PARTY_NOTICES.md`。
 - [验证门槛](concepts/validation-gates.md)：哪些检查能证明哪些结论。
