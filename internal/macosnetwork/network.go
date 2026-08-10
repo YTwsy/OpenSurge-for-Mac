@@ -40,6 +40,7 @@ type ManualConfig struct {
 type InterfaceOption struct {
 	Interface      string `json:"interface"`
 	NetworkService string `json:"network_service"`
+	IPv6LinkLocal  string `json:"ipv6_link_local,omitempty"`
 }
 
 var runCommand = run
@@ -180,7 +181,36 @@ func ListInterfaces(ctx context.Context) ([]InterfaceOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	return interfaceOptions(parseServiceOrder(output)), nil
+	options := interfaceOptions(parseServiceOrder(output))
+	for index := range options {
+		iface, err := net.InterfaceByName(options[index].Interface)
+		if err != nil {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		options[index].IPv6LinkLocal = firstLinkLocalIPv6(addrs)
+	}
+	return options, nil
+}
+
+func firstLinkLocalIPv6(addrs []net.Addr) string {
+	for _, addr := range addrs {
+		address := addr.String()
+		if before, _, ok := strings.Cut(address, "/"); ok {
+			address = before
+		}
+		if before, _, ok := strings.Cut(address, "%"); ok {
+			address = before
+		}
+		ip := net.ParseIP(address)
+		if ip != nil && ip.To4() == nil && ip.IsLinkLocalUnicast() {
+			return ip.String()
+		}
+	}
+	return ""
 }
 
 func interfaceOptions(services map[string]string) []InterfaceOption {

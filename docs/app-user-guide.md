@@ -67,15 +67,20 @@ upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Enable
 **每设备策略** (Per-device policies) if devices need independent egress
 choices, then select **保存网络配置** (Save network configuration).
 
-An isolated downstream LAN also exposes two experimental IPv6 settings.
-**IPv6 DNS queries** controls AAAA answers; **Downstream IPv6 takeover**
-publishes SLAAC/default-route information and enables the userspace TCP/UDP
-path. A normal whole-home IPv6 setup enables both. **Auto** takes over only
-when the upstream has a public IPv6 address (ULA does not count) and an IPv6
-default route, while **Always** can establish the downstream path without it;
-real public-IPv6 `DIRECT` traffic still needs an upstream route.
-Same-LAN modes keep takeover locked off because main-router RA could bypass the
-Mac.
+All three topologies expose the two experimental IPv6 settings. **IPv6 DNS
+queries** controls AAAA answers, while **Downstream IPv6 takeover** establishes
+the userspace TCP/UDP path. **Auto** takes over only when the upstream has a
+public IPv6 address (ULA does not count) and an IPv6 default route. **Always**
+can establish the downstream path without it, but real public-IPv6 `DIRECT`
+traffic still needs an upstream route.
+
+An isolated downstream LAN publishes RA/SLAAC/RDNSS automatically. Same-LAN
+DHCP takeover can publish them to the whole LAN after main-router IPv6
+RA/DHCPv6 is disabled or RA Guard is in place; the page requires an explicit
+readiness confirmation. OpenSurge uses the normal Medium router preference.
+Bypass-router mode sends no RA. Its client setup card shows the stable IPv4,
+IPv6 ULA, and the same Mac link-local address for the default gateway and DNS on selected
+clients; remove the competing main-router IPv6 default route on those clients.
 
 If SafeDNS, DNS Proxy, content filtering, or another Network Extension causes
 local-Mac DNS or connectivity failures with TUN alone, enable **Mac local

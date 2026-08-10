@@ -137,10 +137,14 @@ dnsmasq/mihomo configuration, and the initial and post-reload device views so
 the boundary remains auditable.
 Rule/template/provider compilation stays in unit tests.
 
-`lab-test-ipv6-userspace` is the isolated-downstream-LAN IPv6 takeover gate.
-It builds the OpenSurge-patched Mihomo and BPF broker, then requires both
-clients to obtain `fdfe:dcba:9878::/64` SLAAC addresses, an IPv6 default route,
-and RDNSS from dnsmasq. Client one must hit its device-domain `REJECT` over
+Use `lab-test-ipv6-userspace` for isolated downstream LAN,
+`lab-test-ipv6-same-wifi` for whole-LAN DHCP takeover, and
+`lab-test-ipv6-same-lan` for selective bypass-router IPv6. The first two build
+the OpenSurge-patched Mihomo and BPF broker, then require both clients to obtain
+`fdfe:dcba:9878::/64` SLAAC addresses, a Medium-preference IPv6 default route,
+and RDNSS from dnsmasq. The bypass-router gate uses manual ULAs, the Mac
+link-local default gateway and DNS, and proves that no RA is configured.
+Client one must hit its device-domain `REJECT` over
 IPv6 TCP. Client two must hit its own `DIRECT` selector over IPv6 TCP, a
 controlled UDP request/response, and a 1200-byte QUIC Initial-shaped UDP
 carrier. The TCP origin must receive the HTTP request and the UDP fixture must
@@ -150,9 +154,7 @@ the OpenSurge default route and remove the Mac gateway alias, broker PID,
 Unix sockets, readiness marker, and runtime state. RFC 4862 may temporarily
 retain a deprecated/expiring SLAAC address, so immediate address deletion is
 not the routing-withdrawal condition. The QUIC assertion proves the UDP carrier
-and policy match, not a complete HTTP/3 handshake. This
-gate does not apply to same-LAN mode, where an unsuppressed main-router RA
-would create a bypass path.
+and policy match, not a complete HTTP/3 handshake.
 
 `lab-test-ipv6-imported-egress` complements that deterministic gate; it does
 not replace the local fixtures. Supply an actual mihomo profile explicitly:
@@ -286,6 +288,8 @@ make lab-test-tun-imported-egress  # switch TUN egress through a controlled prox
 make lab-test-tun-local-routing # prove local-Mac mode isolation
 make lab-test-tun-device-policy # prove independent per-device TUN policies
 make lab-test-ipv6-userspace # prove isolated-LAN IPv6 TCP/UDP takeover and withdrawal
+make lab-test-ipv6-same-wifi # prove whole-LAN DHCP IPv6 and Medium RA
+make lab-test-ipv6-same-lan # prove selective manual IPv6 without RA
 make lab-test-ipv6-imported-egress # supplement with an actual profile and public IPv6
 make lab-down     # stop clients and remove the host network
 make lab-destroy  # delete the persistent Lima client disks too

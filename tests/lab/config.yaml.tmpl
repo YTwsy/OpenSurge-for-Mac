@@ -1,11 +1,12 @@
 gateway:
+  mode: "__GATEWAY_MODE__"
   interface: "__LAB_INTERFACE__"
   lan_ip: "192.168.50.1"
   upstream_interface: "__UPSTREAM_INTERFACE__"
 
 dhcp:
   binary: "__DNSMASQ_BINARY__"
-  enabled: true
+  enabled: __DHCP_ENABLED__
   range_start: "192.168.50.100"
   range_end: "192.168.50.200"
   lease_time: "30m"
@@ -44,6 +45,7 @@ transparent:
   tun_auto_detect_interface: false
   tun_strict_route: false
   tun_ipv6: "__TUN_IPV6__"
+  ipv6_shared_l2_ready: __IPV6_SHARED_L2_READY__
   ipv6_packet_broker_binary: "__IPV6_PACKET_BROKER_BINARY__"
   ipv6_packet_mtu: 1500
 

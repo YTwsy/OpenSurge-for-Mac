@@ -28,6 +28,7 @@ type State struct {
 	NativeIPv6Available       bool                 `json:"native_ipv6_available"`
 	IPv6Reason                string               `json:"ipv6_reason,omitempty"`
 	IPv6GatewayAliasOwned     bool                 `json:"ipv6_gateway_alias_owned"`
+	IPv6RAEffective           bool                 `json:"ipv6_ra_effective"`
 	StartedAt                 time.Time            `json:"started_at"`
 }
 

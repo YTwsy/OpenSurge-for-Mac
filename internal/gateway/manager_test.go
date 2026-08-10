@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1023,6 +1024,35 @@ func TestIPv6GatewayAddFailureRollsBackOwnedAliasAndPacketBroker(t *testing.T) {
 	)
 	if _, exists, loadErr := runtime.LoadState(paths.StateFile); loadErr != nil || exists {
 		t.Fatalf("runtime state after rollback exists=%v err=%v", exists, loadErr)
+	}
+}
+
+func TestSameLANIPv6CleanupDoesNotBroadcastRouterWithdrawal(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameLAN
+	cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
+	cfg.DHCP.Enabled = false
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.Transparent.IPv6SharedL2Ready = true
+	events := []string{}
+	host := &fakeIPv6Host{events: &events}
+	manager := Manager{cfg: cfg, paths: runtime.NewPaths(cfg)}
+	state := runtime.State{
+		TUNIPv6Requested:      config.TUNIPv6Always,
+		IPv6PacketEffective:   true,
+		IPv6GatewayAliasOwned: true,
+		IPv6RAEffective:       false,
+	}
+	deps := gatewayDeps{newIPv6Host: func(config.Config) ipv6HostService { return host }}
+	if err := manager.cleanupIPv6(context.Background(), deps, state); err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(events, "ipv6-withdraw") {
+		t.Fatalf("same-LAN selective IPv6 cleanup broadcast a withdrawal: %v", events)
+	}
+	if !slices.Contains(events, "ipv6-gateway-remove") {
+		t.Fatalf("same-LAN selective IPv6 cleanup did not remove the gateway alias: %v", events)
 	}
 }
 

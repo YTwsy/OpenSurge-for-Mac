@@ -45,6 +45,7 @@ transparent:
   tun_auto_detect_interface: false
   tun_strict_route: false
   tun_ipv6: "off"
+  ipv6_shared_l2_ready: false
   ipv6_packet_broker_binary: "opensurge-network"
   ipv6_packet_mtu: 1500
 

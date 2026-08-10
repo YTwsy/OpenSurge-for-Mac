@@ -225,10 +225,80 @@ __PROXY_EXPORTS__
         return 1
       }
 
-      ipv6_dns_server() {
+      manual() {
+        local address iface
+        address="${3:?manual IPv4 address is required}"
+        iface="$(lab_interface)"
+        ip link set dev "$iface" up
+        ip -4 addr flush dev "$iface" scope global || true
+        ip -4 addr add "$address/24" dev "$iface"
+        ip route replace default via "$gateway" dev "$iface" metric 5
+        rm -f /etc/resolv.conf
+        printf 'nameserver %s\n' "$gateway" >/etc/resolv.conf
+        printf 'CLIENT_MANUAL_READY interface=%s address=%s\n' "$iface" "$address"
+      }
+
+      manual6() {
+        local address iface ipv6_dns ipv6_gateway i
+        address="${3:?manual IPv6 address is required}"
+        ipv6_gateway="${4:?manual IPv6 link-local gateway is required}"
+        ipv6_dns="${5:-$ipv6_gateway}"
+        iface="$(lab_interface)"
+        ip link set dev "$iface" up
+        ip -6 addr flush dev "$iface" scope global || true
+        ip -6 route flush dev "$iface" proto ra || true
+        ip -6 addr add "$address/64" dev "$iface"
+        for i in {1..100}; do
+          if ip -6 -o addr show dev "$iface" scope global | awk -v target="$address/64" '$4 == target && $0 !~ /tentative|dadfailed/ { ready = 1 } END { exit !ready }'; then
+            break
+          fi
+          sleep 0.1
+        done
+        if ! ip -6 -o addr show dev "$iface" scope global | awk -v target="$address/64" '$4 == target && $0 !~ /tentative|dadfailed/ { ready = 1 } END { exit !ready }'; then
+          ip -6 addr show dev "$iface" >&2
+          echo "manual IPv6 address did not complete DAD on $iface" >&2
+          return 1
+        fi
+        ip -6 route replace default via "$ipv6_gateway" dev "$iface" metric 5
+        resolvectl dns "$iface" "$ipv6_dns" >/dev/null 2>&1 || true
+        rm -f /etc/resolv.conf
+        printf 'nameserver %s\n' "$ipv6_dns" >/etc/resolv.conf
+        printf 'CLIENT_MANUAL_IPV6_READY interface=%s address=%s gateway=%s dns=%s\n' "$iface" "$address" "$ipv6_gateway" "$ipv6_dns"
+        ip -6 -brief addr show dev "$iface"
+        ip -6 route show dev "$iface"
+      }
+
+      clear_manual() {
         local iface
+        iface="$(lab_interface)"
+        ip -4 route flush dev "$iface" || true
+        ip -6 route flush dev "$iface" || true
+        ip -4 addr flush dev "$iface" scope global || true
+        ip -6 addr flush dev "$iface" scope global || true
+        restore_control_dns
+        printf 'CLIENT_MANUAL_CLEARED interface=%s\n' "$iface"
+      }
+
+      ipv6_dns_server() {
+        local configured iface
         iface="${1:-$(lab_interface)}"
+        configured="$(awk '$1 == "nameserver" && $2 ~ /:/ { print $2; exit }' /etc/resolv.conf 2>/dev/null || true)"
+        if [[ -n "$configured" ]]; then
+          printf '%s\n' "$configured"
+          return
+        fi
         ip -6 route show default dev "$iface" | awk '$1 == "default" && $2 == "via" { print $3; exit }'
+      }
+
+      ipv6_dns_endpoint() {
+        local dns iface
+        iface="${1:-$(lab_interface)}"
+        dns="$(ipv6_dns_server "$iface")"
+        if [[ "$dns" == fe80:* ]]; then
+          printf '%s%%%s\n' "$dns" "$iface"
+        else
+          printf '%s\n' "$dns"
+        fi
       }
 
       restore_control_dns() {
@@ -255,7 +325,7 @@ __PROXY_EXPORTS__
       ipv6_transparent_test() {
         local dns fake host iface port route scheme source test_url
         iface="$(lab_interface)"
-        dns="$(ipv6_dns_server "$iface")%$iface"
+        dns="$(ipv6_dns_endpoint "$iface")"
         test_url="${3:-https://example.com/}"
         scheme="${test_url%%:*}"
         host="${test_url#*://}"
@@ -289,7 +359,7 @@ __PROXY_EXPORTS__
       ipv6_udp_test() {
         local answer dns fake iface port target
         iface="$(lab_interface)"
-        dns="$(ipv6_dns_server "$iface")%$iface"
+        dns="$(ipv6_dns_endpoint "$iface")"
         target="${3:-one.one.one.one}"
         port="${4:-53}"
         answer="${5:-example.com}"
@@ -302,7 +372,7 @@ __PROXY_EXPORTS__
       ipv6_quic_probe() {
         local dns fake iface port target
         iface="$(lab_interface)"
-        dns="$(ipv6_dns_server "$iface")%$iface"
+        dns="$(ipv6_dns_endpoint "$iface")"
         target="${3:-example.com}"
         port="${4:-443}"
         fake="$(dig +time=5 +tries=1 +short "@$dns" "$target" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
@@ -328,7 +398,7 @@ __PROXY_EXPORTS__
       ipv6_native_https_exit_test() {
         local dns exit_address fake host iface port route source test_url
         iface="$(lab_interface)"
-        dns="$(ipv6_dns_server "$iface")%$iface"
+        dns="$(ipv6_dns_endpoint "$iface")"
         test_url="${3:-https://api6.ipify.org/}"
         host="${test_url#*://}"
         host="${host%%/*}"
@@ -432,6 +502,9 @@ __PROXY_EXPORTS__
       case "${1:-}" in
         renew) renew ;;
         renew6) renew6 ;;
+        manual) manual "$@" ;;
+        manual6) manual6 "$@" ;;
+        clear-manual) clear_manual ;;
         restore-control) restore_control_dns ;;
         status) status ;;
         test) test_path ;;
@@ -444,5 +517,5 @@ __PROXY_EXPORTS__
         ipv6-native-https-exit) ipv6_native_https_exit_test "$@" ;;
         ipv6-public-udp) ipv6_public_udp_test "$@" ;;
         ipv6-public-quic) ipv6_public_quic_probe "$@" ;;
-        *) echo "usage: omg-lab-client <renew|renew6|restore-control|status|test|transparent|udp|ipv6-transparent|ipv6-udp|ipv6-quic|ipv6-public-https|ipv6-native-https-exit|ipv6-public-udp|ipv6-public-quic> [gateway] [target] [port]" >&2; exit 2 ;;
+        *) echo "usage: omg-lab-client <renew|renew6|manual|manual6|clear-manual|restore-control|status|test|transparent|udp|ipv6-transparent|ipv6-udp|ipv6-quic|ipv6-public-https|ipv6-native-https-exit|ipv6-public-udp|ipv6-public-quic> [gateway] [target] [port]" >&2; exit 2 ;;
       esac

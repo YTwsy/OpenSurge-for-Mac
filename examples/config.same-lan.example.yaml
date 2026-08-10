@@ -39,9 +39,11 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
-  # Same-LAN IPv6 takeover remains disabled until upstream RA can be
-  # suppressed or guarded without creating a bypass path.
+  # same_lan never broadcasts OpenSurge RA. Set this true only after selected
+  # clients are prepared for a manual ULA plus link-local gateway/DNS and cannot keep a competing
+  # router-advertised IPv6 default route.
   tun_ipv6: "off"
+  ipv6_shared_l2_ready: false
   ipv6_packet_broker_binary: "opensurge-network"
   ipv6_packet_mtu: 1500
 

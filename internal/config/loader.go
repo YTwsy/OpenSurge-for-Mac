@@ -213,6 +213,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Transparent.TUNStrictRoute = enabled
 	case "transparent.tun_ipv6":
 		cfg.Transparent.TUNIPv6 = strings.ToLower(value)
+	case "transparent.ipv6_shared_l2_ready":
+		ready, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("transparent.ipv6_shared_l2_ready must be a boolean")
+		}
+		cfg.Transparent.IPv6SharedL2Ready = ready
 	case "transparent.ipv6_packet_broker_binary":
 		cfg.Transparent.IPv6PacketBrokerBinary = value
 	case "transparent.ipv6_packet_mtu":

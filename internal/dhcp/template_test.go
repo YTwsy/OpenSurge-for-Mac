@@ -168,18 +168,43 @@ func TestRenderConfigWithDownstreamIPv6RAAndRDNSS(t *testing.T) {
 		"enable-ra",
 		"dhcp-range=fdfe:dcba:9878::,ra-stateless,64,12h",
 		"dhcp-option=option6:dns-server,[fe80::]",
-		"ra-param=en0,high,20,60",
+		"ra-param=en0,20,60",
 		"listen-address=fdfe:dcba:9878::1",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered IPv6 dnsmasq config missing %q:\n%s", want, rendered)
 		}
 	}
+	if strings.Contains(rendered, "ra-param=en0,high") || strings.Contains(rendered, "ra-param=en0,low") {
+		t.Fatalf("rendered IPv6 dnsmasq config overrides the default medium router preference:\n%s", rendered)
+	}
 	// dnsmasq replaces [fe80::] with the interface's link-local address for
 	// DHCPv6 and RDNSS. An explicit value is required because its automatic
 	// DHCPv6 option otherwise prefers the downstream ULA when one is present.
 	if strings.Contains(rendered, "option6:dns-server,[fdfe:") {
 		t.Fatalf("rendered IPv6 dnsmasq config advertises a ULA DNS endpoint:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigSameLANIPv6ListensWithoutAdvertisingRA(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameLAN
+	cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
+	cfg.DHCP.Enabled = false
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.Transparent.IPv6SharedL2Ready = true
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "listen-address="+config.DownstreamIPv6Gateway) {
+		t.Fatalf("same-LAN IPv6 DNS listener missing:\n%s", rendered)
+	}
+	for _, forbidden := range []string{"enable-ra", "ra-stateless", "option6:dns-server", "ra-param="} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("same-LAN selective IPv6 config unexpectedly advertises %q:\n%s", forbidden, rendered)
+		}
 	}
 }
 

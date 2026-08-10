@@ -40,6 +40,7 @@ func TestRenderRoundTripPreservesIPv6Controls(t *testing.T) {
 	cfg := Default()
 	cfg.Transparent.Mode = TransparentModeTUN
 	cfg.Transparent.TUNIPv6 = TUNIPv6Always
+	cfg.Transparent.IPv6SharedL2Ready = true
 	cfg.Transparent.IPv6PacketBrokerBinary = "/tmp/opensurge-network"
 	cfg.Transparent.IPv6PacketMTU = 1420
 	cfg.DNS.IPv6 = true
@@ -51,7 +52,7 @@ func TestRenderRoundTripPreservesIPv6Controls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(Render()) error = %v", err)
 	}
-	if !loaded.DNS.IPv6 || loaded.Transparent.TUNIPv6 != TUNIPv6Always || loaded.Transparent.IPv6PacketBrokerBinary != "/tmp/opensurge-network" || loaded.Transparent.IPv6PacketMTU != 1420 {
+	if !loaded.DNS.IPv6 || loaded.Transparent.TUNIPv6 != TUNIPv6Always || !loaded.Transparent.IPv6SharedL2Ready || loaded.Transparent.IPv6PacketBrokerBinary != "/tmp/opensurge-network" || loaded.Transparent.IPv6PacketMTU != 1420 {
 		t.Fatalf("IPv6 round trip mismatch: %#v", loaded.Transparent)
 	}
 }

@@ -2,6 +2,7 @@ package macosnetwork
 
 import (
 	"context"
+	"net"
 	"testing"
 )
 
@@ -68,6 +69,22 @@ func TestInterfaceOptionsAreSortedAndNamed(t *testing.T) {
 		t.Fatalf("second option = %#v", options[1])
 	}
 }
+
+func TestFirstLinkLocalIPv6IgnoresOtherAddressesAndScope(t *testing.T) {
+	addrs := []net.Addr{
+		&net.IPNet{IP: net.ParseIP("192.168.1.20"), Mask: net.CIDRMask(24, 32)},
+		stringAddr("2001:db8::20/64"),
+		stringAddr("fe80::abcd%en0/64"),
+	}
+	if got := firstLinkLocalIPv6(addrs); got != "fe80::abcd" {
+		t.Fatalf("link-local IPv6 = %q", got)
+	}
+}
+
+type stringAddr string
+
+func (address stringAddr) Network() string { return "ip" }
+func (address stringAddr) String() string  { return string(address) }
 
 func TestValidateManual(t *testing.T) {
 	valid := ManualConfig{NetworkService: "Wi-Fi", Interface: "en0", IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"1.1.1.1"}}

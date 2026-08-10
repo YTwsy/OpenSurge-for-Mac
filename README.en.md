@@ -87,8 +87,9 @@ common local-network, TUN, and device configuration questions, see the
 - Start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback.
 - Provide explicit proxying through mihomo `mixed-port`.
 - Provide transparent proxying through mihomo TUN on macOS.
-- In the experimental isolated-downstream-LAN mode, publish IPv6 with dnsmasq
-  RA/SLAAC and capture IPv6 TCP, UDP, and the QUIC carrier through a no-system-TUN
+- In experimental isolated-LAN, whole-LAN DHCP takeover, and selective
+  bypass-router modes, onboard IPv6 through dnsmasq RA/SLAAC or manual ULAs,
+  then capture TCP, UDP, and the QUIC carrier through a no-system-TUN
   BPF-to-Mihomo-gVisor path while retaining MAC-backed device identity.
 - Switch **Rule / Global / Direct** for new local-Mac connections entering
   TUN or the explicit proxy without changing downstream devices. OpenSurge
@@ -234,14 +235,20 @@ only when the upstream interface has both a public global IPv6 address (ULA
 does not count as public reachability) and an IPv6 default route. `always`
 establishes the downstream path even without native upstream IPv6.
 
-The current implementation requires `gateway.mode: "isolated_lan"` and
-`transparent.mode: "tun"`. Same-LAN modes are rejected because competing RA
-from the main router would create an IPv6 bypass until RA suppression or RA
-Guard is available. Downstream IPv6 ingress does not enter a macOS system
-utun: a BPF broker carries the physical Ethernet IPv6 packet plus source MAC
-to a patched Mihomo gVisor listener and reuses the existing device rules. The
-supported payload boundary is TCP and UDP. QUIC is covered as UDP/443; this is
-not a claim that arbitrary IPv6 protocols are proxied.
+All three topologies require `transparent.mode: "tun"`. Isolated downstream
+LAN publishes RA/SLAAC/RDNSS automatically. Same-LAN DHCP takeover can do the
+same for the whole LAN after the main router's IPv6 RA/DHCPv6 is disabled (or
+RA Guard makes OpenSurge the only default-router provider) and
+`transparent.ipv6_shared_l2_ready: true` is confirmed. Both automatic modes
+use the standard Medium RA router preference. Bypass-router mode sends no RA:
+only clients manually configured with an OpenSurge ULA, the Mac's link-local
+default gateway and DNS address, and no competing router default route
+are enrolled. The Network page shows an IPv4/IPv6 fill-in card. Downstream
+IPv6 ingress does not enter a macOS system utun: a BPF broker carries the
+physical Ethernet IPv6 packet plus source MAC to a patched Mihomo gVisor
+listener and reuses the existing device rules. The supported payload boundary
+is TCP and UDP. QUIC is covered as UDP/443; this is not a claim that arbitrary
+IPv6 protocols are proxied.
 
 `always` does not invent public IPv6 connectivity. With no native upstream
 IPv6, fake IPv6 destinations can still use a proxy that supports the required
@@ -512,13 +519,16 @@ egress paths, and enforce a device-level domain `REJECT`. Domain/protocol rule
 compilation, templates, and HTTP/MRS rule-provider configuration are covered by
 unit tests; they do not require one Lab run per operator-defined rule.
 
-Use `make lab-test-ipv6-userspace` when changing downstream RA/SLAAC, the BPF
-broker, the patched Mihomo packet listener, IPv6 device identity, or withdrawal
-on stop. It requires two clients to obtain the OpenSurge IPv6 address, default
-route, and link-local DNS, then uses controlled local fixtures to verify TCP, a
-UDP request/response, a QUIC-shaped UDP carrier, per-device policy, and
-rollback. The QUIC check proves the UDP carrier, not a complete HTTP/3
-handshake.
+When changing downstream RA/SLAAC, the BPF broker, the patched Mihomo packet
+listener, IPv6 device identity, or withdrawal on stop, run the topology gates:
+`make lab-test-ipv6-userspace`, `make lab-test-ipv6-same-wifi`, and
+`make lab-test-ipv6-same-lan`. Automatic-RA gates require two clients to
+obtain OpenSurge IPv6 addresses, Medium-preference default routes, and
+link-local DNS. The bypass-router gate requires manual ULAs, the Mac
+link-local default gateway and DNS, and no RA. All three use controlled local
+fixtures to verify TCP, a UDP request/response, a QUIC-shaped UDP carrier,
+per-device policy, and rollback. The QUIC check proves the UDP carrier, not a
+complete HTTP/3 handshake.
 
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
@@ -569,6 +579,8 @@ make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
 make lab-test-ipv6-userspace
+make lab-test-ipv6-same-wifi
+make lab-test-ipv6-same-lan
 make lab-down
 ```
 

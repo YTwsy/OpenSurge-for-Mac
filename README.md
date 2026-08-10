@@ -85,9 +85,9 @@ forwarding 提供原生网关路径。
 - 启停 DHCP/DNS、mihomo、pf NAT 与 IPv4 forwarding，并带 rollback；
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
-- 在实验性的独立下游 LAN 模式中，通过 dnsmasq RA/SLAAC 与无系统 TUN 的
-  BPF → Mihomo gVisor 数据面接管 IPv6 TCP、UDP 和 QUIC carrier，并保留 MAC
-  设备身份用于独立策略；
+- 在实验性的独立下游 LAN、同 LAN DHCP 全屋接管和选择性旁路由模式中，通过
+  dnsmasq RA/SLAAC 或手工 ULA 接入，并用无系统 TUN 的 BPF → Mihomo gVisor
+  数据面接管 IPv6 TCP、UDP 和 QUIC carrier，保留 MAC 设备身份用于独立策略；
 - 在不改变下游设备的前提下，为 Mac 本机经 TUN/显式代理的新连接切换
   **规则 / 全局 / 直连**；默认不修改 macOS 系统代理，也可在 TUN 模式下显式启用
   HTTP/HTTPS 系统代理协同，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰
@@ -204,12 +204,15 @@ fake IPv6；`transparent.tun_ipv6` 决定是否在下游发布 IPv6 网关、SLA
 IPv6 地址（不把 ULA 当成公网能力）和 IPv6 默认路由时启用；`always` 即使上游没有
 原生 IPv6 也会建立下游路径。
 
-当前只支持 `gateway.mode: "isolated_lan"` 且要求 `transparent.mode: "tun"`。
-旁路由/同网段模式会因主路由器 RA 产生 IPv6 绕过路径，所以在实现 RA suppression
-或 RA Guard 前配置会直接拒绝。下游 IPv6 入站不经过 macOS 系统 utun：BPF broker
-把物理 Ethernet 上的 IPv6 packet 和 source MAC 送入 patched Mihomo gVisor，并把
-身份映射到原有设备规则。支持边界是 TCP 与 UDP；QUIC 按 UDP/443 承载，不代表任意
-IPv6 协议均可代理。
+三种拓扑均要求 `transparent.mode: "tun"`。独立下游 LAN 自动发布 RA/SLAAC/RDNSS；
+局域网 DHCP 接管也可作为全 LAN IPv6 提供者，但必须先关闭主路由 IPv6 RA/DHCPv6，
+或用 RA Guard 保证 OpenSurge 是唯一默认路由提供者，再确认
+`transparent.ipv6_shared_l2_ready: true`。两种自动模式都使用标准 Medium RA 路由器
+优先级。旁路由模式不广播 RA，只接入逐台手工设置 OpenSurge ULA、Mac link-local
+默认网关和 link-local DNS，且移除原主路由 IPv6 默认路由的设备；网络设置页会显示可照填的
+IPv4/IPv6 速查卡。下游 IPv6 入站不经过 macOS 系统 utun：BPF broker 把物理 Ethernet
+上的 IPv6 packet 和 source MAC 送入 patched Mihomo gVisor，并把身份映射到原有设备
+规则。支持边界是 TCP 与 UDP；QUIC 按 UDP/443 承载，不代表任意 IPv6 协议均可代理。
 
 `always` 也不会凭空提供公网 IPv6。上游无原生 IPv6 时，fake IPv6 目标仍可通过支持
 相应流量的代理出口；真实公网 IPv6 的 `DIRECT` 会因没有上游路由而失败，HTTP-only
@@ -455,10 +458,12 @@ CONNECT proxy，证明 `policy-select` 可以把 TUN 出口路径在 `DIRECT` �
 HTTP/MRS rule-provider 配置由单元测试覆盖；不需要为每条操作者规则运行 Lab。
 
 修改下游 IPv6 RA/SLAAC、BPF broker、patched Mihomo packet listener、IPv6 设备身份
-或停止撤销时，使用 `make lab-test-ipv6-userspace`。它要求两台客户端获得 OpenSurge
-IPv6 地址、默认路由与 link-local DNS，并通过本机受控 fixture 分别验证
-TCP、UDP request/response、QUIC-shaped UDP carrier、设备策略和 stop rollback。QUIC 项只
-证明 UDP carrier，不等于完整 HTTP/3 握手。
+或停止撤销时，按拓扑使用 `make lab-test-ipv6-userspace`、
+`make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。自动 RA 门槛要求两台
+客户端获得 OpenSurge IPv6 地址、Medium 优先级默认路由与 link-local DNS；旁路由门槛
+要求手工 ULA、Mac link-local 默认网关与 link-local DNS 且不产生 RA。三者都通过本机受控
+fixture 验证 TCP、UDP request/response、QUIC-shaped UDP carrier、设备策略和 stop
+rollback。QUIC 项只证明 UDP carrier，不等于完整 HTTP/3 握手。
 
 策略组控制面和机器可读 CLI 改动优先使用 `make policy-control-test`。它会启动真实
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller
@@ -504,6 +509,8 @@ make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
 make lab-test-ipv6-userspace
+make lab-test-ipv6-same-wifi
+make lab-test-ipv6-same-lan
 make lab-down
 ```
 

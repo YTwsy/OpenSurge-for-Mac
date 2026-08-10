@@ -22,8 +22,8 @@ vi.mock('./api', () => ({
     networkInterfaces: vi.fn(async () => ({
       schema_version: 1,
       interfaces: [
-        { interface: 'en0', network_service: 'Wi-Fi' },
-        { interface: 'en7', network_service: 'USB LAN' },
+        { interface: 'en0', network_service: 'Wi-Fi', ipv6_link_local: 'fe80::100' },
+        { interface: 'en7', network_service: 'USB LAN', ipv6_link_local: 'fe80::700' },
       ],
     })),
     saveConfig: vi.fn(),
@@ -774,8 +774,8 @@ describe('OpenSurge app shell', () => {
     const always = within(ipv6Card).getByRole('button', { name: /总是开启/ })
     await userEvent.click(always)
     expect(always.getAttribute('aria-pressed')).toBe('true')
-    expect(within(ipv6Card).getByText('OpenSurge ULA')).toBeTruthy()
-    expect(within(ipv6Card).getByText('经此 Mac')).toBeTruthy()
+    expect(within(ipv6Card).getByText('OpenSurge ULA · 自动')).toBeTruthy()
+    expect(within(ipv6Card).getByText('经此 Mac · 自动')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'mihomo DNS（推荐）' }))
     expect((screen.getByLabelText('上游 DNS') as HTMLInputElement).value).toBe('127.0.0.1#1053')
     await userEvent.click(screen.getByRole('button', { name: '公共 DNS（调试）' }))
@@ -812,7 +812,7 @@ describe('OpenSurge app shell', () => {
     expect(saved.dns.upstream).toBe(current.dns.upstream)
   })
 
-  it('safely closes both IPv6 settings when switching back to a same-LAN topology', async () => {
+  it('opens selective manual IPv6 in bypass-router mode without advertising RA', async () => {
     const base = configFor('isolated_lan')
     const current = {
       ...base,
@@ -828,17 +828,54 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     await userEvent.click(screen.getByRole('button', { name: /旁路由模式/ }))
     const ipv6Card = screen.getByRole('article', { name: '下游 IPv6' })
-    expect(within(ipv6Card).getByText('OpenSurge IPv6 在当前拓扑中保持关闭')).toBeTruthy()
-    expect(within(ipv6Card).queryByRole('checkbox', { name: '解析 IPv6 域名' })).toBeNull()
+    expect(within(ipv6Card).getByText('只接入手工配置的设备')).toBeTruthy()
+    expect(within(ipv6Card).getByText('OpenSurge 不会广播 RA')).toBeTruthy()
+    expect(within(ipv6Card).getByText('OpenSurge ULA · 手工')).toBeTruthy()
+    expect(ipv6Card.textContent).toContain('默认网关与 DNS 均使用 fe80::700%en7')
+    const clientGuide = screen.getByRole('complementary', { name: '旁路由设备填写速查' })
+    expect(clientGuide.textContent).toContain('192.168.1.x/24')
+    expect(clientGuide.textContent).toContain('默认网关192.168.1.20')
+    expect(clientGuide.textContent).toContain('fe80::700%en7')
+    expect(clientGuide.textContent).toContain('DNSfe80::700%en7')
+    const readiness = within(ipv6Card).getByRole('checkbox', { name: '确认共享局域网 IPv6 已准备' })
+    expect((readiness as HTMLInputElement).checked).toBe(false)
+    await userEvent.click(readiness)
     await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
 
     await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
     const saved = vi.mocked(api.saveConfig).mock.calls[0][0]
-    expect(saved.transparent.tun_ipv6).toBe('off')
-    expect(saved.dns.ipv6).toBe(false)
+    expect(saved.transparent.tun_ipv6).toBe('always')
+    expect(saved.transparent.ipv6_shared_l2_ready).toBe(true)
+    expect(saved.dns.ipv6).toBe(true)
     expect(saved.gateway.interface).toBe(current.gateway.interface)
     expect(saved.gateway.lan_ip).toBe(current.gateway.lan_ip)
     expect(saved.dhcp.range_start).toBe(current.dhcp.range_start)
+  })
+
+  it('opens LAN-wide automatic IPv6 in DHCP takeover mode after readiness confirmation', async () => {
+    const current = configFor('same_wifi_dhcp')
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_wifi_dhcp', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    const ipv6Card = await screen.findByRole('article', { name: '下游 IPv6' })
+    expect(within(ipv6Card).getByText('确认 OpenSurge 是唯一 IPv6 路由提供者')).toBeTruthy()
+    await userEvent.click(within(ipv6Card).getByRole('checkbox', { name: '确认共享局域网 IPv6 已准备' }))
+    await userEvent.click(within(ipv6Card).getByRole('button', { name: /总是开启/ }))
+    await userEvent.click(within(ipv6Card).getByRole('checkbox', { name: '解析 IPv6 域名' }))
+    expect(within(ipv6Card).getByText('OpenSurge ULA · 自动')).toBeTruthy()
+    expect(within(ipv6Card).getByText('全 LAN IPv6 都会经 Mac')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveConfig).mock.calls[0][0]
+    expect(saved.transparent.tun_ipv6).toBe('always')
+    expect(saved.transparent.ipv6_shared_l2_ready).toBe(true)
+    expect(saved.dns.ipv6).toBe(true)
+    expect(saved.gateway.mode).toBe('same_wifi_dhcp')
+    expect(saved.dhcp.enabled).toBe(true)
   })
 
   it('shows the active IPv6 provider path in user-facing runtime terms', async () => {

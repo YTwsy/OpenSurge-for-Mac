@@ -44,13 +44,16 @@ selector 上 UDP/443 记录为 `REJECT` 而非 fall through 到 `DIRECT`。它�
 路由模式、设备默认出口和设备覆盖；模板、domain/protocol 组合与 HTTP/MRS rule-provider 的编译由
 `make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
 
-`make lab-test-ipv6-userspace` 是独立下游 LAN 的 IPv6 数据面门槛。它要求两台客户端
-通过 dnsmasq RA/SLAAC 获得 `fdfe:dcba:9878::/64` 地址、默认路由和 RDNSS，并要求
-TCP、本机受控 UDP request/response 和 QUIC Initial-shaped UDP carrier 通过 macOS BPF
-broker、Unix sideband 和 patched Mihomo gVisor 路径按 MAC/InUser 命中各自设备规则。
+IPv6 数据面按拓扑使用 `make lab-test-ipv6-userspace`、
+`make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。前两条要求两台客户端
+通过 dnsmasq RA/SLAAC 获得 `fdfe:dcba:9878::/64` 地址、Medium 优先级默认路由和
+RDNSS；第三条要求手工 ULA、Mac link-local 默认网关与 link-local DNS，并证明 dnsmasq 不
+发布 RA。三者都要求 TCP、本机受控 UDP request/response 和 QUIC Initial-shaped UDP
+carrier 通过 macOS BPF broker、Unix sideband 和 patched Mihomo gVisor 路径按
+MAC/InUser 命中各自设备规则。
 TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案；公网上游不是唯一
 捕获证据。stop 必须撤销
-default route、gateway alias、broker 和 runtime paths；RFC 4862 允许 SLAAC 地址暂时
+自动模式的 default route（或旁路由手工配置）、gateway alias、broker 和 runtime paths；RFC 4862 允许 SLAAC 地址暂时
 以 deprecated/等待过期状态保留。QUIC 项只证明 UDP carrier，不宣称完成 HTTP/3
 握手。
 

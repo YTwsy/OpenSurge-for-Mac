@@ -116,6 +116,7 @@ type TransparentConfig struct {
 	TUNAutoDetectInterface bool
 	TUNStrictRoute         bool
 	TUNIPv6                string
+	IPv6SharedL2Ready      bool
 	IPv6PacketBrokerBinary string
 	IPv6PacketMTU          int
 }
@@ -199,6 +200,7 @@ func Default() Config {
 			TUNAutoDetectInterface: false,
 			TUNStrictRoute:         false,
 			TUNIPv6:                TUNIPv6Off,
+			IPv6SharedL2Ready:      false,
 			IPv6PacketBrokerBinary: "opensurge-network",
 			IPv6PacketMTU:          1500,
 		},

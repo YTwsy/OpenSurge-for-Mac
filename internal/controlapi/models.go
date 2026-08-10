@@ -151,9 +151,10 @@ type DNSConfigInput struct {
 }
 
 type TransparentConfigInput struct {
-	Mode        string `json:"mode"`
-	StrictRoute bool   `json:"strict_route"`
-	TUNIPv6     string `json:"tun_ipv6"`
+	Mode              string `json:"mode"`
+	StrictRoute       bool   `json:"strict_route"`
+	TUNIPv6           string `json:"tun_ipv6"`
+	IPv6SharedL2Ready bool   `json:"ipv6_shared_l2_ready"`
 }
 
 type LocalSystemProxyConfigInput struct {

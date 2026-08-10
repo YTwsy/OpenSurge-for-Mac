@@ -104,16 +104,19 @@ policy 接口不泄露内部组。它适合策略组控制、file/HTTP provider 
 
 ```sh
 make lab-test-ipv6-userspace
+make lab-test-ipv6-same-wifi
+make lab-test-ipv6-same-lan
 ```
 
-这条门槛只适用于独立下游 LAN。它要求两台客户端获得
-`fdfe:dcba:9878::/64` SLAAC 地址、OpenSurge IPv6 默认路由和 RDNSS；随后要求无显式
-代理的 IPv6 TCP、受控 UDP request/response 和 1200-byte QUIC Initial-shaped UDP
-carrier 通过本机 fixture 出现在
+前两条分别覆盖独立下游 LAN 与同 LAN DHCP 全屋接管：两台客户端必须获得
+`fdfe:dcba:9878::/64` SLAAC 地址、Medium 优先级 OpenSurge IPv6 默认路由和 RDNSS。
+第三条覆盖选择性旁路由：客户端手工使用不同 ULA，并把 Mac link-local 地址同时作为默认网关和 DNS，
+dnsmasq 配置中不得出现 RA。随后三条门槛都要求无显式代理的 IPv6 TCP、受控 UDP
+request/response 和 1200-byte QUIC Initial-shaped UDP carrier 通过本机 fixture 出现在
 patched Mihomo 的 `opensurge-packet` 路径，并按两台客户端各自的 MAC/InUser 命中
 不同设备策略。TCP origin 必须收到实际 HTTP request，UDP fixture 必须返回
 固定答案，不依赖公网上游作为唯一捕获证据。最后必须停止网关，验证
-RA/default route、gateway alias、broker、
+自动模式的 RA/default route 或旁路由手工配置，以及 gateway alias、broker、
 socket/ready file 和 runtime state 被撤销。RFC 4862 允许客户端暂时保留
 deprecated/等待过期的 SLAAC 地址，因此门槛不要求地址瞬间消失。
 

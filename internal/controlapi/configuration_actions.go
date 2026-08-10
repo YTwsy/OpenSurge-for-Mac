@@ -243,6 +243,7 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
 	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6
+	cfg.Transparent.IPv6SharedL2Ready = input.Transparent.IPv6SharedL2Ready
 	if cfg.Transparent.TUNIPv6 == "" {
 		// Schema v1 clients predating the IPv6 control omit this field. Treat
 		// omission as the fail-safe default instead of making an otherwise valid

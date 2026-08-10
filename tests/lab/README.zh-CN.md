@@ -115,9 +115,11 @@ selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJ
 初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
 编译仍由单元测试覆盖。
 
-`lab-test-ipv6-userspace` 是独立下游 LAN 的 IPv6 接管门禁。它构建 OpenSurge
-patched Mihomo 和 BPF broker，让两台客户端通过 dnsmasq RA/SLAAC 获得
-`fdfe:dcba:9878::/64` 地址、IPv6 默认路由和 RDNSS；随后要求第一台客户端的 IPv6
+IPv6 接管按拓扑使用 `lab-test-ipv6-userspace`（独立下游 LAN）、
+`lab-test-ipv6-same-wifi`（同 LAN DHCP 全屋接管）和 `lab-test-ipv6-same-lan`
+（选择性旁路由）。前两条让两台客户端通过 dnsmasq RA/SLAAC 获得
+`fdfe:dcba:9878::/64` 地址、Medium 优先级 IPv6 默认路由和 RDNSS；旁路由门槛改用
+手工 ULA、Mac link-local 默认网关与 link-local DNS，并断言没有 RA 配置。随后要求第一台客户端的 IPv6
 TCP 命中设备域名 `REJECT`，第二台客户端的 IPv6 TCP、受控 UDP
 request/response 和 1200-byte QUIC Initial-shaped UDP carrier 命中自己的 `DIRECT`
 selector。TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案，
@@ -125,8 +127,7 @@ selector。TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定
 验证客户端 default route、Mac gateway alias、broker PID、Unix socket、ready file
 和 runtime state 被清理。客户端可能按 RFC 4862 暂时保留 deprecated/等待过期的
 SLAAC 地址；门禁不把“地址立即消失”当成路由撤销条件。QUIC 断言证明的是 UDP
-carrier 与策略命中，不是
-完整 HTTP/3 握手。这个门禁不能用于 same-LAN；主路由器 RA 未被抑制时会形成绕过路径。
+carrier 与策略命中，不是完整 HTTP/3 握手。
 
 `lab-test-ipv6-imported-egress` 是上述确定性门禁的外部补充，不替代本机 fixture。
 它要求显式提供一个真实 mihomo 订阅：
@@ -237,6 +238,8 @@ make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
 make lab-test-tun-local-routing # 验证 Mac 本机模式与下游隔离
 make lab-test-tun-device-policy # 验证独立的每设备 TUN 策略
 make lab-test-ipv6-userspace # 验证独立下游 LAN 的 IPv6 TCP/UDP 接管与撤销
+make lab-test-ipv6-same-wifi # 验证同 LAN DHCP 全屋 IPv6、Medium RA 与撤销
+make lab-test-ipv6-same-lan # 验证旁路由手工 IPv6、无 RA 与清理
 make lab-test-ipv6-imported-egress # 使用真实订阅与公网 IPv6 补充验证
 make lab-down     # 停止客户端并移除 host network
 make lab-destroy  # 同时删除持久化的 Lima 客户端磁盘

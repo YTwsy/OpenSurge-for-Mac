@@ -339,7 +339,7 @@ func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	if payload.SchemaVersion != SchemaVersion || len(payload.Interfaces) != 2 {
 		t.Fatalf("interfaces response = %#v", payload)
 	}
-	if payload.Interfaces[0].Interface != "en0" || payload.Interfaces[0].NetworkService != "Wi-Fi" {
+	if payload.Interfaces[0].Interface != "en0" || payload.Interfaces[0].NetworkService != "Wi-Fi" || payload.Interfaces[0].IPv6LinkLocal != "fe80::100" {
 		t.Fatalf("first interface = %#v", payload.Interfaces[0])
 	}
 }
@@ -1330,6 +1330,7 @@ func TestControlConfigRoundTripsIPv6Controls(t *testing.T) {
 	input := controlConfigFrom(cfg, fileDigest(path))
 	input.DNS.IPv6 = true
 	input.Transparent.TUNIPv6 = config.TUNIPv6Always
+	input.Transparent.IPv6SharedL2Ready = true
 	payload, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
@@ -1341,8 +1342,8 @@ func TestControlConfigRoundTripsIPv6Controls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !updated.DNS.IPv6 || updated.Transparent.TUNIPv6 != config.TUNIPv6Always {
-		t.Fatalf("IPv6 controls were not persisted: DNS=%v takeover=%q", updated.DNS.IPv6, updated.Transparent.TUNIPv6)
+	if !updated.DNS.IPv6 || updated.Transparent.TUNIPv6 != config.TUNIPv6Always || !updated.Transparent.IPv6SharedL2Ready {
+		t.Fatalf("IPv6 controls were not persisted: DNS=%v takeover=%q sharedL2=%v", updated.DNS.IPv6, updated.Transparent.TUNIPv6, updated.Transparent.IPv6SharedL2Ready)
 	}
 }
 
@@ -1683,7 +1684,7 @@ runtime:
 		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4Mode: mode, IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"192.168.1.1"}}, nil
 	}
 	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
-		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi"}, {Interface: "en7", NetworkService: "USB LAN"}}, nil
+		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi", IPv6LinkLocal: "fe80::100"}, {Interface: "en7", NetworkService: "USB LAN", IPv6LinkLocal: "fe80::700"}}, nil
 	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)

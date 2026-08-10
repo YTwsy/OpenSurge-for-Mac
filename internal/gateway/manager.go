@@ -372,6 +372,7 @@ func (m Manager) Start(ctx context.Context) error {
 		IPv6PacketEffective: ipv6Resolution.Effective,
 		NativeIPv6Available: ipv6Resolution.NativeAvailable,
 		IPv6Reason:          ipv6Resolution.Reason,
+		IPv6RAEffective:     ipv6Resolution.Effective && m.cfg.DHCP.Enabled,
 	}
 	if bundle := m.cfg.DevicePolicy.Bundle; bundle != nil {
 		state.DevicePolicyDigest = bundle.Digest
@@ -746,7 +747,12 @@ func (m Manager) cleanupIPv6(ctx context.Context, deps gatewayDeps, state runtim
 	var cleanupErr error
 	if state.IPv6GatewayAliasOwned {
 		host := applied.ipv6Host(deps)
-		cleanupErr = errors.Join(cleanupErr, host.Withdraw(ctx))
+		// IPv6RAEffective was added after the first isolated-LAN implementation.
+		// Fall back to the applied DHCP-owning topology so an older runtime state
+		// still receives a withdrawal during an upgrade stop.
+		if state.IPv6RAEffective || (state.IPv6PacketEffective && applied.cfg.DHCP.Enabled) {
+			cleanupErr = errors.Join(cleanupErr, host.Withdraw(ctx))
+		}
 		cleanupErr = errors.Join(cleanupErr, host.RemoveGateway(ctx))
 	}
 	if state.PIDIPv6Packet != 0 {

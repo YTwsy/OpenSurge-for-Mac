@@ -395,11 +395,11 @@ func TestValidateDownstreamIPv6TakeoverContract(t *testing.T) {
 		edit func(*Config)
 		want string
 	}{
-		{"same LAN without RA suppression", func(cfg *Config) {
+		{"same LAN without shared-L2 readiness", func(cfg *Config) {
 			cfg.Gateway.Mode = GatewayModeSameLAN
 			cfg.DHCP.Enabled = false
 			cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
-		}, "requires gateway.mode"},
+		}, "ipv6_shared_l2_ready"},
 		{"transparent off", func(cfg *Config) { cfg.Transparent.Mode = TransparentModeOff }, "requires transparent.mode"},
 		{"missing broker", func(cfg *Config) { cfg.Transparent.IPv6PacketBrokerBinary = "" }, "ipv6_packet_broker_binary is required"},
 		{"MTU too small", func(cfg *Config) { cfg.Transparent.IPv6PacketMTU = 1279 }, "ipv6_packet_mtu must be between"},
@@ -411,6 +411,22 @@ func TestValidateDownstreamIPv6TakeoverContract(t *testing.T) {
 			tt.edit(&cfg)
 			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Validate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+
+	for _, mode := range []string{GatewayModeSameLAN, GatewayModeSameWiFiDHCP} {
+		t.Run(mode+" with shared-L2 readiness", func(t *testing.T) {
+			cfg := valid
+			cfg.Gateway.Mode = mode
+			cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
+			cfg.Transparent.IPv6SharedL2Ready = true
+			cfg.DHCP.Enabled = mode == GatewayModeSameWiFiDHCP
+			if mode == GatewayModeSameWiFiDHCP {
+				cfg.Gateway.LANIP = "192.168.50.1"
+			}
+			if err := Validate(cfg); err != nil {
+				t.Fatalf("Validate(%s shared-L2 IPv6) error = %v", mode, err)
 			}
 		})
 	}

@@ -51,9 +51,10 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
-  # off | auto | always. Currently requires gateway.mode: "isolated_lan"
-  # and transparent.mode: "tun".
+  # off | auto | always. Shared-L2 topologies additionally require the
+  # readiness assertion below; transparent.mode must be "tun".
   tun_ipv6: "off"
+  ipv6_shared_l2_ready: false
   ipv6_packet_broker_binary: "opensurge-network"
   ipv6_packet_mtu: 1500
 

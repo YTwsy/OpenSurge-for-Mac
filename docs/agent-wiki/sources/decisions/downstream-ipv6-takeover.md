@@ -6,16 +6,22 @@ status: implemented-validated
 
 # 下游 IPv6 接管决策
 
-OpenSurge 的下游 IPv6 接管只在 `gateway.mode: "isolated_lan"` 中启用。旁路由和
-同网段 DHCP 模式仍有上游路由器 RA；在没有 RA suppression / RA Guard 之前启用会
-形成绕过 Mac 的第二条 IPv6 默认路由，因此配置必须 fail closed。
+OpenSurge 的下游 IPv6 接管支持三个拓扑，但共享 L2 必须显式确认
+`transparent.ipv6_shared_l2_ready: true`，否则配置 fail closed：
+
+- `isolated_lan`：OpenSurge 自动发布 RA/SLAAC/RDNSS；
+- `same_wifi_dhcp`：OpenSurge 成为全 LAN IPv6 提供者，操作者必须先关闭主路由
+  RA/DHCPv6，或使用 RA Guard 消除竞争默认路由；
+- `same_lan`：选择性手工接入，不广播 RA。客户端使用
+  `fdfe:dcba:9878::/64` 中的唯一地址，默认网关和 DNS 都指向 Mac 接口的
+  link-local IPv6，并移除该设备原有的主路由 IPv6 默认路由。
 
 用户控制面保持两个独立设置：
 
 - `dns.ipv6` 控制 mihomo DNS 是否回答 AAAA，并在开启时使用
   `fdfe:dcba:9876::/64` fake IPv6；
-- `transparent.tun_ipv6` 取 `off | auto | always`，控制是否为独立下游 LAN
-  发布 IPv6 网关、DNS 和用户态透明数据面。`auto` 只在上游接口同时有公网全局
+- `transparent.tun_ipv6` 取 `off | auto | always`，控制是否建立下游 IPv6 网关、
+  DNS 和用户态透明数据面。`auto` 只在上游接口同时有公网全局
   IPv6 地址（排除 ULA）和 IPv6 默认路由时生效；`always` 强制建立下游路径。
 
 下游 IPv6 不从物理接口路由进 macOS 系统 utun。root broker 在下游 Ethernet 的
@@ -30,9 +36,16 @@ ICMPv6、ESP 或任意非 TCP/UDP 协议。
 规则把 `/` 当成多个用户名的分隔符。策略组继续使用用户可见的
 `device/<id>/...`，packet listener 和对应规则使用单值 `device:<id>`。
 
-dnsmasq 在下游发布 `fdfe:dcba:9878::/64` 的 SLAAC/RA 和默认路由，并把
-下游接口的 link-local 地址发布为 RDNSS。`fdfe:dcba:9878::1` 保留为 Mac 的
-下游 gateway alias 和 dnsmasq 监听地址；它不作为客户端收到的 RDNSS。
+dnsmasq 在 `isolated_lan` 和 `same_wifi_dhcp` 发布 `fdfe:dcba:9878::/64` 的
+SLAAC/RA 和默认路由，并把下游接口的 link-local 地址发布为 RDNSS。RA 不设置
+`high`/`low`，使用 RFC 4191 与 dnsmasq 的默认 Medium router preference。
+`same_lan` 只启动 ULA gateway alias、IPv6 DNS listener、BPF broker 和 patched
+Mihomo，不生成任何 RA 配置。`fdfe:dcba:9878::1` 保留为 Mac 的下游 gateway alias
+和 dnsmasq 监听地址，但共享 L2 的手工客户端不依赖它完成邻居发现；默认网关和 DNS
+都使用 Mac link-local 地址。
+受控 vmnet bridge 验证中，手工客户端直接使用 ULA alias 作为 DNS 时邻居发现未可靠
+完成、查询未到达 dnsmasq；link-local DNS 路径通过，因此 UI 与验收门槛不得再把 ULA
+listener 作为旁路由客户端填写值。
 Mihomo 系统 TUN 地址使用独立的
 `fdfe:dcba:9877::1/126`。三段前缀必须保持互不重叠，fake IPv6 不能被本地 ULA
 直连规则吞掉。
@@ -55,5 +68,5 @@ IPv6 route 而失败。HTTP-only 代理也不能承载 UDP/QUIC。
 - `internal/gateway/manager.go`
 - `internal/mihomo/device_policy.go`
 - `tests/lab/lab.sh`
-- dnsmasq `--dhcp-option=option6:dns-server,[fe80::]` link-local substitution:
-  <https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html>
+- dnsmasq RA、RDNSS 与 `--ra-param`：<https://dnsmasq.org/docs/dnsmasq-man.html>
+- RFC 4191 Medium default-router preference：<https://www.rfc-editor.org/rfc/rfc4191.html>

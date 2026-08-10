@@ -56,7 +56,7 @@ export type ProviderProxy = { name: string; type: string; alive: boolean }
 export type ProxyProvider = { name: string; type: string; vehicle_type: string; updated_at?: string; proxy_count: number; proxies: ProviderProxy[] }
 export type RuleProvider = { name: string; type: string; vehicle_type: string; behavior?: string; updated_at?: string; rule_count: number }
 export type NetworkSnapshot = { network_service: string; interface: string; hardware_address?: string; ipv4?: string; subnet_mask?: string; router?: string; dns: string[]; ipv6_default: boolean }
-export type NetworkInterfaceOption = { interface: string; network_service: string }
+export type NetworkInterfaceOption = { interface: string; network_service: string; ipv6_link_local?: string }
 export type NetworkInterfacesResponse = { schema_version: number; interfaces: NetworkInterfaceOption[] }
 export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string; network_snapshot?: NetworkSnapshot; client_validation_skipped?: boolean }
 export type GatewayPlan = { schema_version: number; revision: string; topology: string; snapshot: NetworkSnapshot; protected_ipv4: string[]; dhcp_servers: string[]; warnings: string[]; blockers: string[] }
@@ -66,7 +66,7 @@ export type ControlConfig = {
   gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; upstream_interface: string }
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string }
   dns: { listen: string; upstream: string; ipv6: boolean }
-  transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always' }
+  transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }
   device_policy: { enabled: boolean; protected_ipv4: string[] }
 }

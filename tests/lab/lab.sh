@@ -215,7 +215,7 @@ render_tun_egress_profile() {
 
 write_config() {
   local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line device_policy_file
-  local transparent_mode dns_ipv6 tun_ipv6 ipv6_packet_binary
+  local transparent_mode dns_ipv6 tun_ipv6 ipv6_packet_binary gateway_mode dhcp_enabled ipv6_shared_l2_ready
   local profile_mode profile_path profile_source
 	mode="${1:-off}"
   TUN_EGRESS_PROFILE=0
@@ -228,6 +228,9 @@ write_config() {
   dns_upstream_line=""
   dns_ipv6=false
   tun_ipv6=off
+  gateway_mode=isolated_lan
+  dhcp_enabled=true
+  ipv6_shared_l2_ready=false
   ipv6_packet_binary=opensurge-network
   transparent_mode="$mode"
   profile_mode="managed"
@@ -251,7 +254,7 @@ write_config() {
   case "$mode" in
     off) ;;
     tun) dns_upstream_line='  upstream: "127.0.0.1#1053"' ;;
-    ipv6|ipv6-auto)
+    ipv6|ipv6-auto|ipv6-same-wifi|ipv6-same-lan)
       transparent_mode=tun
       dns_upstream_line='  upstream: "127.0.0.1#1053"'
       dns_ipv6=true
@@ -262,6 +265,16 @@ write_config() {
       fi
       ipv6_packet_binary="$IPV6_PACKET_BINARY"
       mihomo_bin="$PATCHED_MIHOMO_BINARY"
+      if [[ "$mode" == "ipv6-same-wifi" ]]; then
+        gateway_mode=same_wifi_dhcp
+        upstream="$iface"
+        ipv6_shared_l2_ready=true
+      elif [[ "$mode" == "ipv6-same-lan" ]]; then
+        gateway_mode=same_lan
+        upstream="$iface"
+        dhcp_enabled=false
+        ipv6_shared_l2_ready=true
+      fi
       ;;
     *) echo "unknown transparent mode: $mode" >&2; exit 2 ;;
   esac
@@ -273,12 +286,18 @@ write_config() {
   /sbin/ifconfig "$iface" | grep -q 'member: vmenet'
   /sbin/ifconfig "$iface" | grep -q "inet $LAN_IP "
   require_unique_lab_ip "$iface"
-  [[ "$iface" != "$upstream" ]] || { echo "lab and upstream interfaces must differ" >&2; exit 1; }
+  if [[ "$gateway_mode" == "isolated_lan" ]]; then
+    [[ "$iface" != "$upstream" ]] || { echo "isolated lab and upstream interfaces must differ" >&2; exit 1; }
+  else
+    [[ "$iface" == "$upstream" ]] || { echo "shared-L2 lab requires matching gateway and upstream interfaces" >&2; exit 1; }
+  fi
 
   mkdir -p "$STATE_DIR"
   sed \
 	  -e "s|__LAB_INTERFACE__|$(sed_escape "$iface")|g" \
 	  -e "s|__UPSTREAM_INTERFACE__|$(sed_escape "$upstream")|g" \
+	  -e "s|__GATEWAY_MODE__|$(sed_escape "$gateway_mode")|g" \
+	  -e "s|__DHCP_ENABLED__|$(sed_escape "$dhcp_enabled")|g" \
 	  -e "s|__DNSMASQ_BINARY__|$(sed_escape "$dnsmasq_bin")|g" \
 	  -e "s|__MIHOMO_BINARY__|$(sed_escape "$mihomo_bin")|g" \
     -e "s|__MIHOMO_PROFILE_MODE__|$(sed_escape "$profile_mode")|g" \
@@ -287,6 +306,7 @@ write_config() {
     -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
     -e "s|__DNS_IPV6__|$(sed_escape "$dns_ipv6")|g" \
     -e "s|__TUN_IPV6__|$(sed_escape "$tun_ipv6")|g" \
+    -e "s|__IPV6_SHARED_L2_READY__|$(sed_escape "$ipv6_shared_l2_ready")|g" \
     -e "s|__IPV6_PACKET_BROKER_BINARY__|$(sed_escape "$ipv6_packet_binary")|g" \
     -e "s|__TRANSPARENT_MODE__|$(sed_escape "$transparent_mode")|g" \
     -e "s|__RUNTIME_DIR__|$(sed_escape "$runtime_dir")|g" \
@@ -1458,7 +1478,14 @@ run_device_policy_test() {
 
 run_ipv6_userspace_test() {
   local client_one client_two source_one source_two gateway_started broker_pid iface rdnss
-  local egress_probe_started dns_fixture_started
+  local egress_probe_started dns_fixture_started topology config_mode
+  topology="${1:-isolated_lan}"
+  case "$topology" in
+    isolated_lan) config_mode=ipv6 ;;
+    same_wifi_dhcp) config_mode=ipv6-same-wifi ;;
+    same_lan) config_mode=ipv6-same-lan ;;
+    *) echo "unknown IPv6 lab topology: $topology" >&2; exit 2 ;;
+  esac
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
@@ -1479,7 +1506,7 @@ run_ipv6_userspace_test() {
   build_ipv6_lab_binaries
   build_egress_probe
   write_tun_egress_provider
-  write_config ipv6
+  write_config "$config_mode"
   mkdir -p "$ROOT/bin"
   GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
     go build -o "$BINARY" ./cmd/omg
@@ -1491,6 +1518,11 @@ run_ipv6_userspace_test() {
     status=$?
     collect_artifacts || true
     restore_client_control_dns
+    if [[ "$topology" == "same_lan" ]]; then
+      for client in $CLIENTS; do
+        limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client clear-manual || true
+      done
+    fi
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
     fi
@@ -1510,17 +1542,34 @@ run_ipv6_userspace_test() {
   dns_fixture_started=1
   sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
-  for client in $CLIENTS; do
-    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
-    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew6 "$LAN_IP"
-  done
   rdnss="$(/sbin/ifconfig "$iface" | awk '/inet6 fe80:/ { split($2, value, "%"); print value[1]; exit }')"
-  [[ "$rdnss" == fe80:* ]] || { echo "lab interface $iface has no link-local RDNSS address" >&2; exit 1; }
-  grep -F 'option: 23 dns-server' "$STATE_DIR/logs/dnsmasq.log" | grep -Fq "$rdnss" || {
-    echo "dnsmasq did not advertise the link-local RDNSS address $rdnss" >&2
-    tail -180 "$STATE_DIR/logs/dnsmasq.log" >&2 || true
-    exit 1
-  }
+  [[ "$rdnss" == fe80:* ]] || { echo "lab interface $iface has no link-local IPv6 gateway" >&2; exit 1; }
+  if [[ "$topology" == "same_lan" ]]; then
+    limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client manual "$LAN_IP" "192.168.50.101"
+    limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client manual6 "$LAN_IP" "fdfe:dcba:9878::21" "$rdnss" "$rdnss"
+    limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client manual "$LAN_IP" "192.168.50.102"
+    limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client manual6 "$LAN_IP" "fdfe:dcba:9878::22" "$rdnss" "$rdnss"
+    for client in $CLIENTS; do
+      limactl shell "$client" -- grep -Fx "nameserver $rdnss" /etc/resolv.conf
+    done
+    grep -Fq 'listen-address=fdfe:dcba:9878::1' "$STATE_DIR/dnsmasq.conf"
+    if grep -Eq '^(enable-ra|ra-param=|dhcp-option=option6:|dhcp-range=fdfe:)' "$STATE_DIR/dnsmasq.conf"; then
+      echo "same-LAN selective IPv6 unexpectedly enabled router advertisements" >&2
+      cat "$STATE_DIR/dnsmasq.conf" >&2
+      exit 1
+    fi
+  else
+    for client in $CLIENTS; do
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew6 "$LAN_IP"
+      limactl shell "$client" -- bash -lc "ip -6 route show default dev omg0 | grep -F 'pref medium'"
+    done
+    grep -F 'option: 23 dns-server' "$STATE_DIR/logs/dnsmasq.log" | grep -Fq "$rdnss" || {
+      echo "dnsmasq did not advertise the link-local RDNSS address $rdnss" >&2
+      tail -180 "$STATE_DIR/logs/dnsmasq.log" >&2 || true
+      exit 1
+    }
+  fi
   assert_client_ipv4 "$client_one" "192.168.50.101"
   assert_client_ipv4 "$client_two" "192.168.50.102"
   source_one="$(client_ipv6 "$client_one")"
@@ -1535,6 +1584,11 @@ run_ipv6_userspace_test() {
   grep -Fq '"tun_ipv6_requested": "always"' "$STATE_DIR/ipv6-status.json"
   grep -Fq '"ipv6_packet": "ready"' "$STATE_DIR/ipv6-status.json"
   grep -Fq '"gateway": "running"' "$STATE_DIR/ipv6-status.json"
+  if [[ "$topology" == "same_lan" ]]; then
+    grep -Fq '"ipv6_ra_effective": false' "$STATE_DIR/state.json"
+  else
+    grep -Fq '"ipv6_ra_effective": true' "$STATE_DIR/state.json"
+  fi
   grep -Fq 'type: opensurge-packet' "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_one")\": \"device:$client_one\"" "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_two")\": \"device:$client_two\"" "$STATE_DIR/mihomo.yaml"
@@ -1579,12 +1633,18 @@ run_ipv6_userspace_test() {
     echo "OpenSurge IPv6 gateway alias remained on $iface after stop" >&2
     exit 1
   fi
-  for client in $CLIENTS; do
-    assert_client_ipv6_withdrawn "$client"
-  done
+  if [[ "$topology" == "same_lan" ]]; then
+    for client in $CLIENTS; do
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client clear-manual
+    done
+  else
+    for client in $CLIENTS; do
+      assert_client_ipv6_withdrawn "$client"
+    done
+  fi
   trap - EXIT INT TERM
   collect_artifacts
-  echo "virtual LAN userspace IPv6 TCP, UDP/QUIC carrier, device identity, and rollback test passed"
+  echo "virtual LAN $topology userspace IPv6 TCP, UDP/QUIC carrier, device identity, and rollback test passed"
 }
 
 run_ipv6_imported_egress_test() {
@@ -1991,7 +2051,13 @@ case "${1:-}" in
     run_device_policy_test
     ;;
   test-ipv6-userspace)
-    run_ipv6_userspace_test
+    run_ipv6_userspace_test isolated_lan
+    ;;
+  test-ipv6-same-wifi)
+    run_ipv6_userspace_test same_wifi_dhcp
+    ;;
+  test-ipv6-same-lan)
+    run_ipv6_userspace_test same_lan
     ;;
   test-ipv6-imported-egress)
     run_ipv6_imported_egress_test
@@ -2009,7 +2075,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|test-ipv6-userspace|test-ipv6-imported-egress|down|destroy>" >&2
+    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|test-ipv6-userspace|test-ipv6-same-wifi|test-ipv6-same-lan|test-ipv6-imported-egress|down|destroy>" >&2
     exit 2
     ;;
 esac

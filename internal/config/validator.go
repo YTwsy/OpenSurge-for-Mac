@@ -97,8 +97,11 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err
 	}
-	if cfg.Transparent.IPv6Requested() && cfg.Gateway.Mode != GatewayModeIsolatedLAN {
-		return fmt.Errorf("transparent.tun_ipv6 currently requires gateway.mode: \"isolated_lan\"; same-LAN IPv6 needs router RA suppression or RA Guard")
+	if cfg.Transparent.IPv6Requested() && cfg.Gateway.SameLAN() && !cfg.Transparent.IPv6SharedL2Ready {
+		if cfg.Gateway.Mode == GatewayModeSameLAN {
+			return fmt.Errorf("transparent.tun_ipv6 in gateway.mode same_lan requires transparent.ipv6_shared_l2_ready: true after selected clients use the OpenSurge ULA, link-local default gateway, and DNS without a competing IPv6 default route")
+		}
+		return fmt.Errorf("transparent.tun_ipv6 in gateway.mode same_wifi_dhcp requires transparent.ipv6_shared_l2_ready: true after competing IPv6 RA/default routes have been removed from the shared LAN")
 	}
 	if cfg.LocalSystemProxy.Enabled && !cfg.Transparent.TUNEnabled() {
 		return fmt.Errorf("local_system_proxy.enabled requires transparent.mode: \"tun\"")

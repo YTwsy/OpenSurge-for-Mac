@@ -12,8 +12,8 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。当前 runtime pat
 - macOS IPv4 forwarding 由 sysctl 管理，并在停止时恢复。
 - 显式启用时，macOS 上游网络服务的 HTTP/HTTPS 系统代理作为 TUN 兼容层，并由
   runtime state 保存启动前快照。
-- 独立 LAN 启用下游 IPv6 接管时，BPF broker、IPv6 gateway alias 和 dnsmasq
-  RA/SLAAC 也纳入同一个 runtime/rollback 所有权。
+- 启用下游 IPv6 接管时，BPF broker 和 IPv6 gateway alias 纳入同一个
+  runtime/rollback 所有权；自动拓扑还拥有 dnsmasq RA/SLAAC，手工旁路由不发布 RA。
 
 ## Start 顺序
 
@@ -35,7 +35,8 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。当前 runtime pat
     SIGTERM 清理窗口，再按需 SIGKILL 并 rollback；
 11. 若下游 IPv6 生效，启动 BPF broker、记录 PID/fingerprint，再添加并等待 IPv6
     gateway alias 完成 DAD；
-12. 启动 dnsmasq；此时才开始发布 RA/SLAAC/RDNSS；
+12. 启动 dnsmasq；自动拓扑此时才开始发布 RA/SLAAC/RDNSS，手工旁路由只启动 IPv6
+    DNS listener；
 13. 加载 PF anchor；
 14. 所有网关服务 ready 后，才把上游 network service 的 HTTP/HTTPS 代理指向本机
     mihomo mixed-port。
@@ -66,8 +67,8 @@ runtime state 和服务，避免 macOS 继续指向已经停止的本机代理�
 2. 如果存在 runtime state，则加载它；
 3. 若 runtime state 有系统代理快照，先恢复 HTTP/HTTPS 代理；恢复失败则保留服务和 state；
 4. 停止 dnsmasq；
-5. 若拥有下游 IPv6，发送 router/prefix lifetime-zero withdrawal、删除 gateway
-   alias，并停止 BPF broker；
+5. 若拥有下游 IPv6，且 runtime state 记录 RA 实际生效，则发送 router/prefix
+   lifetime-zero withdrawal；随后删除 gateway alias，并停止 BPF broker；
 6. 停止 mihomo；
 7. 如果 PF anchor 已加载，则卸载 PF anchor；
 8. 恢复 IPv4 forwarding 到启动前的值；
@@ -158,5 +159,6 @@ macOS“系统设置 → 网络 → 详细信息 → TCP/IP”，并且不得进
 
 用 `make test` 验证代码层行为。宣称真实网关生命周期在 host network 上
 工作前，运行 `make lab-test`。涉及透明代理行为时，运行 `make lab-test-tun`。
-涉及下游 IPv6 alias、RA/SLAAC、BPF packet path 或撤销时，运行
-`make lab-test-ipv6-userspace`。
+涉及下游 IPv6 alias、RA/SLAAC、BPF packet path 或撤销时，按拓扑运行
+`make lab-test-ipv6-userspace`、`make lab-test-ipv6-same-wifi` 或
+`make lab-test-ipv6-same-lan`。
