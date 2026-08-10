@@ -34,8 +34,8 @@ reservation 可位于动态 DHCP 池内，`devices --format json` 会显式标�
 
 项目不内置儿童、影音、IoT 或第三方规则内容；规则和模板由操作者自己提供。JSON 中有：
 
-- `devices`：稳定 `id`、可选显示名称 `name`、MAC、固定 IPv4、profile 与明确的
-  `egress_mode`；
+- `devices`：稳定 `id`、可选显示名称 `name`、MAC、固定 IPv4、profile、
+  `gateway_target` 与明确的 `egress_mode`；
 - `profiles`：默认 selector 候选项与设备覆盖规则；
 - `templates`：可复用的 profile 默认值和规则片段；
 - `rule_sets`：inline 或 HTTP mihomo rule-provider。
@@ -82,6 +82,14 @@ reservation 可位于动态 DHCP 池内，`devices --format json` 会显式标�
 Web GUI 新登记设备默认使用 `inherit_global`。旧文件没有 `egress_mode` 时不会被静默改变，
 而会以 `legacy_fallback` 保留原来的“全局规则优先、设备出口兜底”语义；GUI 会明确提示
 用户选择一种新模式。
+
+`gateway_target` 默认为 `opensurge`。只有 `same_wifi_dhcp`（局域网 DHCP
+接管）可显式选择 `upstream_router`：dnsmasq 仍按 MAC 为设备分配登记的固定
+IPv4，但通过 tag 向它单独下发 `dhcp.bypass_gateway` 和
+`dhcp.bypass_dns`。此时不生成该设备的 mihomo selector 或规则，Profile 和
+规则只保留不删除；切回 `opensurge` 后重新生效。切换后必须让设备续租或重新
+连接网络，新的 Router/DNS 才会生效。该选项必须有真实 MAC，且主路由网关
+必须与 Mac 网关处于同一 `/24`、不得位于 DHCP 动态地址池内。
 
 只有跟随设备使用的 Profile 仍会保留 `default_policies` 作为以后切换独立模式的配置，
 但这些未渲染的候选不会参与当前 imported profile 引用校验；真正生成独立或兼容 selector

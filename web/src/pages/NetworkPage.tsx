@@ -117,7 +117,13 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       setConfig(currentConfig => {
         if (!currentConfig || currentConfig.gateway.mode !== mode) return currentConfig
         const dhcp = mode === 'same_wifi_dhcp'
-          ? { ...currentConfig.dhcp, range_start: defaults.dhcp_range_start!, range_end: defaults.dhcp_range_end! }
+          ? {
+              ...currentConfig.dhcp,
+              range_start: defaults.dhcp_range_start!,
+              range_end: defaults.dhcp_range_end!,
+              bypass_gateway: defaults.bypass_gateway || defaults.snapshot.router || '',
+              bypass_dns: defaults.bypass_dns.length ? defaults.bypass_dns : defaults.snapshot.router ? [defaults.snapshot.router] : [],
+            }
           : currentConfig.dhcp
         return {
           ...currentConfig,
@@ -127,9 +133,10 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
         }
       })
       const warning = defaults.warnings.length ? ` ${defaults.warnings.join('；')}。` : ''
-      setNetworkDefaultsMessage(`已根据当前 ${defaults.snapshot.network_service}（${defaults.snapshot.interface}）填入 IPv4 建议值，尚未保存。${warning}`)
+      const fields = mode === 'same_wifi_dhcp' ? 'IPv4、地址池和主路由建议值' : 'IPv4 建议值'
+      setNetworkDefaultsMessage(`已根据当前 ${defaults.snapshot.network_service}（${defaults.snapshot.interface}）填入 ${fields}，尚未保存。${warning}`)
     } catch (cause) {
-      const fields = mode === 'same_lan' ? '接口和 IPv4' : '接口、IPv4 和地址池'
+      const fields = mode === 'same_lan' ? '接口和 IPv4' : '接口、IPv4、地址池、主路由网关和 DNS'
       setNetworkDefaultsError(`无法自动填写当前网络：${cause instanceof Error ? cause.message : String(cause)}。请手工确认${fields}。`)
     } finally {
       setNetworkDefaultsBusy(false)
@@ -173,6 +180,21 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
 
   const save = async () => {
     if (!config || !savedConfig) return
+    const leavingTakeover = savedConfig.gateway.mode === 'same_wifi_dhcp' && config.gateway.mode !== 'same_wifi_dhcp' && config.device_policy.enabled
+    if (leavingTakeover) {
+      try {
+        const document = await api.devicePolicy()
+        const bypassDevices = document.policy.devices.filter(device => device.gateway_target === 'upstream_router')
+        if (bypassDevices.length) {
+          const names = bypassDevices.map(device => device.name || device.id).join('、')
+          setError(`${names} 正在使用“直连主路由”；该方式仅适用于局域网 DHCP 接管。请先在设备页将这些设备切回 OpenSurge。`)
+          return
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        return
+      }
+    }
     const leavingSameLAN = savedConfig.gateway.mode === 'same_lan' && config.gateway.mode !== 'same_lan' && config.device_policy.enabled
     if (!leavingSameLAN) {
       await persistConfig(config)
@@ -368,6 +390,22 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
               </ConfigField>
             </div>
           </fieldset>
+          {config.gateway.mode === 'same_wifi_dhcp' && <fieldset className="dhcp-config-group">
+            <legend><strong>直连主路由设备</strong><small>仅供设备页“直连主路由”使用；普通接管设备仍获得 Mac 网关和 DNS</small></legend>
+            <div className="dhcp-config-grid">
+              <ConfigField label="主路由网关" setting="dhcp.bypass_gateway" hint="向取消 OpenSurge IPv4 网关接管的设备下发。必须与 Mac 网关处于同一 /24，且不能位于 DHCP 地址池中。">
+                <input aria-label="直连主路由网关" placeholder="192.168.1.1" value={config.dhcp.bypass_gateway} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: event.target.value } })} />
+              </ConfigField>
+              <ConfigField label="主路由 DNS" setting="dhcp.bypass_dns" hint="向直连主路由设备下发，可填写原路由器或公共 DNS；多个地址用逗号分隔。">
+                <input aria-label="直连主路由 DNS" placeholder="192.168.1.1" value={config.dhcp.bypass_dns.join(', ')} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, bypass_dns: event.target.value.split(',').map(item => item.trim()).filter(Boolean) } })} />
+              </ConfigField>
+            </div>
+            <button type="button" className="text-link" disabled={!plan?.snapshot.router && !recoverySnapshot?.router} onClick={() => {
+              const snapshot = plan?.snapshot || recoverySnapshot
+              if (!snapshot) return
+              setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: snapshot.router || '', bypass_dns: snapshot.dns.length ? snapshot.dns : snapshot.router ? [snapshot.router] : [] } })
+            }}>使用当前网络快照中的路由器与 DNS</button>
+          </fieldset>}
           <ConfigField label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
             <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
               <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>

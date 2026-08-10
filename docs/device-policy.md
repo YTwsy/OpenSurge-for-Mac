@@ -43,7 +43,7 @@ lists. Operators own the policy content. The JSON model has four independent
 collections:
 
 - `devices`: stable identity (`id`, MAC, reserved IPv4, profile id), an optional
-  human-readable `name`, plus an explicit `egress_mode`;
+  human-readable `name`, plus `gateway_target` and an explicit `egress_mode`;
 - `profiles`: default selector candidates plus device rule overlays;
 - `templates`: optional reusable profile defaults and rule fragments;
 - `rule_sets`: inline or HTTP mihomo rule-provider definitions.
@@ -118,6 +118,15 @@ New devices created in the Web GUI default to `inherit_global`. A document that
 omits `egress_mode` keeps the previous global-first/device-fallback behavior as
 `legacy_fallback`; the GUI displays that state explicitly and asks the operator
 to choose either new mode instead of silently migrating it.
+
+`gateway_target` defaults to `opensurge`. Only `same_wifi_dhcp` may explicitly
+select `upstream_router`: dnsmasq still reserves the device's IPv4 by MAC, but
+uses a client tag to send `dhcp.bypass_gateway` and `dhcp.bypass_dns` instead.
+OpenSurge emits no mihomo selectors or rules for that device while bypass is
+active; its profile and rules remain stored and return when it switches back to
+`opensurge`. The client must renew its lease or reconnect before the new Router
+and DNS options take effect. This target requires a real MAC, and the upstream
+router must be in the gateway `/24` but outside the dynamic DHCP pool.
 
 An inherit-only device retains its profile's `default_policies` as future
 configuration, but those unused candidates are not rendered or checked against

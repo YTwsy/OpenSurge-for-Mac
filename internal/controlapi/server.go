@@ -344,7 +344,7 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
 		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
-		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain},
+		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain, BypassGateway: cfg.DHCP.BypassGateway, BypassDNS: append([]string{}, cfg.DHCP.BypassDNS...)},
 		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream},
 		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute},
 		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
@@ -1136,6 +1136,7 @@ func (s *Server) handleNetworkDefaults(w http.ResponseWriter, r *http.Request) {
 		Mode:          mode,
 		Snapshot:      snapshot,
 		GatewayIPv4:   snapshot.IPv4,
+		BypassDNS:     []string{},
 		Warnings:      []string{},
 		Blockers:      []string{},
 	}
@@ -1143,6 +1144,11 @@ func (s *Server) handleNetworkDefaults(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, "当前 Mac IPv4 由主路由 DHCP 分配；旁路由长期使用时建议在主路由中保留该地址")
 	}
 	if mode == config.GatewayModeSameWiFiDHCP {
+		result.BypassGateway = snapshot.Router
+		result.BypassDNS = append([]string(nil), snapshot.DNS...)
+		if len(result.BypassDNS) == 0 && snapshot.Router != "" {
+			result.BypassDNS = []string{snapshot.Router}
+		}
 		start, end, rangeErr := suggestDHCPRange24(snapshot, cfg.DevicePolicy.ProtectedIPv4)
 		if rangeErr != nil {
 			result.Blockers = append(result.Blockers, rangeErr.Error())
@@ -1597,12 +1603,8 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
+	if err := config.ValidateDevicePolicyCandidate(cfg, policy); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_validation_failed", err.Error())
-		return
-	}
-	if _, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "device_policy_compile_failed", err.Error())
 		return
 	}
 	data, _ := json.Marshal(policy)

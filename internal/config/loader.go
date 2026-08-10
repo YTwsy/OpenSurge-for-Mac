@@ -135,6 +135,10 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.DHCP.LeaseTime = value
 	case "dhcp.domain":
 		cfg.DHCP.Domain = value
+	case "dhcp.bypass_gateway":
+		cfg.DHCP.BypassGateway = value
+	case "dhcp.bypass_dns":
+		cfg.DHCP.BypassDNS = splitCommaSeparated(value)
 	case "device_policy.file":
 		cfg.DevicePolicy.File = value
 	case "device_policy.protected_ipv4":

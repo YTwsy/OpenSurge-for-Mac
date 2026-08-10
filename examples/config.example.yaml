@@ -10,6 +10,10 @@ dhcp:
   range_end: "192.168.50.200"
   lease_time: "12h"
   domain: "lan"
+  # Used only by same_wifi_dhcp devices whose gateway_target is
+  # "upstream_router". The router must stay outside the dynamic pool.
+  bypass_gateway: ""
+  bypass_dns: ""
 
 # Optional JSON control-plane file for fixed device leases and per-device
 # mihomo policy overlays. Leave empty unless device policy is enabled.

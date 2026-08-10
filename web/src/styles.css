@@ -355,6 +355,7 @@ button{cursor:pointer}
 .route-options,.registration-routing{display:grid;gap:8px}
 .route-options label,.registration-routing>label{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:start;padding:10px;border:1px solid #263c34;border-radius:10px;background:#0a1713;color:#a6b8b1;cursor:pointer}
 .route-options label.active,.registration-routing>label.active{border-color:#5caa89;background:#10271f;color:#e5f0eb}
+.route-options label.unavailable,.registration-routing>label.unavailable{cursor:not-allowed;opacity:.58}
 .route-options input,.registration-routing input{margin:3px 0 0;accent-color:#79e6b3}
 .route-options strong,.route-options small,.registration-routing strong,.registration-routing small{display:block;letter-spacing:0}
 .route-options small,.registration-routing small{margin-top:3px;color:#768c83;font-size:10px;font-weight:500;line-height:1.45}
@@ -363,6 +364,8 @@ button{cursor:pointer}
 .runtime-route{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:13px 15px;border:1px solid #31483f;border-radius:12px;background:#0b1915}
 .runtime-route strong,.runtime-route small{display:block}.runtime-route small{margin-top:3px;color:#83978f;letter-spacing:0}
 .runtime-route.following{border-color:#385345;background:#102019}
+.runtime-route.router-bypass{border-color:#876f38;background:#211c10}
+.router-bypass-settings-link{justify-self:start;margin-top:2px}.router-bypass-rule-notice{margin:0 0 14px}
 .draft-mode-delta{display:block!important;margin-top:8px!important;color:#d6bd79!important;letter-spacing:0!important;line-height:1.5}
 .default-slot{display:grid;grid-template-columns:minmax(90px,.7fr) minmax(0,1.3fr);gap:12px;align-items:center;margin-top:18px;padding:15px;border:1px solid #35634f;border-radius:12px;background:#112a21}
 .default-slot>span strong,.default-slot>span small{display:block}.default-slot>span small{margin-top:4px;color:#70b994}
@@ -543,6 +546,7 @@ html[data-theme="light"] .legacy-mode-warning{background:#fff5dc;border-color:#d
 html[data-theme="light"] .legacy-mode-warning small{color:#806b3a}
 html[data-theme="light"] .runtime-route{background:#f8fbfa;border-color:#cbded6}
 html[data-theme="light"] .runtime-route.following{background:#eaf5f0;border-color:#9dc9b6}
+html[data-theme="light"] .runtime-route.router-bypass{background:#fff8e7;border-color:#d8bd76}
 html[data-theme="light"] .default-slot{background:#e9f5ef;border-color:#92c8af}
 html[data-theme="light"] .default-slot.legacy{background:#fff5dc;border-color:#dabd70}
 html[data-theme="light"] .device-rules{background:#fffdf8;border-color:#d2bd83}

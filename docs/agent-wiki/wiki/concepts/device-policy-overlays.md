@@ -21,6 +21,11 @@ mihomo YAML”。
 - `domains`、`ip_cidrs`、`protocols`、`ports` 和 `rule_sets` 可组合；字段之间为
   AND，同字段多个值为 OR。
 - `templates` 只复用默认候选与规则片段；项目不预置儿童、影音或第三方规则内容。
+- `gateway_target` 默认为 `opensurge`。只有 `same_wifi_dhcp` 可选
+  `upstream_router`：保留 MAC 固定租约，但 dnsmasq 通过 tag 向该客户端下发
+  `dhcp.bypass_gateway` 和 `dhcp.bypass_dns`。编译结果不为其生成 mihomo
+  selector/rule，但必须保留 Profile、规则和 `egress_mode`，切回后恢复。
+  切换是 save-and-reload，且只有客户端 DHCP 续租/重连后新 Router/DNS 才生效。
 
 Web GUI 的设备主路径不要求用户先理解这些复用对象：登记默认创建
 `<device-id>-policy` 私有 Profile，并默认选择 `inherit_global`。路由模式修改属于

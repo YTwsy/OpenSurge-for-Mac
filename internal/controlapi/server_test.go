@@ -366,7 +366,7 @@ func TestNetworkDefaultsUseCurrentDefaultNetworkForSameLANModes(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &takeover); err != nil {
 		t.Fatal(err)
 	}
-	if takeover.GatewayIPv4 != "192.168.1.190" || takeover.Snapshot.Interface != "en7" || takeover.DHCPRangeStart != "192.168.1.100" || takeover.DHCPRangeEnd != "192.168.1.189" || len(takeover.Blockers) != 0 {
+	if takeover.GatewayIPv4 != "192.168.1.190" || takeover.Snapshot.Interface != "en7" || takeover.DHCPRangeStart != "192.168.1.100" || takeover.DHCPRangeEnd != "192.168.1.189" || takeover.BypassGateway != "192.168.1.1" || !reflect.DeepEqual(takeover.BypassDNS, []string{"192.168.1.1"}) || len(takeover.Blockers) != 0 {
 		t.Fatalf("takeover defaults = %#v", takeover)
 	}
 

@@ -37,12 +37,14 @@ type GatewayConfig struct {
 }
 
 type DHCPConfig struct {
-	Binary     string
-	Enabled    bool
-	RangeStart string
-	RangeEnd   string
-	LeaseTime  string
-	Domain     string
+	Binary        string
+	Enabled       bool
+	RangeStart    string
+	RangeEnd      string
+	LeaseTime     string
+	Domain        string
+	BypassGateway string
+	BypassDNS     []string
 }
 
 type DNSConfig struct {
@@ -142,6 +144,7 @@ func Default() Config {
 			RangeEnd:   "192.168.50.200",
 			LeaseTime:  "12h",
 			Domain:     "lan",
+			BypassDNS:  []string{},
 		},
 		DevicePolicy: DevicePolicyConfig{},
 		DNS: DNSConfig{

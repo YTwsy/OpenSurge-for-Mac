@@ -67,7 +67,11 @@ function renderPage(customOverview = overview) {
 
 describe('DevicesPage', () => {
   beforeEach(() => {
-    vi.mocked(api.config).mockResolvedValue({ device_policy: { enabled: true } } as never)
+    vi.mocked(api.config).mockResolvedValue({
+      gateway: { mode: 'same_wifi_dhcp' },
+      dhcp: { bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
+      device_policy: { enabled: true },
+    } as never)
     vi.mocked(api.sources).mockResolvedValue({ revision: 'sources-r1', sources: [] })
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(basePolicy))
     vi.mocked(api.devices).mockResolvedValue(devicesResponse())
@@ -614,6 +618,41 @@ describe('DevicesPage', () => {
     await waitFor(() => expect(api.gateway).toHaveBeenCalledWith('reload'))
     expect(waitForOperation).toHaveBeenCalledWith('reload-1')
     expect(await screen.findByText(/网关已使用最新设备配置重新启动/)).toBeTruthy()
+  })
+
+  it('offers router bypass only in DHCP takeover and names the device in renewal guidance', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'playstation-5', name: 'PlayStation 5', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'upstream_router', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'console-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [{ id: 'video', match: { domains: ['video.example'] }, action: 'DIRECT' }] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      drift: true,
+      applied: true,
+      desired_digest: 'desired123',
+      applied_digest: 'applied123',
+      applied_devices: [{ id: 'playstation-5', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'opensurge', egress_mode: 'dedicated', groups: { default: 'device/playstation-5/default' } }],
+    }))
+    renderPage({ ...overview, topology: 'same_wifi_dhcp' } as unknown as Overview)
+
+    const routerBypass = await screen.findByRole('radio', { name: /直连主路由/ })
+    expect((routerBypass as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText(/直连主路由期间，这些规则和出口设置会保留但不生效/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '应用并重载网关' }))
+    expect(within(screen.getByRole('dialog')).getByText('应用后，请重新连接 PlayStation 5 的网络，使新的主路由网关和 DNS 生效。')).toBeTruthy()
+  })
+
+  it('does not expose router bypass outside DHCP takeover', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'console-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+    await screen.findByText('console')
+    expect(screen.queryByRole('radio', { name: /直连主路由/ })).toBeNull()
   })
 
   it('keeps drift retryable and shows a readable error when reload fails', async () => {

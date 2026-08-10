@@ -239,6 +239,55 @@ func TestValidateSameWiFiDHCPGatewayMode(t *testing.T) {
 	}
 }
 
+func TestValidateDevicePolicyCandidateEnforcesRouterBypassTopology(t *testing.T) {
+	baseConfig := func() Config {
+		cfg := Default()
+		cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
+		cfg.Gateway.Interface = "en0"
+		cfg.Gateway.UpstreamInterface = "en0"
+		cfg.Gateway.LANIP = "192.168.1.20"
+		cfg.DHCP.Enabled = true
+		cfg.DHCP.RangeStart = "192.168.1.120"
+		cfg.DHCP.RangeEnd = "192.168.1.199"
+		cfg.DHCP.BypassGateway = "192.168.1.1"
+		cfg.DHCP.BypassDNS = []string{"192.168.1.1", "1.1.1.1"}
+		cfg.DNS.Listen = cfg.Gateway.LANIP
+		cfg.Transparent.Mode = TransparentModeTUN
+		return cfg
+	}
+	policy := device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices: []device.ManagedDevice{{
+			ID: "console", MAC: "aa:bb:cc:dd:ee:05", IPv4: "192.168.1.190", Profile: "home", GatewayTarget: device.GatewayTargetUpstreamRouter,
+		}},
+	}
+
+	if err := ValidateDevicePolicyCandidate(baseConfig(), policy); err != nil {
+		t.Fatalf("valid router bypass rejected: %v", err)
+	}
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{name: "missing gateway", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "" }, want: "requires dhcp.bypass_gateway"},
+		{name: "missing DNS", edit: func(cfg *Config) { cfg.DHCP.BypassDNS = nil }, want: "requires at least one dhcp.bypass_dns"},
+		{name: "different subnet", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "192.168.2.1" }, want: "must remain in gateway LAN"},
+		{name: "inside pool", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "192.168.1.150" }, want: "must not be inside the DHCP range"},
+		{name: "unsupported topology", edit: func(cfg *Config) { cfg.Gateway.Mode = GatewayModeSameLAN; cfg.DHCP.Enabled = false }, want: "only available in gateway.mode same_wifi_dhcp"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := baseConfig()
+			tt.edit(&cfg)
+			err := ValidateDevicePolicyCandidate(cfg, policy)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ValidateDevicePolicyCandidate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateAcceptsUpstreamProxy(t *testing.T) {
 	cfg := Default()
 	cfg.UpstreamProxy.Enabled = true

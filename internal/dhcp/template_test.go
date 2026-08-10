@@ -73,6 +73,44 @@ func TestRenderConfigWithDevicePolicyReservations(t *testing.T) {
 	}
 }
 
+func TestRenderConfigWithPerDeviceRouterBypass(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{
+  "profiles":[{"id":"default","default_policies":["DIRECT"]}],
+  "devices":[
+    {"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.1.181","profile":"default"},
+    {"id":"console","mac":"aa:bb:cc:dd:ee:05","ipv4":"192.168.1.190","profile":"default","gateway_target":"upstream_router"}
+  ]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
+	cfg.Gateway.LANIP = "192.168.1.20"
+	cfg.DHCP.RangeStart = "192.168.1.120"
+	cfg.DHCP.RangeEnd = "192.168.1.199"
+	cfg.DHCP.BypassGateway = "192.168.1.1"
+	cfg.DHCP.BypassDNS = []string{"192.168.1.1", "1.1.1.1"}
+	cfg.DevicePolicy.File = policyPath
+
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"dhcp-option=tag:opensurge-router-bypass,option:router,192.168.1.1",
+		"dhcp-option=tag:opensurge-router-bypass,option:dns-server,192.168.1.1,1.1.1.1",
+		"dhcp-host=aa:bb:cc:dd:ee:05,set:opensurge-router-bypass,192.168.1.190",
+		"dhcp-host=aa:bb:cc:dd:ee:01,192.168.1.181",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
 func TestRenderConfigWithDNSUpstream(t *testing.T) {
 	cfg := config.Default()
 	cfg.DNS.Upstream = "1.1.1.1"

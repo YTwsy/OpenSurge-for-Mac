@@ -23,6 +23,8 @@ dhcp:
   range_end: %s
   lease_time: %s
   domain: %s
+  bypass_gateway: %s
+  bypass_dns: %s
 
 device_policy:
   file: %s
@@ -72,7 +74,7 @@ runtime:
   dir: %s
 `,
 		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), q(cfg.Gateway.UpstreamInterface),
-		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain),
+		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain), q(cfg.DHCP.BypassGateway), q(strings.Join(cfg.DHCP.BypassDNS, ",")),
 		q(cfg.DevicePolicy.File), q(strings.Join(cfg.DevicePolicy.ProtectedIPv4, ",")),
 		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream),
 		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),

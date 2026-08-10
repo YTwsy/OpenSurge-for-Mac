@@ -109,7 +109,8 @@ function deviceIdentityDetail(device: DeviceTrafficRow, gateway?: string) {
       : device.identity_source === 'observed_traffic'
         ? '流量已观察'
         : '身份来源未标记'
-  return device.mac ? `${source} · ${device.mac}` : `${source} · MAC 待识别`
+  const route = device.gateway_target === 'upstream_router' ? ' · 主路由直连' : ''
+  return device.mac ? `${source}${route} · ${device.mac}` : `${source}${route} · MAC 待识别`
 }
 
 function gatewayLocalDetail(device: DeviceTrafficRow, gateway?: string) {

@@ -167,7 +167,7 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	if err := decoder.Decode(&policy); err != nil {
 		return "", err
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
+	if err := config.ValidateDevicePolicyCandidate(cfg, policy); err != nil {
 		return "", err
 	}
 	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN)
@@ -237,6 +237,8 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.DHCP.RangeEnd = input.DHCP.RangeEnd
 	cfg.DHCP.LeaseTime = input.DHCP.LeaseTime
 	cfg.DHCP.Domain = input.DHCP.Domain
+	cfg.DHCP.BypassGateway = input.DHCP.BypassGateway
+	cfg.DHCP.BypassDNS = append([]string(nil), input.DHCP.BypassDNS...)
 	cfg.DNS.Listen = input.DNS.Listen
 	cfg.DNS.Upstream = input.DNS.Upstream
 	cfg.Transparent.Mode = input.Transparent.Mode

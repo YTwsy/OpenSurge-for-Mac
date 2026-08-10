@@ -236,6 +236,7 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 		if index, exists := byIP[ip]; exists {
 			if (observeLAN && strings.TrimSpace(managed.MAC) == "") || strings.EqualFold(rows[index].MAC, managed.MAC) {
 				rows[index].Name = device.DisplayName(managed)
+				rows[index].GatewayTarget = device.EffectiveGatewayTarget(managed.GatewayTarget)
 			}
 			continue
 		}
@@ -245,6 +246,7 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 			IP:             ip,
 			MAC:            strings.ToLower(strings.TrimSpace(managed.MAC)),
 			IdentitySource: identitySourceRegisteredStatic,
+			GatewayTarget:  device.EffectiveGatewayTarget(managed.GatewayTarget),
 		})
 	}
 	for _, connection := range snapshot.Connections {
@@ -321,6 +323,9 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 
 	for index := range rows {
 		rows[index].PrimaryEgress = primaryEgress(egressByDevice[index])
+		if rows[index].GatewayTarget == device.GatewayTargetUpstreamRouter && rows[index].PrimaryEgress == "" {
+			rows[index].PrimaryEgress = "主路由直连"
+		}
 	}
 	gatewayLocal.PrimaryEgress = primaryEgress(localEgress)
 	gatewayLocal.Transport = combinedLocalTransport(localHasTUN, localHasExplicitProxy, gatewayLocal.ActiveConnections > 0)

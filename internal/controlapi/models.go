@@ -130,6 +130,8 @@ type NetworkDefaultsResponse struct {
 	GatewayIPv4    string                `json:"gateway_ipv4"`
 	DHCPRangeStart string                `json:"dhcp_range_start,omitempty"`
 	DHCPRangeEnd   string                `json:"dhcp_range_end,omitempty"`
+	BypassGateway  string                `json:"bypass_gateway,omitempty"`
+	BypassDNS      []string              `json:"bypass_dns"`
 	Warnings       []string              `json:"warnings"`
 	Blockers       []string              `json:"blockers"`
 }
@@ -165,11 +167,13 @@ type GatewayConfigInput struct {
 }
 
 type DHCPConfigInput struct {
-	Enabled    bool   `json:"enabled"`
-	RangeStart string `json:"range_start"`
-	RangeEnd   string `json:"range_end"`
-	LeaseTime  string `json:"lease_time"`
-	Domain     string `json:"domain"`
+	Enabled       bool     `json:"enabled"`
+	RangeStart    string   `json:"range_start"`
+	RangeEnd      string   `json:"range_end"`
+	LeaseTime     string   `json:"lease_time"`
+	Domain        string   `json:"domain"`
+	BypassGateway string   `json:"bypass_gateway"`
+	BypassDNS     []string `json:"bypass_dns"`
 }
 
 type DNSConfigInput struct {
@@ -364,6 +368,7 @@ type DeviceTraffic struct {
 	PrimaryEgress     string `json:"primary_egress,omitempty"`
 	IdentitySource    string `json:"identity_source"`
 	Transport         string `json:"transport,omitempty"`
+	GatewayTarget     string `json:"gateway_target,omitempty"`
 }
 
 type DeviceTrafficTotals struct {

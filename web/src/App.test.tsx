@@ -15,7 +15,7 @@ vi.mock('./api', () => ({
     config: vi.fn(async () => ({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: false, protected_ipv4: [] },
     })),
@@ -106,7 +106,7 @@ function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
   return {
     schema_version: 1, revision: 'config-revision',
     gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-    dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+    dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: mode === 'same_wifi_dhcp' ? '192.168.1.1' : '', bypass_dns: mode === 'same_wifi_dhcp' ? ['192.168.1.1'] : [] },
     dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
@@ -116,7 +116,7 @@ function installerSeedConfig(): ControlConfig {
   return {
     schema_version: 1, revision: 'installer-seed-revision',
     gateway: { mode: 'isolated_lan', interface: 'en0', lan_ip: '192.168.50.1', upstream_interface: 'en0' },
-    dhcp: { enabled: true, range_start: '192.168.50.100', range_end: '192.168.50.200', lease_time: '12h', domain: 'lan' },
+    dhcp: { enabled: true, range_start: '192.168.50.100', range_end: '192.168.50.200', lease_time: '12h', domain: 'lan', bypass_gateway: '', bypass_dns: [] },
     dns: { listen: '192.168.50.1', upstream: '127.0.0.1#1053' }, transparent: { mode: 'off', strict_route: false }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
@@ -395,6 +395,8 @@ describe('OpenSurge app shell', () => {
       gateway_ipv4: '192.168.1.190',
       dhcp_range_start: '192.168.1.100',
       dhcp_range_end: '192.168.1.189',
+      bypass_gateway: '192.168.1.1',
+      bypass_dns: ['192.168.1.1'],
       warnings: [], blockers: [],
     })
     render(<App />)
@@ -409,7 +411,9 @@ describe('OpenSurge app shell', () => {
     expect((screen.getByLabelText('上游网络接口') as HTMLInputElement).value).toBe('en7')
     expect((screen.getByLabelText('DHCP 地址池起点') as HTMLInputElement).value).toBe('192.168.1.100')
     expect((screen.getByLabelText('DHCP 地址池终点') as HTMLInputElement).value).toBe('192.168.1.189')
-    expect(screen.getByText(/已根据当前 USB LAN（en7）填入 IPv4 建议值，尚未保存/)).toBeTruthy()
+    expect((screen.getByLabelText('直连主路由网关') as HTMLInputElement).value).toBe('192.168.1.1')
+    expect((screen.getByLabelText('直连主路由 DNS') as HTMLInputElement).value).toBe('192.168.1.1')
+    expect(screen.getByText(/已根据当前 USB LAN（en7）填入 IPv4、地址池和主路由建议值，尚未保存/)).toBeTruthy()
     expect(screen.getByText('有未保存的修改')).toBeTruthy()
     expect(api.saveConfig).not.toHaveBeenCalled()
   })
@@ -421,7 +425,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1,
       mode: 'same_lan',
       snapshot: { network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.20', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: ['192.168.1.1'], ipv6_default: false },
-      gateway_ipv4: '192.168.1.20', warnings: [], blockers: [],
+      gateway_ipv4: '192.168.1.20', bypass_dns: [], warnings: [], blockers: [],
     })
     render(<App />)
 
@@ -933,7 +937,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
@@ -953,7 +957,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
@@ -978,7 +982,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
