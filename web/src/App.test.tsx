@@ -26,6 +26,7 @@ vi.mock('./api', () => ({
         { interface: 'en7', network_service: 'USB LAN' },
       ],
     })),
+    networkDefaults: vi.fn(),
     saveConfig: vi.fn(),
     gateway: vi.fn(),
     setSleepPrevention: vi.fn(),
@@ -107,6 +108,16 @@ function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
     gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
     dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
     dns: { listen: '192.168.1.20', upstream: '1.1.1.1' }, transparent: { mode: 'tun', strict_route: false }, local_system_proxy: { enabled: false },
+    device_policy: { enabled: false, protected_ipv4: [] },
+  }
+}
+
+function installerSeedConfig(): ControlConfig {
+  return {
+    schema_version: 1, revision: 'installer-seed-revision',
+    gateway: { mode: 'isolated_lan', interface: 'en0', lan_ip: '192.168.50.1', upstream_interface: 'en0' },
+    dhcp: { enabled: true, range_start: '192.168.50.100', range_end: '192.168.50.200', lease_time: '12h', domain: 'lan' },
+    dns: { listen: '192.168.50.1', upstream: '127.0.0.1#1053' }, transparent: { mode: 'off', strict_route: false }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
 }
@@ -372,6 +383,58 @@ describe('OpenSurge app shell', () => {
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('独立下游 LAN 的 DHCP/DNS'))
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-isolated')
+  })
+
+  it('fills current IPv4 and a safe DHCP pool when first-time setup selects takeover', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(installerSeedConfig())
+    vi.mocked(api.networkDefaults).mockResolvedValue({
+      schema_version: 1,
+      mode: 'same_wifi_dhcp',
+      snapshot: { network_service: 'USB LAN', interface: 'en7', ipv4: '192.168.1.190', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: ['192.168.1.1'], ipv6_default: false },
+      gateway_ipv4: '192.168.1.190',
+      dhcp_range_start: '192.168.1.100',
+      dhcp_range_end: '192.168.1.189',
+      warnings: [], blockers: [],
+    })
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    expect(await screen.findByText(/首次设置：选择旁路由模式或局域网 DHCP 接管/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+
+    await waitFor(() => expect(api.networkDefaults).toHaveBeenCalledWith('same_wifi_dhcp'))
+    await waitFor(() => expect((screen.getByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.190'))
+    expect((screen.getByLabelText('下游 LAN 接口') as HTMLInputElement).value).toBe('en7')
+    expect((screen.getByLabelText('上游网络接口') as HTMLInputElement).value).toBe('en7')
+    expect((screen.getByLabelText('DHCP 地址池起点') as HTMLInputElement).value).toBe('192.168.1.100')
+    expect((screen.getByLabelText('DHCP 地址池终点') as HTMLInputElement).value).toBe('192.168.1.189')
+    expect(screen.getByText(/已根据当前 USB LAN（en7）填入 IPv4 建议值，尚未保存/)).toBeTruthy()
+    expect(screen.getByText('有未保存的修改')).toBeTruthy()
+    expect(api.saveConfig).not.toHaveBeenCalled()
+  })
+
+  it('keeps isolated downstream LAN manual during first-time setup', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(installerSeedConfig())
+    vi.mocked(api.networkDefaults).mockResolvedValue({
+      schema_version: 1,
+      mode: 'same_lan',
+      snapshot: { network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.20', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: ['192.168.1.1'], ipv6_default: false },
+      gateway_ipv4: '192.168.1.20', warnings: [], blockers: [],
+    })
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /旁路由模式/ }))
+    await waitFor(() => expect(api.networkDefaults).toHaveBeenCalledWith('same_lan'))
+    await waitFor(() => expect((screen.getByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.20'))
+    expect((screen.getByLabelText('DHCP 地址池起点') as HTMLInputElement).value).toBe('192.168.50.100')
+    expect(screen.getByLabelText('DHCP 地址池起点').closest('fieldset')?.hasAttribute('disabled')).toBe(true)
+    vi.mocked(api.networkDefaults).mockClear()
+    await userEvent.click(screen.getByRole('button', { name: /独立下游 LAN/ }))
+
+    expect(api.networkDefaults).not.toHaveBeenCalled()
   })
 
   it('stops a degraded same-LAN gateway and keeps configuration locked while active', async () => {
@@ -710,6 +773,7 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    expect(api.networkDefaults).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
 
     await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())

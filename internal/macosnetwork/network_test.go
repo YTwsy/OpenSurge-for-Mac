@@ -117,6 +117,36 @@ func TestLookupRouteReturnsSelectedInterface(t *testing.T) {
 	}
 }
 
+func TestDiscoverDefaultUsesDefaultRouteNetworkService(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	runCommand = func(_ context.Context, binary string, args ...string) (string, error) {
+		switch {
+		case binary == "/sbin/route":
+			return "   gateway: 192.168.1.1\n interface: en7\n", nil
+		case binary == "/usr/sbin/networksetup" && len(args) == 1 && args[0] == "-listnetworkserviceorder":
+			return "(1) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en0)\n(2) USB LAN\n(Hardware Port: USB LAN, Device: en7)\n", nil
+		case binary == "/usr/sbin/networksetup" && len(args) == 2 && args[0] == "-getinfo" && args[1] == "USB LAN":
+			return "DHCP Configuration\nIP address: 192.168.1.190\nSubnet mask: 255.255.255.0\nRouter: 192.168.1.1\n", nil
+		case binary == "/usr/sbin/networksetup" && len(args) == 2 && args[0] == "-getdnsservers" && args[1] == "USB LAN":
+			return "192.168.1.1\n", nil
+		case binary == "/usr/sbin/netstat":
+			return "", nil
+		default:
+			t.Fatalf("unexpected command: %s %#v", binary, args)
+			return "", nil
+		}
+	}
+
+	snapshot, err := DiscoverDefault(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.NetworkService != "USB LAN" || snapshot.Interface != "en7" || snapshot.IPv4 != "192.168.1.190" || snapshot.SubnetMask != "255.255.255.0" {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+}
+
 func TestParseRouteGet(t *testing.T) {
 	got := parseRouteGet("   route to: 1.1.1.1\n    gateway: 198.18.0.1\n  interface: utun123\n")
 	if got.Interface != "utun123" || got.Gateway != "198.18.0.1" {

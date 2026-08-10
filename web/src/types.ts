@@ -54,6 +54,7 @@ export type RuleProvider = { name: string; type: string; vehicle_type: string; b
 export type NetworkSnapshot = { network_service: string; interface: string; hardware_address?: string; ipv4?: string; subnet_mask?: string; router?: string; dns: string[]; ipv6_default: boolean }
 export type NetworkInterfaceOption = { interface: string; network_service: string }
 export type NetworkInterfacesResponse = { schema_version: number; interfaces: NetworkInterfaceOption[] }
+export type NetworkDefaults = { schema_version: number; mode: 'same_lan' | 'same_wifi_dhcp'; snapshot: NetworkSnapshot; gateway_ipv4: string; dhcp_range_start?: string; dhcp_range_end?: string; warnings: string[]; blockers: string[] }
 export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string; network_snapshot?: NetworkSnapshot; client_validation_skipped?: boolean }
 export type GatewayPlan = { schema_version: number; revision: string; topology: string; snapshot: NetworkSnapshot; protected_ipv4: string[]; dhcp_servers: string[]; warnings: string[]; blockers: string[] }
 export type Operation = { id: string; kind: string; state: string; error?: string }

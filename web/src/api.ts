@@ -1,4 +1,4 @@
-import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source } from './types'
+import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -27,6 +27,7 @@ export const api = {
   overview: () => request<Overview>('/api/v1/overview'),
   config: () => request<ControlConfig>('/api/v1/config'),
   networkInterfaces: () => request<NetworkInterfacesResponse>('/api/v1/network/interfaces'),
+  networkDefaults: (mode: NetworkDefaults['mode']) => request<NetworkDefaults>(`/api/v1/network/defaults?mode=${encodeURIComponent(mode)}`),
   saveConfig: (config: ControlConfig) => request<ControlConfig>('/api/v1/config', { method: 'PUT', headers: { 'If-Match': `"${config.revision}"` }, body: JSON.stringify(config) }),
   gateway: (action: 'start' | 'stop' | 'reload' | 'restart-mihomo') => request<Operation>(`/api/v1/gateway/${action}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
   setSleepPrevention: (enabled: boolean) => request<SleepPreventionStatus>('/api/v1/sleep-prevention', { method: 'PUT', body: JSON.stringify({ enabled }) }),

@@ -215,6 +215,11 @@ production 写入经 helper 落到 root-owned config。`/events` 发送真实
 config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的短日志尾部。
 上下游接口字段通过只读 `GET /api/v1/network/interfaces` 提供 macOS 网络服务候选，
 但仍保留可输入形式以支持没有列入网络服务顺序的 bridge、VLAN 或临时接口。
+安装器初始网络字段尚未保存为用户配置时，选择 `same_lan` 或 `same_wifi_dhcp` 会通过只读
+`GET /api/v1/network/defaults` 读取当前 IPv4 默认路由对应的网络服务，把同一接口、当前
+IPv4 与 `dns.listen` 写入前端草稿；`same_wifi_dhcp` 只在 `/24` 下生成避开 Mac、路由器和
+受保护地址的建议池。建议不自动保存、不执行 `networksetup`，已有配置也不得被覆盖。
+`isolated_lan` 不使用这条建议路径，继续由操作者手工配置独立下游接口和子网。
 `same_lan` 不运行 DHCP 服务，因此地址池与租期整组必须禁用并明确标记为运行时不使用；
 保留字段值只用于日后切换 topology，不能暗示当前模式会应用它们。
 配置填写提示应作为表单内的低强调步骤说明，保存区与最后一组字段保持明确间距，并显示

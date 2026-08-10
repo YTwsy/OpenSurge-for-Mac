@@ -123,6 +123,17 @@ type NetworkInterfacesResponse struct {
 	Interfaces    []macosnetwork.InterfaceOption `json:"interfaces"`
 }
 
+type NetworkDefaultsResponse struct {
+	SchemaVersion  int                   `json:"schema_version"`
+	Mode           string                `json:"mode"`
+	Snapshot       macosnetwork.Snapshot `json:"snapshot"`
+	GatewayIPv4    string                `json:"gateway_ipv4"`
+	DHCPRangeStart string                `json:"dhcp_range_start,omitempty"`
+	DHCPRangeEnd   string                `json:"dhcp_range_end,omitempty"`
+	Warnings       []string              `json:"warnings"`
+	Blockers       []string              `json:"blockers"`
+}
+
 type ManualRecoveryFinishRequest struct {
 	RouterDHCPRestoredConfirmed bool `json:"router_dhcp_restored_confirmed"`
 }

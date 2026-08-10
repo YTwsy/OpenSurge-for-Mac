@@ -84,6 +84,17 @@ func Discover(ctx context.Context, networkService, interfaceName string) (Snapsh
 	return snapshot, nil
 }
 
+// DiscoverDefault returns the complete IPv4 configuration for the network
+// service currently carrying the default IPv4 route. It is read-only and is
+// intended for control-plane suggestions, not for changing network settings.
+func DiscoverDefault(ctx context.Context) (Snapshot, error) {
+	route, err := LookupRoute(ctx, "default")
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("discover default IPv4 route: %w", err)
+	}
+	return Discover(ctx, "", route.Interface)
+}
+
 func SetManual(ctx context.Context, cfg ManualConfig) error {
 	if err := ValidateManual(cfg); err != nil {
 		return err

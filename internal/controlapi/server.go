@@ -37,6 +37,7 @@ type Options struct {
 	ConfigRunner      ConfigurationRunner
 	SleepRunner       SleepPreventionRunner
 	DiscoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	DiscoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	PingRouter        func(context.Context, string) error
@@ -52,6 +53,7 @@ type Server struct {
 	networkRunner     NetworkRunner
 	configRunner      ConfigurationRunner
 	discoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	discoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	listInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	pingRouter        func(context.Context, string) error
@@ -140,6 +142,9 @@ func New(options Options) (*Server, error) {
 	if options.DiscoverNetwork == nil {
 		options.DiscoverNetwork = macosnetwork.Discover
 	}
+	if options.DiscoverDefault == nil {
+		options.DiscoverDefault = macosnetwork.DiscoverDefault
+	}
 	if options.ListInterfaces == nil {
 		options.ListInterfaces = macosnetwork.ListInterfaces
 	}
@@ -169,6 +174,7 @@ func New(options Options) (*Server, error) {
 		networkRunner:     options.NetworkRunner,
 		configRunner:      options.ConfigRunner,
 		discoverNetwork:   options.DiscoverNetwork,
+		discoverDefault:   options.DiscoverDefault,
 		listInterfaces:    options.ListInterfaces,
 		discoverNeighbors: options.DiscoverNeighbors,
 		pingRouter:        options.PingRouter,
@@ -234,6 +240,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/recovery/client-validation-skip", s.auth(http.HandlerFunc(s.handleClientValidationSkip)))
 	mux.Handle("POST /api/v1/recovery/keep-static", s.auth(http.HandlerFunc(s.handleKeepStaticFinish)))
 	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
+	mux.Handle("GET /api/v1/network/defaults", s.auth(http.HandlerFunc(s.handleNetworkDefaults)))
 	mux.Handle("GET /api/v1/network/interfaces", s.auth(http.HandlerFunc(s.handleNetworkInterfaces)))
 	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
 	mux.Handle("POST /api/v1/network/dhcp-probe", s.auth(http.HandlerFunc(s.handleDHCPProbe)))
@@ -1106,6 +1113,44 @@ func (s *Server) handleNetworkInterfaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, NetworkInterfacesResponse{SchemaVersion: SchemaVersion, Interfaces: interfaces})
+}
+
+func (s *Server) handleNetworkDefaults(w http.ResponseWriter, r *http.Request) {
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	if mode != config.GatewayModeSameLAN && mode != config.GatewayModeSameWiFiDHCP {
+		writeError(w, http.StatusBadRequest, "network_defaults_mode_unsupported", "automatic network defaults are only available for bypass-router and same-LAN DHCP takeover modes")
+		return
+	}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	snapshot, err := s.discoverDefault(r.Context())
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "network_defaults_discovery_failed", err.Error())
+		return
+	}
+	result := NetworkDefaultsResponse{
+		SchemaVersion: SchemaVersion,
+		Mode:          mode,
+		Snapshot:      snapshot,
+		GatewayIPv4:   snapshot.IPv4,
+		Warnings:      []string{},
+		Blockers:      []string{},
+	}
+	if mode == config.GatewayModeSameLAN && snapshot.IPv4Mode == macosnetwork.IPv4ModeDHCP {
+		result.Warnings = append(result.Warnings, "当前 Mac IPv4 由主路由 DHCP 分配；旁路由长期使用时建议在主路由中保留该地址")
+	}
+	if mode == config.GatewayModeSameWiFiDHCP {
+		start, end, rangeErr := suggestDHCPRange24(snapshot, cfg.DevicePolicy.ProtectedIPv4)
+		if rangeErr != nil {
+			result.Blockers = append(result.Blockers, rangeErr.Error())
+		} else {
+			result.DHCPRangeStart, result.DHCPRangeEnd = start, end
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleRecoveryPrepare(w http.ResponseWriter, r *http.Request) {

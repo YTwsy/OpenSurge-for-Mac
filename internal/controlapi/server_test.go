@@ -344,6 +344,53 @@ func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	}
 }
 
+func TestNetworkDefaultsUseCurrentDefaultNetworkForSameLANModes(t *testing.T) {
+	server := newTestServer(t)
+	server.discoverDefault = func(context.Context) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{
+			NetworkService: "USB LAN",
+			Interface:      "en7",
+			IPv4Mode:       macosnetwork.IPv4ModeDHCP,
+			IPv4:           "192.168.1.190",
+			SubnetMask:     "255.255.255.0",
+			Router:         "192.168.1.1",
+			DNS:            []string{"192.168.1.1"},
+		}, nil
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=same_wifi_dhcp", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+	var takeover NetworkDefaultsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &takeover); err != nil {
+		t.Fatal(err)
+	}
+	if takeover.GatewayIPv4 != "192.168.1.190" || takeover.Snapshot.Interface != "en7" || takeover.DHCPRangeStart != "192.168.1.100" || takeover.DHCPRangeEnd != "192.168.1.189" || len(takeover.Blockers) != 0 {
+		t.Fatalf("takeover defaults = %#v", takeover)
+	}
+
+	response = performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=same_lan", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("same-LAN defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+	var bypass NetworkDefaultsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &bypass); err != nil {
+		t.Fatal(err)
+	}
+	if bypass.GatewayIPv4 != "192.168.1.190" || bypass.DHCPRangeStart != "" || bypass.DHCPRangeEnd != "" || len(bypass.Warnings) != 1 {
+		t.Fatalf("bypass defaults = %#v", bypass)
+	}
+}
+
+func TestNetworkDefaultsDoNotSupportIsolatedLAN(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=isolated_lan", nil)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "network_defaults_mode_unsupported") {
+		t.Fatalf("isolated defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestPreparedRecoveryCanBeDiscardedBeforeNetworkChanges(t *testing.T) {
 	server := newTestServer(t)
 	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
