@@ -216,7 +216,7 @@ render_tun_egress_profile() {
 write_config() {
   local mode iface upstream dnsmasq_bin mihomo_bin runtime_dir dns_upstream_line device_policy_file
   local transparent_mode dns_ipv6 tun_ipv6 ipv6_packet_binary gateway_mode dhcp_enabled ipv6_shared_l2_ready
-  local profile_mode profile_path profile_source
+  local profile_mode profile_path profile_source dhcp_bypass_gateway dhcp_bypass_dns
 	mode="${1:-off}"
   TUN_EGRESS_PROFILE=0
 	iface="$(lab_interface)"
@@ -230,6 +230,8 @@ write_config() {
   tun_ipv6=off
   gateway_mode=isolated_lan
   dhcp_enabled=true
+  dhcp_bypass_gateway=""
+  dhcp_bypass_dns=""
   ipv6_shared_l2_ready=false
   ipv6_packet_binary=opensurge-network
   transparent_mode="$mode"
@@ -269,6 +271,10 @@ write_config() {
         gateway_mode=same_wifi_dhcp
         upstream="$iface"
         ipv6_shared_l2_ready=true
+        # Use an address outside the dynamic pool as the fixture's stand-in
+        # upstream router. IPv6 still enters through the OpenSurge packet path.
+        dhcp_bypass_gateway=192.168.50.254
+        dhcp_bypass_dns=192.168.50.1
       elif [[ "$mode" == "ipv6-same-lan" ]]; then
         gateway_mode=same_lan
         upstream="$iface"
@@ -298,6 +304,8 @@ write_config() {
 	  -e "s|__UPSTREAM_INTERFACE__|$(sed_escape "$upstream")|g" \
 	  -e "s|__GATEWAY_MODE__|$(sed_escape "$gateway_mode")|g" \
 	  -e "s|__DHCP_ENABLED__|$(sed_escape "$dhcp_enabled")|g" \
+	  -e "s|__DHCP_BYPASS_GATEWAY__|$(sed_escape "$dhcp_bypass_gateway")|g" \
+	  -e "s|__DHCP_BYPASS_DNS__|$(sed_escape "$dhcp_bypass_dns")|g" \
 	  -e "s|__DNSMASQ_BINARY__|$(sed_escape "$dnsmasq_bin")|g" \
 	  -e "s|__MIHOMO_BINARY__|$(sed_escape "$mihomo_bin")|g" \
     -e "s|__MIHOMO_PROFILE_MODE__|$(sed_escape "$profile_mode")|g" \
@@ -424,6 +432,7 @@ collect_artifacts() {
     device-policies.json \
     device-policies-after-reload.json \
     ipv6-status.json \
+    ipv6-devices.json \
     ipv6-state.evidence.json; do
     cp "$STATE_DIR/$evidence" "$artifact_dir/$evidence" 2>/dev/null || true
   done
@@ -793,7 +802,7 @@ build_ipv6_lab_binaries() {
     no_proxy="$go_no_proxy" \
     OPENSURGE_MIHOMO_OUTPUT="$PATCHED_MIHOMO_BINARY" \
       "$ROOT/scripts/build-opensurge-mihomo.sh" 2>&1 | tee "$build_log"; then
-    if ! grep -F "$mod_cache" "$build_log" | grep -Fq 'no such file or directory'; then
+    if ! grep -F "$mod_cache" "$build_log" | grep -Eq 'no such file or directory|no matching files found'; then
       return 1
     fi
     echo "OpenSurge Mihomo module cache is incomplete; rebuilding the disposable Lab cache"
@@ -809,13 +818,18 @@ build_ipv6_lab_binaries() {
 }
 
 write_ipv6_device_policy_fixture() {
-  local client_one client_two mac_one mac_two
+  local topology client_one client_two mac_one mac_two gateway_target
+  topology="${1:-isolated_lan}"
   set -- $CLIENTS
   [[ "$#" -eq 2 ]] || { echo "IPv6 lab requires exactly two clients" >&2; exit 1; }
   client_one="$1"
   client_two="$2"
   mac_one="$(client_mac "$client_one")"
   mac_two="$(client_mac "$client_two")"
+  gateway_target=""
+  if [[ "$topology" == "same_wifi_dhcp" ]]; then
+    gateway_target=',"gateway_target":"upstream_router"'
+  fi
   LAB_DEVICE_POLICY_FILE="$STATE_DIR/device-policy.ipv6.json"
   cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
 {
@@ -824,7 +838,7 @@ write_ipv6_device_policy_fixture() {
     {"id":"direct","default_policies":["DIRECT"]}
   ],
   "devices": [
-    {"id":"$client_one","mac":"$mac_one","ipv4":"192.168.50.101","profile":"blocked","egress_mode":"dedicated"},
+    {"id":"$client_one","mac":"$mac_one","ipv4":"192.168.50.101","profile":"blocked","egress_mode":"dedicated"$gateway_target},
     {"id":"$client_two","mac":"$mac_two","ipv4":"192.168.50.102","profile":"direct","egress_mode":"dedicated"}
   ]
 }
@@ -1477,7 +1491,7 @@ run_device_policy_test() {
 }
 
 run_ipv6_userspace_test() {
-  local client_one client_two source_one source_two gateway_started broker_pid iface rdnss
+  local client_one client_two source_one source_two gateway_started broker_pid iface rdnss client_gateway
   local egress_probe_started dns_fixture_started topology config_mode
   topology="${1:-isolated_lan}"
   case "$topology" in
@@ -1502,7 +1516,7 @@ run_ipv6_userspace_test() {
   # Do not carry ad-hoc tcpdump files from an earlier diagnostic session into
   # a new artifact bundle; managed gateway logs are recreated by start.
   rm -f "$STATE_DIR/logs/ipv6-packets-bridge102.log" "$STATE_DIR/logs/ipv6-packets-utun123.log"
-  write_ipv6_device_policy_fixture
+  write_ipv6_device_policy_fixture "$topology"
   build_ipv6_lab_binaries
   build_egress_probe
   write_tun_egress_provider
@@ -1560,7 +1574,11 @@ run_ipv6_userspace_test() {
     fi
   else
     for client in $CLIENTS; do
-      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+      client_gateway="$LAN_IP"
+      if [[ "$topology" == "same_wifi_dhcp" && "$client" == "$client_one" ]]; then
+        client_gateway=192.168.50.254
+      fi
+      limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$client_gateway"
       limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew6 "$LAN_IP"
       limactl shell "$client" -- bash -lc "ip -6 route show default dev omg0 | grep -F 'pref medium'"
     done
@@ -1572,6 +1590,10 @@ run_ipv6_userspace_test() {
   fi
   assert_client_ipv4 "$client_one" "192.168.50.101"
   assert_client_ipv4 "$client_two" "192.168.50.102"
+  if [[ "$topology" == "same_wifi_dhcp" ]]; then
+    limactl shell "$client_one" -- bash -lc "ip -4 route show default dev omg0 | grep -F 'via 192.168.50.254'"
+    limactl shell "$client_two" -- bash -lc "ip -4 route show default dev omg0 | grep -F 'via $LAN_IP'"
+  fi
   source_one="$(client_ipv6 "$client_one")"
   source_two="$(client_ipv6 "$client_two")"
   [[ "$source_one" == fdfe:dcba:9878:* && "$source_two" == fdfe:dcba:9878:* && "$source_one" != "$source_two" ]] || {
@@ -1592,6 +1614,17 @@ run_ipv6_userspace_test() {
   grep -Fq 'type: opensurge-packet' "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_one")\": \"device:$client_one\"" "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_two")\": \"device:$client_two\"" "$STATE_DIR/mihomo.yaml"
+  if [[ "$topology" == "same_wifi_dhcp" ]]; then
+    grep -Fq -- "- AND,((IN-TYPE,TUN),(IN-USER,device:$client_one)),REJECT" "$STATE_DIR/mihomo.yaml"
+    "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/ipv6-devices.json"
+    /usr/bin/ruby -rjson -e '
+      device = JSON.parse(File.read(ARGV.fetch(0))).fetch("devices").find { |item| item["id"] == ARGV.fetch(1) }
+      abort "upstream-router fixture device missing" unless device
+      abort "upstream-router fixture was not preserved" unless device["gateway_target"] == "upstream_router"
+      abort "upstream-router fixture did not report ipv6_blocked" unless device["ipv6_blocked"] == true
+      abort "upstream-router fixture unexpectedly retained selectors" unless device.fetch("groups", {}).empty?
+    ' "$STATE_DIR/ipv6-devices.json" "$client_one"
+  fi
 
   if limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client ipv6-transparent "$LAN_IP" "$IPV6_TCP_TEST_URL"; then
     echo "$client_one unexpectedly bypassed its IPv6 REJECT rule" >&2
@@ -1644,7 +1677,7 @@ run_ipv6_userspace_test() {
   fi
   trap - EXIT INT TERM
   collect_artifacts
-  echo "virtual LAN $topology userspace IPv6 TCP, UDP/QUIC carrier, device identity, and rollback test passed"
+  echo "virtual LAN $topology userspace IPv6 TCP, UDP/QUIC carrier, device identity, upstream-router IPv6 block, and rollback test passed"
 }
 
 run_ipv6_imported_egress_test() {

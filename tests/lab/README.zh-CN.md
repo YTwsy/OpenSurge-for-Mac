@@ -119,8 +119,11 @@ IPv6 接管按拓扑使用 `lab-test-ipv6-userspace`（独立下游 LAN）、
 `lab-test-ipv6-same-wifi`（同 LAN DHCP 全屋接管）和 `lab-test-ipv6-same-lan`
 （选择性旁路由）。前两条让两台客户端通过 dnsmasq RA/SLAAC 获得
 `fdfe:dcba:9878::/64` 地址、Medium 优先级 IPv6 默认路由和 RDNSS；旁路由门槛改用
-手工 ULA、Mac link-local 默认网关与 link-local DNS，并断言没有 RA 配置。随后要求第一台客户端的 IPv6
-TCP 命中设备域名 `REJECT`，第二台客户端的 IPv6 TCP、受控 UDP
+手工 ULA、Mac link-local 默认网关与 link-local DNS，并断言没有 RA 配置。在
+`same_wifi_dhcp` 门槛中，第一台客户端配置为 IPv4 主路由绕行，必须报告
+`ipv6_blocked`、不生成 selector，并让 IPv6 TCP 命中最前置的 packet-listener
+`TUN + InUser REJECT`；其他
+拓扑仍让它命中设备域名 `REJECT`。第二台客户端的 IPv6 TCP、受控 UDP
 request/response 和 1200-byte QUIC Initial-shaped UDP carrier 命中自己的 `DIRECT`
 selector。TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案，
 不把公网上游当作唯一捕获证据。最后会停止网关并

@@ -187,8 +187,9 @@ __PROXY_EXPORTS__
       }
 
       renew6() {
-        local dns iface i
+        local dns iface i ipv4_gateway
         iface="$(lab_interface)"
+        ipv4_gateway="$(ip -4 route show default dev "$iface" | awk '$1 == "default" && $2 == "via" { print $3; exit }')"
         ip -6 addr flush dev "$iface" scope global || true
         ip -6 route flush dev "$iface" proto ra || true
         ip link set dev "$iface" down
@@ -211,6 +212,9 @@ __PROXY_EXPORTS__
             dns="$(ipv6_dns_server "$iface")"
             [[ "$dns" == fe80:* ]]
             resolvectl dns "$iface" | grep -Fq "$dns"
+            if [[ -n "$ipv4_gateway" ]]; then
+              ip -4 route replace default via "$ipv4_gateway" dev "$iface" metric 5
+            fi
             printf 'CLIENT_IPV6_READY interface=%s\n' "$iface"
             printf 'CLIENT_IPV6_DNS=%s%%%s\n' "$dns" "$iface"
             ip -6 -brief addr show dev "$iface"

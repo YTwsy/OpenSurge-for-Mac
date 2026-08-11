@@ -145,7 +145,10 @@ the OpenSurge-patched Mihomo and BPF broker, then require both clients to obtain
 and RDNSS from dnsmasq. The bypass-router gate uses manual ULAs, the Mac
 link-local default gateway and DNS, and proves that no RA is configured.
 Client one must hit its device-domain `REJECT` over
-IPv6 TCP. Client two must hit its own `DIRECT` selector over IPv6 TCP, a
+IPv6 TCP in the isolated-LAN and selective-bypass fixtures. In the
+`same_wifi_dhcp` gate it instead uses IPv4 upstream-router bypass and must
+report `ipv6_blocked`, emit no selector, and hit the leading packet-listener
+`TUN + InUser REJECT`. Client two must hit its own `DIRECT` selector over IPv6 TCP, a
 controlled UDP request/response, and a 1200-byte QUIC Initial-shaped UDP
 carrier. The TCP origin must receive the HTTP request and the UDP fixture must
 return its fixed answer; public upstream services are not the sole capture

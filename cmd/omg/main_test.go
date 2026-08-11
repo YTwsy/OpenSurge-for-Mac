@@ -1002,7 +1002,7 @@ func TestDevicesCommandPrintsConfiguredPolicyAndLeaseState(t *testing.T) {
 		t.Fatalf("devices = %#v", payload.Devices)
 	}
 	device := payload.Devices[0]
-	if device.ID != "phone" || device.IPv4 != "192.168.50.101" || device.EgressMode != "legacy_fallback" || device.Hostname != "phone-host" || !device.LeaseMatch || !device.PolicyIdentityReady || !device.Applied {
+	if device.ID != "phone" || device.IPv4 != "192.168.50.101" || device.GatewayTarget != "opensurge" || device.EgressMode != "legacy_fallback" || device.IPv6Blocked || device.Hostname != "phone-host" || !device.LeaseMatch || !device.PolicyIdentityReady || !device.Applied {
 		t.Fatalf("device = %#v", device)
 	}
 	if device.Groups["default"] != "device/phone/default" || device.Groups["streaming"] != "device/phone/streaming" {

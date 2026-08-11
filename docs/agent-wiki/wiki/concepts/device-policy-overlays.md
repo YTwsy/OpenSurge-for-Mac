@@ -26,7 +26,7 @@ mihomo YAML”。
   `dhcp.bypass_gateway` 和 `dhcp.bypass_dns`。这是 IPv4-only 绕行：编译结果不为其
   生成代理 selector/普通设备规则，但必须保留 Profile、规则和 `egress_mode`，切回后
   恢复。若下游 IPv6 开启，仍保留 MAC→`device:<id>` 映射，只在所有其他规则之前生成
-  `AND,((IN-USER,device:<id>),(IP-CIDR6,::/0)),REJECT`；其他设备 IPv6 不受影响。
+  `AND,((IN-TYPE,TUN),(IN-USER,device:<id>)),REJECT`；其他设备 IPv6 不受影响。
   切换是 save-and-reload，且只有客户端 DHCP 续租/重连后新 IPv4 Router/DNS 才生效。
   设备可能仍有 SLAAC/RDNSS，控制面只能写“IPv6 出站已阻止”。共享 L2 必须关闭主路由
   RA/DHCPv6 或使用 RA Guard，否则 IPv6 会绕过 OpenSurge。

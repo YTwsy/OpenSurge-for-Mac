@@ -110,6 +110,10 @@ make lab-test-ipv6-same-lan
 
 前两条分别覆盖独立下游 LAN 与同 LAN DHCP 全屋接管：两台客户端必须获得
 `fdfe:dcba:9878::/64` SLAAC 地址、Medium 优先级 OpenSurge IPv6 默认路由和 RDNSS。
+其中 same-WiFi 门槛把第一台客户端配置为 IPv4 主路由绕行，要求设备状态报告
+`ipv6_blocked`、不生成 selector，并让 IPv6 TCP 命中最前置的 packet-listener
+`TUN + InUser REJECT`；第二台
+客户端仍须继续完成 IPv6 TCP、UDP 与 QUIC carrier 的 `DIRECT` 路径。
 第三条覆盖选择性旁路由：客户端手工使用不同 ULA，并把 Mac link-local 地址同时作为默认网关和 DNS，
 dnsmasq 配置中不得出现 RA。随后三条门槛都要求无显式代理的 IPv6 TCP、受控 UDP
 request/response 和 1200-byte QUIC Initial-shaped UDP carrier 通过本机 fixture 出现在

@@ -39,7 +39,9 @@ ICMPv6、ESP 或任意非 TCP/UDP 协议。
 `same_wifi_dhcp` 中的 `gateway_target: upstream_router` 是 IPv4-only 绕行。dnsmasq
 向该设备下发主路由 IPv4 gateway/DNS，编译器不生成代理 selector 或普通设备规则；
 若下游 IPv6 开启，packet listener 仍保留它的 MAC→`device:<id>` 映射，并在所有其他
-规则前生成 `AND,((IN-USER,device:<id>),(IP-CIDR6,::/0)),REJECT`。其他设备继续使用
+规则前生成 `AND,((IN-TYPE,TUN),(IN-USER,device:<id>)),REJECT`。packet listener 会把
+fake-AAAA 目标恢复为域名，因此不能依赖 `IP-CIDR6,::/0`；TUN + InUser 组合只命中
+该 IPv6 packet path。其他设备继续使用
 正常 IPv6 策略。控制面必须描述为“IPv6 出站已阻止”：共享 L2 的设备仍可能收到
 SLAAC/RDNSS；若主路由 RA 未关闭或未被 RA Guard 消除，设备甚至可能完全绕过
 OpenSurge 的 packet path，OpenSurge 无法按设备阻断那条链路。

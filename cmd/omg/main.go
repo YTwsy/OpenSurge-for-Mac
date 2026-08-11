@@ -428,7 +428,9 @@ type configuredDeviceJSON struct {
 	IPv4                     string            `json:"ipv4"`
 	ExpectedIP               string            `json:"expected_ip"`
 	Profile                  string            `json:"profile"`
+	GatewayTarget            string            `json:"gateway_target"`
 	EgressMode               string            `json:"egress_mode"`
+	IPv6Blocked              bool              `json:"ipv6_blocked,omitempty"`
 	Groups                   map[string]string `json:"groups"`
 	PolicySource             string            `json:"policy_source"`
 	DesiredDigest            string            `json:"desired_digest"`
@@ -614,7 +616,9 @@ func configuredDevices(cfg config.Config) ([]configuredDeviceJSON, error) {
 			IPv4:                     managed.IPv4,
 			ExpectedIP:               managed.IPv4,
 			Profile:                  managed.Profile,
+			GatewayTarget:            managed.GatewayTarget,
 			EgressMode:               managed.EgressMode,
+			IPv6Blocked:              cfg.Transparent.TUNIPv6 != config.TUNIPv6Off && managed.GatewayTarget == device.GatewayTargetUpstreamRouter,
 			Groups:                   managed.Groups,
 			PolicySource:             policySource,
 			DesiredDigest:            desiredDigest,

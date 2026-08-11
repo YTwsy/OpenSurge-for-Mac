@@ -295,7 +295,7 @@ func routerBypassIPv6RejectRules(policy policySections) []string {
 		if managed.GatewayTarget != device.GatewayTargetUpstreamRouter || managed.MAC == "" {
 			continue
 		}
-		rules = append(rules, fmt.Sprintf("AND,((IN-USER,%s),(IP-CIDR6,::/0)),REJECT", deviceInboundUser(managed.ID)))
+		rules = append(rules, fmt.Sprintf("AND,((IN-TYPE,TUN),(IN-USER,%s)),REJECT", deviceInboundUser(managed.ID)))
 	}
 	return rules
 }

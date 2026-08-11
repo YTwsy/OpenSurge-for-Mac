@@ -759,7 +759,7 @@ func TestRenderConfigRejectsIPv6BeforeRulesForRouterBypassDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bypassReject := "AND,((IN-USER,device:console),(IP-CIDR6,::/0)),REJECT"
+	bypassReject := "AND,((IN-TYPE,TUN),(IN-USER,device:console)),REJECT"
 	phoneRule := "AND,((IN-USER,device:phone),(DOMAIN-SUFFIX,phone.example)),DIRECT"
 	for _, want := range []string{
 		`"aa:bb:cc:dd:ee:05": "device:console"`,
@@ -771,7 +771,7 @@ func TestRenderConfigRejectsIPv6BeforeRulesForRouterBypassDevice(t *testing.T) {
 			t.Fatalf("rendered router-bypass IPv6 config missing %q:\n%s", want, rendered)
 		}
 	}
-	if strings.Contains(rendered, "AND,((IN-USER,device:phone),(IP-CIDR6,::/0)),REJECT") {
+	if strings.Contains(rendered, "AND,((IN-TYPE,TUN),(IN-USER,device:phone)),REJECT") {
 		t.Fatalf("non-bypass device IPv6 was rejected:\n%s", rendered)
 	}
 	assertOrdered(t, rendered, bypassReject, "IN-TYPE,TUN", phoneRule, "MATCH,DIRECT")

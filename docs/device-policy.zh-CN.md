@@ -89,7 +89,7 @@ IPv4，但通过 tag 向它单独下发 `dhcp.bypass_gateway` 和
 `dhcp.bypass_dns`。此时不生成该设备的代理 selector 或普通设备规则，Profile
 和规则只保留不删除；切回 `opensurge` 后重新生效。这是仅限 IPv4 的绕行：启用
 下游 IPv6 时，packet listener 仍保留该设备基于 MAC 的 `device:<id>` 身份，只用于
-最优先的 `IP-CIDR6,::/0,REJECT`，其他设备继续使用各自正常的 IPv6 策略。该设备
+最优先的 `IN-TYPE,TUN + IN-USER,REJECT`，其他设备继续使用各自正常的 IPv6 策略。该设备
 仍可能保留 SLAAC 地址或 RDNSS，因此 UI 只显示“IPv6 出站已阻止”，不声称设备
 没有 IPv6。必须关闭主路由 RA/DHCPv6 或由 RA Guard 消除，否则 IPv6 仍可能完全
 绕过 OpenSurge。切换后必须让设备续租或重新连接网络，新的 IPv4 Router/DNS 才会

@@ -126,7 +126,7 @@ OpenSurge emits no proxy selectors or ordinary device rules for that device
 while bypass is active; its profile and rules remain stored and return when it
 switches back to `opensurge`. This is an IPv4-only bypass. When downstream IPv6
 is enabled, the packet listener keeps the device's MAC-backed `device:<id>`
-identity solely for a highest-priority `IP-CIDR6,::/0,REJECT`; other devices
+identity solely for a highest-priority `IN-TYPE,TUN + IN-USER,REJECT`; other devices
 keep their normal IPv6 policy. The client may still retain a SLAAC address or
 RDNSS, so the UI reports **IPv6 egress blocked** rather than claiming that IPv6
 is absent. The main router's RA/DHCPv6 must be disabled or removed by RA Guard,
