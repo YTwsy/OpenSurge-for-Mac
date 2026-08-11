@@ -135,8 +135,10 @@ client validated 或明确跳过客户端验收的接管阶段执行，且成功
 Control Service 会在当前 boot、有效 active runtime 和允许的 DHCP 接管阶段内监测这条
 恢复路径。Mihomo 进程缺失立即触发一次自动恢复；controller 的 `connection refused`
 需要连续两次观测才触发。每个未恢复 incident 最多自动尝试一次；命令完成后仍要等新的
-健康 status 才算恢复，持续异常会转为 `failed` 并在连通性页显示手动兜底。上次开机留下
-的 interrupted runtime、配置读取失败和尚未 active 的 DHCP 接管阶段都不会触发。
+连续健康 status 才算恢复，持续异常会转为 `failed` 并在连通性页显示手动兜底。配置或
+status 读取失败、runtime 非 active、以及不允许恢复的 DHCP 接管阶段都属于 unknown：
+既不触发恢复，也不能累计健康确认或清除本次 incident 的单次尝试保护。上次开机留下的
+interrupted runtime 同样不会触发。
 
 start、stop、reload、手动/自动 `restart-mihomo` 和运行中 source apply 共享 Control
 Service 生命周期互斥锁，避免两个 helper 动作同时修改 runtime。这个自动化只实现了窄的

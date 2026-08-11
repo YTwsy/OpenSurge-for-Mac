@@ -16,6 +16,17 @@ export type GatewayStatus = {
 }
 
 export type DoctorCheck = { name: string; ok: boolean; message?: string }
+export type DoctorRunStatus = {
+  schema_version: number
+  state: 'idle' | 'running' | 'succeeded' | 'failed'
+  revision?: string
+  current: boolean
+  checks: DoctorCheck[]
+  healthy: boolean
+  error?: string
+  started_at?: string
+  completed_at?: string
+}
 export type Lease = { ip: string; mac: string; hostname?: string; registered_name?: string; expires_at: string; online: boolean }
 export type ProxyGroup = { name: string; type: string; selected: string; options: string[] }
 export type LocalRoutingMode = 'rule' | 'global' | 'direct'
@@ -84,6 +95,7 @@ export type Overview = {
   status_error?: string
   doctor: DoctorCheck[]
   doctor_healthy: boolean
+  doctor_status?: DoctorRunStatus
   leases: Lease[]
   policies: ProxyGroup[]
   providers: { proxy_providers: ProxyProvider[]; rule_providers: RuleProvider[] }

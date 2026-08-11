@@ -261,6 +261,14 @@ connecting 从第一帧就使用半透明 OpenSurge 品牌图标；只有真实�
 的 `network.slash`。恢复警报优先于其他状态。
 网关明确处于 `stopped` 时显示“OpenSurge 网关已停止”；此时 runtime-oriented doctor
 未通过或存在待应用配置都不能把“未启动”误报成“运行异常”。
+
+Doctor 的完整检查包含最长 90 秒的真实 `mihomo -t`，不再由 overview、菜单栏或 SSE
+轮询触发。诊断页只有在用户点击后才调用 `POST /api/v1/doctor` 启动 Control Service 内的
+single-flight 后台任务，并通过 `GET /api/v1/doctor` 读取进度和最近结果；离开页面不会取消
+任务，也不会启动第二份。缓存结果绑定主配置、设备策略与 imported profile 摘要，配置变化
+后标记为旧结果且不影响当前菜单栏健康。Doctor 的历史结果不参与 start/reload 判定；真实
+生命周期动作继续执行各自的配置预检与 TUN readiness。
+
 “只退出菜单栏 App”只终止菜单栏 App；点击后会先提示后台 Control Service 仍会继续，若网关正在
 运行，还会明确 DHCP/DNS、mihomo、PF/转发不会随菜单栏退出。停止网关仍须进入 Web GUI。
 

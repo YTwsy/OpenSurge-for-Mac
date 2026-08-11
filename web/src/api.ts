@@ -1,4 +1,4 @@
-import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source } from './types'
+import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -70,6 +70,8 @@ export const api = {
   connectivity: () => request<ConnectivityResponse>('/api/v1/connectivity'),
   testConnectivity: (targetIDs: string[] = []) => request<ConnectivityResponse>('/api/v1/connectivity/tests', { method: 'POST', body: JSON.stringify({ target_ids: targetIDs }) }),
   refreshProvider: (name: string) => request(`/api/v1/providers/${encodeURIComponent(name)}/refresh`, { method: 'POST' }),
+  doctorStatus: () => request<DoctorRunStatus>('/api/v1/doctor'),
+  runDoctor: () => request<DoctorRunStatus>('/api/v1/doctor', { method: 'POST' }),
   diagnostics: () => request<Diagnostics>('/api/v1/diagnostics'),
 }
 

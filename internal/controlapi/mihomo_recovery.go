@@ -66,6 +66,19 @@ func (c *mihomoRecoveryController) observeHealthy() {
 	c.attempted = false
 }
 
+func (c *mihomoRecoveryController) observeUnknown() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.operationActive {
+		return
+	}
+	// An unreadable or inapplicable sample proves neither recovery nor
+	// continued failure. Keep the one-attempt incident guard, while requiring
+	// future failure and health confirmations to be consecutive again.
+	c.healthyCount = 0
+	c.refusedCount = 0
+}
+
 func (c *mihomoRecoveryController) observeFailure(reason string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -171,23 +184,24 @@ func (s *Server) monitorMihomoRecovery(ctx context.Context) {
 func (s *Server) evaluateMihomoRecovery(ctx context.Context) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
-		s.mihomoRecovery.observeHealthy()
+		s.mihomoRecovery.observeUnknown()
 		return
 	}
 	status, err := s.gatewayStatus(ctx, cfg)
 	if err != nil || status.RuntimeState != "active" {
-		s.mihomoRecovery.observeHealthy()
-		return
-	}
-	recovery, _ := s.store.Recovery()
-	if !mihomoRecoveryStageAllowed(cfg.Gateway.Mode, recovery.Stage) {
-		s.mihomoRecovery.observeHealthy()
+		s.mihomoRecovery.observeUnknown()
 		return
 	}
 
 	reason := mihomoFailureReason(status)
 	if reason == "" {
 		s.mihomoRecovery.observeHealthy()
+		return
+	}
+
+	recovery, err := s.store.Recovery()
+	if err != nil || !mihomoRecoveryStageAllowed(cfg.Gateway.Mode, recovery.Stage) {
+		s.mihomoRecovery.observeUnknown()
 		return
 	}
 	if !s.mihomoRecovery.observeFailure(reason) {

@@ -37,12 +37,25 @@ type Overview struct {
 	StatusError          string                   `json:"status_error,omitempty"`
 	Doctor               []doctor.Check           `json:"doctor"`
 	DoctorHealthy        bool                     `json:"doctor_healthy"`
+	DoctorStatus         DoctorRunStatus          `json:"doctor_status"`
 	Leases               []device.Client          `json:"leases"`
 	Policies             []mihomo.ProxyGroup      `json:"policies"`
 	Providers            mihomo.ProvidersSnapshot `json:"providers"`
 	Recovery             RecoveryState            `json:"recovery"`
 	MihomoRecovery       MihomoRecoveryStatus     `json:"mihomo_recovery"`
 	SleepPrevention      SleepPreventionStatus    `json:"sleep_prevention"`
+}
+
+type DoctorRunStatus struct {
+	SchemaVersion int            `json:"schema_version"`
+	State         string         `json:"state"`
+	Revision      string         `json:"revision,omitempty"`
+	Current       bool           `json:"current"`
+	Checks        []doctor.Check `json:"checks"`
+	Healthy       bool           `json:"healthy"`
+	Error         string         `json:"error,omitempty"`
+	StartedAt     *time.Time     `json:"started_at,omitempty"`
+	CompletedAt   *time.Time     `json:"completed_at,omitempty"`
 }
 
 type MenuBarStatus struct {

@@ -103,7 +103,6 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
       const updated = await api.saveDevicePolicy(policy, document.revision)
       setDocument(updated)
       setPolicy(copyPolicy(updated.policy))
-      setMessage('设备配置已保存。运行中的网关仍使用 applied 配置；请使用上方按钮应用并重载。')
       await refresh()
       await onChanged()
     } catch (cause) {
@@ -206,7 +205,6 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
 
   return <>
     <PageHeader eyebrow="DEVICES" title="设备与规则" description="分别设置当前 Mac 和下游设备如何选择出口；两者互不影响。" />
-    {data?.drift && <DriftBanner data={data} running={overview?.status.gateway === 'running'} onReload={() => setReloadOpen(true)} onDashboard={() => onNavigate('dashboard')} />}
     {message && <div className="notice ok-notice" role="status">{message}</div>}
     {error && <div className="notice warn" role="alert">{error}{revisionConflict && <button className="inline-action" type="button" onClick={() => void discardDraft()}>放弃本地修改并加载最新版本</button>}</div>}
 
@@ -241,7 +239,9 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
         : <section className="section"><Empty text="选择一台 desired 设备后，可在这里编辑它的规则。" /></section>}
 
       <AdvancedPolicyTools policy={policy} candidates={candidates} onPolicyChange={setPolicy} />
-      <div className={`sticky-save ${dirty ? 'has-changes' : 'is-saved'}`}><div><strong>{dirty ? '有未保存的设备修改' : '设备配置已保存'}</strong><small>{dirty ? '保存只更新 desired；运行中还需重载' : `revision ${document.revision.slice(0, 10)}`}</small></div><button className="primary" type="button" disabled={!dirty || saving || rebinding} onClick={() => void save()}>{saving ? '正在验证并保存…' : '保存设备配置'}</button></div>
+      {data?.drift && !dirty
+        ? <PendingReloadBar data={data} running={overview?.status.gateway === 'running'} onReload={() => setReloadOpen(true)} onDashboard={() => onNavigate('dashboard')} />
+        : <div className={`sticky-save ${dirty ? 'has-changes' : 'is-saved'}`}><div><strong>{dirty ? '有未保存的设备修改' : '设备配置已保存'}</strong><small>{dirty ? '保存只更新 desired；运行中还需重载' : `revision ${document.revision.slice(0, 10)}`}</small></div><button className="primary" type="button" disabled={!dirty || saving || rebinding} onClick={() => void save()}>{saving ? '正在验证并保存…' : '保存设备配置'}</button></div>}
     </> : <section className="section"><Empty text="当前 gateway config 尚未启用设备策略；请先在网络设置中启用。" /></section>}
 
     {reloadOpen && <ReloadDialog busy={reloading} routerBypassRenewalNames={routerBypassRenewalNames} openSurgeRenewalNames={openSurgeRenewalNames} onCancel={() => setReloadOpen(false)} onConfirm={() => void reload()} />}
@@ -249,8 +249,8 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
   </>
 }
 
-function DriftBanner({ data, running, onReload, onDashboard }: { data: DevicesResponse; running: boolean; onReload: () => void; onDashboard: () => void }) {
-  return <div className="drift-banner" role="status"><div><span className="effect-badge restart">需重载</span><strong>{running ? '设备配置已保存，但尚未应用' : '设备配置将在下次启动时应用'}</strong><p>desired {data.desired_digest?.slice(0, 8)} · applied {data.applied_digest?.slice(0, 8) || '尚无'}</p></div>{running ? <button className="primary" type="button" onClick={onReload}>应用并重载网关</button> : <button type="button" onClick={onDashboard}>前往总览启动</button>}</div>
+function PendingReloadBar({ data, running, onReload, onDashboard }: { data: DevicesResponse; running: boolean; onReload: () => void; onDashboard: () => void }) {
+  return <div className="sticky-save needs-reload" role="status"><div><span className="effect-badge restart">需重载</span><strong>{running ? '设备配置已保存，但尚未应用' : '设备配置将在下次启动时应用'}</strong><small>desired {data.desired_digest?.slice(0, 8)} · applied {data.applied_digest?.slice(0, 8) || '尚无'}</small></div>{running ? <button className="primary" type="button" onClick={onReload}>应用并重载网关</button> : <button type="button" onClick={onDashboard}>前往总览启动</button>}</div>
 }
 
 function ReloadDialog({ busy, routerBypassRenewalNames, openSurgeRenewalNames, onCancel, onConfirm }: { busy: boolean; routerBypassRenewalNames: string[]; openSurgeRenewalNames: string[]; onCancel: () => void; onConfirm: () => void }) {
@@ -322,10 +322,10 @@ function DeviceCard({ view, topology, routerBypass, routerBypassReady, onNetwork
     <div className="device-metadata">
       {view.desired?.name && <span className="device-meta-item"><small>设备 ID</small><span className="device-meta-value">{device.id}</span></span>}
       <span className="device-meta-item"><small>IPv4</small><span className="device-meta-value">{device.ipv4}</span></span>
+      {identity?.state === 'waiting' && <span className="device-meta-item"><small>状态</small><span className="device-meta-value">设备按登记 IP 接入后生效</span></span>}
       <span className="device-meta-item"><small>MAC</small><span className="device-meta-value">{device.mac.trim() || (view.state === 'paused' ? '未登记 · 策略已暂停，补充后恢复' : '未登记 · 当前按固定 IPv4 匹配')}</span></span>
     </div>
     {identity?.state === 'address_changed' ? <div className="identity-rebind"><span className="identity-state changed"><strong>设备已识别，但 IP 已变化</strong><small>原地址 {applied!.ipv4} → 当前地址 {identity.observedIPv4}</small></span>{view.desired && !rebindOwner && !rebindAlreadyDrafted && <button className="primary" type="button" onClick={() => onUseObservedIPv4(view.desired!.id, displayDeviceName(view.desired!), applied!.ipv4, identity.observedIPv4!)}>使用当前 IP 并应用</button>}{rebindAlreadyDrafted && <small className="identity-rebind-note">当前 IP 已写入草稿；保存并重载后生效。</small>}{rebindOwner && <small className="identity-rebind-note conflict">当前地址已登记给 {displayDeviceName(rebindOwner)}，请先解决身份冲突。</small>}</div> : identity && <span className={`identity-state ${identity.tone}`}>{identity.text}</span>}
-    {identity?.state === 'waiting' && <small className="outlet-activation-note">设备按登记 IP 接入后生效</small>}
     {view.desired && <fieldset className={`device-routing-mode ${identityBlocked ? 'identity-blocked' : ''}`} disabled={identityBlocked}>
       <legend>设备路由方式 <span className="effect-badge restart">保存后重载</span></legend>
       {identityBlocked && <small className="identity-routing-blocked">{identity?.state === 'address_changed' ? '当前 IP 尚未绑定；请先使用上方按钮更新设备 IP。' : '当前登记 IP 存在身份冲突；解决冲突后才能切换。'}</small>}

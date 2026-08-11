@@ -27,6 +27,10 @@ func newSystemSleepLeaseManager(marker string) *systemSleepLeaseManager {
 func (m *systemSleepLeaseManager) Reconcile(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.releaseOwnedLocked(ctx)
+}
+
+func (m *systemSleepLeaseManager) releaseOwnedLocked(ctx context.Context) error {
 	if _, err := os.Stat(m.marker); errors.Is(err, os.ErrNotExist) {
 		return nil
 	} else if err != nil {
@@ -44,6 +48,13 @@ func (m *systemSleepLeaseManager) Acquire(ctx context.Context) error {
 	if m.holders > 0 {
 		m.holders++
 		return nil
+	}
+	// A marker with no live holders means a previous disconnect could not
+	// restore sleep. Retry that cleanup before deciding whether SleepDisabled is
+	// externally owned, otherwise the failed release can never recover without a
+	// Helper restart.
+	if err := m.releaseOwnedLocked(ctx); err != nil {
+		return fmt.Errorf("finish pending OpenSurge sleep prevention release: %w", err)
 	}
 	disabled, err := m.inspect(ctx)
 	if err != nil {
@@ -83,12 +94,30 @@ func (m *systemSleepLeaseManager) Release() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := m.set(ctx, false); err != nil {
-		m.holders = 1
-		return err
+	return m.releaseOwnedLocked(ctx)
+}
+
+func (m *systemSleepLeaseManager) retryRelease(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			attemptCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			m.mu.Lock()
+			if m.holders > 0 {
+				m.mu.Unlock()
+				cancel()
+				return
+			}
+			err := m.releaseOwnedLocked(attemptCtx)
+			m.mu.Unlock()
+			cancel()
+			if err == nil {
+				return
+			}
+		}
 	}
-	if err := os.Remove(m.marker); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
 }

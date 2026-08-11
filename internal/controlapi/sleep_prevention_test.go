@@ -150,6 +150,76 @@ func TestSystemSleepLeaseManagerReconcilesOnlyItsOwnStaleMarker(t *testing.T) {
 	}
 }
 
+func TestSystemSleepLeaseManagerRetriesFailedReleaseWithoutPhantomHolder(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "sleep-prevention-owned")
+	manager := &systemSleepLeaseManager{marker: marker}
+	manager.inspect = func(context.Context) (bool, error) { return false, nil }
+	releaseAttempts := 0
+	manager.set = func(_ context.Context, disabled bool) error {
+		if disabled {
+			return nil
+		}
+		releaseAttempts++
+		if releaseAttempts == 1 {
+			return errors.New("temporary pmset failure")
+		}
+		return nil
+	}
+
+	if err := manager.Acquire(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Release(); err == nil {
+		t.Fatal("expected the first release to fail")
+	}
+	if manager.holders != 0 {
+		t.Fatalf("failed release left holders=%d, want 0", manager.holders)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("failed release must retain ownership marker: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	manager.retryRelease(ctx, time.Millisecond)
+	if releaseAttempts != 2 {
+		t.Fatalf("release attempts=%d, want 2", releaseAttempts)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("retry left ownership marker behind: %v", err)
+	}
+}
+
+func TestSystemSleepLeaseManagerAcquireFinishesPendingRelease(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "sleep-prevention-owned")
+	manager := &systemSleepLeaseManager{marker: marker}
+	manager.inspect = func(context.Context) (bool, error) { return false, nil }
+	releaseFails := true
+	manager.set = func(_ context.Context, disabled bool) error {
+		if !disabled && releaseFails {
+			return errors.New("temporary pmset failure")
+		}
+		return nil
+	}
+
+	if err := manager.Acquire(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Release(); err == nil {
+		t.Fatal("expected the first release to fail")
+	}
+	releaseFails = false
+	if err := manager.Acquire(t.Context()); err != nil {
+		t.Fatalf("new lease did not finish pending release: %v", err)
+	}
+	if manager.holders != 1 {
+		t.Fatalf("holders=%d, want 1 active lease", manager.holders)
+	}
+	if err := manager.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSleepPreventionAPIControlsIndependentLease(t *testing.T) {
 	server := newTestServer(t)
 	runner := &fakeSleepPreventionRunner{}

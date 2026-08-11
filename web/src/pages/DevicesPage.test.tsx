@@ -90,7 +90,7 @@ describe('DevicesPage', () => {
 
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
-  it('keeps device cards in their own column and only floats save controls while dirty', async () => {
+  it('keeps device cards in their own column and floats save controls while dirty', async () => {
     const policy: PolicySet = {
       ...basePolicy,
       devices: [
@@ -119,6 +119,36 @@ describe('DevicesPage', () => {
     expect(within(secondCard).getByRole('button', { name: '编辑此设备规则' })).toBeTruthy()
     await userEvent.click(within(firstCard).getByRole('radio', { name: /独立设备出口/ }))
     expect(saveBar.classList.contains('has-changes')).toBe(true)
+  })
+
+  it('replaces the dirty save bar with a floating reload bar after saving', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [] }],
+    }
+    let saved = false
+    let savedDocument = documentFor(policy)
+    vi.mocked(api.devicePolicy).mockImplementation(async () => savedDocument)
+    vi.mocked(api.devices).mockImplementation(async () => devicesResponse(saved
+      ? { drift: true, applied: true, desired_digest: 'desired123', applied_digest: 'applied123' }
+      : { applied: true, desired_digest: 'applied123', applied_digest: 'applied123' }))
+    vi.mocked(api.saveDevicePolicy).mockImplementation(async next => {
+      saved = true
+      savedDocument = documentFor(next, 'policy-r2')
+      return savedDocument
+    })
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('radio', { name: /独立设备出口/ }))
+    expect((document.querySelector('.sticky-save') as HTMLElement).classList.contains('has-changes')).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+
+    const reloadBar = (await screen.findByText('设备配置已保存，但尚未应用')).closest('.sticky-save') as HTMLElement
+    expect(reloadBar.classList.contains('needs-reload')).toBe(true)
+    expect(reloadBar.classList.contains('has-changes')).toBe(false)
+    expect(screen.queryByText(/请使用上方按钮应用并重载/)).toBeNull()
+    expect(within(reloadBar).getByRole('button', { name: '应用并重载网关' })).toBeTruthy()
   })
 
   it('shows the local global outlet only for fixed routing and keeps the policy-page shortcut', async () => {
@@ -486,7 +516,10 @@ describe('DevicesPage', () => {
 
     expect(await screen.findByText('静态配置身份：等待该 IPv4 经过 Mac')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '使用当前 IP 并应用' })).toBeNull()
-    expect(screen.getByText('设备按登记 IP 接入后生效')).toBeTruthy()
+    const activation = screen.getByText('设备按登记 IP 接入后生效')
+    expect(activation.closest('.device-meta-item')).toBeTruthy()
+    expect(activation.closest('.device-metadata')).toBeTruthy()
+    expect(document.querySelector('.outlet-activation-note')).toBeNull()
   })
 
   it('allows an offline same-LAN device outlet to be preset with an explicit activation boundary', async () => {

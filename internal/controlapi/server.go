@@ -67,6 +67,7 @@ type Server struct {
 	probeConnectivity func(context.Context, config.Config, ConnectivityTarget) ConnectivityResult
 	trafficSampler    *trafficRateSampler
 	gatewayStatus     func(context.Context, config.Config) (gateway.Status, error)
+	doctor            *doctorController
 	mihomoRecovery    *mihomoRecoveryController
 	sleepPrevention   *sleepPreventionController
 	token             string
@@ -190,6 +191,7 @@ func New(options Options) (*Server, error) {
 		gatewayStatus: func(ctx context.Context, cfg config.Config) (gateway.Status, error) {
 			return gateway.New(cfg).Status(ctx)
 		},
+		doctor:          newDoctorController(doctor.Run),
 		mihomoRecovery:  newMihomoRecoveryController(),
 		sleepPrevention: newSleepPreventionController(options.SleepRunner, configPath),
 		token:           token,
@@ -263,6 +265,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
 	mux.Handle("POST /api/v1/connectivity/tests", s.auth(http.HandlerFunc(s.handleConnectivityTests)))
 	mux.Handle("GET /api/v1/providers", s.auth(http.HandlerFunc(s.handleProviders)))
+	mux.Handle("GET /api/v1/doctor", s.auth(http.HandlerFunc(s.handleDoctor)))
+	mux.Handle("POST /api/v1/doctor", s.auth(http.HandlerFunc(s.handleDoctor)))
 	mux.Handle("GET /api/v1/diagnostics", s.auth(http.HandlerFunc(s.handleDiagnostics)))
 	mux.Handle("POST /api/v1/providers/{name}/refresh", s.auth(http.HandlerFunc(s.handleProviderRefresh)))
 	mux.Handle("GET /api/v1/operations/{id}", s.auth(http.HandlerFunc(s.handleOperation)))
@@ -510,8 +514,7 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		cfg, _ = config.LoadRuntime(s.configPath)
 	}
 	status, statusErr := s.gatewayStatus(ctx, cfg)
-	report := doctor.Run(cfg)
-	controlDoctorChecks := doctorChecksForControl(report.Checks)
+	revision := fileDigest(s.configPath)
 	paths := runtime.NewPaths(cfg)
 	leases, _ := device.LoadLeases(paths.LeaseFile)
 	if leases == nil {
@@ -526,6 +529,8 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		desiredDigest = cfg.DevicePolicy.Bundle.Digest
 	}
 	desiredProfileDigest, profileDigestErr := config.MihomoProfileDigest(cfg)
+	doctorStatus := s.doctor.snapshot(doctorInputRevision(revision, desiredDigest, desiredProfileDigest, errorString(profileDigestErr)))
+	controlDoctorChecks, controlDoctorHealthy := doctorOverviewResult(doctorStatus)
 	appliedDigest := ""
 	appliedProfileDigest := ""
 	if state, exists, _ := runtime.LoadState(paths.StateFile); exists {
@@ -566,7 +571,7 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	}
 	return Overview{
 		SchemaVersion:        SchemaVersion,
-		Revision:             fileDigest(s.configPath),
+		Revision:             revision,
 		Topology:             cfg.Gateway.Mode,
 		DesiredDigest:        desiredDigest,
 		AppliedDigest:        appliedDigest,
@@ -577,7 +582,8 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		Status:               status,
 		StatusError:          errorString(statusErr),
 		Doctor:               controlDoctorChecks,
-		DoctorHealthy:        doctorHealthyForControl(controlDoctorChecks),
+		DoctorHealthy:        controlDoctorHealthy,
+		DoctorStatus:         doctorStatus,
 		Leases:               leases,
 		Policies:             groups,
 		Providers:            providers,
@@ -1839,6 +1845,44 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "providers": providers})
 }
 
+func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		status := s.doctor.snapshot("")
+		if status.State == doctorRunIdle || status.State == doctorRunRunning {
+			writeJSON(w, http.StatusOK, s.doctor.snapshot(status.Revision))
+			return
+		}
+		writeJSON(w, http.StatusOK, s.doctor.snapshot(s.currentDoctorRevision()))
+		return
+	}
+	status := s.doctor.snapshot("")
+	if status.State == doctorRunRunning {
+		writeJSON(w, http.StatusAccepted, s.doctor.snapshot(status.Revision))
+		return
+	}
+	revision := fileDigest(s.configPath)
+	if revision == "" {
+		writeError(w, http.StatusBadRequest, "config_invalid", "configuration file is unavailable")
+		return
+	}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	if revision != fileDigest(s.configPath) {
+		writeError(w, http.StatusConflict, "revision_conflict", "configuration changed while Doctor was starting; retry the check")
+		return
+	}
+	deviceDigest := ""
+	if cfg.DevicePolicy.Bundle != nil {
+		deviceDigest = cfg.DevicePolicy.Bundle.Digest
+	}
+	profileDigest, profileErr := config.MihomoProfileDigest(cfg)
+	status, _ = s.doctor.start(cfg, doctorInputRevision(revision, deviceDigest, profileDigest, errorString(profileErr)))
+	writeJSON(w, http.StatusAccepted, status)
+}
+
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
@@ -2027,6 +2071,43 @@ func doctorChecksForControl(checks []doctor.Check) []doctor.Check {
 		}
 	}
 	return result
+}
+
+func doctorOverviewResult(status DoctorRunStatus) ([]doctor.Check, bool) {
+	if !status.Current {
+		return []doctor.Check{}, true
+	}
+	switch status.State {
+	case doctorRunSucceeded:
+		return append([]doctor.Check{}, status.Checks...), status.Healthy
+	case doctorRunFailed:
+		return []doctor.Check{}, false
+	default:
+		return []doctor.Check{}, true
+	}
+}
+
+func (s *Server) currentDoctorRevision() string {
+	configRevision := fileDigest(s.configPath)
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		return doctorInputRevision(configRevision, "", "", err.Error())
+	}
+	deviceDigest := ""
+	if cfg.DevicePolicy.Bundle != nil {
+		deviceDigest = cfg.DevicePolicy.Bundle.Digest
+	}
+	profileDigest, profileErr := config.MihomoProfileDigest(cfg)
+	return doctorInputRevision(configRevision, deviceDigest, profileDigest, errorString(profileErr))
+}
+
+func doctorInputRevision(configRevision, deviceDigest, profileDigest, profileError string) string {
+	digest := sha256.New()
+	for _, value := range []string{configRevision, deviceDigest, profileDigest, profileError} {
+		_, _ = digest.Write([]byte(value))
+		_, _ = digest.Write([]byte{0})
+	}
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func fileDigest(path string) string {

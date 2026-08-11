@@ -44,6 +44,58 @@ func TestAutoMihomoRecoveryRestartsMissingProcessOncePerIncident(t *testing.T) {
 	waitForRunnerCount(t, runner, 2)
 }
 
+func TestAutoMihomoRecoveryObservationErrorsDoNotResetIncident(t *testing.T) {
+	server := newTestServer(t)
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	status := gateway.Status{Gateway: "degraded", RuntimeState: "active", Mihomo: "stopped"}
+	var statusErr error
+	server.gatewayStatus = func(context.Context, config.Config) (gateway.Status, error) {
+		return status, statusErr
+	}
+	runner := &countingActionRunner{}
+	server.runner = runner
+
+	server.evaluateMihomoRecovery(t.Context())
+	waitForRunnerCount(t, runner, 1)
+	waitForRecoveryOperationCompletion(t, server)
+
+	statusErr = errors.New("temporary status read failure")
+	server.evaluateMihomoRecovery(t.Context())
+	server.evaluateMihomoRecovery(t.Context())
+	if got := server.mihomoRecovery.snapshot(); got.State != mihomoRecoveryRecovering {
+		t.Fatalf("unknown observations changed recovery state=%#v", got)
+	}
+
+	statusErr = nil
+	server.evaluateMihomoRecovery(t.Context())
+	time.Sleep(30 * time.Millisecond)
+	if got := runner.Count(); got != 1 {
+		t.Fatalf("observation errors allowed %d restarts for one incident", got)
+	}
+	if got := server.mihomoRecovery.snapshot(); got.State != mihomoRecoveryFailed {
+		t.Fatalf("continued failure after unknown observations=%#v", got)
+	}
+}
+
+func TestAutoMihomoRecoveryUnknownBreaksHealthyConfirmationSequence(t *testing.T) {
+	controller := newMihomoRecoveryController()
+	controller.beginManual()
+	controller.finishManual(nil)
+
+	controller.observeHealthy()
+	controller.observeUnknown()
+	controller.observeHealthy()
+	if got := controller.snapshot(); got.State != mihomoRecoveryRecovering {
+		t.Fatalf("non-consecutive healthy observations completed recovery=%#v", got)
+	}
+	controller.observeHealthy()
+	if got := controller.snapshot(); got.State != mihomoRecoveryIdle {
+		t.Fatalf("two fresh healthy observations did not complete recovery=%#v", got)
+	}
+}
+
 func TestAutoMihomoRecoveryConfirmsControllerRefusalTwice(t *testing.T) {
 	server := newTestServer(t)
 	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryClientValidated, Required: true}); err != nil {

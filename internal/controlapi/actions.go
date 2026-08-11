@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/user"
@@ -188,7 +189,7 @@ func ServeHelper(ctx context.Context, socketPath, allowedRoot, socketGroup strin
 	reconcileCtx, reconcileCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer reconcileCancel()
 	if err := sleepManager.Reconcile(reconcileCtx); err != nil {
-		return err
+		retrySystemSleepRelease(ctx, sleepManager, err)
 	}
 	_ = os.Remove(socketPath)
 	listener, err := net.Listen("unix", socketPath)
@@ -293,7 +294,9 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 		}
 		if encodeErr := json.NewEncoder(conn).Encode(response); err != nil || encodeErr != nil {
 			if err == nil {
-				_ = sleepManager.Release()
+				if releaseErr := sleepManager.Release(); releaseErr != nil {
+					retrySystemSleepRelease(ctx, sleepManager, releaseErr)
+				}
 			}
 			return
 		}
@@ -307,7 +310,9 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 		case <-ctx.Done():
 		case <-disconnected:
 		}
-		_ = sleepManager.Release()
+		if err := sleepManager.Release(); err != nil {
+			retrySystemSleepRelease(ctx, sleepManager, err)
+		}
 		return
 	}
 	response := HelperResponse{}
@@ -350,6 +355,11 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 		response.Error = err.Error()
 	}
 	_ = json.NewEncoder(conn).Encode(response)
+}
+
+func retrySystemSleepRelease(ctx context.Context, manager *systemSleepLeaseManager, releaseErr error) {
+	log.Printf("OpenSurge sleep prevention release pending; retrying in background: %v", releaseErr)
+	go manager.retryRelease(ctx, time.Second)
 }
 
 func loadHelperConfig(action, configPath string) (config.Config, error) {

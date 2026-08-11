@@ -68,6 +68,15 @@ gateway start/stop API。真实生命周期动作留在网络页，使 topology�
 菜单栏 indicator 先判断需要用户处理的 recovery，再判断 gateway 是否明确 `stopped`；
 只有正在运行或 degraded 的 gateway 才把 drift/doctor failure 表示为“运行异常”。停止状态
 下的 runtime doctor failure 或待应用配置不能覆盖“OpenSurge 网关已停止”。
+
+Doctor 包含真实 `mihomo -t`，单次配置验证最长可到 90 秒，因此不得从
+`/api/v1/overview`、`/api/v1/menubar`、SSE 或其他轮询热路径同步执行。Web 诊断页通过
+`POST /api/v1/doctor` 显式启动 Control Service 内的 single-flight 后台检查，再用
+`GET /api/v1/doctor` 读取运行状态和缓存结果；重复请求只能观察同一份进行中的任务。
+缓存以主配置、设备策略与 imported profile 摘要共同标识，配置变化后只能显示为旧结果，
+不能继续影响当前菜单栏健康状态。这个只读 Doctor 缓存不参与 start/reload 放行；两者仍须
+执行各自的真实预检与 TUN readiness，不能用历史 Doctor 成功结果替代。
+
 进程刚启动且尚未取得第一份状态时使用独立的 connecting 状态和 OpenSurge 品牌图标；真实
 请求失败后进入 unreachable，但仍使用更低透明度的品牌图标和明确的无障碍文案区分。初装
 期间不能因为 Control Service 启动稍慢而退回看起来像旧版图标的 `network.slash`。
@@ -223,7 +232,9 @@ IPv4 与 `dns.listen` 写入前端草稿；`same_wifi_dhcp` 只在 `/24` 下生�
 `same_lan` 不运行 DHCP 服务，因此地址池与租期整组必须禁用并明确标记为运行时不使用；
 保留字段值只用于日后切换 topology，不能暗示当前模式会应用它们。
 配置填写提示应作为表单内的低强调步骤说明，保存区与最后一组字段保持明确间距，并显示
-当前已保存或存在未保存修改，避免按钮紧贴字段卡片。
+当前已保存或存在未保存修改，避免按钮紧贴字段卡片。设备页的未保存修改与已保存待重载
+状态使用同一套底部浮动操作条；保存后直接从“保存设备配置”切换为“应用并重载网关”，
+不把待重载提示移回页面顶部。
 
 设备页先显示独立的 Mac 本机模式卡片；它只调用 `GET/POST /api/v1/local-routing`，
 在规则 / 全局 / 直连之间协调 `open-surge/mac-*` 隐藏 selector。卡片必须说明只影响

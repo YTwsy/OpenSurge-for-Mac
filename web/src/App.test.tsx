@@ -73,6 +73,8 @@ vi.mock('./api', () => ({
     connectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'local_mac_runtime', rounds: 3, targets: [], results: [] })),
     testConnectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'local_mac_runtime', rounds: 3, targets: [], results: [] })),
     refreshProvider: vi.fn(),
+    doctorStatus: vi.fn(async () => ({ schema_version: 1, state: 'idle', current: true, checks: [], healthy: false })),
+    runDoctor: vi.fn(),
     diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {}, operations: [], recovery: { stage: 'idle', required: false } })),
   },
 }))
