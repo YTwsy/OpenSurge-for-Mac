@@ -116,8 +116,10 @@ recovery state active until the network has actually been restored.
 - **来源** (Sources) refreshes subscriptions and shows version differences. A
   refresh creates a draft that still needs to be applied.
 - **设备** (Devices) switches local-Mac Rule / Global / Direct and lets each
-  downstream device follow gateway rules or use an independent egress. Those
-  controls do not affect each other.
+  downstream device follow gateway rules, use an independent egress, or choose
+  IPv4 direct via the main router during DHCP takeover. Those controls do not
+  affect each other. The last mode blocks IPv6 egress for that device when
+  downstream IPv6 is enabled, although the client may retain SLAAC/RDNSS.
 - **策略** (Policies) tests proxy health and switches applied Selectors
   immediately.
 - **连通性** (Connectivity) shows latency, matched rules, and egress chains
@@ -125,6 +127,12 @@ recovery state active until the network has actually been restored.
   represent a downstream-device path.
 - **诊断** (Diagnostics) shows recent operations, connections, providers, and
   redacted logs.
+
+The menu bar panel and Web GUI sidebar both provide **合盖保持运行** (Keep
+Running with Lid Closed). It is off by default, applies only to the current
+OpenSurge run, and is independent of gateway state. Quitting OpenSurge or
+rebooting the Mac releases it. Lid-closed operation increases heat and battery
+use; never place a running Mac in an unventilated bag.
 
 The local-Mac mode affects only new connections entering OpenSurge through TUN
 or the local explicit proxy. The mode switch itself does not rewrite macOS

@@ -735,6 +735,57 @@ func TestRenderConfigAddsDownstreamIPv6PacketListenerAndDeviceIdentity(t *testin
 	}
 }
 
+func TestRenderConfigRejectsIPv6BeforeRulesForRouterBypassDevice(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{
+  "profiles": [{"id":"home","default_policies":["DIRECT"],"rules":[{"id":"phone-rule","match":{"domains":["phone.example"]},"action":"DIRECT"}]}],
+  "devices": [
+    {"id":"console","mac":"aa:bb:cc:dd:ee:05","ipv4":"192.168.50.105","profile":"home","gateway_target":"upstream_router","egress_mode":"dedicated"},
+    {"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"inherit_global"}
+  ]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Runtime.Dir = dir
+	cfg.Mihomo.Config = filepath.Join(dir, "mihomo.yaml")
+	cfg.DevicePolicy.File = policyPath
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bypassReject := "AND,((IN-USER,device:console),(IP-CIDR6,::/0)),REJECT"
+	phoneRule := "AND,((IN-USER,device:phone),(DOMAIN-SUFFIX,phone.example)),DIRECT"
+	for _, want := range []string{
+		`"aa:bb:cc:dd:ee:05": "device:console"`,
+		`"aa:bb:cc:dd:ee:01": "device:phone"`,
+		bypassReject,
+		phoneRule,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered router-bypass IPv6 config missing %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "AND,((IN-USER,device:phone),(IP-CIDR6,::/0)),REJECT") {
+		t.Fatalf("non-bypass device IPv6 was rejected:\n%s", rendered)
+	}
+	assertOrdered(t, rendered, bypassReject, "IN-TYPE,TUN", phoneRule, "MATCH,DIRECT")
+
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+	rendered, err = RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rendered, bypassReject) || strings.Contains(rendered, "type: opensurge-packet") {
+		t.Fatalf("disabled downstream IPv6 emitted packet listener or bypass reject:\n%s", rendered)
+	}
+}
+
 func assertOrdered(t *testing.T, value string, ordered ...string) {
 	t.Helper()
 	position := -1

@@ -85,11 +85,12 @@ describe('ConnectivityPage', () => {
     expect(screen.getByText(/启动网关和 mihomo/)).toBeTruthy()
   })
 
-  it('offers mihomo-only recovery only for an active current-boot runtime whose engine stopped', async () => {
+  it('offers manual mihomo-only recovery after automatic recovery failed for an active runtime', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     const degraded = {
       ...running,
       status: { ...running.status, gateway: 'degraded', mihomo: 'stopped', runtime_state: 'active' },
+      mihomo_recovery: { state: 'failed', reason: 'process_missing', error: 'replacement did not become ready' },
     } as Overview
     render(<ConnectivityPage overview={degraded} onChanged={onChanged} />)
     await screen.findByText('百度')
@@ -106,10 +107,24 @@ describe('ConnectivityPage', () => {
     render(<ConnectivityPage overview={{
       ...running,
       warnings: ['mihomo policies unavailable: Get "http://127.0.0.1:9090/proxies": dial tcp 127.0.0.1:9090: connect: connection refused'],
-      status: { ...running.status, runtime_state: 'active' },
+      status: { ...running.status, runtime_state: 'active', mihomo_error: 'dial tcp 127.0.0.1:9090: connect: connection refused' },
+      mihomo_recovery: { state: 'failed', reason: 'controller_refused' },
     } as Overview} onChanged={onChanged} />)
     await screen.findByText('百度')
     expect(screen.getByRole('button', { name: '恢复 Mihomo' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: '检测全部' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('suppresses the manual recovery card while the backend is observing or recovering', async () => {
+    const automatic = {
+      ...running,
+      status: { ...running.status, gateway: 'degraded', mihomo: 'stopped', runtime_state: 'active' },
+      mihomo_recovery: { state: 'recovering', reason: 'process_missing' },
+    } as Overview
+    render(<ConnectivityPage overview={automatic} onChanged={onChanged} />)
+    await screen.findByText('百度')
+    expect(screen.queryByRole('button', { name: '恢复 Mihomo' })).toBeNull()
+    expect(screen.getByText('正在自动恢复 Mihomo')).toBeTruthy()
     expect((screen.getByRole('button', { name: '检测全部' }) as HTMLButtonElement).disabled).toBe(true)
   })
 

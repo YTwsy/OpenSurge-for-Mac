@@ -76,6 +76,12 @@ broker 从 BPF 保留 source MAC，listener 将它映射到内部
 因为 Mihomo `IN-USER` 会把 `/` 解释为多个用户的分隔符。IPv6 地址与 MAC 冲突时
 fail closed；这项身份适用于分流归属，不应被宣传为防 MAC spoofing 的安全认证。
 
+`same_wifi_dhcp` 的按设备 `upstream_router` 是 IPv4-only 绕行。IPv6 开启时仍保留
+该设备的 MAC→`device:<id>` 映射，但只用于最前置的 `IP-CIDR6,::/0,REJECT`，不会
+恢复它的 selector、普通设备规则或 IPv4 流量统计。其他设备 IPv6 保持原策略。设备
+仍可能获得 SLAAC/RDNSS，因此 UI 写“IPv6 出站已阻止”；若主路由 RA 未消除，设备可
+从 OpenSurge packet path 外直接走 IPv6，这不是 OpenSurge 能按设备拦截的链路。
+
 ## 生命周期与验收
 
 自动模式启动按 Mihomo → broker → gateway alias → dnsmasq RA；停止按 dnsmasq →

@@ -50,6 +50,9 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 			return fmt.Errorf("dhcp.lease_time is required")
 		}
 	}
+	if err := validateOptionalBypassAddresses(cfg.DHCP); err != nil {
+		return err
+	}
 	if checkDevicePolicy {
 		if err := validateDevicePolicy(cfg); err != nil {
 			return err
@@ -173,10 +176,85 @@ func validateDevicePolicy(cfg Config) error {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(bundle.Policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
+	if err := validateRouterBypass(cfg, bundle.Policy); err != nil {
+		return fmt.Errorf("device_policy.file: %w", err)
+	}
+	protected := append([]string(nil), cfg.DevicePolicy.ProtectedIPv4...)
+	if device.UsesUpstreamRouter(bundle.Policy) {
+		protected = append(protected, cfg.DHCP.BypassGateway)
+	}
+	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(bundle.Policy, cfg.Gateway.LANIP, protected, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	return nil
+}
+
+// ValidateDevicePolicyCandidate applies the complete topology and DHCP
+// contract to a candidate policy before the root helper writes it.
+func ValidateDevicePolicyCandidate(cfg Config, policy device.PolicySet) error {
+	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == GatewayModeSameLAN)
+	if err != nil {
+		return err
+	}
+	candidate := cfg
+	if strings.TrimSpace(candidate.DevicePolicy.File) == "" {
+		candidate.DevicePolicy.File = "<candidate>"
+	}
+	candidate.DevicePolicy.Bundle = &bundle
+	return validate(candidate, true)
+}
+
+func validateOptionalBypassAddresses(cfg DHCPConfig) error {
+	if value := strings.TrimSpace(cfg.BypassGateway); value != "" && net.ParseIP(value).To4() == nil {
+		return fmt.Errorf("dhcp.bypass_gateway must be a valid IPv4 address")
+	}
+	for _, value := range cfg.BypassDNS {
+		if net.ParseIP(strings.TrimSpace(value)).To4() == nil {
+			return fmt.Errorf("dhcp.bypass_dns entry %q must be a valid IPv4 address", value)
+		}
+	}
+	return nil
+}
+
+func validateRouterBypass(cfg Config, policy device.PolicySet) error {
+	if !device.UsesUpstreamRouter(policy) {
+		return nil
+	}
+	if cfg.Gateway.Mode != GatewayModeSameWiFiDHCP {
+		return fmt.Errorf("gateway_target %q is only available in gateway.mode same_wifi_dhcp", device.GatewayTargetUpstreamRouter)
+	}
+	gateway := net.ParseIP(strings.TrimSpace(cfg.DHCP.BypassGateway)).To4()
+	lan := cfg.LANIP().To4()
+	if gateway == nil {
+		return fmt.Errorf("gateway_target %q requires dhcp.bypass_gateway", device.GatewayTargetUpstreamRouter)
+	}
+	if len(cfg.DHCP.BypassDNS) == 0 {
+		return fmt.Errorf("gateway_target %q requires at least one dhcp.bypass_dns address", device.GatewayTargetUpstreamRouter)
+	}
+	if gateway[0] != lan[0] || gateway[1] != lan[1] || gateway[2] != lan[2] {
+		return fmt.Errorf("dhcp.bypass_gateway %s must remain in gateway LAN %d.%d.%d.0/24", gateway.String(), lan[0], lan[1], lan[2])
+	}
+	if gateway[3] == 0 || gateway[3] == 255 || gateway.Equal(lan) {
+		return fmt.Errorf("dhcp.bypass_gateway must be a usable host address different from gateway.lan_ip")
+	}
+	start := net.ParseIP(cfg.DHCP.RangeStart).To4()
+	end := net.ParseIP(cfg.DHCP.RangeEnd).To4()
+	if start != nil && end != nil && bytesCompareIPv4(gateway, start) >= 0 && bytesCompareIPv4(gateway, end) <= 0 {
+		return fmt.Errorf("dhcp.bypass_gateway must not be inside the DHCP range")
+	}
+	return nil
+}
+
+func bytesCompareIPv4(left, right net.IP) int {
+	for index := 0; index < net.IPv4len; index++ {
+		if left[index] < right[index] {
+			return -1
+		}
+		if left[index] > right[index] {
+			return 1
+		}
+	}
+	return 0
 }
 
 // PrepareDevicePolicy loads and compiles the policy exactly once for a config

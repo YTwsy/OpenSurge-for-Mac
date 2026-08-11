@@ -53,6 +53,18 @@ grep -Fq 'Button(model.isUninstalling ? "正在卸载…" : "卸载 OpenSurge…
   echo "menu bar must expose the native OpenSurge uninstall entry" >&2
   exit 1
 }
+grep -Fq 'Toggle("合盖保持运行"' "$MENU_CONTENT" || {
+  echo "menu bar must expose the independent lid-closed operation switch" >&2
+  exit 1
+}
+grep -Fq 'model.status?.sleepPrevention?.active == true' "$MENU_CONTENT" || {
+  echo "lid-closed operation switch must reflect the live Control Service lease" >&2
+  exit 1
+}
+grep -Fq '退出 OpenSurge 或重启 Mac 后自动释放' "$MENU_CONTENT" || {
+  echo "lid-closed operation help must explain its non-persistent lifetime" >&2
+  exit 1
+}
 grep -Fq 'alert.addButton(withTitle: "保留数据并卸载")' "$MENU_CONTENT" || {
   echo "uninstall confirmation must offer a data-preserving choice" >&2
   exit 1

@@ -57,6 +57,8 @@ gateway or DNS changes.
   gateway-critical fields without replacing its nodes or rules.
 - Use the Web GUI and menu bar app to see which devices are active, how much
   traffic they are moving, and which egress chain they use.
+- Temporarily keep the Mac running with its lid closed from either UI. The
+  switch is off by default and applies only to the current OpenSurge run.
 
 Under the hood, dnsmasq provides DHCP/DNS, mihomo serves as the proxy engine,
 and macOS pf plus IPv4 forwarding provide the native gateway path.
@@ -73,6 +75,8 @@ into the next engineering loop.
 
 - Use the macOS menu bar app to check status, receive recovery warnings, and
   open the local Web GUI.
+- Temporarily prevent idle and lid-close sleep independently of gateway state;
+  the non-persistent switch releases when OpenSurge quits or the Mac reboots.
 - Import sources, configure the network, route individual devices, check proxy
   health and connectivity, and inspect diagnostics from one control surface.
 - Follow a recovery state machine through same-LAN DHCP takeover startup,
@@ -147,7 +151,7 @@ If you installed OpenSurge from a package, start with the
 [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 
 The repository now includes the loopback Go Control API, an embedded React Web
-GUI, and a read-only native SwiftUI menu bar launcher. For a development build:
+GUI, and a status-focused native SwiftUI menu bar launcher. For a development build:
 
 ```sh
 make web-install
@@ -158,8 +162,9 @@ make menubar-build
 
 The control service listens only on `127.0.0.1` and prints a one-time Web GUI
 bootstrap link. The menu bar app shows status and recovery warnings and opens
-the Web GUI; it deliberately has no gateway start/stop or policy-selection
-actions. It separates quitting only the menu bar app from quitting OpenSurge.
+the Web GUI. Apart from the independent temporary lid-closed-operation switch,
+it deliberately has no gateway start/stop or policy-selection actions. It
+separates quitting only the menu bar app from quitting OpenSurge.
 The latter is available only after the gateway data plane has stopped, and
 quits the menu bar app plus the user-level Control Service. The launchd-managed
 root Helper remains loaded and idle, so reopening OpenSurge needs no new
@@ -249,6 +254,14 @@ physical Ethernet IPv6 packet plus source MAC to a patched Mihomo gVisor
 listener and reuses the existing device rules. The supported payload boundary
 is TCP and UDP. QUIC is covered as UDP/443; this is not a claim that arbitrary
 IPv6 protocols are proxied.
+
+Per-device **Direct via main router** in DHCP takeover bypasses only IPv4.
+When downstream IPv6 is enabled, IPv6 from that device that reaches the
+OpenSurge packet path receives a highest-priority `REJECT`; other devices keep
+their normal IPv6 policy. The client may still retain SLAAC addresses or RDNSS,
+so the UI says **IPv6 egress blocked** rather than claiming IPv6 is absent. If
+the main router still publishes RA, the client can bypass OpenSurge over IPv6;
+disable the main-router RA/DHCPv6 or enforce RA Guard.
 
 `always` does not invent public IPv6 connectivity. With no native upstream
 IPv6, fake IPv6 destinations can still use a proxy that supports the required

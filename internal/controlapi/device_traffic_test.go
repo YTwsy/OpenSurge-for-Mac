@@ -56,6 +56,27 @@ func TestAggregateDeviceTrafficUsesNewestLeaseForMAC(t *testing.T) {
 	}
 }
 
+func TestAggregateDeviceTrafficLabelsRouterBypassWithoutMihomoSessions(t *testing.T) {
+	policy := device.PolicySet{Devices: []device.ManagedDevice{{
+		ID: "console", Name: "PlayStation 5", MAC: "aa:bb:cc:dd:ee:05", IPv4: "192.168.1.190", GatewayTarget: device.GatewayTargetUpstreamRouter,
+	}}}
+	leases := []device.Client{{
+		Hostname: "PlayStation-5", IP: "192.168.1.190", MAC: "aa:bb:cc:dd:ee:05", Online: true, ExpiresAt: time.Now().Add(time.Hour),
+	}}
+	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.1.20", false)
+	if len(result.Devices) != 1 || result.Devices[0].GatewayTarget != device.GatewayTargetUpstreamRouter || result.Devices[0].PrimaryEgress != "主路由直连" {
+		t.Fatalf("router bypass traffic row = %#v", result.Devices)
+	}
+	annotateDeviceTrafficIPv6BlockState(result.Devices, true)
+	if !result.Devices[0].IPv6Blocked {
+		t.Fatalf("router bypass IPv6 state = %#v", result.Devices[0])
+	}
+	annotateDeviceTrafficIPv6BlockState(result.Devices, false)
+	if result.Devices[0].IPv6Blocked {
+		t.Fatalf("disabled downstream IPv6 still reported blocked = %#v", result.Devices[0])
+	}
+}
+
 func TestAggregateSameLANDeviceTrafficUsesStaticAndObservedIdentities(t *testing.T) {
 	policy := device.PolicySet{Devices: []device.ManagedDevice{{
 		ID: "living-room", Name: "Living Room", MAC: "aa:bb:cc:dd:ee:24", IPv4: "192.168.5.124",

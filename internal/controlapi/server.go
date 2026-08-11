@@ -35,7 +35,9 @@ type Options struct {
 	Runner            ActionRunner
 	NetworkRunner     NetworkRunner
 	ConfigRunner      ConfigurationRunner
+	SleepRunner       SleepPreventionRunner
 	DiscoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	DiscoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	PingRouter        func(context.Context, string) error
@@ -51,6 +53,7 @@ type Server struct {
 	networkRunner     NetworkRunner
 	configRunner      ConfigurationRunner
 	discoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
+	discoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	listInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	pingRouter        func(context.Context, string) error
@@ -63,12 +66,17 @@ type Server struct {
 	measureProxyDelay func(context.Context, config.Config, string, string, time.Duration) mihomo.ProxyDelayResult
 	probeConnectivity func(context.Context, config.Config, ConnectivityTarget) ConnectivityResult
 	trafficSampler    *trafficRateSampler
+	gatewayStatus     func(context.Context, config.Config) (gateway.Status, error)
+	doctor            *doctorController
+	mihomoRecovery    *mihomoRecoveryController
+	sleepPrevention   *sleepPreventionController
 	token             string
 	baseURL           string
 
-	mu         sync.Mutex
-	sessions   map[string]time.Time
-	bootstraps map[string]bootstrapGrant
+	mu          sync.Mutex
+	lifecycleMu sync.Mutex
+	sessions    map[string]time.Time
+	bootstraps  map[string]bootstrapGrant
 }
 
 type bootstrapGrant struct {
@@ -125,8 +133,18 @@ func New(options Options) (*Server, error) {
 			options.ConfigRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
 		}
 	}
+	if options.SleepRunner == nil {
+		if runner, ok := options.Runner.(SleepPreventionRunner); ok {
+			options.SleepRunner = runner
+		} else {
+			options.SleepRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
+		}
+	}
 	if options.DiscoverNetwork == nil {
 		options.DiscoverNetwork = macosnetwork.Discover
+	}
+	if options.DiscoverDefault == nil {
+		options.DiscoverDefault = macosnetwork.DiscoverDefault
 	}
 	if options.ListInterfaces == nil {
 		options.ListInterfaces = macosnetwork.ListInterfaces
@@ -157,6 +175,7 @@ func New(options Options) (*Server, error) {
 		networkRunner:     options.NetworkRunner,
 		configRunner:      options.ConfigRunner,
 		discoverNetwork:   options.DiscoverNetwork,
+		discoverDefault:   options.DiscoverDefault,
 		listInterfaces:    options.ListInterfaces,
 		discoverNeighbors: options.DiscoverNeighbors,
 		pingRouter:        options.PingRouter,
@@ -169,10 +188,16 @@ func New(options Options) (*Server, error) {
 		measureProxyDelay: mihomo.MeasureProxyDelay,
 		probeConnectivity: probeConnectivityTarget,
 		trafficSampler:    newTrafficRateSampler(),
-		token:             token,
-		baseURL:           "http://" + options.Addr,
-		sessions:          map[string]time.Time{},
-		bootstraps:        map[string]bootstrapGrant{},
+		gatewayStatus: func(ctx context.Context, cfg config.Config) (gateway.Status, error) {
+			return gateway.New(cfg).Status(ctx)
+		},
+		doctor:          newDoctorController(doctor.Run),
+		mihomoRecovery:  newMihomoRecoveryController(),
+		sleepPrevention: newSleepPreventionController(options.SleepRunner, configPath),
+		token:           token,
+		baseURL:         "http://" + options.Addr,
+		sessions:        map[string]time.Time{},
+		bootstraps:      map[string]bootstrapGrant{},
 	}, nil
 }
 
@@ -197,6 +222,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
 	mux.Handle("PUT /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
 	mux.Handle("GET /api/v1/menubar", s.auth(http.HandlerFunc(s.handleMenuBar)))
+	mux.Handle("GET /api/v1/sleep-prevention", s.auth(http.HandlerFunc(s.handleSleepPrevention)))
+	mux.Handle("PUT /api/v1/sleep-prevention", s.auth(http.HandlerFunc(s.handleSleepPrevention)))
 	mux.Handle("GET /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
 	mux.Handle("POST /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
 	mux.Handle("POST /api/v1/gateway/start", s.auth(http.HandlerFunc(s.handleGatewayAction)))
@@ -215,6 +242,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/recovery/client-validation-skip", s.auth(http.HandlerFunc(s.handleClientValidationSkip)))
 	mux.Handle("POST /api/v1/recovery/keep-static", s.auth(http.HandlerFunc(s.handleKeepStaticFinish)))
 	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
+	mux.Handle("GET /api/v1/network/defaults", s.auth(http.HandlerFunc(s.handleNetworkDefaults)))
 	mux.Handle("GET /api/v1/network/interfaces", s.auth(http.HandlerFunc(s.handleNetworkInterfaces)))
 	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
 	mux.Handle("POST /api/v1/network/dhcp-probe", s.auth(http.HandlerFunc(s.handleDHCPProbe)))
@@ -237,6 +265,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
 	mux.Handle("POST /api/v1/connectivity/tests", s.auth(http.HandlerFunc(s.handleConnectivityTests)))
 	mux.Handle("GET /api/v1/providers", s.auth(http.HandlerFunc(s.handleProviders)))
+	mux.Handle("GET /api/v1/doctor", s.auth(http.HandlerFunc(s.handleDoctor)))
+	mux.Handle("POST /api/v1/doctor", s.auth(http.HandlerFunc(s.handleDoctor)))
 	mux.Handle("GET /api/v1/diagnostics", s.auth(http.HandlerFunc(s.handleDiagnostics)))
 	mux.Handle("POST /api/v1/providers/{name}/refresh", s.auth(http.HandlerFunc(s.handleProviderRefresh)))
 	mux.Handle("GET /api/v1/operations/{id}", s.auth(http.HandlerFunc(s.handleOperation)))
@@ -318,7 +348,7 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
 		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
-		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain},
+		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain, BypassGateway: cfg.DHCP.BypassGateway, BypassDNS: append([]string{}, cfg.DHCP.BypassDNS...)},
 		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream, IPv6: cfg.DNS.IPv6},
 		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
 		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
@@ -337,7 +367,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err := writeAtomic(filepath.Join(s.store.Dir(), "control-endpoint.json"), append(data, '\n'), 0o600); err != nil {
 		return err
 	}
+	defer s.sleepPrevention.Close()
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
+	go s.monitorMihomoRecovery(ctx)
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -481,10 +513,8 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if desiredErr != nil {
 		cfg, _ = config.LoadRuntime(s.configPath)
 	}
-	manager := gateway.New(cfg)
-	status, statusErr := manager.Status(ctx)
-	report := doctor.Run(cfg)
-	controlDoctorChecks := doctorChecksForControl(report.Checks)
+	status, statusErr := s.gatewayStatus(ctx, cfg)
+	revision := fileDigest(s.configPath)
 	paths := runtime.NewPaths(cfg)
 	leases, _ := device.LoadLeases(paths.LeaseFile)
 	if leases == nil {
@@ -499,6 +529,8 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		desiredDigest = cfg.DevicePolicy.Bundle.Digest
 	}
 	desiredProfileDigest, profileDigestErr := config.MihomoProfileDigest(cfg)
+	doctorStatus := s.doctor.snapshot(doctorInputRevision(revision, desiredDigest, desiredProfileDigest, errorString(profileDigestErr)))
+	controlDoctorChecks, controlDoctorHealthy := doctorOverviewResult(doctorStatus)
 	appliedDigest := ""
 	appliedProfileDigest := ""
 	if state, exists, _ := runtime.LoadState(paths.StateFile); exists {
@@ -539,7 +571,7 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	}
 	return Overview{
 		SchemaVersion:        SchemaVersion,
-		Revision:             fileDigest(s.configPath),
+		Revision:             revision,
 		Topology:             cfg.Gateway.Mode,
 		DesiredDigest:        desiredDigest,
 		AppliedDigest:        appliedDigest,
@@ -550,11 +582,14 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		Status:               status,
 		StatusError:          errorString(statusErr),
 		Doctor:               controlDoctorChecks,
-		DoctorHealthy:        doctorHealthyForControl(controlDoctorChecks),
+		DoctorHealthy:        controlDoctorHealthy,
+		DoctorStatus:         doctorStatus,
 		Leases:               leases,
 		Policies:             groups,
 		Providers:            providers,
 		Recovery:             recovery,
+		MihomoRecovery:       s.mihomoRecovery.snapshot(),
+		SleepPrevention:      s.sleepPrevention.Status(),
 	}, nil
 }
 
@@ -568,11 +603,37 @@ func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, MenuBarStatus{
 		SchemaVersion: SchemaVersion, Revision: overview.Revision, Gateway: overview.Status.Gateway,
 		Topology: cfg.Gateway.Mode, LANIP: overview.Status.LANIP, DHCP: overview.Status.DHCP,
-		Mihomo: overview.Status.Mihomo, PFAnchor: overview.Status.PFAnchor, Forwarding: overview.Status.Forwarding,
+		Mihomo: overview.Status.Mihomo, MihomoError: overview.Status.MihomoError, PFAnchor: overview.Status.PFAnchor, Forwarding: overview.Status.Forwarding,
 		TUN: overview.Status.TUN, TUNInterface: overview.Status.TUNInterface, TUNError: overview.Status.TUNError,
 		ClientCount: overview.Status.ClientCount, Drift: overview.Drift, DoctorHealthy: overview.DoctorHealthy,
 		Recovery: overview.Recovery.Required, RecoveryStage: overview.Recovery.Stage, Warnings: overview.Warnings,
+		MihomoRecovery:  overview.MihomoRecovery,
+		SleepPrevention: overview.SleepPrevention,
 	})
+}
+
+func (s *Server) handleSleepPrevention(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		writeJSON(w, http.StatusOK, s.sleepPrevention.Status())
+		return
+	}
+	var request struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := decodeJSON(r, &request, 16<<10); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	status, err := s.sleepPrevention.SetEnabled(r.Context(), request.Enabled)
+	if err != nil {
+		statusCode, code := http.StatusInternalServerError, "sleep_prevention_failed"
+		if errors.Is(err, errSleepPreventionExternallyOwned) {
+			statusCode, code = http.StatusConflict, "sleep_prevention_conflict"
+		}
+		writeError(w, statusCode, code, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
@@ -636,6 +697,16 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if !s.lifecycleMu.TryLock() {
+		writeError(w, http.StatusConflict, "operation_in_progress", "another gateway lifecycle operation is already running")
+		return
+	}
+	locked := true
+	defer func() {
+		if locked {
+			s.lifecycleMu.Unlock()
+		}
+	}()
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
@@ -649,7 +720,7 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if action == "reload" {
-		status, statusErr := gateway.New(cfg).Status(r.Context())
+		status, statusErr := s.gatewayStatus(r.Context(), cfg)
 		if statusErr == nil && status.RuntimeState == "interrupted" {
 			writeError(w, http.StatusConflict, "runtime_interrupted", "gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again")
 			return
@@ -682,7 +753,7 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "runtime_interrupted", "gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again")
 			return
 		}
-		if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated && recovery.Stage != RecoveryClientValidationSkipped {
+		if !mihomoRecoveryStageAllowed(cfg.Gateway.Mode, recovery.Stage) {
 			writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover can restart mihomo only while the gateway is active")
 			return
 		}
@@ -696,11 +767,16 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "operation_failed", err.Error())
 		return
 	}
-	go s.runOperation(op, cfg.Gateway.Mode, recovery)
+	if action == "restart-mihomo" {
+		s.mihomoRecovery.beginManual()
+	}
+	locked = false
+	go s.runOperationLocked(op, cfg.Gateway.Mode, recovery, nil)
 	writeJSON(w, http.StatusAccepted, op)
 }
 
-func (s *Server) runOperation(op Operation, topology string, recoveryBefore RecoveryState) {
+func (s *Server) runOperationLocked(op Operation, topology string, recoveryBefore RecoveryState, completed func(error)) {
+	defer s.lifecycleMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	err := s.runner.Run(ctx, op.Kind, s.configPath)
@@ -730,6 +806,11 @@ func (s *Server) runOperation(op Operation, topology string, recoveryBefore Reco
 		}
 	}
 	_ = s.store.SaveOperation(op)
+	if completed != nil {
+		completed(err)
+	} else if op.Kind == "restart-mihomo" {
+		s.mihomoRecovery.finishManual(err)
+	}
 }
 
 func (s *Server) recordStartRecoveryFailure(topology string, recoveryBefore RecoveryState, startErr error) {
@@ -1038,6 +1119,50 @@ func (s *Server) handleNetworkInterfaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, NetworkInterfacesResponse{SchemaVersion: SchemaVersion, Interfaces: interfaces})
+}
+
+func (s *Server) handleNetworkDefaults(w http.ResponseWriter, r *http.Request) {
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	if mode != config.GatewayModeSameLAN && mode != config.GatewayModeSameWiFiDHCP {
+		writeError(w, http.StatusBadRequest, "network_defaults_mode_unsupported", "automatic network defaults are only available for bypass-router and same-LAN DHCP takeover modes")
+		return
+	}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	snapshot, err := s.discoverDefault(r.Context())
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "network_defaults_discovery_failed", err.Error())
+		return
+	}
+	result := NetworkDefaultsResponse{
+		SchemaVersion: SchemaVersion,
+		Mode:          mode,
+		Snapshot:      snapshot,
+		GatewayIPv4:   snapshot.IPv4,
+		BypassDNS:     []string{},
+		Warnings:      []string{},
+		Blockers:      []string{},
+	}
+	if mode == config.GatewayModeSameLAN && snapshot.IPv4Mode == macosnetwork.IPv4ModeDHCP {
+		result.Warnings = append(result.Warnings, "当前 Mac IPv4 由主路由 DHCP 分配；旁路由长期使用时建议在主路由中保留该地址")
+	}
+	if mode == config.GatewayModeSameWiFiDHCP {
+		result.BypassGateway = snapshot.Router
+		result.BypassDNS = append([]string(nil), snapshot.DNS...)
+		if len(result.BypassDNS) == 0 && snapshot.Router != "" {
+			result.BypassDNS = []string{snapshot.Router}
+		}
+		start, end, rangeErr := suggestDHCPRange24(snapshot, cfg.DevicePolicy.ProtectedIPv4)
+		if rangeErr != nil {
+			result.Blockers = append(result.Blockers, rangeErr.Error())
+		} else {
+			result.DHCPRangeStart, result.DHCPRangeEnd = start, end
+		}
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleRecoveryPrepare(w http.ResponseWriter, r *http.Request) {
@@ -1369,6 +1494,13 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "runtime_state_invalid", stateErr.Error())
 		return
 	}
+	if gatewayActive {
+		if !s.lifecycleMu.TryLock() {
+			writeError(w, http.StatusConflict, "operation_in_progress", "another gateway lifecycle operation is already running")
+			return
+		}
+		defer s.lifecycleMu.Unlock()
+	}
 	recovery, _ := s.store.Recovery()
 	if gatewayActive && cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP && recovery.Stage != RecoveryGatewayActive && recovery.Stage != RecoveryClientValidated && recovery.Stage != RecoveryClientValidationSkipped {
 		writeError(w, http.StatusConflict, "recovery_precondition", "same-LAN DHCP takeover can apply a profile only while the gateway is active")
@@ -1477,12 +1609,8 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
+	if err := config.ValidateDevicePolicyCandidate(cfg, policy); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "device_policy_validation_failed", err.Error())
-		return
-	}
-	if _, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "device_policy_compile_failed", err.Error())
 		return
 	}
 	data, _ := json.Marshal(policy)
@@ -1557,7 +1685,17 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		}
 		response.ObservationError = strings.Join(observationErrors, "; ")
 	}
+	ipv6BlockEnabled := cfg.Transparent.TUNIPv6 != config.TUNIPv6Off
+	annotateCompiledDeviceIPv6BlockState(response.Devices, ipv6BlockEnabled)
+	annotateCompiledDeviceIPv6BlockState(response.DesiredDevices, ipv6BlockEnabled)
+	annotateCompiledDeviceIPv6BlockState(response.AppliedDevices, ipv6BlockEnabled)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func annotateCompiledDeviceIPv6BlockState(devices []device.CompiledDevice, enabled bool) {
+	for index := range devices {
+		devices[index].IPv6Blocked = enabled && devices[index].GatewayTarget == device.GatewayTargetUpstreamRouter
+	}
 }
 
 func changedDeviceIDs(desired, applied device.PolicySet) []string {
@@ -1715,6 +1853,44 @@ func (s *Server) handleProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	providers = mihomo.VisibleProviders(providers)
 	writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "providers": providers})
+}
+
+func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		status := s.doctor.snapshot("")
+		if status.State == doctorRunIdle || status.State == doctorRunRunning {
+			writeJSON(w, http.StatusOK, s.doctor.snapshot(status.Revision))
+			return
+		}
+		writeJSON(w, http.StatusOK, s.doctor.snapshot(s.currentDoctorRevision()))
+		return
+	}
+	status := s.doctor.snapshot("")
+	if status.State == doctorRunRunning {
+		writeJSON(w, http.StatusAccepted, s.doctor.snapshot(status.Revision))
+		return
+	}
+	revision := fileDigest(s.configPath)
+	if revision == "" {
+		writeError(w, http.StatusBadRequest, "config_invalid", "configuration file is unavailable")
+		return
+	}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	if revision != fileDigest(s.configPath) {
+		writeError(w, http.StatusConflict, "revision_conflict", "configuration changed while Doctor was starting; retry the check")
+		return
+	}
+	deviceDigest := ""
+	if cfg.DevicePolicy.Bundle != nil {
+		deviceDigest = cfg.DevicePolicy.Bundle.Digest
+	}
+	profileDigest, profileErr := config.MihomoProfileDigest(cfg)
+	status, _ = s.doctor.start(cfg, doctorInputRevision(revision, deviceDigest, profileDigest, errorString(profileErr)))
+	writeJSON(w, http.StatusAccepted, status)
 }
 
 func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
@@ -1905,6 +2081,43 @@ func doctorChecksForControl(checks []doctor.Check) []doctor.Check {
 		}
 	}
 	return result
+}
+
+func doctorOverviewResult(status DoctorRunStatus) ([]doctor.Check, bool) {
+	if !status.Current {
+		return []doctor.Check{}, true
+	}
+	switch status.State {
+	case doctorRunSucceeded:
+		return append([]doctor.Check{}, status.Checks...), status.Healthy
+	case doctorRunFailed:
+		return []doctor.Check{}, false
+	default:
+		return []doctor.Check{}, true
+	}
+}
+
+func (s *Server) currentDoctorRevision() string {
+	configRevision := fileDigest(s.configPath)
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		return doctorInputRevision(configRevision, "", "", err.Error())
+	}
+	deviceDigest := ""
+	if cfg.DevicePolicy.Bundle != nil {
+		deviceDigest = cfg.DevicePolicy.Bundle.Digest
+	}
+	profileDigest, profileErr := config.MihomoProfileDigest(cfg)
+	return doctorInputRevision(configRevision, deviceDigest, profileDigest, errorString(profileErr))
+}
+
+func doctorInputRevision(configRevision, deviceDigest, profileDigest, profileError string) string {
+	digest := sha256.New()
+	for _, value := range []string{configRevision, deviceDigest, profileDigest, profileError} {
+		_, _ = digest.Write([]byte(value))
+		_, _ = digest.Write([]byte{0})
+	}
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func fileDigest(path string) string {

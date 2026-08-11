@@ -51,6 +51,7 @@ AP、SSID 或 VLAN 时，则可以使用独立下游 LAN。
 
 - 可导入已有的 mihomo 配置或订阅，保留原有节点、代理组和规则
 - Web GUI 实时展示每台设备的连接、上下行流量和实际出口链；菜单栏随时查看网关状态与恢复提醒。
+- 菜单栏与 Web GUI 提供默认关闭、仅本次运行有效的**合盖保持运行**开关。
 
 底层由 dnsmasq 提供 DHCP/DNS，mihomo 作为代理引擎，macOS pf 与 IPv4
 forwarding 提供原生网关路径。
@@ -74,6 +75,8 @@ forwarding 提供原生网关路径。
 
 - 通过 macOS 菜单栏 App 随时查看状态、接收网络恢复提醒并打开本地 Web GUI；再次打开
   `/Applications/OpenSurge.app` 会直接展开与菜单栏图标相同的状态面板；
+- 按需临时阻止空闲与合盖睡眠；开关不依赖网关状态，不保存偏好，退出 OpenSurge 或重启
+  Mac 后恢复正常睡眠；
 - 在一个控制面中完成订阅导入、网络设置、设备分流、节点健康、连通性检查与诊断；
 - 使用恢复状态机引导局域网 DHCP 接管的启动、客户端验收、停止和网络恢复。
 
@@ -134,7 +137,7 @@ OpenSurge 有意不内置家庭模板或第三方规则列表；策略内容由�
 通过安装包使用 OpenSurge 时，请从
 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)开始。
 
-本地 Control API、React Web GUI 和只读 SwiftUI 菜单栏 launcher 已进入仓库。开发构建：
+本地 Control API、React Web GUI 和以状态展示为主的 SwiftUI 菜单栏 launcher 已进入仓库。开发构建：
 
 ```sh
 make web-install
@@ -144,7 +147,8 @@ make menubar-build
 ```
 
 控制服务只监听 `127.0.0.1`，启动时会输出一次性 Web GUI 链接。菜单栏 App 显示
-状态、恢复警报并打开 Web GUI，不提供网关 start/stop 或策略切换。它区分“只退出菜单栏
+状态、恢复警报并打开 Web GUI；除独立的临时合盖运行开关外，不提供网关 start/stop 或
+策略切换。它区分“只退出菜单栏
 App”和“退出 OpenSurge”：后者只在网关数据面已经停止时退出菜单栏 App 与用户级
 Control Service；系统 launchd 托管的 root Helper 保持空闲加载，下次打开无需再次授权。
 菜单栏还提供独立的“卸载 OpenSurge”入口：只要网关已经停止即可通过 macOS 管理员授权
@@ -213,6 +217,12 @@ IPv6 地址（不把 ULA 当成公网能力）和 IPv6 默认路由时启用；`
 IPv4/IPv6 速查卡。下游 IPv6 入站不经过 macOS 系统 utun：BPF broker 把物理 Ethernet
 上的 IPv6 packet 和 source MAC 送入 patched Mihomo gVisor，并把身份映射到原有设备
 规则。支持边界是 TCP 与 UDP；QUIC 按 UDP/443 承载，不代表任意 IPv6 协议均可代理。
+
+局域网 DHCP 接管中的按设备“直连主路由”只绕行 IPv4。启用下游 IPv6 时，该设备经过
+OpenSurge packet path 的 IPv6 会以最高优先级 `REJECT`，其他设备的 IPv6 不受影响。
+设备仍可能保留 SLAAC 地址或 RDNSS，因此界面只显示“IPv6 出站已阻止”。如果主路由
+仍发布 RA，设备可能直接从主路由走 IPv6、完全绕过 OpenSurge；必须关闭主路由
+RA/DHCPv6 或使用 RA Guard。
 
 `always` 也不会凭空提供公网 IPv6。上游无原生 IPv6 时，fake IPv6 目标仍可通过支持
 相应流量的代理出口；真实公网 IPv6 的 `DIRECT` 会因没有上游路由而失败，HTTP-only

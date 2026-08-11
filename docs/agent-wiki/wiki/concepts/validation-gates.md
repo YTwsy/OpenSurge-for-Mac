@@ -409,9 +409,11 @@ selector 隔离；同时要求设备默认 selector 指向 HTTP-only outbound �
 独立模式、默认出口、安全 reload、UDP fail-closed 和覆盖规则的真实 LAN/TUN 数据路径。
 
 大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
-`make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。当前设备身份
-边界是 MAC 绑定 IPv4 DHCP reservation 加 IPv4 `SRC-IP-CIDR`，不是 IPv6 或 mihomo
-内的 MAC 匹配。
+`make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。系统 TUN 的设备
+身份边界是 MAC 绑定 IPv4 DHCP reservation 加 IPv4 `SRC-IP-CIDR`；下游 IPv6 则由
+packet path 把观察到的 source MAC 映射为 patched Mihomo 的 `IN-USER(device:<id>)`。
+后者是路由归属，不是防 MAC spoofing 认证；`upstream_router` 设备只用它命中最高优先级
+IPv6 `REJECT`。
 
 2026-07-11 已在 P1-1..P1-5 修复（commit `7b14586`）后运行此门槛并通过：两个 VM
 拿到 `.101`/`.102` 固定租约且 `omg devices` identity 就绪，UDP
@@ -451,9 +453,18 @@ Mac 与下游客户端共用同一个 Wi-Fi 接口时，普通连通性 smoke �
 5. 重复 DIRECT 与代理出口探针，要求均恢复，并确认旧日志已归档；
 6. 最后完成 same-WiFi stop 与路由器 DHCP、Mac DHCP、客户端自动获取恢复门槛。
 
-`make test` 只证明独立恢复动作的状态事务和接口边界。普通 `make lab-test-tun` 使用虚拟
-LAN，不能代替物理 Wi-Fi 断开/重关联证据；在上述真实门槛未运行前，不得宣称自动恢复或
-根因已经彻底修复。
+`make test` 只证明独立恢复动作、单次自动触发和生命周期互斥的状态事务与接口边界。
+普通 `make lab-test-tun` 使用虚拟 LAN，不能代替物理 Wi-Fi 断开/重关联证据；在上述真实
+门槛未运行前，只能说明自动恢复机制已经实现，不能宣称物理链路恢复或根因已经彻底验收。
+
+## 合盖运行门槛
+
+单元测试必须覆盖默认关闭且不持久化、Helper lease 丢失、外部 `SleepDisabled` 拒绝接管、
+ownership marker 引用计数和上次异常运行的 marker reconciliation。pkg 静态检查必须确认
+升级与卸载只在 marker 存在时恢复睡眠。它们不证明特定 Mac 型号和 macOS 版本在电池/电源
+下的真实合盖行为；正式宣称前还需在安装包环境分别验证开关启用时合盖保持运行、关闭时
+恢复合盖睡眠、Control Service kill、Helper kill 与系统重启后的恢复，并记录 `pmset -g`
+中的 `SleepDisabled` 证据。测试机必须保持通风，不能把合盖运行中的机器放入包内。
 
 ## 结论纪律
 

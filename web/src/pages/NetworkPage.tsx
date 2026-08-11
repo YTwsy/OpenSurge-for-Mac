@@ -3,10 +3,22 @@ import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
 import { recoveryLabel } from '../status'
-import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
+import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkDefaults, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
 
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 type NetworkMode = ControlConfig['gateway']['mode']
+
+function isInstallerNetworkSeed(config: ControlConfig): boolean {
+  return config.gateway.mode === 'isolated_lan'
+    && config.gateway.interface === 'en0'
+    && config.gateway.upstream_interface === 'en0'
+    && config.gateway.lan_ip === '192.168.50.1'
+    && config.dhcp.enabled
+    && config.dhcp.range_start === '192.168.50.100'
+    && config.dhcp.range_end === '192.168.50.200'
+    && config.dns.listen === '192.168.50.1'
+}
+
 type PolicyMigrationDevice = Pick<PolicyDevice, 'id' | 'name' | 'ipv4'> & { mac?: string }
 type PolicyMigration = {
   target: ControlConfig
@@ -30,6 +42,10 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const gatewayControlFocused = useRef(false)
   const [interfaceOptions, setInterfaceOptions] = useState<NetworkInterfaceOption[]>([])
   const [interfaceDiscoveryError, setInterfaceDiscoveryError] = useState(false)
+  const [initialNetworkSetup, setInitialNetworkSetup] = useState(false)
+  const [networkDefaultsBusy, setNetworkDefaultsBusy] = useState(false)
+  const [networkDefaultsMessage, setNetworkDefaultsMessage] = useState('')
+  const [networkDefaultsError, setNetworkDefaultsError] = useState('')
   const [clientIPv4, setClientIPv4] = useState('')
   const [clientConfirmed, setClientConfirmed] = useState(false)
   const [ipv6Acknowledged, setIPv6Acknowledged] = useState(false)
@@ -45,7 +61,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const gatewayStopped = overview?.status.gateway === 'stopped'
   const gatewayInterrupted = overview?.status.runtime_state === 'interrupted'
   const dhcpRuntimeDisabled = config?.gateway.mode === 'same_lan'
-  const configurationEditable = !busy && gatewayStopped && !recoveryBlocksConfig
+  const configurationEditable = !busy && !networkDefaultsBusy && gatewayStopped && !recoveryBlocksConfig
   const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
   const blockedByPlan = planBlockersApply && (plan?.blockers.length ?? 0) > 0
   const recoverySnapshot = overview?.recovery.network_snapshot
@@ -64,7 +80,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
 
   useEffect(() => {
     let active = true
-    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
+    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setInitialNetworkSetup(isInstallerNetworkSeed(value)); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
     void api.networkInterfaces().then(value => { if (active) setInterfaceOptions(value.interfaces) }).catch(() => { if (active) setInterfaceDiscoveryError(true) })
     return () => { active = false }
   }, [loadPlan])
@@ -103,10 +119,48 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
     }
   })
 
+  const applyInitialNetworkDefaults = async (mode: NetworkDefaults['mode']) => {
+    setNetworkDefaultsBusy(true); setNetworkDefaultsError(''); setNetworkDefaultsMessage('')
+    try {
+      const defaults = await api.networkDefaults(mode)
+      if (defaults.blockers.length) throw new Error(defaults.blockers.join('；'))
+      setConfig(currentConfig => {
+        if (!currentConfig || currentConfig.gateway.mode !== mode) return currentConfig
+        const dhcp = mode === 'same_wifi_dhcp'
+          ? {
+              ...currentConfig.dhcp,
+              range_start: defaults.dhcp_range_start!,
+              range_end: defaults.dhcp_range_end!,
+              bypass_gateway: defaults.bypass_gateway || defaults.snapshot.router || '',
+              bypass_dns: defaults.bypass_dns.length ? defaults.bypass_dns : defaults.snapshot.router ? [defaults.snapshot.router] : [],
+            }
+          : currentConfig.dhcp
+        return {
+          ...currentConfig,
+          gateway: { ...currentConfig.gateway, interface: defaults.snapshot.interface, upstream_interface: defaults.snapshot.interface, lan_ip: defaults.gateway_ipv4 },
+          dhcp,
+          dns: { ...currentConfig.dns, listen: defaults.gateway_ipv4 },
+        }
+      })
+      const warning = defaults.warnings.length ? ` ${defaults.warnings.join('；')}。` : ''
+      const fields = mode === 'same_wifi_dhcp' ? 'IPv4、地址池和主路由建议值' : 'IPv4 建议值'
+      setNetworkDefaultsMessage(`已根据当前 ${defaults.snapshot.network_service}（${defaults.snapshot.interface}）填入 ${fields}，尚未保存。${warning}`)
+    } catch (cause) {
+      const fields = mode === 'same_lan' ? '接口和 IPv4' : '接口、IPv4、地址池、主路由网关和 DNS'
+      setNetworkDefaultsError(`无法自动填写当前网络：${cause instanceof Error ? cause.message : String(cause)}。请手工确认${fields}。`)
+    } finally {
+      setNetworkDefaultsBusy(false)
+    }
+  }
+
   const toggleMode = (mode: NetworkMode) => {
     setDetailMode(mode)
     setExpandedMode(currentMode => currentMode === mode ? null : mode)
-    if (config?.gateway.mode !== mode) selectMode(mode)
+    if (mode === 'isolated_lan') { setNetworkDefaultsMessage(''); setNetworkDefaultsError('') }
+    if (config?.gateway.mode !== mode) {
+      selectMode(mode)
+      if (initialNetworkSetup && mode !== 'isolated_lan') void applyInitialNetworkDefaults(mode)
+    }
   }
 
   const persistConfig = async (target: ControlConfig, migration?: PolicyMigration) => {
@@ -119,6 +173,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       }
       const updated = await api.saveConfig(target)
       setConfig(updated); setSavedConfig(updated); setPolicyMigration(null)
+      setInitialNetworkSetup(false); setNetworkDefaultsMessage(''); setNetworkDefaultsError('')
       await onChanged(); await loadPlan(updated)
       if (migration) {
         const messages = []
@@ -135,6 +190,21 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
 
   const save = async () => {
     if (!config || !savedConfig) return
+    const leavingTakeover = savedConfig.gateway.mode === 'same_wifi_dhcp' && config.gateway.mode !== 'same_wifi_dhcp' && config.device_policy.enabled
+    if (leavingTakeover) {
+      try {
+        const document = await api.devicePolicy()
+        const bypassDevices = document.policy.devices.filter(device => device.gateway_target === 'upstream_router')
+        if (bypassDevices.length) {
+          const names = bypassDevices.map(device => device.name || device.id).join('、')
+          setError(`${names} 正在使用“直连主路由”；该方式仅适用于局域网 DHCP 接管。请先在设备页将这些设备切回 OpenSurge。`)
+          return
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        return
+      }
+    }
     const leavingSameLAN = savedConfig.gateway.mode === 'same_lan' && config.gateway.mode !== 'same_lan' && config.device_policy.enabled
     if (!leavingSameLAN) {
       await persistConfig(config)
@@ -298,6 +368,10 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
         <SectionTitle title="Desired 网络配置" subtitle={`这是下次启动要使用的目标值；保存本身不会切换网络。revision ${config.revision.slice(0, 12)}`} />
         <fieldset disabled={!configurationEditable} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
           <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方网络模式，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址。保存不会立即改动网络；保存后的配置会在启动网关时应用。恢复资料已准备但网络尚未改动时仍可修正配置，保存后会从第 1 步重新开始。</p></div>
+          {initialNetworkSetup && <div className="notice">首次设置：选择旁路由模式或局域网 DHCP 接管后，OpenSurge 会读取当前主网络并填入未保存的建议值；独立下游 LAN 保持手工配置。</div>}
+          {networkDefaultsBusy && <div className="notice" role="status">正在读取当前主网络…</div>}
+          {networkDefaultsMessage && <div className="notice ok-notice" role="status">{networkDefaultsMessage}</div>}
+          {networkDefaultsError && <div className="notice warn" role="alert">{networkDefaultsError}</div>}
           <datalist id="network-interface-options">
             {interfaceOptions.map(option => <option key={`${option.interface}:${option.network_service}`} value={option.interface} label={`${option.network_service} · ${option.interface}`} />)}
           </datalist>
@@ -326,6 +400,22 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
               </ConfigField>
             </div>
           </fieldset>
+          {config.gateway.mode === 'same_wifi_dhcp' && <fieldset className="dhcp-config-group">
+            <legend><strong>直连主路由设备</strong><small>仅供设备页“直连主路由”使用；普通接管设备仍获得 Mac 网关和 DNS</small></legend>
+            <div className="dhcp-config-grid">
+              <ConfigField label="主路由网关" setting="dhcp.bypass_gateway" hint="向取消 OpenSurge IPv4 网关接管的设备下发。必须与 Mac 网关处于同一 /24，且不能位于 DHCP 地址池中。">
+                <input aria-label="直连主路由网关" placeholder="192.168.1.1" value={config.dhcp.bypass_gateway} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: event.target.value } })} />
+              </ConfigField>
+              <ConfigField label="主路由 DNS" setting="dhcp.bypass_dns" hint="向直连主路由设备下发，可填写原路由器或公共 DNS；多个地址用逗号分隔。">
+                <input aria-label="直连主路由 DNS" placeholder="192.168.1.1" value={config.dhcp.bypass_dns.join(', ')} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, bypass_dns: event.target.value.split(',').map(item => item.trim()).filter(Boolean) } })} />
+              </ConfigField>
+            </div>
+            <button type="button" className="text-link" disabled={!plan?.snapshot.router && !recoverySnapshot?.router} onClick={() => {
+              const snapshot = plan?.snapshot || recoverySnapshot
+              if (!snapshot) return
+              setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: snapshot.router || '', bypass_dns: snapshot.dns.length ? snapshot.dns : snapshot.router ? [snapshot.router] : [] } })
+            }}>使用当前网络快照中的路由器与 DNS</button>
+          </fieldset>}
           <ConfigField label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
             <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
               <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>

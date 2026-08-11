@@ -36,6 +36,14 @@ ICMPv6、ESP 或任意非 TCP/UDP 协议。
 规则把 `/` 当成多个用户名的分隔符。策略组继续使用用户可见的
 `device/<id>/...`，packet listener 和对应规则使用单值 `device:<id>`。
 
+`same_wifi_dhcp` 中的 `gateway_target: upstream_router` 是 IPv4-only 绕行。dnsmasq
+向该设备下发主路由 IPv4 gateway/DNS，编译器不生成代理 selector 或普通设备规则；
+若下游 IPv6 开启，packet listener 仍保留它的 MAC→`device:<id>` 映射，并在所有其他
+规则前生成 `AND,((IN-USER,device:<id>),(IP-CIDR6,::/0)),REJECT`。其他设备继续使用
+正常 IPv6 策略。控制面必须描述为“IPv6 出站已阻止”：共享 L2 的设备仍可能收到
+SLAAC/RDNSS；若主路由 RA 未关闭或未被 RA Guard 消除，设备甚至可能完全绕过
+OpenSurge 的 packet path，OpenSurge 无法按设备阻断那条链路。
+
 dnsmasq 在 `isolated_lan` 和 `same_wifi_dhcp` 发布 `fdfe:dcba:9878::/64` 的
 SLAAC/RA 和默认路由，并把下游接口的 link-local 地址发布为 RDNSS。RA 不设置
 `high`/`low`，使用 RFC 4191 与 dnsmasq 的默认 Medium router preference。

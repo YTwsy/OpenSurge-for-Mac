@@ -1,4 +1,4 @@
-import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, Source } from './types'
+import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -27,8 +27,10 @@ export const api = {
   overview: () => request<Overview>('/api/v1/overview'),
   config: () => request<ControlConfig>('/api/v1/config'),
   networkInterfaces: () => request<NetworkInterfacesResponse>('/api/v1/network/interfaces'),
+  networkDefaults: (mode: NetworkDefaults['mode']) => request<NetworkDefaults>(`/api/v1/network/defaults?mode=${encodeURIComponent(mode)}`),
   saveConfig: (config: ControlConfig) => request<ControlConfig>('/api/v1/config', { method: 'PUT', headers: { 'If-Match': `"${config.revision}"` }, body: JSON.stringify(config) }),
   gateway: (action: 'start' | 'stop' | 'reload' | 'restart-mihomo') => request<Operation>(`/api/v1/gateway/${action}`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),
+  setSleepPrevention: (enabled: boolean) => request<SleepPreventionStatus>('/api/v1/sleep-prevention', { method: 'PUT', body: JSON.stringify({ enabled }) }),
   operation: (id: string) => request<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`),
   gatewayPlan: (routerDHCPDisabled = false) => request<GatewayPlan>('/api/v1/gateway/plan', { method: 'POST', body: JSON.stringify({ router_dhcp_disabled: routerDHCPDisabled }) }),
   recovery: (stage: string) => request('/api/v1/recovery', { method: 'POST', body: JSON.stringify({ stage }) }),
@@ -68,6 +70,8 @@ export const api = {
   connectivity: () => request<ConnectivityResponse>('/api/v1/connectivity'),
   testConnectivity: (targetIDs: string[] = []) => request<ConnectivityResponse>('/api/v1/connectivity/tests', { method: 'POST', body: JSON.stringify({ target_ids: targetIDs }) }),
   refreshProvider: (name: string) => request(`/api/v1/providers/${encodeURIComponent(name)}/refresh`, { method: 'POST' }),
+  doctorStatus: () => request<DoctorRunStatus>('/api/v1/doctor'),
+  runDoctor: () => request<DoctorRunStatus>('/api/v1/doctor', { method: 'POST' }),
   diagnostics: () => request<Diagnostics>('/api/v1/diagnostics'),
 }
 

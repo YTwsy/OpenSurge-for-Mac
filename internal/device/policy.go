@@ -27,18 +27,24 @@ type PolicySet struct {
 }
 
 type ManagedDevice struct {
-	ID         string `json:"id"`
-	Name       string `json:"name,omitempty"`
-	MAC        string `json:"mac"`
-	IPv4       string `json:"ipv4"`
-	Profile    string `json:"profile"`
-	EgressMode string `json:"egress_mode,omitempty"`
+	ID            string `json:"id"`
+	Name          string `json:"name,omitempty"`
+	MAC           string `json:"mac"`
+	IPv4          string `json:"ipv4"`
+	Profile       string `json:"profile"`
+	GatewayTarget string `json:"gateway_target,omitempty"`
+	EgressMode    string `json:"egress_mode,omitempty"`
 }
 
 const (
 	EgressModeInheritGlobal  = "inherit_global"
 	EgressModeDedicated      = "dedicated"
 	EgressModeLegacyFallback = "legacy_fallback"
+)
+
+const (
+	GatewayTargetOpenSurge      = "opensurge"
+	GatewayTargetUpstreamRouter = "upstream_router"
 )
 
 // Profile is a reusable routing policy. Every device that uses it still gets
@@ -95,9 +101,10 @@ type RuleSet struct {
 }
 
 type Reservation struct {
-	ID   string `json:"id"`
-	MAC  string `json:"mac"`
-	IPv4 string `json:"ipv4"`
+	ID            string `json:"id"`
+	MAC           string `json:"mac"`
+	IPv4          string `json:"ipv4"`
+	GatewayTarget string `json:"gateway_target"`
 }
 
 type SelectorGroup struct {
@@ -116,12 +123,14 @@ type RuleProvider struct {
 }
 
 type CompiledDevice struct {
-	ID         string            `json:"id"`
-	MAC        string            `json:"mac"`
-	IPv4       string            `json:"ipv4"`
-	Profile    string            `json:"profile"`
-	EgressMode string            `json:"egress_mode"`
-	Groups     map[string]string `json:"groups"` // slot (default or rule id) -> mihomo group name
+	ID            string            `json:"id"`
+	MAC           string            `json:"mac"`
+	IPv4          string            `json:"ipv4"`
+	Profile       string            `json:"profile"`
+	GatewayTarget string            `json:"gateway_target"`
+	EgressMode    string            `json:"egress_mode"`
+	IPv6Blocked   bool              `json:"ipv6_blocked,omitempty"`
+	Groups        map[string]string `json:"groups"` // slot (default or rule id) -> mihomo group name
 }
 
 type CompiledPolicy struct {
@@ -277,6 +286,12 @@ func ValidatePolicySet(set PolicySet) error {
 		if managed.EgressMode != "" && managed.EgressMode != EgressModeInheritGlobal && managed.EgressMode != EgressModeDedicated {
 			return fmt.Errorf("device %q egress_mode must be %q or %q", managed.ID, EgressModeInheritGlobal, EgressModeDedicated)
 		}
+		if managed.GatewayTarget != "" && managed.GatewayTarget != GatewayTargetOpenSurge && managed.GatewayTarget != GatewayTargetUpstreamRouter {
+			return fmt.Errorf("device %q gateway_target must be %q or %q", managed.ID, GatewayTargetOpenSurge, GatewayTargetUpstreamRouter)
+		}
+		if EffectiveGatewayTarget(managed.GatewayTarget) == GatewayTargetUpstreamRouter && strings.TrimSpace(managed.MAC) == "" {
+			return fmt.Errorf("device %q gateway_target %q requires a MAC address", managed.ID, GatewayTargetUpstreamRouter)
+		}
 	}
 	return nil
 }
@@ -403,15 +418,20 @@ func CompilePolicySetForIPOnlyMode(set PolicySet, ipOnlyDevicesActive bool) (Com
 		}
 		ip := net.ParseIP(managed.IPv4).To4().String()
 		device := CompiledDevice{
-			ID:         managed.ID,
-			MAC:        mac,
-			IPv4:       ip,
-			Profile:    profile.ID,
-			EgressMode: EffectiveEgressMode(managed.EgressMode),
-			Groups:     map[string]string{},
+			ID:            managed.ID,
+			MAC:           mac,
+			IPv4:          ip,
+			Profile:       profile.ID,
+			GatewayTarget: EffectiveGatewayTarget(managed.GatewayTarget),
+			EgressMode:    EffectiveEgressMode(managed.EgressMode),
+			Groups:        map[string]string{},
 		}
 		if mac != "" {
-			compiled.Reservations = append(compiled.Reservations, Reservation{ID: device.ID, MAC: mac, IPv4: ip})
+			compiled.Reservations = append(compiled.Reservations, Reservation{ID: device.ID, MAC: mac, IPv4: ip, GatewayTarget: device.GatewayTarget})
+		}
+		if device.GatewayTarget == GatewayTargetUpstreamRouter {
+			compiled.Devices = append(compiled.Devices, device)
+			continue
 		}
 
 		defaultGroup := DeviceGroupName(device.ID, "default")
@@ -485,6 +505,24 @@ func EffectiveEgressMode(mode string) string {
 		return EgressModeLegacyFallback
 	}
 	return mode
+}
+
+// EffectiveGatewayTarget keeps existing policy documents on the OpenSurge
+// data path. Router bypass is always an explicit per-device choice.
+func EffectiveGatewayTarget(target string) string {
+	if target == "" {
+		return GatewayTargetOpenSurge
+	}
+	return target
+}
+
+func UsesUpstreamRouter(set PolicySet) bool {
+	for _, managed := range set.Devices {
+		if EffectiveGatewayTarget(managed.GatewayTarget) == GatewayTargetUpstreamRouter {
+			return true
+		}
+	}
+	return false
 }
 
 func DeviceGroupName(deviceID, slot string) string {

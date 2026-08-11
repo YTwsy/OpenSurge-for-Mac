@@ -11,6 +11,7 @@ final class StatusModel: ObservableObject {
     @Published private(set) var isChangingServices = false
     @Published private(set) var isUninstalling = false
     @Published private(set) var isCheckingForUpdate = false
+    @Published private(set) var isChangingSleepPrevention = false
     @Published private(set) var availableUpdate: AvailableUpdate?
     @Published private(set) var updateCheckMessage: String?
     @Published var openAtLogin = false
@@ -99,6 +100,19 @@ final class StatusModel: ObservableObject {
         try? await Task.sleep(for: .milliseconds(350))
         isRefreshing = false
         await refresh()
+    }
+
+    func setSleepPrevention(_ enabled: Bool) async {
+        guard !isQuitting, !isChangingSleepPrevention else { return }
+        isChangingSleepPrevention = true
+        error = nil
+        defer { isChangingSleepPrevention = false }
+        do {
+            _ = try await client.setSleepPrevention(enabled)
+            await refresh()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     func quitMenuBarApp() -> Never {

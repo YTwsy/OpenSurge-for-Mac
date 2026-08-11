@@ -15,7 +15,7 @@ vi.mock('./api', () => ({
     config: vi.fn(async () => ({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: false, protected_ipv4: [] },
     })),
@@ -26,8 +26,10 @@ vi.mock('./api', () => ({
         { interface: 'en7', network_service: 'USB LAN', ipv6_link_local: 'fe80::700' },
       ],
     })),
+    networkDefaults: vi.fn(),
     saveConfig: vi.fn(),
     gateway: vi.fn(),
+    setSleepPrevention: vi.fn(),
     operation: vi.fn(),
     gatewayPlan: vi.fn(async () => ({
       schema_version: 1,
@@ -71,6 +73,8 @@ vi.mock('./api', () => ({
     connectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'local_mac_runtime', rounds: 3, targets: [], results: [] })),
     testConnectivity: vi.fn(async () => ({ schema_version: 1, source: 'gateway_mihomo', scope: 'local_mac_runtime', rounds: 3, targets: [], results: [] })),
     refreshProvider: vi.fn(),
+    doctorStatus: vi.fn(async () => ({ schema_version: 1, state: 'idle', current: true, checks: [], healthy: false })),
+    runDoctor: vi.fn(),
     diagnostics: vi.fn(async () => ({ revision: 'r', connections: { upload_total: 0, download_total: 0, connections: [] }, logs: {}, operations: [], recovery: { stage: 'idle', required: false } })),
   },
 }))
@@ -98,14 +102,25 @@ const overview: Overview = {
       router: '192.168.1.1', dns: ['192.168.1.1', '1.1.1.1'], ipv6_default: false,
     },
   },
+  sleep_prevention: { enabled: false, active: false },
 }
 
 function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
   return {
     schema_version: 1, revision: 'config-revision',
     gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-    dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+    dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: mode === 'same_wifi_dhcp' ? '192.168.1.1' : '', bypass_dns: mode === 'same_wifi_dhcp' ? ['192.168.1.1'] : [] },
     dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
+    device_policy: { enabled: false, protected_ipv4: [] },
+  }
+}
+
+function installerSeedConfig(): ControlConfig {
+  return {
+    schema_version: 1, revision: 'installer-seed-revision',
+    gateway: { mode: 'isolated_lan', interface: 'en0', lan_ip: '192.168.50.1', upstream_interface: 'en0' },
+    dhcp: { enabled: true, range_start: '192.168.50.100', range_end: '192.168.50.200', lease_time: '12h', domain: 'lan', bypass_gateway: '', bypass_dns: [] },
+    dns: { listen: '192.168.50.1', upstream: '127.0.0.1#1053', ipv6: false }, transparent: { mode: 'off', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
 }
@@ -182,6 +197,19 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('img', { name: '上传最近 60 秒趋势' }).querySelector('.rate-line')?.getAttribute('d')).toContain(' C ')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('button', { name: '启动网关' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('controls non-persistent lid-closed sleep prevention independently of gateway state', async () => {
+    const enabled = { ...overview, sleep_prevention: { enabled: true, active: true } }
+    vi.mocked(api.setSleepPrevention).mockResolvedValue(enabled.sleep_prevention)
+    vi.mocked(api.overview).mockResolvedValueOnce(overview).mockResolvedValue(enabled)
+    render(<App />)
+    const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
+    expect((toggle as HTMLInputElement).checked).toBe(false)
+    await userEvent.click(toggle)
+    await waitFor(() => expect(api.setSleepPrevention).toHaveBeenCalledWith(true))
+    await waitFor(() => expect((screen.getByRole('checkbox', { name: /合盖保持运行/ }) as HTMLInputElement).checked).toBe(true))
+    expect(screen.getByText('系统睡眠已临时禁用')).toBeTruthy()
   })
 
   it('routes the dashboard start button to network settings without starting the gateway', async () => {
@@ -358,6 +386,62 @@ describe('OpenSurge app shell', () => {
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('独立下游 LAN 的 DHCP/DNS'))
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-isolated')
+  })
+
+  it('fills current IPv4 and a safe DHCP pool when first-time setup selects takeover', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(installerSeedConfig())
+    vi.mocked(api.networkDefaults).mockResolvedValue({
+      schema_version: 1,
+      mode: 'same_wifi_dhcp',
+      snapshot: { network_service: 'USB LAN', interface: 'en7', ipv4: '192.168.1.190', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: ['192.168.1.1'], ipv6_default: false },
+      gateway_ipv4: '192.168.1.190',
+      dhcp_range_start: '192.168.1.100',
+      dhcp_range_end: '192.168.1.189',
+      bypass_gateway: '192.168.1.1',
+      bypass_dns: ['192.168.1.1'],
+      warnings: [], blockers: [],
+    })
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    expect(await screen.findByText(/首次设置：选择旁路由模式或局域网 DHCP 接管/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+
+    await waitFor(() => expect(api.networkDefaults).toHaveBeenCalledWith('same_wifi_dhcp'))
+    await waitFor(() => expect((screen.getByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.190'))
+    expect((screen.getByLabelText('下游 LAN 接口') as HTMLInputElement).value).toBe('en7')
+    expect((screen.getByLabelText('上游网络接口') as HTMLInputElement).value).toBe('en7')
+    expect((screen.getByLabelText('DHCP 地址池起点') as HTMLInputElement).value).toBe('192.168.1.100')
+    expect((screen.getByLabelText('DHCP 地址池终点') as HTMLInputElement).value).toBe('192.168.1.189')
+    expect((screen.getByLabelText('直连主路由网关') as HTMLInputElement).value).toBe('192.168.1.1')
+    expect((screen.getByLabelText('直连主路由 DNS') as HTMLInputElement).value).toBe('192.168.1.1')
+    expect(screen.getByText(/已根据当前 USB LAN（en7）填入 IPv4、地址池和主路由建议值，尚未保存/)).toBeTruthy()
+    expect(screen.getByText('有未保存的修改')).toBeTruthy()
+    expect(api.saveConfig).not.toHaveBeenCalled()
+  })
+
+  it('keeps isolated downstream LAN manual during first-time setup', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(installerSeedConfig())
+    vi.mocked(api.networkDefaults).mockResolvedValue({
+      schema_version: 1,
+      mode: 'same_lan',
+      snapshot: { network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.20', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: ['192.168.1.1'], ipv6_default: false },
+      gateway_ipv4: '192.168.1.20', bypass_dns: [], warnings: [], blockers: [],
+    })
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /旁路由模式/ }))
+    await waitFor(() => expect(api.networkDefaults).toHaveBeenCalledWith('same_lan'))
+    await waitFor(() => expect((screen.getByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.20'))
+    expect((screen.getByLabelText('DHCP 地址池起点') as HTMLInputElement).value).toBe('192.168.50.100')
+    expect(screen.getByLabelText('DHCP 地址池起点').closest('fieldset')?.hasAttribute('disabled')).toBe(true)
+    vi.mocked(api.networkDefaults).mockClear()
+    await userEvent.click(screen.getByRole('button', { name: /独立下游 LAN/ }))
+
+    expect(api.networkDefaults).not.toHaveBeenCalled()
   })
 
   it('stops a degraded same-LAN gateway and keeps configuration locked while active', async () => {
@@ -696,6 +780,7 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     await userEvent.click(screen.getByRole('button', { name: /局域网 DHCP 接管/ }))
+    expect(api.networkDefaults).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
 
     await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
@@ -984,7 +1069,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
@@ -1004,7 +1089,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
@@ -1029,7 +1114,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', upstream_interface: 'en0' },
-      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan' },
+      dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
       dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })

@@ -6,6 +6,7 @@ export type GatewayStatus = {
   dhcp: string
   dhcp_enabled: boolean
   mihomo: string
+  mihomo_error?: string
   tun?: string
   tun_interface?: string
   tun_error?: string
@@ -20,6 +21,17 @@ export type GatewayStatus = {
 }
 
 export type DoctorCheck = { name: string; ok: boolean; message?: string }
+export type DoctorRunStatus = {
+  schema_version: number
+  state: 'idle' | 'running' | 'succeeded' | 'failed'
+  revision?: string
+  current: boolean
+  checks: DoctorCheck[]
+  healthy: boolean
+  error?: string
+  started_at?: string
+  completed_at?: string
+}
 export type Lease = { ip: string; mac: string; hostname?: string; registered_name?: string; expires_at: string; online: boolean }
 export type ProxyGroup = { name: string; type: string; selected: string; options: string[] }
 export type LocalRoutingMode = 'rule' | 'global' | 'direct'
@@ -58,13 +70,16 @@ export type RuleProvider = { name: string; type: string; vehicle_type: string; b
 export type NetworkSnapshot = { network_service: string; interface: string; hardware_address?: string; ipv4?: string; subnet_mask?: string; router?: string; dns: string[]; ipv6_default: boolean }
 export type NetworkInterfaceOption = { interface: string; network_service: string; ipv6_link_local?: string }
 export type NetworkInterfacesResponse = { schema_version: number; interfaces: NetworkInterfaceOption[] }
+export type NetworkDefaults = { schema_version: number; mode: 'same_lan' | 'same_wifi_dhcp'; snapshot: NetworkSnapshot; gateway_ipv4: string; dhcp_range_start?: string; dhcp_range_end?: string; bypass_gateway?: string; bypass_dns: string[]; warnings: string[]; blockers: string[] }
 export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string; network_snapshot?: NetworkSnapshot; client_validation_skipped?: boolean }
 export type GatewayPlan = { schema_version: number; revision: string; topology: string; snapshot: NetworkSnapshot; protected_ipv4: string[]; dhcp_servers: string[]; warnings: string[]; blockers: string[] }
 export type Operation = { id: string; kind: string; state: string; error?: string }
+export type MihomoRecoveryStatus = { state: 'idle' | 'observing' | 'recovering' | 'failed'; reason?: 'process_missing' | 'controller_refused'; error?: string }
+export type SleepPreventionStatus = { enabled: boolean; active: boolean; error?: string }
 export type ControlConfig = {
   schema_version: number; revision: string
   gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; upstream_interface: string }
-  dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string }
+  dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string; bypass_gateway: string; bypass_dns: string[] }
   dns: { listen: string; upstream: string; ipv6: boolean }
   transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }
@@ -85,10 +100,13 @@ export type Overview = {
   status_error?: string
   doctor: DoctorCheck[]
   doctor_healthy: boolean
+  doctor_status?: DoctorRunStatus
   leases: Lease[]
   policies: ProxyGroup[]
   providers: { proxy_providers: ProxyProvider[]; rule_providers: RuleProvider[] }
   recovery: Recovery
+  mihomo_recovery?: MihomoRecoveryStatus
+  sleep_prevention?: SleepPreventionStatus
 }
 
 export type Source = {
@@ -118,7 +136,8 @@ export type Source = {
 
 export type DeviceEgressMode = 'inherit_global' | 'dedicated'
 export type AppliedDeviceEgressMode = DeviceEgressMode | 'legacy_fallback'
-export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; egress_mode?: AppliedDeviceEgressMode | ''; groups: Record<string, string> }
+export type DeviceGatewayTarget = 'opensurge' | 'upstream_router'
+export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; gateway_target?: DeviceGatewayTarget | ''; egress_mode?: AppliedDeviceEgressMode | ''; ipv6_blocked?: boolean; groups: Record<string, string> }
 export type ObservedDevice = { ip: string; mac?: string; active_connections: number; neighbor_observed: boolean }
 export type DevicesResponse = {
   desired_digest?: string
@@ -148,6 +167,8 @@ export type DeviceTrafficRow = {
   primary_egress?: string
   identity_source?: 'dhcp_lease' | 'registered_static' | 'observed_traffic' | 'gateway_local'
   transport?: 'none' | 'tun' | 'explicit_proxy' | 'tun_and_explicit_proxy' | 'other'
+  gateway_target?: DeviceGatewayTarget
+  ipv6_blocked?: boolean
 }
 
 export type TrafficRates = { upload: number; download: number }
@@ -183,7 +204,7 @@ export type PolicyRule = {
   on_unsupported?: string
 }
 export type PolicyProfile = { id: string; template?: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
-export type PolicyDevice = { id: string; name?: string; mac: string; ipv4: string; profile: string; egress_mode?: DeviceEgressMode }
+export type PolicyDevice = { id: string; name?: string; mac: string; ipv4: string; profile: string; gateway_target?: DeviceGatewayTarget; egress_mode?: DeviceEgressMode }
 export type PolicyTemplate = { id: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
 export type PolicyRuleSet = { id: string; type?: 'inline' | 'http'; behavior: 'domain' | 'ipcidr' | 'classical'; format?: string; url?: string; interval?: number; payload?: string[] }
 export type PolicySet = { devices: PolicyDevice[]; profiles: PolicyProfile[]; templates: PolicyTemplate[]; rule_sets: PolicyRuleSet[] }

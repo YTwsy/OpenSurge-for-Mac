@@ -67,7 +67,11 @@ function renderPage(customOverview = overview) {
 
 describe('DevicesPage', () => {
   beforeEach(() => {
-    vi.mocked(api.config).mockResolvedValue({ device_policy: { enabled: true } } as never)
+    vi.mocked(api.config).mockResolvedValue({
+      gateway: { mode: 'same_wifi_dhcp' },
+      dhcp: { bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
+      device_policy: { enabled: true },
+    } as never)
     vi.mocked(api.sources).mockResolvedValue({ revision: 'sources-r1', sources: [] })
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(basePolicy))
     vi.mocked(api.devices).mockResolvedValue(devicesResponse())
@@ -86,7 +90,7 @@ describe('DevicesPage', () => {
 
   afterEach(() => { cleanup(); vi.clearAllMocks() })
 
-  it('keeps device cards in their own column and only floats save controls while dirty', async () => {
+  it('keeps device cards in their own column and floats save controls while dirty', async () => {
     const policy: PolicySet = {
       ...basePolicy,
       devices: [
@@ -115,6 +119,36 @@ describe('DevicesPage', () => {
     expect(within(secondCard).getByRole('button', { name: '编辑此设备规则' })).toBeTruthy()
     await userEvent.click(within(firstCard).getByRole('radio', { name: /独立设备出口/ }))
     expect(saveBar.classList.contains('has-changes')).toBe(true)
+  })
+
+  it('replaces the dirty save bar with a floating reload bar after saving', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [] }],
+    }
+    let saved = false
+    let savedDocument = documentFor(policy)
+    vi.mocked(api.devicePolicy).mockImplementation(async () => savedDocument)
+    vi.mocked(api.devices).mockImplementation(async () => devicesResponse(saved
+      ? { drift: true, applied: true, desired_digest: 'desired123', applied_digest: 'applied123' }
+      : { applied: true, desired_digest: 'applied123', applied_digest: 'applied123' }))
+    vi.mocked(api.saveDevicePolicy).mockImplementation(async next => {
+      saved = true
+      savedDocument = documentFor(next, 'policy-r2')
+      return savedDocument
+    })
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('radio', { name: /独立设备出口/ }))
+    expect((document.querySelector('.sticky-save') as HTMLElement).classList.contains('has-changes')).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+
+    const reloadBar = (await screen.findByText('设备配置已保存，但尚未应用')).closest('.sticky-save') as HTMLElement
+    expect(reloadBar.classList.contains('needs-reload')).toBe(true)
+    expect(reloadBar.classList.contains('has-changes')).toBe(false)
+    expect(screen.queryByText(/请使用上方按钮应用并重载/)).toBeNull()
+    expect(within(reloadBar).getByRole('button', { name: '应用并重载网关' })).toBeTruthy()
   })
 
   it('shows the local global outlet only for fixed routing and keeps the policy-page shortcut', async () => {
@@ -482,7 +516,10 @@ describe('DevicesPage', () => {
 
     expect(await screen.findByText('静态配置身份：等待该 IPv4 经过 Mac')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '使用当前 IP 并应用' })).toBeNull()
-    expect(screen.getByText('设备按登记 IP 接入后生效')).toBeTruthy()
+    const activation = screen.getByText('设备按登记 IP 接入后生效')
+    expect(activation.closest('.device-meta-item')).toBeTruthy()
+    expect(activation.closest('.device-metadata')).toBeTruthy()
+    expect(document.querySelector('.outlet-activation-note')).toBeNull()
   })
 
   it('allows an offline same-LAN device outlet to be preset with an explicit activation boundary', async () => {
@@ -614,6 +651,60 @@ describe('DevicesPage', () => {
     await waitFor(() => expect(api.gateway).toHaveBeenCalledWith('reload'))
     expect(waitForOperation).toHaveBeenCalledWith('reload-1')
     expect(await screen.findByText(/网关已使用最新设备配置重新启动/)).toBeTruthy()
+  })
+
+  it('offers router bypass only in DHCP takeover and names the device in renewal guidance', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'playstation-5', name: 'PlayStation 5', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'upstream_router', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'console-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [{ id: 'video', match: { domains: ['video.example'] }, action: 'DIRECT' }] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      drift: true,
+      applied: true,
+      desired_digest: 'desired123',
+      applied_digest: 'applied123',
+      applied_devices: [{ id: 'playstation-5', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'opensurge', egress_mode: 'dedicated', groups: { default: 'device/playstation-5/default' } }],
+    }))
+    renderPage({ ...overview, topology: 'same_wifi_dhcp' } as unknown as Overview)
+
+    const routerBypass = await screen.findByRole('radio', { name: /直连主路由/ })
+    expect((routerBypass as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText(/启用下游 IPv6 时，该设备的 IPv6 出站会被阻止；设备仍可能保留 SLAAC 地址或 RDNSS/)).toBeTruthy()
+    expect(screen.getByText(/直连主路由期间，这些规则和出口设置会保留但不生效/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '应用并重载网关' }))
+    expect(within(screen.getByRole('dialog')).getByText('应用后，请重新连接 PlayStation 5 的网络，使新的主路由网关和 DNS 生效。')).toBeTruthy()
+  })
+
+  it('shows the applied IPv6 block without claiming the device has no IPv6 address', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'upstream_router', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'console-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      devices: [{ id: 'console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'upstream_router', egress_mode: 'inherit_global', ipv6_blocked: true, groups: {} }],
+      applied_devices: [{ id: 'console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'upstream_router', egress_mode: 'inherit_global', ipv6_blocked: true, groups: {} }],
+    }))
+    renderPage({ ...overview, topology: 'same_wifi_dhcp' } as unknown as Overview)
+
+    expect(await screen.findByText('IPv4 直连主路由 · IPv6 出站已阻止')).toBeTruthy()
+    expect(screen.queryByText(/没有 IPv6 地址/)).toBeNull()
+  })
+
+  it('does not expose router bypass outside DHCP takeover', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'console-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
+    await screen.findByText('console')
+    expect(screen.queryByRole('radio', { name: /直连主路由/ })).toBeNull()
   })
 
   it('keeps drift retryable and shows a readable error when reload fails', async () => {

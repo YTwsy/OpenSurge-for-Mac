@@ -109,7 +109,8 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 		out.WriteString("\n")
 	}
 
-	rules := append([]string{}, localRouting.Rules...)
+	rules := routerBypassIPv6RejectRules(policy)
+	rules = append(rules, localRouting.Rules...)
 	rules = append(rules, orderedDevicePreRules(policy)...)
 	if cfg.UpstreamProxy.Enabled {
 		rules = append(rules, "DOMAIN,"+cfg.UpstreamProxy.MatchDomain+",open-surge-egress")
@@ -129,7 +130,8 @@ func composeImportedPolicySections(imported *importedProfile, policy policySecti
 	if len(policy.providers) > 0 {
 		appendImportedRuleProviders(imported, policy.providers)
 	}
-	preRules := append([]string{}, localRouting.Rules...)
+	preRules := routerBypassIPv6RejectRules(policy)
+	preRules = append(preRules, localRouting.Rules...)
 	preRules = append(preRules, orderedDevicePreRules(policy)...)
 	if err := composeImportedRules(imported.sections["rules"], preRules, policy.defaults); err != nil {
 		return "", err
@@ -280,6 +282,23 @@ var dedicatedLocalCIDRs = []string{
 // packet listener identity must therefore use a delimiter-free namespace so a
 // complete device identity remains one rule value.
 func deviceInboundUser(deviceID string) string { return "device:" + deviceID }
+
+// Router bypass is IPv4-only. Keep the packet-listener identity solely to
+// reject IPv6 before local-Mac, imported, global, or ordinary device rules can
+// select an OpenSurge egress for this device.
+func routerBypassIPv6RejectRules(policy policySections) []string {
+	if policy.bundle == nil || !policy.ipv6 {
+		return nil
+	}
+	rules := []string{}
+	for _, managed := range policy.bundle.Compiled.Devices {
+		if managed.GatewayTarget != device.GatewayTargetUpstreamRouter || managed.MAC == "" {
+			continue
+		}
+		rules = append(rules, fmt.Sprintf("AND,((IN-USER,%s),(IP-CIDR6,::/0)),REJECT", deviceInboundUser(managed.ID)))
+	}
+	return rules
+}
 
 // Dedicated device egress is a public-Internet routing choice. Keep local,
 // link-local, carrier-grade NAT, and multicast destinations direct before any

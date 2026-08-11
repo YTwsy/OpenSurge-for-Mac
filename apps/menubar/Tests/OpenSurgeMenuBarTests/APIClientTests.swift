@@ -35,6 +35,23 @@ final class APIClientTests: XCTestCase {
         XCTAssertFalse(url.absoluteString.contains("test-token"))
     }
 
+    func testSleepPreventionUsesAuthenticatedNonPersistentLeaseEndpoint() async throws {
+        let client = try makeClient()
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/api/v1/sleep-prevention")
+            XCTAssertEqual(request.httpMethod, "PUT")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-token")
+            let body = try XCTUnwrap(request.httpBody)
+            XCTAssertEqual(String(decoding: body, as: UTF8.self), #"{"enabled":true}"#)
+            let response = #"{"enabled":true,"active":true}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(response.utf8))
+        }
+
+        let status = try await client.setSleepPrevention(true)
+        XCTAssertTrue(status.enabled)
+        XCTAssertTrue(status.active)
+    }
+
     func testStatusReadsLocalTokenFromApplicationSupport() async throws {
         let client = try makeClient(tokenOverride: nil, fileToken: "file-token")
         MockURLProtocol.handler = { request in

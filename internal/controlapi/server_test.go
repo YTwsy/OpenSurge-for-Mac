@@ -344,6 +344,53 @@ func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	}
 }
 
+func TestNetworkDefaultsUseCurrentDefaultNetworkForSameLANModes(t *testing.T) {
+	server := newTestServer(t)
+	server.discoverDefault = func(context.Context) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{
+			NetworkService: "USB LAN",
+			Interface:      "en7",
+			IPv4Mode:       macosnetwork.IPv4ModeDHCP,
+			IPv4:           "192.168.1.190",
+			SubnetMask:     "255.255.255.0",
+			Router:         "192.168.1.1",
+			DNS:            []string{"192.168.1.1"},
+		}, nil
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=same_wifi_dhcp", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+	var takeover NetworkDefaultsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &takeover); err != nil {
+		t.Fatal(err)
+	}
+	if takeover.GatewayIPv4 != "192.168.1.190" || takeover.Snapshot.Interface != "en7" || takeover.DHCPRangeStart != "192.168.1.100" || takeover.DHCPRangeEnd != "192.168.1.189" || takeover.BypassGateway != "192.168.1.1" || !reflect.DeepEqual(takeover.BypassDNS, []string{"192.168.1.1"}) || len(takeover.Blockers) != 0 {
+		t.Fatalf("takeover defaults = %#v", takeover)
+	}
+
+	response = performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=same_lan", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("same-LAN defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+	var bypass NetworkDefaultsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &bypass); err != nil {
+		t.Fatal(err)
+	}
+	if bypass.GatewayIPv4 != "192.168.1.190" || bypass.DHCPRangeStart != "" || bypass.DHCPRangeEnd != "" || len(bypass.Warnings) != 1 {
+		t.Fatalf("bypass defaults = %#v", bypass)
+	}
+}
+
+func TestNetworkDefaultsDoNotSupportIsolatedLAN(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=isolated_lan", nil)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "network_defaults_mode_unsupported") {
+		t.Fatalf("isolated defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestPreparedRecoveryCanBeDiscardedBeforeNetworkChanges(t *testing.T) {
 	server := newTestServer(t)
 	if response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/prepare", []byte(`{"network_service":"Wi-Fi"}`)); response.Code != http.StatusOK {
@@ -788,6 +835,9 @@ func TestHelperAllowlistIncludesNamedLifecycleActions(t *testing.T) {
 	if !helperActionAllowed("restart-mihomo") {
 		t.Fatal("restart-mihomo is not available to the privileged helper")
 	}
+	if !helperActionAllowed("sleep-prevention-hold") {
+		t.Fatal("sleep-prevention-hold is not available to the privileged helper")
+	}
 	for _, action := range []string{"hot-reload", "restart", "shell"} {
 		if helperActionAllowed(action) {
 			t.Fatalf("unexpected helper action %q", action)
@@ -1142,6 +1192,16 @@ func TestGatewayRestartMihomoRejectsMissingRuntimeState(t *testing.T) {
 	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/restart-mihomo", nil)
 	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "gateway_not_running") {
 		t.Fatalf("restart-mihomo status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGatewayLifecycleActionRejectsConcurrentOperation(t *testing.T) {
+	server := newTestServer(t)
+	server.lifecycleMu.Lock()
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/stop", nil)
+	server.lifecycleMu.Unlock()
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "operation_in_progress") {
+		t.Fatalf("concurrent lifecycle status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -1638,6 +1698,21 @@ func TestSameLANDevicesEndpointListsSourcesCurrentlyPassingThroughMac(t *testing
 	}
 	if len(traffic.Devices) != 1 || traffic.Devices[0].Name != "Living Room" || traffic.Devices[0].MAC != "aa:bb:cc:dd:ee:37" || traffic.Devices[0].IdentitySource != identitySourceRegisteredStatic || traffic.Devices[0].ActiveConnections != 2 || traffic.Devices[0].Upload != 100 || traffic.Devices[0].PrimaryEgress != "Proxy → edge" {
 		t.Fatalf("same-LAN device traffic = %#v", traffic)
+	}
+}
+
+func TestAnnotateCompiledDeviceIPv6BlockState(t *testing.T) {
+	devices := []device.CompiledDevice{
+		{ID: "console", GatewayTarget: device.GatewayTargetUpstreamRouter},
+		{ID: "phone", GatewayTarget: device.GatewayTargetOpenSurge},
+	}
+	annotateCompiledDeviceIPv6BlockState(devices, true)
+	if !devices[0].IPv6Blocked || devices[1].IPv6Blocked {
+		t.Fatalf("compiled device IPv6 state = %#v", devices)
+	}
+	annotateCompiledDeviceIPv6BlockState(devices, false)
+	if devices[0].IPv6Blocked {
+		t.Fatalf("disabled downstream IPv6 still reported blocked = %#v", devices)
 	}
 }
 

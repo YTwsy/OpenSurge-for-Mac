@@ -1,13 +1,22 @@
 # GUI 控制面
 
 OpenSurge 的完整 GUI 是 `web/` 中的 React 应用，菜单栏 App 是
-`apps/menubar/` 中由 AppKit 管理生命周期和状态项、由 SwiftUI 渲染状态面板的只读
+`apps/menubar/` 中由 AppKit 管理生命周期和状态项、由 SwiftUI 渲染状态面板的轻量
 launcher。两者都只访问 `cmd/opensurge-control` 提供的 loopback API；业务规则继续位于
 Go gateway、device、mihomo 和 runtime 包中。
 
 菜单栏 App 不提供 start/stop 或策略切换。它只消费 `/api/v1/menubar`，显示网关、
-客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。不要把菜单栏
-演变成第二控制面。
+客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。唯一独立动作是
+与网关状态无关的临时“合盖保持运行”开关；不要借此把菜单栏演变成第二套网关控制面。
+
+睡眠开关默认关闭、不写 preference，只由 Control Service 内存中的 lease 表示本次运行
+意图。菜单栏与 Web GUI 都调用 `PUT /api/v1/sleep-prevention`；Control Service 保持到 root
+Helper 的长连接，连接 EOF、完整退出或服务崩溃都会释放。普通 `caffeinate` 的 idle sleep
+assertion 不能覆盖 lid close，因此 Helper 使用系统级 `pmset -a disablesleep`。启用前若
+`SleepDisabled` 已由外部设置为 1，Helper 拒绝接管；只有创建了 root-owned marker 后才
+会在释放时写回 0。marker 位于持久的系统 runtime 目录，必须先于 `pmset` 写入，确保系统
+重启、Helper 重启、pkg 升级和卸载能识别并恢复 OpenSurge 遗留的临时接管。UI 必须提示
+耗电、发热和不要放入不通风包内。
 
 版本发现属于原生 App 生命周期而不是网关控制面。菜单栏 App 打开时至多每 24 小时查询
 一次本仓库 GitHub `releases/latest`，也提供手动检查；只比较稳定版语义版本并校验返回的
@@ -59,6 +68,15 @@ gateway start/stop API。真实生命周期动作留在网络页，使 topology�
 菜单栏 indicator 先判断需要用户处理的 recovery，再判断 gateway 是否明确 `stopped`；
 只有正在运行或 degraded 的 gateway 才把 drift/doctor failure 表示为“运行异常”。停止状态
 下的 runtime doctor failure 或待应用配置不能覆盖“OpenSurge 网关已停止”。
+
+Doctor 包含真实 `mihomo -t`，单次配置验证最长可到 90 秒，因此不得从
+`/api/v1/overview`、`/api/v1/menubar`、SSE 或其他轮询热路径同步执行。Web 诊断页通过
+`POST /api/v1/doctor` 显式启动 Control Service 内的 single-flight 后台检查，再用
+`GET /api/v1/doctor` 读取运行状态和缓存结果；重复请求只能观察同一份进行中的任务。
+缓存以主配置、设备策略与 imported profile 摘要共同标识，配置变化后只能显示为旧结果，
+不能继续影响当前菜单栏健康状态。这个只读 Doctor 缓存不参与 start/reload 放行；两者仍须
+执行各自的真实预检与 TUN readiness，不能用历史 Doctor 成功结果替代。
+
 进程刚启动且尚未取得第一份状态时使用独立的 connecting 状态和 OpenSurge 品牌图标；真实
 请求失败后进入 unreachable，但仍使用更低透明度的品牌图标和明确的无障碍文案区分。初装
 期间不能因为 Control Service 启动稍慢而退回看起来像旧版图标的 `network.slash`。
@@ -206,10 +224,17 @@ production 写入经 helper 落到 root-owned config。`/events` 发送真实
 config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的短日志尾部。
 上下游接口字段通过只读 `GET /api/v1/network/interfaces` 提供 macOS 网络服务候选，
 但仍保留可输入形式以支持没有列入网络服务顺序的 bridge、VLAN 或临时接口。
+安装器初始网络字段尚未保存为用户配置时，选择 `same_lan` 或 `same_wifi_dhcp` 会通过只读
+`GET /api/v1/network/defaults` 读取当前 IPv4 默认路由对应的网络服务，把同一接口、当前
+IPv4 与 `dns.listen` 写入前端草稿；`same_wifi_dhcp` 只在 `/24` 下生成避开 Mac、路由器和
+受保护地址的建议池。建议不自动保存、不执行 `networksetup`，已有配置也不得被覆盖。
+`isolated_lan` 不使用这条建议路径，继续由操作者手工配置独立下游接口和子网。
 `same_lan` 不运行 DHCP 服务，因此地址池与租期整组必须禁用并明确标记为运行时不使用；
 保留字段值只用于日后切换 topology，不能暗示当前模式会应用它们。
 配置填写提示应作为表单内的低强调步骤说明，保存区与最后一组字段保持明确间距，并显示
-当前已保存或存在未保存修改，避免按钮紧贴字段卡片。
+当前已保存或存在未保存修改，避免按钮紧贴字段卡片。设备页的未保存修改与已保存待重载
+状态使用同一套底部浮动操作条；保存后直接从“保存设备配置”切换为“应用并重载网关”，
+不把待重载提示移回页面顶部。
 
 设备页先显示独立的 Mac 本机模式卡片；它只调用 `GET/POST /api/v1/local-routing`，
 在规则 / 全局 / 直连之间协调 `open-surge/mac-*` 隐藏 selector。卡片必须说明只影响
