@@ -129,7 +129,9 @@ func TestStopStartedProcessAllowsGracefulTUNCleanup(t *testing.T) {
 }
 
 func TestStopRemovesOwnedIPv6PacketListenerSocket(t *testing.T) {
-	dir, err := os.MkdirTemp("/private/tmp", "os6-sock-")
+	// Keep the Unix socket path short on macOS while remaining portable to the
+	// Linux CI runner, where /private/tmp does not exist.
+	dir, err := os.MkdirTemp("/tmp", "os6-sock-")
 	if err != nil {
 		t.Fatal(err)
 	}
