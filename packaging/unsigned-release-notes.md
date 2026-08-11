@@ -4,12 +4,12 @@
 
 ### 主要变化
 
-<!-- 发布前请更新为当前版本的主要变化，并同步维护 English / Highlights。 -->
-
-- 修复 Mac 重启后旧 runtime 阻塞再次启动的问题（Issue #22）：OpenSurge 现在记录开机 session 与 dnsmasq/mihomo 进程指纹，将上一次开机留下的状态明确标记为「重启后待清理」。控制面提供「安全清理旧状态」，不会向旧 PID 发送信号，也不会改动本次开机的 PF 或 IPv4 forwarding；若上次运行启用了本机系统代理协同，则恢复 OpenSurge 启动前保存的 HTTP/HTTPS 状态。
-- 修复 PKG 升级偶发需要安装两次：preinstall 会先停止可能重新唤醒 Control Service 的菜单栏 App，持续卸载精确的用户服务，并使用新安装包内置的当前版本恢复 CLI 清理网关，不再依赖正在被替换的旧版 `omg stop`。
-- 改进睡眠唤醒与 Wi-Fi 重连恢复（Issue #23）：只有本次开机的网关 runtime 仍有效、且 Mihomo 已停止或本地 controller 明确拒绝连接时，连通性页才显示「恢复 Mihomo」；健康运行和完整重启后的中断状态不会显示该入口。
-- 优化设备出口卡片：设备 ID、IPv4 与 MAC 统一为紧凑的绿色代码标签并使用适合中文的字体；未登记 MAC 与「策略已暂停」合并显示在 MAC 位置，不再额外展示突兀的棕色警告块。
+- 新增首次网络配置建议：选择旁路由或局域网 DHCP 接管时，OpenSurge 会读取当前主网络并预填接口与 Mac IPv4；DHCP 接管还会建议避开 Mac、路由器和受保护地址的 `/24` 地址池，以及主路由网关与 DNS。建议只写入草稿，不会自动保存或修改 macOS 网络。
+- 局域网 DHCP 接管新增按设备「直连主路由」：固定 IPv4 仍由 OpenSurge 分配，但该设备续租后直接使用已配置的主路由网关与 DNS；代理、设备规则和 OpenSurge 流量统计会暂停，切回 OpenSurge 后恢复。
+- 新增 Mihomo 独立自动恢复：进程消失会立即触发，本地 controller 连续两次拒绝连接后触发；每次未恢复事故最多自动尝试一次，并在连通性页保留手动兜底。配置、状态或 runtime 暂时不可观测时不会误判为健康，也不会清除这次事故的单次尝试保护。
+- 菜单栏与 Web GUI 新增默认关闭、仅本次运行有效的「合盖保持运行」。退出 OpenSurge 或重启 Mac 后会恢复正常睡眠；若释放系统睡眠接管失败，Helper 会保留待释放标记并后台重试，同时继续提供其他安全操作。
+- 诊断检查改为诊断页显式触发的 single-flight 后台任务，不再同步进入总览、菜单栏或 SSE 轮询热路径；配置变化会令旧结果失效。启动与重载仍执行各自的真实预检，不会复用缓存结果。
+- 优化设备出口编辑：设备 ID、IPv4、MAC 与「按登记 IP 接入后生效」统一放入紧凑元数据区域；保存后，页面底部的浮动操作条会从「有未保存的设备修改」切换为「需重载」，不再另行显示顶部卡片。
 
 ### 选择安装包
 
@@ -57,10 +57,12 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ### Highlights
 
-- Fixed stale runtime state blocking startup after a Mac reboot (Issue #22): OpenSurge now records the boot session and dnsmasq/mihomo process fingerprints, and clearly marks state left by an earlier boot as **Interrupted after restart**. The control plane provides **Safely clear old state** without signaling stale PIDs or changing PF or IPv4 forwarding for the current boot. If local system-proxy coordination was active, cleanup restores the saved pre-OpenSurge HTTP/HTTPS state.
-- Fixed an intermittent PKG upgrade failure that required a second installation attempt: preinstall now stops the menu bar app that can wake the Control Service, repeatedly unloads the exact user service, and uses the current recovery CLI embedded in the new package instead of relying on the old `omg stop` being replaced.
-- Improved wake and Wi-Fi reconnect recovery (Issue #23): Connectivity shows **Recover Mihomo** only when the current-boot gateway runtime is still valid and Mihomo has stopped or its local controller explicitly refuses connections. Healthy runtimes and runtimes interrupted by a full reboot do not show the action.
-- Refined device outlet cards: device ID, IPv4, and MAC now use consistent compact green code tags with Chinese-friendly typography. Missing MAC and **policy paused** status are shown together in the MAC slot instead of a separate prominent brown warning block.
+- Added first-run network suggestions: when selecting same-LAN manual gateway or DHCP takeover, OpenSurge reads the current primary network and pre-fills interfaces and the Mac IPv4. DHCP takeover also suggests a `/24` pool that avoids the Mac, router, and protected addresses, plus the upstream-router gateway and DNS. Suggestions remain an unsaved draft and never change macOS networking automatically.
+- Added per-device **Direct via main router** for same-LAN DHCP takeover. OpenSurge still assigns the fixed IPv4, but after lease renewal that device uses the configured main-router gateway and DNS directly. Proxying, device rules, and OpenSurge traffic accounting pause until the device is switched back.
+- Added narrow automatic Mihomo recovery: a missing process triggers immediately, while two consecutive local-controller connection refusals are required. Each unresolved incident gets at most one automatic attempt, with a manual fallback on Connectivity. Temporarily unreadable configuration, status, or runtime is treated as unknown rather than healthy and cannot clear the incident guard.
+- Added **Keep Running with Lid Closed** to the menu bar and Web GUI. It is off by default and applies only to the current run; quitting OpenSurge or rebooting restores normal sleep. If releasing the system sleep override fails, the Helper retains a pending-release marker and retries in the background while continuing to serve other safe operations.
+- Moved Doctor into an explicitly started, single-flight background task on Diagnostics instead of synchronously running it from dashboard, menu bar, or SSE polling paths. Configuration changes invalidate stale results. Start and reload still perform their own real preflight checks and never trust the cached Doctor result.
+- Refined device editing: device ID, IPv4, MAC, and **Applies after the device connects with its registered IP** now share the compact metadata area. After saving, the floating bottom action bar changes from **Unsaved device changes** to **Reload required** instead of showing a separate card near the top.
 
 ### Choose a package
 
