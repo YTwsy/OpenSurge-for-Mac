@@ -3,6 +3,7 @@ import { api, RequestError, waitForOperation } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import { DeviceOutletSummary } from '../components/DeviceOutletSummary'
 import { LocalRoutingCard } from '../components/LocalRoutingCard'
+import type { OperationNotification } from '../components/OperationNotifications'
 import { useProxyHealth } from '../hooks/useProxyHealth'
 import type { AppliedDeviceEgressMode, CompiledDevice, ControlConfig, DeviceEgressMode, DeviceGatewayTarget, DevicePolicyDocument, DevicesResponse, Lease, ObservedDevice, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, ProxyGroup, ProxyHealthEntry } from '../types'
 
@@ -15,11 +16,12 @@ type DevicesPageProps = {
   onChanged: () => Promise<void>
   onNavigate: (page: 'dashboard' | 'network' | 'policies') => void
   onDirtyChange: (dirty: boolean) => void
+  onNotify: (notification: OperationNotification) => void
 }
 
 type DeviceRebindRequest = { deviceID: string; name: string; fromIPv4: string; toIPv4: string }
 
-export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: DevicesPageProps) {
+export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, onNotify }: DevicesPageProps) {
   const proxyHealth = useProxyHealth()
   const [data, setData] = useState<DevicesResponse | null>(null)
   const [controlConfig, setControlConfig] = useState<ControlConfig | null>(null)
@@ -123,13 +125,16 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange }: 
       setReloadOpen(false)
       await refresh(true)
       await onChanged()
-      setMessage('网关已使用最新设备配置重新启动。改变固定 IPv4 的设备可能需要重新连接以获取新租约。')
+      const result = '网关已使用最新设备配置重新启动。改变固定 IPv4 的设备可能需要重新连接以获取新租约。'
+      setMessage(result)
+      onNotify({ tone: 'success', title: '应用并重载网关成功', message: result })
     } catch (cause) {
       const failure = cause instanceof Error ? cause.message : String(cause)
       setReloadOpen(false)
       await refresh()
       await onChanged()
       setError(failure)
+      onNotify({ tone: 'error', title: '应用并重载网关失败', message: failure })
     } finally { setReloading(false) }
   }
 

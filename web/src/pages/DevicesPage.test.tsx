@@ -61,8 +61,9 @@ function renderPage(customOverview = overview) {
   const onChanged = vi.fn(async () => {})
   const onNavigate = vi.fn()
   const onDirtyChange = vi.fn()
-  render(<DevicesPage overview={customOverview} onChanged={onChanged} onNavigate={onNavigate} onDirtyChange={onDirtyChange} />)
-  return { onChanged, onNavigate, onDirtyChange }
+  const onNotify = vi.fn()
+  render(<DevicesPage overview={customOverview} onChanged={onChanged} onNavigate={onNavigate} onDirtyChange={onDirtyChange} onNotify={onNotify} />)
+  return { onChanged, onNavigate, onDirtyChange, onNotify }
 }
 
 describe('DevicesPage', () => {
@@ -642,7 +643,7 @@ describe('DevicesPage', () => {
 
   it('uses a custom interruption warning before reload and waits for the operation', async () => {
     vi.mocked(api.devices).mockResolvedValue(devicesResponse({ drift: true, applied: true, desired_digest: 'desired123', applied_digest: 'applied123' }))
-    renderPage()
+    const { onNotify } = renderPage()
     await userEvent.click(await screen.findByRole('button', { name: '应用并重载网关' }))
     const dialog = screen.getByRole('dialog', { name: '应用设备配置并重载网关？' })
     expect(dialog.textContent).toContain('DHCP/DNS、mihomo、PF 与 IPv4 forwarding')
@@ -651,6 +652,7 @@ describe('DevicesPage', () => {
     await waitFor(() => expect(api.gateway).toHaveBeenCalledWith('reload'))
     expect(waitForOperation).toHaveBeenCalledWith('reload-1')
     expect(await screen.findByText(/网关已使用最新设备配置重新启动/)).toBeTruthy()
+    expect(onNotify).toHaveBeenCalledWith(expect.objectContaining({ tone: 'success', title: '应用并重载网关成功' }))
   })
 
   it('offers router bypass only in DHCP takeover and names the device in renewal guidance', async () => {
@@ -710,11 +712,12 @@ describe('DevicesPage', () => {
   it('keeps drift retryable and shows a readable error when reload fails', async () => {
     vi.mocked(api.devices).mockResolvedValue(devicesResponse({ drift: true, applied: true, desired_digest: 'desired123', applied_digest: 'applied123' }))
     vi.mocked(waitForOperation).mockRejectedValueOnce(new Error('候选配置校验失败；现有网关仍在运行'))
-    renderPage()
+    const { onNotify } = renderPage()
     await userEvent.click(await screen.findByRole('button', { name: '应用并重载网关' }))
     await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '确认应用并重载' }))
     expect((await screen.findByRole('alert')).textContent).toContain('候选配置校验失败；现有网关仍在运行')
     expect((screen.getByRole('button', { name: '应用并重载网关' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(onNotify).toHaveBeenCalledWith({ tone: 'error', title: '应用并重载网关失败', message: '候选配置校验失败；现有网关仍在运行' })
   })
 
   it('keeps the local form on revision conflict and offers an explicit reload choice', async () => {

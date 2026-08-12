@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
+import type { OperationNotification } from '../components/OperationNotifications'
 import type { Overview, Source } from '../types'
 
 type SourceAction =
@@ -8,7 +9,7 @@ type SourceAction =
   | { kind: 'refresh'; sourceID: string }
   | null
 
-export function SourcesPage({ overview, onChanged }: { overview: Overview | null; onChanged: () => void | Promise<void> }) {
+export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overview | null; onChanged: () => void | Promise<void>; onNotify: (notification: OperationNotification) => void }) {
   const [sources, setSources] = useState<Source[]>([])
   const [revision, setRevision] = useState('')
   const [name, setName] = useState('')
@@ -63,10 +64,14 @@ export function SourcesPage({ overview, onChanged }: { overview: Overview | null
     try {
       const applied = await api.applySource(selected.id, revision)
       setPending(null)
-      setMessage(applied.applied ? '订阅已应用，网关已使用新的运行配置。' : '订阅已保存，将在下次启动网关时应用。')
+      const result = applied.applied ? '订阅已应用，网关已使用新的运行配置。' : '订阅已保存，将在下次启动网关时应用。'
+      setMessage(result)
+      if (running && applied.applied) onNotify({ tone: 'success', title: '应用并重载网关成功', message: `${selected.name} 已应用，网关正在使用新的运行配置。` })
       await Promise.all([refresh(), Promise.resolve(onChanged())])
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(failure)
+      if (running) onNotify({ tone: 'error', title: '应用并重载网关失败', message: failure })
     } finally {
       setActiveAction(null)
     }

@@ -25,6 +25,7 @@ final class StatusModel: ObservableObject {
     private var failureCount = 0
     private var isQuitting = false
     private var lastAutomaticUpdateCheck: Date?
+    private var sleepPreventionGeneration = 0
 
     init(
         client: ControlAPIClient = ControlAPIClient(),
@@ -63,11 +64,12 @@ final class StatusModel: ObservableObject {
 
     func refresh() async {
         guard !isQuitting, !isRefreshing else { return }
+        let sleepGeneration = sleepPreventionGeneration
         timer?.invalidate()
         isRefreshing = true
         defer { isRefreshing = false; scheduleNextRefresh() }
         do {
-            status = try await client.status()
+            storeStatus(try await client.status(), sleepGeneration: sleepGeneration)
             error = nil
             serviceNeedsReconnect = false
             failureCount = 0
@@ -78,7 +80,7 @@ final class StatusModel: ObservableObject {
             try? await Task.sleep(for: .milliseconds(350))
             guard !isQuitting else { return }
             do {
-                status = try await client.status()
+                storeStatus(try await client.status(), sleepGeneration: sleepGeneration)
                 error = nil
                 serviceNeedsReconnect = false
                 failureCount = 0
@@ -104,13 +106,20 @@ final class StatusModel: ObservableObject {
 
     func setSleepPrevention(_ enabled: Bool) async {
         guard !isQuitting, !isChangingSleepPrevention else { return }
+        sleepPreventionGeneration += 1
         isChangingSleepPrevention = true
         error = nil
         defer { isChangingSleepPrevention = false }
         do {
-            _ = try await client.setSleepPrevention(enabled)
+            let sleepPrevention = try await client.setSleepPrevention(enabled)
+            sleepPreventionGeneration += 1
+            if var currentStatus = status {
+                currentStatus.sleepPrevention = sleepPrevention
+                status = currentStatus
+            }
             await refresh()
         } catch {
+            sleepPreventionGeneration += 1
             self.error = error.localizedDescription
         }
     }
@@ -196,6 +205,15 @@ final class StatusModel: ObservableObject {
         failureCount += 1
     }
 
+    private func storeStatus(_ nextStatus: MenuBarStatus, sleepGeneration: Int) {
+        status = menuBarStatusAfterRefresh(
+            nextStatus,
+            currentStatus: status,
+            requestSleepGeneration: sleepGeneration,
+            currentSleepGeneration: sleepPreventionGeneration
+        )
+    }
+
     private func scheduleNextRefresh() {
         guard !isQuitting else { return }
         let base = rapidPolling ? 2.0 : 15.0
@@ -256,4 +274,19 @@ final class StatusModel: ObservableObject {
         lastAutomaticUpdateCheck = now
         Task { await checkForUpdates(manual: false) }
     }
+}
+
+func menuBarStatusAfterRefresh(
+    _ nextStatus: MenuBarStatus,
+    currentStatus: MenuBarStatus?,
+    requestSleepGeneration: Int,
+    currentSleepGeneration: Int
+) -> MenuBarStatus {
+    guard requestSleepGeneration != currentSleepGeneration,
+          let currentSleepPrevention = currentStatus?.sleepPrevention else {
+        return nextStatus
+    }
+    var mergedStatus = nextStatus
+    mergedStatus.sleepPrevention = currentSleepPrevention
+    return mergedStatus
 }

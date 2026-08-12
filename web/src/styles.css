@@ -135,6 +135,11 @@ button{cursor:pointer}
 .error-banner span{color:#ffad9f;font-weight:800}
 .error-banner p{flex:1;margin:0}
 .error-banner button,.recovery-banner button{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:7px 12px}
+.operation-notifications{position:fixed;z-index:40;top:24px;right:28px;width:min(390px,calc(100vw - 56px));display:grid;gap:10px;pointer-events:none}
+.operation-notification{pointer-events:auto;display:grid;grid-template-columns:auto 1fr auto;align-items:start;gap:12px;padding:14px;border:1px solid #345c4c;border-radius:14px;background:#0d1b17f2;color:#eaf2ee;box-shadow:0 18px 55px #0008;backdrop-filter:blur(18px);animation:operation-notification-in .22s ease-out}
+.operation-notification.error{border-color:#75423a;background:#2a1715f2}.operation-notification-icon{display:grid;place-items:center;width:25px;height:25px;border-radius:50%;background:#225c42;color:#aaf3d0;font-weight:900}.operation-notification.error .operation-notification-icon{background:#6b3029;color:#ffc2b8}
+.operation-notification strong{display:block;font-size:13px}.operation-notification p{margin:4px 0 0;color:#9cb1a9;font-size:12px;line-height:1.45}.operation-notification.error p{color:#e0b7b0}.operation-notification button{width:26px;height:26px;padding:0;border:0;border-radius:7px;background:transparent;color:#8ca099;font-size:19px;line-height:1}.operation-notification button:hover{background:#ffffff0d;color:#eaf2ee}
+@keyframes operation-notification-in{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
 .session-expired{min-height:calc(100vh - 80px);display:flex;align-items:center;justify-content:center;gap:16px;text-align:left;color:#d8e6e0}
 .session-expired>span{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#321a18;border:1px solid #6b3932;color:#ffad9f;font-size:22px;font-weight:800}
 .session-expired h1{margin:0 0 8px;font-size:22px}.session-expired p{margin:0;color:#8fa39b}
@@ -522,6 +527,7 @@ html[data-theme="light"] .router-guide .router-link{color:#7a5700}
 html[data-theme="light"] .router-fallback code{background:#f0dfb5}
 html[data-theme="light"] .empty{color:#637a71;border-color:#bdd2c9}
 html[data-theme="light"] .ok-notice{background:#e3f2eb;border-color:#7fc5a5;color:#245c45}
+html[data-theme="light"] .operation-notification{background:#fffffff2;color:#183028;border-color:#8bc2aa;box-shadow:0 18px 55px #45655835}html[data-theme="light"] .operation-notification.error{background:#fff7f5f2;border-color:#d49a91}html[data-theme="light"] .operation-notification p{color:#587268}html[data-theme="light"] .operation-notification.error p{color:#80534c}html[data-theme="light"] .operation-notification button{color:#657a72}
 html[data-theme="light"] .source-import-card,html[data-theme="light"] .source-card{background:linear-gradient(145deg,#fff,#f6faf8);border-color:#cbded6}html[data-theme="light"] .source-import-head>span{background:#e2f2ea;border-color:#a7cdbc;color:#2b7859}html[data-theme="light"] .source-import-card input{background:#fff;border-color:#bad1c7;color:#183028}html[data-theme="light"] .source-dropzone{background:#f7fbf9;border-color:#9dc9b6}html[data-theme="light"] .source-dropzone:hover,html[data-theme="light"] .source-dropzone.busy{background:#eaf5f0;border-color:#65ad8d}html[data-theme="light"] .dropzone-icon{background:#dcefe6;color:#287557}html[data-theme="light"] .source-guard-note,html[data-theme="light"] .source-origin{color:#60776e!important}
 html[data-theme="light"] .source-inventory{background:#d6e5df;border-color:#d6e5df}html[data-theme="light"] .source-inventory>span{background:#f8fbfa}html[data-theme="light"] .source-diff{background:#edf6f2;color:#567067}html[data-theme="light"] .source-validation{background:#f5faf8;border-color:#cbded6}html[data-theme="light"] .source-validation.invalid{background:#fff4f1;border-color:#dda097}html[data-theme="light"] .source-actions button{background:#edf5f1;border-color:#bed3ca;color:#254c3e}html[data-theme="light"] .source-actions button.primary{background:#84dfb5;color:#12382a}
 html[data-theme="light"] .effect-badge.live{background:#dcf1e7;border-color:#68ad8c;color:#215e46}
@@ -593,7 +599,7 @@ body{min-width:0}
 @media(max-width:1150px){
 .dashboard-live-grid{grid-template-columns:1fr 1fr}.gateway-health-card{grid-column:1/-1}.dashboard-monitor-grid{grid-template-columns:1fr}.source-import-grid,.source-grid{grid-template-columns:1fr}
 }
-@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell,.config-switch,.config-switch-toggle,.config-switch-toggle i{transition:none!important}.mode-detail{animation:none}.button-spinner,.live-rate-card header em i,.trend-live-dot span{animation:none}}
+@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell,.config-switch,.config-switch-toggle,.config-switch-toggle i{transition:none!important}.mode-detail,.operation-notification{animation:none}.button-spinner,.live-rate-card header em i,.trend-live-dot span{animation:none}}
 
 /* Node health, outlet summaries and applied-path connectivity */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

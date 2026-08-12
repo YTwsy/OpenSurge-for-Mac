@@ -26,7 +26,7 @@ struct MenuBarStatus: Codable, Equatable {
     let recoveryStage: String?
     let warnings: [String]
     let errorCode: String?
-    let sleepPrevention: SleepPreventionStatus?
+    var sleepPrevention: SleepPreventionStatus?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"

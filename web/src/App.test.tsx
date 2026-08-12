@@ -201,15 +201,52 @@ describe('OpenSurge app shell', () => {
 
   it('controls non-persistent lid-closed sleep prevention independently of gateway state', async () => {
     const enabled = { ...overview, sleep_prevention: { enabled: true, active: true } }
+    let finishRefresh!: (value: Overview) => void
     vi.mocked(api.setSleepPrevention).mockResolvedValue(enabled.sleep_prevention)
-    vi.mocked(api.overview).mockResolvedValueOnce(overview).mockResolvedValue(enabled)
+    vi.mocked(api.overview).mockResolvedValueOnce(overview).mockImplementation(() => new Promise(resolve => { finishRefresh = resolve }))
     render(<App />)
     const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
     expect((toggle as HTMLInputElement).checked).toBe(false)
     await userEvent.click(toggle)
     await waitFor(() => expect(api.setSleepPrevention).toHaveBeenCalledWith(true))
-    await waitFor(() => expect((screen.getByRole('checkbox', { name: /合盖保持运行/ }) as HTMLInputElement).checked).toBe(true))
+    await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true))
     expect(screen.getByText('系统睡眠已临时禁用')).toBeTruthy()
+    await act(async () => finishRefresh(enabled))
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false))
+  })
+
+  it('does not let a refresh started during sleep-prevention mutation overwrite its result', async () => {
+    const enabled = { ...overview, sleep_prevention: { enabled: true, active: true } }
+    let stateListener: EventListener | undefined
+    let finishMutation!: (value: NonNullable<Overview['sleep_prevention']>) => void
+    let finishStaleRefresh!: (value: Overview) => void
+    class TestEventSource {
+      constructor(_url: string) {}
+      addEventListener(type: string, listener: EventListener) {
+        if (type === 'state') stateListener = listener
+      }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', TestEventSource)
+    vi.mocked(api.setSleepPrevention).mockImplementation(() => new Promise(resolve => { finishMutation = resolve }))
+    vi.mocked(api.overview)
+      .mockResolvedValueOnce(overview)
+      .mockImplementationOnce(() => new Promise(resolve => { finishStaleRefresh = resolve }))
+      .mockResolvedValue(enabled)
+
+    render(<App />)
+    const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
+    await userEvent.click(toggle)
+    await waitFor(() => expect(api.setSleepPrevention).toHaveBeenCalledWith(true))
+    await act(async () => stateListener?.(new Event('state')))
+    await waitFor(() => expect(api.overview).toHaveBeenCalledTimes(2))
+
+    await act(async () => finishMutation(enabled.sleep_prevention))
+    await waitFor(() => expect((toggle as HTMLInputElement).checked).toBe(true))
+    await act(async () => finishStaleRefresh(overview))
+
+    await waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false))
+    expect((toggle as HTMLInputElement).checked).toBe(true)
   })
 
   it('routes the dashboard start button to network settings without starting the gateway', async () => {
@@ -353,6 +390,37 @@ describe('OpenSurge app shell', () => {
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-same-lan')
     expect(await screen.findByText('旁路由模式已启动。')).toBeTruthy()
+    expect(screen.getByText('启动网关成功')).toBeTruthy()
+  })
+
+  it('shows a failure notification when gateway startup does not complete', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'start-failed', kind: 'start', state: 'running' })
+    vi.mocked(waitForOperation).mockRejectedValueOnce(new Error('TUN readiness check failed'))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '启动网关' }))
+    await userEvent.click(await screen.findByRole('button', { name: '启动旁路由模式' }))
+
+    expect(await screen.findByText('启动网关失败')).toBeTruthy()
+    expect(screen.getAllByText('TUN readiness check failed')).toHaveLength(2)
+  })
+
+  it('shows a result notification after stopping a directly controlled gateway', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'running'))
+    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
+    vi.mocked(api.gateway).mockResolvedValue({ id: 'stop-same-lan', kind: 'stop', state: 'running' })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '停止网关' }))
+    await userEvent.click(await screen.findByRole('button', { name: '停止旁路由模式' }))
+
+    expect(api.gateway).toHaveBeenCalledWith('stop')
+    expect(waitForOperation).toHaveBeenCalledWith('stop-same-lan')
+    expect(await screen.findByText('停止网关成功')).toBeTruthy()
   })
 
   it('offers DHCP takeover abandonment after the Mac becomes static', async () => {
@@ -1066,6 +1134,7 @@ describe('OpenSurge app shell', () => {
     expect(within(dialog).getByRole('button', { name: '正在验证并应用…' })).toBeTruthy()
     resolveApply({ ...source, desired: true, applied: true })
     expect(await screen.findByText('订阅已应用，网关已使用新的运行配置。')).toBeTruthy()
+    expect(screen.getByText('应用并重载网关成功')).toBeTruthy()
   })
 
   it('edits templates in the structured device policy editor', async () => {

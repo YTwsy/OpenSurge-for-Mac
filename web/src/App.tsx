@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
+import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './components/OperationNotifications'
 import { RecoveryBanner, StatusDot } from './components/Common'
 import { DashboardPage } from './pages/DashboardPage'
 import { ConnectivityPage } from './pages/ConnectivityPage'
@@ -63,6 +64,9 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [devicesDirty, setDevicesDirty] = useState(false)
   const [sleepPreventionChanging, setSleepPreventionChanging] = useState(false)
+  const [notifications, setNotifications] = useState<OperationNotificationItem[]>([])
+  const notificationID = useRef(0)
+  const sleepPreventionGeneration = useRef(0)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
   pageRef.current = page
@@ -74,8 +78,12 @@ export function App() {
   }, [theme])
 
   const refresh = useCallback(async () => {
+    const sleepGeneration = sleepPreventionGeneration.current
     try {
-      setOverview(await api.overview())
+      const nextOverview = await api.overview()
+      setOverview(current => sleepGeneration === sleepPreventionGeneration.current || !current
+        ? nextOverview
+        : { ...nextOverview, sleep_prevention: current.sleep_prevention })
       setError('')
     } catch (cause) {
       if (cause instanceof RequestError && cause.status === 401) {
@@ -135,16 +143,29 @@ export function App() {
 
   const setSleepPrevention = async (enabled: boolean) => {
     if (sleepPreventionChanging) return
+    sleepPreventionGeneration.current += 1
     setSleepPreventionChanging(true)
     try {
-      await api.setSleepPrevention(enabled)
+      const sleepPrevention = await api.setSleepPrevention(enabled)
+      sleepPreventionGeneration.current += 1
+      setOverview(current => current ? { ...current, sleep_prevention: sleepPrevention } : current)
       await refresh()
     } catch (cause) {
+      sleepPreventionGeneration.current += 1
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setSleepPreventionChanging(false)
     }
   }
+
+  const notify = useCallback((notification: OperationNotification) => {
+    const item = { ...notification, id: ++notificationID.current }
+    setNotifications(current => [...current, item].slice(-3))
+  }, [])
+
+  const dismissNotification = useCallback((id: number) => {
+    setNotifications(current => current.filter(notification => notification.id !== id))
+  }, [])
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -165,14 +186,15 @@ export function App() {
         {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
         <PageErrorBoundary key={page}>
           {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={action => go('network', action === 'cleanup' ? 'control' : action === 'stop' ? 'bottom' : 'none')} />}
-          {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} />}
-          {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
-          {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
+          {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} />}
+          {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} />}
+          {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} />}
           {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
           {page === 'connectivity' && <ConnectivityPage overview={overview} onChanged={refresh} />}
           {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
         </PageErrorBoundary>
       </>}
     </main>
+    <OperationNotifications notifications={notifications} onDismiss={dismissNotification} />
   </div>
 }

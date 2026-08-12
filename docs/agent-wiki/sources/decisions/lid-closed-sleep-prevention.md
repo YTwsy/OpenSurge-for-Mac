@@ -34,5 +34,8 @@ OpenSurge 的“合盖保持运行”是与网关生命周期解耦的临时系�
 
 - 不读取或写入网关 runtime state，不启动/停止 DHCP、DNS、Mihomo、PF 或 forwarding。
 - 不保留用户开关偏好，服务重新启动时 UI 必须显示关闭。
+- PUT 成功后菜单栏与 Web GUI 都立即采用 Control API 返回的 lease 状态；Web SSE 的
+  `state` 签名必须包含 `sleep_prevention`，保证任一界面切换后另一界面会触发刷新。
+  菜单栏轮询与 Web 定时 overview 仅作为断线或竞态后的收敛兜底，不能各自保存开关状态。
 - UI 必须明确提示耗电、发热和包内运行风险。
 - 单元测试与静态打包检查不能替代真实 Mac 合盖、进程 kill 和重启验收。

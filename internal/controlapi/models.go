@@ -415,16 +415,17 @@ type BootstrapResponse struct {
 }
 
 type StateEvent struct {
-	SchemaVersion        int           `json:"schema_version"`
-	Revision             string        `json:"revision"`
-	Gateway              string        `json:"gateway"`
-	DesiredDigest        string        `json:"desired_digest,omitempty"`
-	AppliedDigest        string        `json:"applied_digest,omitempty"`
-	DesiredProfileDigest string        `json:"desired_profile_digest,omitempty"`
-	AppliedProfileDigest string        `json:"applied_profile_digest,omitempty"`
-	Drift                bool          `json:"drift"`
-	Recovery             RecoveryState `json:"recovery"`
-	At                   time.Time     `json:"at"`
+	SchemaVersion        int                   `json:"schema_version"`
+	Revision             string                `json:"revision"`
+	Gateway              string                `json:"gateway"`
+	DesiredDigest        string                `json:"desired_digest,omitempty"`
+	AppliedDigest        string                `json:"applied_digest,omitempty"`
+	DesiredProfileDigest string                `json:"desired_profile_digest,omitempty"`
+	AppliedProfileDigest string                `json:"applied_profile_digest,omitempty"`
+	Drift                bool                  `json:"drift"`
+	Recovery             RecoveryState         `json:"recovery"`
+	SleepPrevention      SleepPreventionStatus `json:"sleep_prevention"`
+	At                   time.Time             `json:"at"`
 }
 
 type DiagnosticsResponse struct {

@@ -1437,11 +1437,17 @@ func TestControlConfigAcceptsLegacyPayloadWithoutIPv6TakeoverMode(t *testing.T) 
 
 func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
 	server := newTestServer(t)
+	runner := &fakeSleepPreventionRunner{}
+	server.sleepPrevention = newSleepPreventionController(runner, server.configPath)
+	if _, err := server.sleepPrevention.SetEnabled(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.sleepPrevention.Close() })
 	state, err := server.stateEvent(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Revision == "" || state.Gateway == "" || state.Recovery.Stage != RecoveryIdle {
+	if state.Revision == "" || state.Gateway == "" || state.Recovery.Stage != RecoveryIdle || !state.SleepPrevention.Active {
 		t.Fatalf("state event = %#v", state)
 	}
 }

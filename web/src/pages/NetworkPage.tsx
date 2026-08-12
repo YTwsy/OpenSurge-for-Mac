@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
+import type { OperationNotification } from '../components/OperationNotifications'
 import { recoveryLabel } from '../status'
 import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkDefaults, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
 
@@ -28,7 +29,7 @@ type PolicyMigration = {
   unresolved: PolicyMigrationDevice[]
 }
 
-export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void }) {
+export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void; onNotify: (notification: OperationNotification) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -252,8 +253,14 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       const operation = await api.gateway(action)
       await waitForOperation(operation.id)
       await onChanged()
-      setMessage(action === 'start' ? `${gatewayModeLabel(config.gateway.mode)}已启动。` : `${gatewayModeLabel(config.gateway.mode)}已停止。`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      const result = action === 'start' ? `${gatewayModeLabel(config.gateway.mode)}已启动。` : `${gatewayModeLabel(config.gateway.mode)}已停止。`
+      setMessage(result)
+      onNotify({ tone: 'success', title: action === 'start' ? '启动网关成功' : '停止网关成功', message: action === 'start' ? `OpenSurge 已完成${gatewayModeLabel(config.gateway.mode)}启动。` : `OpenSurge 已完成${gatewayModeLabel(config.gateway.mode)}停止。` })
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(failure)
+      onNotify({ tone: 'error', title: action === 'start' ? '启动网关失败' : '停止网关失败', message: failure })
+    }
     finally { setBusy(false) }
   }
 
@@ -265,10 +272,16 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       const operation = await api.gateway('stop')
       await waitForOperation(operation.id)
       await onChanged()
-      setMessage(config.gateway.mode === 'same_wifi_dhcp'
+      const result = config.gateway.mode === 'same_wifi_dhcp'
         ? '旧状态已安全清理。请继续完成路由器 DHCP 与 Mac 网络恢复。'
-        : `旧状态已安全清理。现在可以重新启动${gatewayModeLabel(config.gateway.mode)}。`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+        : `旧状态已安全清理。现在可以重新启动${gatewayModeLabel(config.gateway.mode)}。`
+      setMessage(result)
+      onNotify({ tone: 'success', title: '旧网关状态清理成功', message: '上次运行遗留的 runtime 已完成安全清理。' })
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(failure)
+      onNotify({ tone: 'error', title: '旧网关状态清理失败', message: failure })
+    }
     finally { setBusy(false) }
   }
 
@@ -277,6 +290,11 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       setError('网络配置尚未保存。请先保存配置；若恢复资料已准备，保存会清除该预备卡并从第 1 步重新开始。')
       return
     }
+    const lifecycleAction = current === 'router_dhcp_disabled_confirmed'
+      ? 'start'
+      : current === 'client_validated' || current === 'client_validation_skipped'
+        ? 'stop'
+        : null
     setBusy(true); setError('')
     try {
       switch (current) {
@@ -295,7 +313,13 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       // that normal transition into a false "incomplete IPv4" error after the
       // recovery action itself has succeeded.
       if (config && current !== 'router_dhcp_restored') await loadPlan(config)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      if (lifecycleAction === 'start') onNotify({ tone: 'success', title: '启动网关成功', message: '局域网 DHCP 接管网关已启动，请继续验证客户端接入。' })
+      if (lifecycleAction === 'stop') onNotify({ tone: 'success', title: '停止网关成功', message: '网关已停止，请继续恢复路由器 DHCP 与 Mac 网络。' })
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(failure)
+      if (lifecycleAction) onNotify({ tone: 'error', title: lifecycleAction === 'start' ? '启动网关失败' : '停止网关失败', message: failure })
+    }
     finally { setBusy(false) }
   }
 

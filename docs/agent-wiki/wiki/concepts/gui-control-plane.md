@@ -18,6 +18,11 @@ assertion 不能覆盖 lid close，因此 Helper 使用系统级 `pmset -a disab
 重启、Helper 重启、pkg 升级和卸载能识别并恢复 OpenSurge 遗留的临时接管。UI 必须提示
 耗电、发热和不要放入不通风包内。
 
+两端不能缓存独立的开关意图。PUT 成功后应立即采用响应中的 lease 状态；Web SSE 的
+`state` 变化签名包含 `sleep_prevention`，因此菜单栏切换会促使已打开的 Web GUI 刷新。
+菜单栏打开时的快速轮询和 Web overview 定时读取负责最终收敛，并且较早发出的状态请求
+不得覆盖较新的 PUT 结果。
+
 版本发现属于原生 App 生命周期而不是网关控制面。菜单栏 App 打开时至多每 24 小时查询
 一次本仓库 GitHub `releases/latest`，也提供手动检查；只比较稳定版语义版本并校验返回的
 下载页仍位于 `YTwsy/OpenSurge-for-Mac`。发现新版本后只打开对应 Release 页面，不下载

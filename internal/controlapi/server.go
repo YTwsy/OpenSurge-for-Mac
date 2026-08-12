@@ -2014,7 +2014,7 @@ func (s *Server) stateEvent(ctx context.Context) (StateEvent, error) {
 		appliedProfile = state.ProfileDigest
 	}
 	recovery, _ := s.store.Recovery()
-	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, DesiredProfileDigest: desiredProfile, AppliedProfileDigest: appliedProfile, Drift: desired != applied || desiredProfile != appliedProfile, Recovery: recovery}, nil
+	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, DesiredProfileDigest: desiredProfile, AppliedProfileDigest: appliedProfile, Drift: desired != applied || desiredProfile != appliedProfile, Recovery: recovery, SleepPrevention: s.sleepPrevention.Status()}, nil
 }
 
 func (s *Server) sourceByID(id string) (Source, error) {
