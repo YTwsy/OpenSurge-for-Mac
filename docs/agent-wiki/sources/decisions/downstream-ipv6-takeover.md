@@ -16,6 +16,9 @@ OpenSurge 的下游 IPv6 接管支持三个拓扑，但共享 L2 必须显式确
   `fdfe:dcba:9878::/64` 中的唯一地址，默认网关和 DNS 都指向 Mac 接口的
   link-local IPv6，并移除该设备原有的主路由 IPv6 默认路由。
 
+这个布尔值表达操作者已经知晓并完成共享 L2 前置条件，不是可持续启停的运行时功能。
+Web GUI 使用明确的知晓复选框呈现它；切换拓扑时清除旧确认。
+
 用户控制面保持两个独立设置：
 
 - `dns.ipv6` 控制 mihomo DNS 是否回答 AAAA，并在开启时使用
@@ -31,6 +34,11 @@ sing-tun gVisor 处理 TCP/UDP，把 MAC 映射为内部 `device:<id>` InUser，
 设备规则和 outbound。返回包沿 Unix datagram 回到 broker，并按已观察的
 IPv6-to-MAC 邻居表写回 Ethernet。QUIC 由 UDP/443 路径承载；这个实现不宣称代理
 ICMPv6、ESP 或任意非 TCP/UDP 协议。
+
+安装包将 broker 安装为 `<OpenSurge root>/bin/opensurge-network`。新安装生成的配置
+使用该绝对路径；升级保留的旧配置可能仍使用短名称，因此 broker 解析在 `PATH` 和当前
+可执行文件旁边均未命中时，还要根据 `runtime.dir` 检查同一安装根目录的 `bin`。root
+Helper 的 launchd `PATH` 不包含产品目录，不能依赖它偶然找到 broker。
 
 内部身份不能使用设备策略组的 `device/<id>` 字符串，因为 Mihomo 的 `IN-USER`
 规则把 `/` 当成多个用户名的分隔符。策略组继续使用用户可见的

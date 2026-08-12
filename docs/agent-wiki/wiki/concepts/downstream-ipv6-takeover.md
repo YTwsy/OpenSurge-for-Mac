@@ -34,7 +34,8 @@
 
 Web GUI 将这两个设置组合在“下游 IPv6”卡片中，但不改变配置语义。三个拓扑在 TUN
 开启时都提供 `off / auto / always` 与 AAAA 控件。共享 L2 还提供
-`ipv6_shared_l2_ready` 前置条件确认；切换拓扑时必须清除旧确认，不能沿用。旁路由页面
+`ipv6_shared_l2_ready` 前置条件确认；界面应使用“我已知晓”的复选框，而不是把它表现为
+持续启停功能的滑动开关。切换拓扑时必须清除旧确认，不能沿用。旁路由页面
 另有 IPv4/IPv6 填写速查，动态显示所选 Mac 接口的 link-local 默认网关。卡片应优先
 解释设备会获得的地址、默认路由和 DNS，再显示运行时探测细节，不使用 `RA Override`
 作为用户概念。
@@ -89,6 +90,12 @@ fail closed；这项身份适用于分流归属，不应被宣传为防 MAC spoo
 lifetime-zero RA → alias → broker → Mihomo。`same_lan` 使用同一生命周期但不发送启动
 或撤销 RA。runtime state 的 `ipv6_ra_effective` 区分这两条清理路径。任何中间失败都
 进入统一 rollback，并保留无法完成清理时的 runtime state 供重试。
+
+安装包把 broker 放在 `<OpenSurge root>/bin/opensurge-network`。root Helper 由
+`/Library/PrivilegedHelperTools` 下的 launchd 服务启动，默认 `PATH` 不包含产品的
+`bin` 目录，因此安装配置应写入 broker 绝对路径；升级保留的旧配置若仍为短名称，运行时
+必须根据 `runtime.dir` 回退到同一安装根目录的 `bin`，不能只检查 `PATH` 或 Helper
+可执行文件旁边。
 
 单元/无 root 集成门槛可以证明配置、真实 dnsmasq 语法、patched Mihomo 的
 TCP/UDP gVisor 注入和 InUser 规则。只有实际通过

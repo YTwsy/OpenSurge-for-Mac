@@ -576,13 +576,17 @@ function DownstreamIPv6Card({ config, editable, gatewayActive, runtimeStatus, ip
     </div> : <>
       {sharedL2 && <div className="ipv6-card-step ipv6-shared-l2-step">
         <div className="ipv6-step-copy"><span>1</span><div><small>共享局域网前置条件</small><strong>{bypassRouter ? '只接入手工配置的设备' : '确认 OpenSurge 是唯一 IPv6 路由提供者'}</strong><p>{bypassRouter ? 'OpenSurge 不广播 RA；选定设备必须手工使用 OpenSurge ULA、默认路由和 DNS，并且不能保留主路由 IPv6 默认路由。' : '此模式会向整个 LAN 广播 RA。请先关闭主路由 IPv6 RA/DHCPv6，或使用 RA Guard 确保客户端只能收到 OpenSurge。'}</p></div></div>
-        <ConfigSwitch
-          label={bypassRouter ? '已准备手工 IPv6 设备' : '共享 LAN IPv6 已准备'}
-          accessibleLabel="确认共享局域网 IPv6 已准备"
-          checked={sharedL2Ready}
-          disabled={!editable}
-          onChange={onSharedL2ReadyChange}
-        />
+        <label className={`ipv6-readiness-ack ${sharedL2Ready ? 'is-acknowledged' : ''} ${!editable ? 'is-disabled' : ''}`}>
+          <input
+            aria-label="我已知晓共享局域网 IPv6 前置条件"
+            type="checkbox"
+            checked={sharedL2Ready}
+            disabled={!editable}
+            onChange={event => onSharedL2ReadyChange(event.target.checked)}
+          />
+          <span className="ipv6-readiness-check" aria-hidden="true">{sharedL2Ready ? '✓' : ''}</span>
+          <span><strong>我已知晓上述前置条件</strong><small>{sharedL2Ready ? '已确认' : '勾选后才可启用共享 LAN IPv6'}</small></span>
+        </label>
       </div>}
 
       <div className="ipv6-card-step">

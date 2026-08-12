@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/ipv6packet"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
@@ -38,7 +39,18 @@ func Run(cfg config.Config) Report {
 		checkIPv4("LAN IP", cfg.Gateway.LANIP),
 		checkInterfaceIPv4(cfg.Gateway.Interface, cfg.Gateway.LANIP),
 	}
+	if cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		checks = append(checks, checkIPv6PacketBroker(cfg))
+	}
 	return Report{Checks: checks}
+}
+
+func checkIPv6PacketBroker(cfg config.Config) Check {
+	path, err := ipv6packet.NewManager(cfg, runtime.NewPaths(cfg)).ResolveBinary()
+	if err != nil {
+		return Check{Name: "IPv6 packet broker", OK: false, Message: err.Error()}
+	}
+	return Check{Name: "IPv6 packet broker", OK: true, Message: path}
 }
 
 func checkMihomoConfigRender(cfg config.Config) Check {

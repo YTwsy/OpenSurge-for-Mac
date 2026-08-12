@@ -23,13 +23,17 @@ func NewManager(cfg config.Config, paths runtime.Paths) Manager {
 	return Manager{cfg: cfg, paths: paths}
 }
 
+func (m Manager) ResolveBinary() (string, error) {
+	return resolveBrokerBinary(m.cfg.Transparent.IPv6PacketBrokerBinary, m.cfg.Runtime.Dir)
+}
+
 func (m Manager) Check() error {
-	_, err := resolveBrokerBinary(m.cfg.Transparent.IPv6PacketBrokerBinary)
+	_, err := m.ResolveBinary()
 	return err
 }
 
 func (m Manager) Start() (int, error) {
-	binary, err := resolveBrokerBinary(m.cfg.Transparent.IPv6PacketBrokerBinary)
+	binary, err := m.ResolveBinary()
 	if err != nil {
 		return 0, err
 	}
@@ -81,7 +85,7 @@ func readBrokerLog(path string) string {
 	return string(data)
 }
 
-func resolveBrokerBinary(path string) (string, error) {
+func resolveBrokerBinary(path, runtimeDir string) (string, error) {
 	if strings.ContainsRune(path, os.PathSeparator) {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -101,5 +105,16 @@ func resolveBrokerBinary(path string) (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("%s not found in PATH or beside the OpenSurge executable", path)
+	// Installed configurations keep mutable runtime state under
+	// <OpenSurge root>/runtime and packaged executables under the sibling bin
+	// directory. The root helper is launched from /Library/PrivilegedHelperTools,
+	// so the broker is not beside that executable and launchd's PATH does not
+	// include the product-owned bin directory.
+	if runtimeDir != "" {
+		candidate := filepath.Join(filepath.Dir(runtimeDir), "bin", path)
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("%s not found in PATH, beside the OpenSurge executable, or in the installed bin directory", path)
 }
