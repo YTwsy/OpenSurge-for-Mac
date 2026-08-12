@@ -104,4 +104,10 @@ TCP/UDP gVisor 注入和 InUser 规则。只有实际通过
 carrier、按设备策略和停止清理在真实 host-network 路径中完成验收。自动模式还必须
 从客户端观察到 Medium 默认路由；旁路由门槛必须证明没有 RA 配置。
 
+2026-08-13 的同 LAN 真实下游 Mac 补充 smoke 已观察到：强制 IPv6 HTTPS 成功，
+packet broker 双向收发，ULA/MAC 正确映射到 `device:<id>`，浏览器播放 YouTube 时
+多条 TCP/443 自动走 IPv6 和设备 selector；同一窗口的 UDP/443 仍走 IPv4。这是物理
+macOS 客户端的混合双栈 TCP 证据，不构成 IPv6 UDP/QUIC、原生公网 IPv6、停止撤销或
+重启恢复验收。详细边界见 `../../sources/validation/real-device-smoke.md`。
+
 来源：`../../sources/decisions/downstream-ipv6-takeover.md`。

@@ -77,6 +77,28 @@ runner 会在终端里触发一次 `sudo` 提示，并把 root-required 步骤�
 smoke。它们也证明最小受控 upstream proxy 切片可以把指定域名从
 `MATCH,DIRECT` 改为命中 `open-surge-egress`，并把请求交给受控代理。
 
+## 2026-08-13 同 LAN 下游 macOS IPv6 smoke
+
+本次在 `same_wifi_dhcp`、`dns.ipv6: true`、`tun_ipv6: always` 且上游无原生
+IPv6 的运行状态下，用另一台真实 Mac 作为已登记下游设备完成补充验证：
+
+- 下游 Mac 获得预期 DHCPv4 租约和 `fdfe:dcba:9878::/64` SLAAC 地址，设备状态
+  显示 lease、MAC 与固定 IPv4 匹配，`policy_identity_ready: true`。
+- 操作者从下游 Mac 执行强制 IPv6 HTTPS 成功；Mac 侧 packet broker 日志持续出现
+  该 ULA/MAC 的 `ingress accepted` 和 `egress written`。
+- patched Mihomo 把该 ULA/MAC 映射为对应 `device:<id>`，连接命中
+  `InUser(device:<id>)` 和设备专属 selector。
+- 浏览器播放 YouTube 时，`www.youtube.com`、`googlevideo.com`、`ytimg.com` 和
+  `googleusercontent.com` 的多条 TCP/443 连接自动使用下游 ULA；同一窗口的
+  QUIC 形态 UDP/443 仍使用客户端 IPv4，说明真实应用表现为混合双栈选择，而不是
+  对全部连接固定选择一个地址族。
+- 观察窗口内没有该设备的 `REJECT`、连接失败或 IPv6 packet-path 错误。
+
+这次 smoke 证明当前物理同 LAN 上的下游 macOS IPv6 TCP、BPF 双向 packet path、
+MAC/InUser 身份和设备 selector 可以实际工作。它没有证明 IPv6 UDP/QUIC、原生公网
+IPv6、主路由竞争 RA 已被本次独立复核、停止时 RA 撤销、睡眠/重启恢复或其他设备类型；
+也不能替代可复现的 IPv6 Lab 门槛。
+
 ## 仍未覆盖的范围
 
 默认生成的 mihomo 配置仍是 `MATCH,DIRECT`。已验证的 proxy egress smoke 只覆盖
