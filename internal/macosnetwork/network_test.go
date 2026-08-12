@@ -31,6 +31,64 @@ func TestParseDNSAndIPv6Default(t *testing.T) {
 	}
 }
 
+func TestIPv6DefaultRouteStateDistinguishesSelfAndCompetingGateways(t *testing.T) {
+	localAddresses := []net.Addr{
+		stringAddr("fe80::1851:c102:7eba:c3a9%en0/64"),
+		stringAddr("fdfe:dcba:9878::1/64"),
+	}
+
+	tests := []struct {
+		name     string
+		routes   string
+		active   bool
+		selfOnly bool
+	}{
+		{
+			name:     "OpenSurge self route",
+			routes:   "default fe80::1851:c102:7eba:c3a9%en0 UGcg en0\n",
+			active:   true,
+			selfOnly: true,
+		},
+		{
+			name:     "external router",
+			routes:   "default fe80::1%en0 UGcg en0 1200\n",
+			active:   true,
+			selfOnly: false,
+		},
+		{
+			name: "self and external routers",
+			routes: "default fe80::1851:c102:7eba:c3a9%en0 UGcg en0\n" +
+				"default fe80::1%en0 UGcg en0\n",
+			active:   true,
+			selfOnly: false,
+		},
+		{
+			name:     "other interface",
+			routes:   "default fe80::1%en7 UGcg en7\n",
+			active:   false,
+			selfOnly: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			active, selfOnly := ipv6DefaultRouteState(test.routes, "en0", localAddresses)
+			if active != test.active || selfOnly != test.selfOnly {
+				t.Fatalf("route state = active %t, self-only %t", active, selfOnly)
+			}
+		})
+	}
+}
+
+func TestSnapshotCompetingIPv6DefaultIsConservativeForLegacySnapshots(t *testing.T) {
+	if (Snapshot{IPv6Default: true, IPv6DefaultSelfOnly: true}).CompetingIPv6Default() {
+		t.Fatal("self-only IPv6 default route was treated as competing")
+	}
+	if !(Snapshot{IPv6Default: true}).CompetingIPv6Default() {
+		t.Fatal("legacy IPv6 default route snapshot lost its conservative warning")
+	}
+}
+
 func TestParseServiceInterface(t *testing.T) {
 	output := `An asterisk (*) denotes that a network service is disabled.
 (1) Wi-Fi

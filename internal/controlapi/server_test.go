@@ -326,6 +326,48 @@ func TestRecoveryTransitionsPersist(t *testing.T) {
 	}
 }
 
+func TestGatewayPlanWarnsOnlyForCompetingIPv6DefaultRoute(t *testing.T) {
+	server := newTestServer(t)
+	selfOnly := true
+	server.discoverNetwork = func(context.Context, string, string) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{
+			NetworkService:      "Wi-Fi",
+			Interface:           "en0",
+			IPv4:                "192.168.1.20",
+			SubnetMask:          "255.255.255.0",
+			Router:              "192.168.1.1",
+			DNS:                 []string{"192.168.1.1"},
+			IPv6Default:         true,
+			IPv6DefaultSelfOnly: selfOnly,
+		}, nil
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("self-only plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	var plan GatewayPlan
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 0 || !plan.Snapshot.IPv6DefaultSelfOnly {
+		t.Fatalf("self-only plan = %#v", plan)
+	}
+
+	selfOnly = false
+	plan = GatewayPlan{}
+	response = performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("competing plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "per-device IPv4 policy can be bypassed") {
+		t.Fatalf("competing plan = %#v", plan)
+	}
+}
+
 func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	server := newTestServer(t)
 	response := performAuthorized(server, http.MethodGet, "/api/v1/network/interfaces", nil)
@@ -1472,7 +1514,7 @@ func TestClientAcceptanceRequiresLeaseDNSAndTUNEvidence(t *testing.T) {
 	if err := os.WriteFile(paths.MihomoLog, []byte("[TCP] 192.168.1.121:50000 --> example.com:443 using DIRECT\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true}); err != nil {
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true, NetworkSnapshot: &macosnetwork.Snapshot{IPv6Default: true, IPv6DefaultSelfOnly: true}}); err != nil {
 		t.Fatal(err)
 	}
 	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/client-validated", []byte(`{"client_ipv4":"192.168.1.121","gateway_dns_confirmed":true,"no_explicit_proxy_confirmed":true,"ipv6_bypass_warning_confirmed":false}`))
@@ -1482,6 +1524,14 @@ func TestClientAcceptanceRequiresLeaseDNSAndTUNEvidence(t *testing.T) {
 	state, _ := server.store.Recovery()
 	if state.Stage != RecoveryClientValidated {
 		t.Fatalf("state=%#v", state)
+	}
+
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true, NetworkSnapshot: &macosnetwork.Snapshot{IPv6Default: true}}); err != nil {
+		t.Fatal(err)
+	}
+	response = performAuthorized(server, http.MethodPost, "/api/v1/recovery/client-validated", []byte(`{"client_ipv4":"192.168.1.121","gateway_dns_confirmed":true,"no_explicit_proxy_confirmed":true,"ipv6_bypass_warning_confirmed":false}`))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "ipv6_warning_unacknowledged") {
+		t.Fatalf("unacknowledged competing IPv6 status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

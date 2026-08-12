@@ -663,7 +663,7 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 		if snapshot.IPv4 != cfg.Gateway.LANIP {
 			plan.Blockers = append(plan.Blockers, fmt.Sprintf("Mac IPv4 %s differs from configured gateway.lan_ip %s", snapshot.IPv4, cfg.Gateway.LANIP))
 		}
-		if snapshot.IPv6Default {
+		if snapshot.CompetingIPv6Default() {
 			plan.Warnings = append(plan.Warnings, "IPv6 default route is active; per-device IPv4 policy can be bypassed")
 		}
 		if err := s.pingRouter(r.Context(), snapshot.Router); err != nil {
@@ -1015,7 +1015,7 @@ func (s *Server) handleClientValidated(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "client_confirmation_required", "confirm client gateway/DNS and no explicit proxy")
 		return
 	}
-	if state.NetworkSnapshot != nil && state.NetworkSnapshot.IPv6Default && !request.IPv6BypassWarningConfirmed {
+	if state.NetworkSnapshot != nil && state.NetworkSnapshot.CompetingIPv6Default() && !request.IPv6BypassWarningConfirmed {
 		writeError(w, http.StatusUnprocessableEntity, "ipv6_warning_unacknowledged", "acknowledge that IPv6 may bypass cooperative IPv4 policy")
 		return
 	}

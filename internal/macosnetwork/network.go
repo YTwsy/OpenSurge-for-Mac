@@ -12,15 +12,23 @@ import (
 )
 
 type Snapshot struct {
-	NetworkService string   `json:"network_service"`
-	Interface      string   `json:"interface"`
-	IPv4Mode       string   `json:"-"`
-	HardwareAddr   string   `json:"hardware_address,omitempty"`
-	IPv4           string   `json:"ipv4,omitempty"`
-	SubnetMask     string   `json:"subnet_mask,omitempty"`
-	Router         string   `json:"router,omitempty"`
-	DNS            []string `json:"dns"`
-	IPv6Default    bool     `json:"ipv6_default"`
+	NetworkService      string   `json:"network_service"`
+	Interface           string   `json:"interface"`
+	IPv4Mode            string   `json:"-"`
+	HardwareAddr        string   `json:"hardware_address,omitempty"`
+	IPv4                string   `json:"ipv4,omitempty"`
+	SubnetMask          string   `json:"subnet_mask,omitempty"`
+	Router              string   `json:"router,omitempty"`
+	DNS                 []string `json:"dns"`
+	IPv6Default         bool     `json:"ipv6_default"`
+	IPv6DefaultSelfOnly bool     `json:"ipv6_default_self_only,omitempty"`
+}
+
+// CompetingIPv6Default reports whether an IPv6 default route may let shared-L2
+// clients bypass OpenSurge. Snapshots written by older versions do not carry
+// IPv6DefaultSelfOnly, so they retain the conservative warning behavior.
+func (s Snapshot) CompetingIPv6Default() bool {
+	return s.IPv6Default && !s.IPv6DefaultSelfOnly
 }
 
 const (
@@ -73,11 +81,13 @@ func Discover(ctx context.Context, networkService, interfaceName string) (Snapsh
 	if dns, err := runCommand(ctx, "/usr/sbin/networksetup", "-getdnsservers", networkService); err == nil {
 		snapshot.DNS = parseDNS(dns)
 	}
+	var localAddresses []net.Addr
 	if iface, err := net.InterfaceByName(interfaceName); err == nil {
 		snapshot.HardwareAddr = iface.HardwareAddr.String()
+		localAddresses, _ = iface.Addrs()
 	}
 	if routes, err := runCommand(ctx, "/usr/sbin/netstat", "-rn", "-f", "inet6"); err == nil {
-		snapshot.IPv6Default = hasIPv6DefaultRoute(routes, interfaceName)
+		snapshot.IPv6Default, snapshot.IPv6DefaultSelfOnly = ipv6DefaultRouteState(routes, interfaceName, localAddresses)
 	}
 	if snapshot.IPv4 == "" || snapshot.SubnetMask == "" || snapshot.Router == "" {
 		return Snapshot{}, fmt.Errorf("network service %q does not expose a complete IPv4 configuration", networkService)
@@ -336,13 +346,48 @@ func parseDNS(output string) []string {
 }
 
 func hasIPv6DefaultRoute(output, interfaceName string) bool {
-	for _, line := range strings.Split(output, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 4 && (fields[0] == "default" || fields[0] == "::/0") && fields[len(fields)-1] == interfaceName {
-			return true
+	active, _ := ipv6DefaultRouteState(output, interfaceName, nil)
+	return active
+}
+
+func ipv6DefaultRouteState(output, interfaceName string, localAddresses []net.Addr) (active, selfOnly bool) {
+	localIPv6 := make(map[string]struct{}, len(localAddresses))
+	for _, address := range localAddresses {
+		if normalized := normalizeIPv6Address(address.String()); normalized != "" {
+			localIPv6[normalized] = struct{}{}
 		}
 	}
-	return false
+	selfOnly = true
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || (fields[0] != "default" && fields[0] != "::/0") {
+			continue
+		}
+		last := len(fields) - 1
+		if fields[last] != interfaceName && (last == 0 || fields[last-1] != interfaceName) {
+			continue
+		}
+		active = true
+		gateway := normalizeIPv6Address(fields[1])
+		if _, local := localIPv6[gateway]; gateway == "" || !local {
+			selfOnly = false
+		}
+	}
+	return active, active && selfOnly
+}
+
+func normalizeIPv6Address(value string) string {
+	if address, _, ok := strings.Cut(value, "/"); ok {
+		value = address
+	}
+	if address, _, ok := strings.Cut(value, "%"); ok {
+		value = address
+	}
+	ip := net.ParseIP(value)
+	if ip == nil || ip.To4() != nil {
+		return ""
+	}
+	return ip.String()
 }
 
 func run(ctx context.Context, binary string, args ...string) (string, error) {

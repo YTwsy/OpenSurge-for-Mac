@@ -72,6 +72,12 @@ Web GUI 将这两个设置组合在“下游 IPv6”卡片中，但不改变配�
 自动模式的 RA 使用 Medium 默认路由器优先级。不要显式配置 `high`；共享 LAN 的正确性
 来自消除竞争 RA，而不是用更高优先级压过主路由。
 
+在 `same_wifi_dhcp` 运行期间，Mac 可能接收 OpenSurge 自己发布的 RA，并在下游接口上
+形成以本机 link-local 地址为下一跳的 IPv6 默认路由。控制面的绕过提示必须区分这种
+本机自有路由与外部路由器发布的竞争默认路由；只有前者不构成绕过 OpenSurge 的路径。
+如果本机与外部默认路由同时存在，仍必须保留提示。旧恢复快照没有路由所有权字段时应
+继续采取保守行为。
+
 broker 从 BPF 保留 source MAC，listener 将它映射到内部
 `device:<id>`。设备 selector 名称仍是 `device/<id>/...`。内部字符串不能带 `/`，
 因为 Mihomo `IN-USER` 会把 `/` 解释为多个用户的分隔符。IPv6 地址与 MAC 冲突时
