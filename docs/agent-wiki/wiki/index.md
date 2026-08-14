@@ -32,28 +32,33 @@
 
 ## 项目形态
 
-OpenSurge for Mac 正在走向一个开源的 Surge for Mac 风格 macOS gateway。它的
-核心能力是全屋代理：下游设备接入由 Mac 服务的 LAN，从 dnsmasq 获得
-DHCP/DNS，并把流量交给 Mac；mihomo 提供代理行为，macOS pf/sysctl 提供 NAT
-和 forwarding。
+OpenSurge for Mac 是一个开源的 Surge for Mac 风格 macOS 网关与控制面。它的
+核心能力是全屋代理：Mac 对下游设备承担网关职责，dnsmasq 按拓扑提供 DHCP/DNS，
+mihomo 提供代理行为，macOS pf/sysctl 提供 IPv4 NAT 和 forwarding。实验性的
+下游 IPv6 通过 dnsmasq RA/SLAAC/RDNSS 或手工 ULA 接入，再由 macOS BPF broker
+与本项目补丁构建的 mihomo 用户态数据面接管。
 
-当前仓库是 CLI-driven MVP。把 CLI 当作当前控制面，不要把它误认为最终产品
-边界。
+当前面向操作者的主要控制面是 React Web GUI。SwiftUI 菜单栏 App 显示网关状态、
+恢复提醒并打开 Web GUI；loopback Control API 连接界面与 Go 业务规则，root Helper
+执行固定的特权动作。`omg` CLI 不再代表产品形态，但仍是受支持的运维、诊断、
+自动化和恢复接口。
 
-当前控制面契约优先保持机器可读：`status`、`doctor`、`leases`、`logs`、
+CLI 契约继续优先保持机器可读：`status`、`doctor`、`leases`、`logs`、
 `policies`、`local-routing`、`devices`、`connections`、`providers`、`provider-update` 和 `snapshot` 支持 JSON
 输出。`logs --tail N --format json` 会返回最近的 dnsmasq/mihomo 日志行，并对每个
 日志文件标出存在状态和读取错误。`snapshot --format json` 聚合 status、doctor、
 leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo API 不可用记录在局部
-字段里，适合后续轻 UI 或菜单栏诊断界面复用。
+字段里，供 GUI 后端与自动化诊断复用。
 `start --format json` 和 `stop --format json` 在动作成功后返回结构化成功 payload；
 失败仍保留非零退出码，并在 `--format json` 时把
 `{"command":"...","ok":false,"error":"..."}` 写到 stderr。
 
 ## 事实来源
 
-- 公开范围：`README.md`
+- 公开范围与 App/CLI 工作流：`README.md`
 - 示例配置：`examples/config.example.yaml`
+- GUI 控制面：`internal/controlapi/`、`web/`、`apps/menubar/` 和
+  `concepts/gui-control-plane.md`
 - 生命周期代码：`internal/gateway/manager.go`
 - 配置验证：`internal/config/validator.go`
 - mihomo profile 导入：`internal/mihomo/profile.go` 和

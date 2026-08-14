@@ -4,8 +4,8 @@
 而是为了让未来 agent 从稳定的项目上下文开始工作，不必每次都从全仓库重新
 拼出同一套心智模型。
 
-当前阶段刻意保持很小：把稳定项目知识放在代码旁边，同时让目录形状兼容未来
-接入 `llm-wiki-compiler` 的刷新、审查与上下文包工作流。
+当前采用手工维护：把稳定项目知识放在代码旁边，同时让目录形状兼容未来接入
+`llm-wiki-compiler` 的刷新、审查与上下文包工作流。
 
 ## 目录结构
 
@@ -15,18 +15,13 @@ docs/agent-wiki/
   sources/
     project-brief.md
     decisions/
-      mihomo-profile-overlay.md
-      tun-mainline.md
+      ...
     validation/
-      lab-gates.md
-      real-device-smoke.md
+      ...
   wiki/
     index.md
     concepts/
-      gateway-lifecycle.md
-      macos-tun-transparent-proxy.md
-      mihomo-profile-overlay.md
-      validation-gates.md
+      ...
 ```
 
 `sources/` 保存来源材料：稳定事实、产品方向、决策和验证契约。
