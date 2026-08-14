@@ -6,7 +6,7 @@ import type { Overview, Source } from '../types'
 
 type SourceAction =
   | { kind: 'import-url' | 'import-file' | 'apply'; sourceID?: string }
-  | { kind: 'refresh'; sourceID: string }
+  | { kind: 'refresh' | 'copy-path' | 'reveal' | 'export'; sourceID: string }
   | null
 
 export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overview | null; onChanged: () => void | Promise<void>; onNotify: (notification: OperationNotification) => void }) {
@@ -77,6 +77,29 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
     }
   }
 
+  const runFileAction = async (source: Source, kind: 'copy-path' | 'reveal' | 'export') => {
+    setActiveAction({ kind, sourceID: source.id })
+    setMessage('')
+    setError('')
+    try {
+      if (kind === 'copy-path') {
+        const location = await api.sourceSnapshotLocation(source.id)
+        await copyText(location.path)
+        setMessage(`${source.name} 的本地快照路径已复制。`)
+      } else if (kind === 'reveal') {
+        await api.revealSourceSnapshot(source.id)
+        setMessage(`${source.name} 的本地快照已在 Finder 中选中。`)
+      } else {
+        const exported = await api.exportSourceSnapshot(source.id)
+        setMessage(`${source.name} 已导出为可编辑副本，并在 Finder 中选中：${exported.display_path}`)
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setActiveAction(null)
+    }
+  }
+
   return <>
     <PageHeader eyebrow="SOURCES" title="代理与规则源" description="导入、校验、应用各自有明确状态；运行配置只会在完整校验成功后切换。" />
     <div className="source-feedback" aria-live="polite">
@@ -123,9 +146,25 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
         const state = source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid ? '结构有效' : '无效'
         const action = source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本'
         const refreshing = activeAction?.kind === 'refresh' && activeAction.sourceID === source.id
+        const copyingPath = activeAction?.kind === 'copy-path' && activeAction.sourceID === source.id
+        const revealing = activeAction?.kind === 'reveal' && activeAction.sourceID === source.id
+        const exporting = activeAction?.kind === 'export' && activeAction.sourceID === source.id
         return <article className="source-card" key={source.id}>
           <div className="source-head"><div><small>{source.kind}</small><h3>{source.name}</h3></div><span className={source.applied ? 'pill ok' : source.desired ? 'pill' : source.valid ? 'pill ok' : 'pill bad'}>{state}</span></div>
           <p className="source-origin" title={origin}><span aria-hidden="true">⌁</span>{origin}</p>
+          {source.snapshot_display_path && <div className="source-location">
+            <span className="source-location-icon" aria-hidden="true">▤</span>
+            <div className="source-location-copy">
+              <small>本地快照</small>
+              <code title={source.snapshot_display_path} dir="ltr">{source.snapshot_display_path}</code>
+              <span>OpenSurge 管理 · 请勿直接编辑</span>
+            </div>
+            <div className="source-location-actions" aria-label={`${source.name} 本地快照操作`}>
+              <button type="button" disabled={busy} aria-label={`复制 ${source.name} 本地快照路径`} onClick={() => void runFileAction(source, 'copy-path')}><ActionLabel active={copyingPath} idle="复制路径" pending="复制中…" /></button>
+              <button type="button" disabled={busy} aria-label={`在 Finder 中显示 ${source.name} 本地快照`} onClick={() => void runFileAction(source, 'reveal')}><ActionLabel active={revealing} idle="Finder 中显示" pending="正在打开…" /></button>
+              <button type="button" disabled={busy} aria-label={`导出 ${source.name} 可编辑副本`} onClick={() => void runFileAction(source, 'export')}><ActionLabel active={exporting} idle="导出副本" pending="正在导出…" /></button>
+            </div>
+          </div>}
           <div className="source-inventory">
             <SourceMetric value={proxyGroups.length} label="策略组" />
             <SourceMetric value={proxyProviders.length} label="Provider" />
@@ -157,4 +196,21 @@ function SourceMetric({ value, label }: { value: number; label: string }) {
 
 function ActionLabel({ active, idle, pending }: { active: boolean; idle: string; pending: string }) {
   return <>{active && <span className="button-spinner" aria-hidden="true" />}{active ? pending : idle}</>
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+  const field = document.createElement('textarea')
+  field.value = value
+  field.setAttribute('readonly', '')
+  field.style.position = 'fixed'
+  field.style.opacity = '0'
+  document.body.appendChild(field)
+  field.select()
+  const copied = document.execCommand('copy')
+  field.remove()
+  if (!copied) throw new Error('浏览器未允许复制路径，请使用 Finder 中显示。')
 }

@@ -51,6 +51,15 @@ Importing a draft does not change the current network. Applying a source while
 the gateway is running validates the full configuration before briefly
 restarting gateway services.
 
+Each imported-source card shows the local snapshot managed by OpenSurge. You
+can copy its full path or select **Finder 中显示** (Show in Finder) to reveal
+the file. Do not edit the managed snapshot because its digest, history, and
+apply state belong to OpenSurge. Select **导出副本** (Export copy) instead:
+OpenSurge writes a separate `0600` YAML file under
+`~/Library/Application Support/OpenSurge/exports/`, then opens Finder with the
+new file selected. Refreshing the source does not overwrite exported copies,
+and an edited copy must be imported as a local file before it becomes a draft.
+
 ### 2. Choose a network mode
 
 Open **网络设置** (Network Settings) and choose the topology that matches your

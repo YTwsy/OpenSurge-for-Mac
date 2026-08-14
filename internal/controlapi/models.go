@@ -251,23 +251,32 @@ type Operation struct {
 }
 
 type Source struct {
-	SchemaVersion int             `json:"schema_version"`
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	Kind          string          `json:"kind"`
-	Origin        string          `json:"origin"`
-	FetchURL      string          `json:"fetch_url,omitempty"`
-	SnapshotPath  string          `json:"snapshot_path,omitempty"`
-	Digest        string          `json:"digest"`
-	Size          int64           `json:"size"`
-	Valid         bool            `json:"valid"`
-	Validation    string          `json:"validation,omitempty"`
-	Inventory     Inventory       `json:"inventory"`
-	ImportedAt    time.Time       `json:"imported_at"`
-	Desired       bool            `json:"desired"`
-	Applied       bool            `json:"applied"`
-	Versions      []SourceVersion `json:"versions"`
-	Diff          SourceDiff      `json:"diff"`
+	SchemaVersion       int             `json:"schema_version"`
+	ID                  string          `json:"id"`
+	Name                string          `json:"name"`
+	Kind                string          `json:"kind"`
+	Origin              string          `json:"origin"`
+	FetchURL            string          `json:"fetch_url,omitempty"`
+	SnapshotPath        string          `json:"snapshot_path,omitempty"`
+	SnapshotDisplayPath string          `json:"snapshot_display_path,omitempty"`
+	Digest              string          `json:"digest"`
+	Size                int64           `json:"size"`
+	Valid               bool            `json:"valid"`
+	Validation          string          `json:"validation,omitempty"`
+	Inventory           Inventory       `json:"inventory"`
+	ImportedAt          time.Time       `json:"imported_at"`
+	Desired             bool            `json:"desired"`
+	Applied             bool            `json:"applied"`
+	Versions            []SourceVersion `json:"versions"`
+	Diff                SourceDiff      `json:"diff"`
+}
+
+type SourceSnapshotFile struct {
+	SchemaVersion int    `json:"schema_version"`
+	SourceID      string `json:"source_id"`
+	Kind          string `json:"kind"`
+	Path          string `json:"path"`
+	DisplayPath   string `json:"display_path"`
 }
 
 type SourceVersion struct {

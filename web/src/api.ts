@@ -1,4 +1,4 @@
-import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source } from './types'
+import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -56,6 +56,9 @@ export const api = {
   },
   refreshSource: (id: string) => request<Source>(`/api/v1/sources/${id}/refresh`, { method: 'POST' }),
   applySource: (id: string, revision: string) => request<Source>(`/api/v1/sources/${id}/apply`, { method: 'POST', headers: { 'If-Match': `"${revision}"` } }),
+  sourceSnapshotLocation: (id: string) => request<SourceSnapshotFile>(`/api/v1/sources/${encodeURIComponent(id)}/snapshot-location`),
+  revealSourceSnapshot: (id: string) => request<SourceSnapshotFile>(`/api/v1/sources/${encodeURIComponent(id)}/reveal`, { method: 'POST' }),
+  exportSourceSnapshot: (id: string) => request<SourceSnapshotFile>(`/api/v1/sources/${encodeURIComponent(id)}/export`, { method: 'POST' }),
   devices: () => request<DevicesResponse>('/api/v1/devices'),
   deviceTraffic: () => request<DeviceTraffic>('/api/v1/device-traffic'),
   devicePolicy: () => request<DevicePolicyDocument>('/api/v1/device-policy'),

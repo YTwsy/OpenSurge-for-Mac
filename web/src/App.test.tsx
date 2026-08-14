@@ -59,6 +59,9 @@ vi.mock('./api', () => ({
     importFile: vi.fn(),
     refreshSource: vi.fn(),
     applySource: vi.fn(),
+    sourceSnapshotLocation: vi.fn(),
+    revealSourceSnapshot: vi.fn(),
+    exportSourceSnapshot: vi.fn(),
     devices: vi.fn(async () => ({ devices: [], leases: [], drift: false, applied: false })),
     deviceTraffic: vi.fn(async () => ({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })),
     policies: vi.fn(async () => ({ groups: [] })),
@@ -192,9 +195,11 @@ describe('OpenSurge app shell', () => {
     const brand = document.querySelector('.brand')
     expect(brand?.textContent).toBe('OpenSurgefor Mac')
     expect(brand?.querySelector('.brand-series')).toBeNull()
-    const release = document.querySelector('.sidebar-release')
-    expect(release?.textContent).toContain('Wind Rose')
-    expect(release?.textContent).toContain('v0.2')
+    const sidebarStatus = document.querySelector('.sidebar-status')
+    expect(sidebarStatus?.querySelector('small')?.textContent).toBe(`${import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose`)
+    expect(sidebarStatus?.querySelectorAll('small')).toHaveLength(1)
+    expect(sidebarStatus?.textContent).not.toContain('192.168.1.20')
+    expect(document.querySelector('.sidebar-release')).toBeNull()
     expect(await screen.findByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
     const gateway = screen.getByRole('article', { name: '网关状态' })
     expect(within(gateway).getByText('en0 · 192.168.1.20')).toBeTruthy()
@@ -1116,6 +1121,42 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
     await userEvent.click(await screen.findByRole('button', { name: '刷新草稿' }))
     expect(await screen.findByText('Home 已刷新；新内容已保存为草稿。')).toBeTruthy()
+  })
+
+  it('shows managed snapshot actions and reveals an exported editable copy in Finder', async () => {
+    const source: Source = {
+      id: 'home', name: 'Home', kind: 'mihomo_profile', origin: 'https://example.com/profile', digest: '1234567890abcdef', size: 100,
+      snapshot_display_path: '~/Library/Application Support/OpenSurge/sources/home/12345678….yaml',
+      valid: true, validation: 'valid', desired: false, applied: false, versions: [], imported_at: '2026-07-15T00:00:00Z',
+      diff: { proxies_added: [], proxies_removed: [], groups_added: [], groups_removed: [], proxy_providers_added: [], proxy_providers_removed: [], rule_providers_added: [], rule_providers_removed: [], rule_count_delta: 0 },
+      inventory: { proxies: ['edge'], proxy_providers: [], proxy_groups: ['Main'], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
+    }
+    const managed = { schema_version: 1, source_id: 'home', kind: 'managed_snapshot' as const, path: '/Users/tester/Library/Application Support/OpenSurge/sources/home/1234567890abcdef.yaml', display_path: source.snapshot_display_path! }
+    const exported = { schema_version: 1, source_id: 'home', kind: 'editable_export' as const, path: '/Users/tester/Library/Application Support/OpenSurge/exports/Home-12345678.yaml', display_path: '~/Library/Application Support/OpenSurge/exports/Home-12345678.yaml' }
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
+    vi.mocked(api.sourceSnapshotLocation).mockResolvedValue(managed)
+    vi.mocked(api.revealSourceSnapshot).mockResolvedValue(managed)
+    vi.mocked(api.exportSourceSnapshot).mockResolvedValue(exported)
+
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+
+    expect(await screen.findByText(source.snapshot_display_path!)).toBeTruthy()
+    expect(screen.getByText('OpenSurge 管理 · 请勿直接编辑')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '复制 Home 本地快照路径' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(managed.path))
+    expect(await screen.findByText('Home 的本地快照路径已复制。')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '在 Finder 中显示 Home 本地快照' }))
+    await waitFor(() => expect(api.revealSourceSnapshot).toHaveBeenCalledWith('home'))
+    expect(await screen.findByText('Home 的本地快照已在 Finder 中选中。')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '导出 Home 可编辑副本' }))
+    await waitFor(() => expect(api.exportSourceSnapshot).toHaveBeenCalledWith('home'))
+    expect(await screen.findByText(`Home 已导出为可编辑副本，并在 Finder 中选中：${exported.display_path}`)).toBeTruthy()
   })
 
   it('confirms and applies a source through a running gateway reload', async () => {

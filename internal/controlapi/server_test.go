@@ -925,7 +925,7 @@ func TestTrustedPathRejectsEscapesAndUserOwnedFiles(t *testing.T) {
 }
 
 func TestPublicSourcesKeepsEmptyArray(t *testing.T) {
-	if sources := publicSources([]Source{}); sources == nil {
+	if sources := publicSources([]Source{}, t.TempDir()); sources == nil {
 		t.Fatal("publicSources returned nil for an empty collection")
 	}
 }
@@ -934,7 +934,7 @@ func TestPublicSourcesNormalizesCurrentAndHistoricalInventory(t *testing.T) {
 	public := publicSources([]Source{{
 		Inventory: Inventory{},
 		Versions:  []SourceVersion{{Inventory: Inventory{}}},
-	}})
+	}}, t.TempDir())
 	data, err := json.Marshal(public)
 	if err != nil {
 		t.Fatal(err)
@@ -947,9 +947,28 @@ func TestPublicSourcesNormalizesCurrentAndHistoricalInventory(t *testing.T) {
 }
 
 func TestPublicSourcesRedactsFetchURLAndPath(t *testing.T) {
-	public := publicSources([]Source{{Origin: "https://example.com/profile", FetchURL: "https://token@example.com/profile?secret=1", SnapshotPath: "/private/source.yaml"}})
+	public := publicSources([]Source{{Origin: "https://example.com/profile", FetchURL: "https://token@example.com/profile?secret=1", SnapshotPath: "/private/source.yaml", SnapshotDisplayPath: "/injected/path.yaml"}}, t.TempDir())
 	if public[0].FetchURL != "" || public[0].SnapshotPath != "" {
 		t.Fatalf("public source leaked private fields: %#v", public[0])
+	}
+	if public[0].SnapshotDisplayPath != "" {
+		t.Fatalf("untrusted source path received a display location: %#v", public[0])
+	}
+}
+
+func TestPublicSourcesAddsManagedDisplayPath(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("dg5.org-0715", "mihomo_profile", "file:dg5.yaml", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	public := publicSources([]Source{source}, server.store.Dir())
+	if public[0].SnapshotPath != "" {
+		t.Fatalf("public source leaked the absolute snapshot path: %#v", public[0])
+	}
+	want := filepath.Join("OpenSurge", "sources", source.ID, source.Digest+".yaml")
+	if public[0].SnapshotDisplayPath != want {
+		t.Fatalf("snapshot display path=%q want=%q", public[0].SnapshotDisplayPath, want)
 	}
 }
 
@@ -1025,9 +1044,114 @@ func TestSourceRefreshPreservesAppliedVersionAndBuildsInventoryDiff(t *testing.T
 	if second.Diff.PreviousDigest != first.Digest || len(second.Diff.ProxiesAdded) != 1 || second.Diff.ProxiesAdded[0] != "new" || second.Diff.RuleCountDelta != 1 {
 		t.Fatalf("diff = %#v", second.Diff)
 	}
-	public := publicSources([]Source{second})[0]
+	public := publicSources([]Source{second}, server.store.Dir())[0]
 	if public.Versions[0].SnapshotPath != "" {
 		t.Fatal("public version leaked snapshot path")
+	}
+}
+
+func TestSourceSnapshotFileActionsRevealAndExport(t *testing.T) {
+	server := newTestServer(t)
+	sourceBody := "proxies:\n  - {name: edge, type: http, server: 127.0.0.1, port: 18080}\nrules:\n  - MATCH,edge\n"
+	source, err := server.importReader("dg5.org-0715", "mihomo_profile", "file:dg5.yaml", strings.NewReader(sourceBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	revealed := []string{}
+	server.revealInFinder = func(_ context.Context, path string) error {
+		revealed = append(revealed, path)
+		return nil
+	}
+
+	locationResponse := performAuthorized(server, http.MethodGet, "/api/v1/sources/"+source.ID+"/snapshot-location", nil)
+	if locationResponse.Code != http.StatusOK {
+		t.Fatalf("location status=%d body=%s", locationResponse.Code, locationResponse.Body.String())
+	}
+	var location SourceSnapshotFile
+	if err := json.Unmarshal(locationResponse.Body.Bytes(), &location); err != nil {
+		t.Fatal(err)
+	}
+	if location.Kind != "managed_snapshot" || location.Path != source.SnapshotPath || location.DisplayPath == "" {
+		t.Fatalf("location=%#v", location)
+	}
+
+	revealResponse := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/reveal", nil)
+	if revealResponse.Code != http.StatusOK || len(revealed) != 1 || revealed[0] != source.SnapshotPath {
+		t.Fatalf("reveal status=%d body=%s paths=%v", revealResponse.Code, revealResponse.Body.String(), revealed)
+	}
+
+	exportResponse := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/export", nil)
+	if exportResponse.Code != http.StatusCreated {
+		t.Fatalf("export status=%d body=%s", exportResponse.Code, exportResponse.Body.String())
+	}
+	var exported SourceSnapshotFile
+	if err := json.Unmarshal(exportResponse.Body.Bytes(), &exported); err != nil {
+		t.Fatal(err)
+	}
+	if exported.Kind != "editable_export" || !strings.HasPrefix(exported.Path, filepath.Join(server.store.Dir(), "exports")+string(os.PathSeparator)) {
+		t.Fatalf("exported=%#v", exported)
+	}
+	if !strings.HasPrefix(filepath.Base(exported.Path), "dg5.org-0715-"+source.Digest[:8]+"-") || filepath.Ext(exported.Path) != ".yaml" {
+		t.Fatalf("export filename=%q", filepath.Base(exported.Path))
+	}
+	data, err := os.ReadFile(exported.Path)
+	if err != nil || string(data) != sourceBody {
+		t.Fatalf("exported data=%q err=%v", data, err)
+	}
+	info, err := os.Stat(exported.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("exported mode=%v", info.Mode().Perm())
+	}
+	if len(revealed) != 2 || revealed[1] != exported.Path {
+		t.Fatalf("Finder reveal paths=%v", revealed)
+	}
+}
+
+func TestSourceSnapshotActionsRejectModifiedManagedFile(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source.SnapshotPath, []byte("rules:\n  - MATCH,REJECT\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	server.revealInFinder = func(context.Context, string) error {
+		called = true
+		return nil
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/reveal", nil)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "source_snapshot_unavailable") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if called {
+		t.Fatal("Finder was opened for a modified managed snapshot")
+	}
+}
+
+func TestSourceExportKeepsCopyWhenFinderRevealFails(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.revealInFinder = func(context.Context, string) error {
+		return errors.New("Finder unavailable")
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/export", nil)
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "editable copy was exported") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	exports, err := filepath.Glob(filepath.Join(server.store.Dir(), "exports", "*.yaml"))
+	if err != nil || len(exports) != 1 {
+		t.Fatalf("exports=%v err=%v", exports, err)
+	}
+	if data, err := os.ReadFile(exports[0]); err != nil || string(data) != "rules:\n  - MATCH,DIRECT\n" {
+		t.Fatalf("exported data=%q err=%v", data, err)
 	}
 }
 

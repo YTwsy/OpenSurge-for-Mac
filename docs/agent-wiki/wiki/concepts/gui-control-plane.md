@@ -194,6 +194,14 @@ source 是同步的两阶段事务：先写候选并做真实校验，再通过�
 展示接口、LAN IPv4、接管模式和 desired/applied 状态；不要从 `recovery.topology` 猜当前
 模式，也不要再增加一条重复的网络上下文条。
 
+来源列表只公开经过管理目录校验的 `snapshot_display_path`，继续清空原始
+`snapshot_path` 与订阅取回地址。复制完整路径、Finder 定位和导出副本分别通过受认证的
+来源文件接口执行；动作前必须同时校验 source ID、digest、规范化路径、私有权限和文件
+内容摘要，不能把任意持久化路径交给 Finder。管理快照只读，导出副本写入 Control Service
+用户数据目录下的 `exports/`，目录权限 `0700`、文件权限 `0600`，命名包含来源名、摘要短值
+和时间戳且不得覆盖旧文件。导出成功后用用户会话中的 Finder 选中新文件；如果 Finder
+调用失败，已经写出的副本必须保留，并在错误反馈中给出其显示路径。
+
 局域网 DHCP 接管 start 后还有 `client_validated` 阶段：要求 active lease、DHCPACK、客户端源 IP
 DNS 与 mihomo TUN 日志，并保存用户对网关/DNS、无显式代理和 IPv6 绕过警告的确认。
 Web GUI 允许用户显式进入 `client_validation_skipped`，然后继续 stop；这只是解除流程阻塞，

@@ -114,6 +114,7 @@ export type Source = {
   name: string
   kind: string
   origin: string
+  snapshot_display_path?: string
   digest: string
   size: number
   valid: boolean
@@ -132,6 +133,14 @@ export type Source = {
     terminal_match: boolean
     warnings: string[]
   }
+}
+
+export type SourceSnapshotFile = {
+  schema_version: number
+  source_id: string
+  kind: 'managed_snapshot' | 'editable_export'
+  path: string
+  display_path: string
 }
 
 export type DeviceEgressMode = 'inherit_global' | 'dedicated'

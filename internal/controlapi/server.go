@@ -43,6 +43,7 @@ type Options struct {
 	PingRouter        func(context.Context, string) error
 	Static            http.Handler
 	Credentials       SourceCredentialStore
+	RevealInFinder    func(context.Context, string) error
 }
 
 type Server struct {
@@ -59,6 +60,7 @@ type Server struct {
 	pingRouter        func(context.Context, string) error
 	static            http.Handler
 	credentials       SourceCredentialStore
+	revealInFinder    func(context.Context, string) error
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
 	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
 	fetchLocalRouting func(context.Context, config.Config) (mihomo.LocalRoutingSnapshot, error)
@@ -167,6 +169,9 @@ func New(options Options) (*Server, error) {
 	} else if err := migrateSourceCredentials(context.Background(), store, options.Credentials); err != nil {
 		return nil, err
 	}
+	if options.RevealInFinder == nil {
+		options.RevealInFinder = revealPathInFinder
+	}
 	return &Server{
 		configPath:        configPath,
 		addr:              options.Addr,
@@ -181,6 +186,7 @@ func New(options Options) (*Server, error) {
 		pingRouter:        options.PingRouter,
 		static:            options.Static,
 		credentials:       options.Credentials,
+		revealInFinder:    options.RevealInFinder,
 		fetchConnections:  mihomo.FetchConnections,
 		fetchProxyHealth:  mihomo.FetchProxyHealth,
 		fetchLocalRouting: mihomo.FetchLocalRouting,
@@ -251,6 +257,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/sources", s.auth(http.HandlerFunc(s.handleSources)))
 	mux.Handle("POST /api/v1/sources/{id}/refresh", s.auth(http.HandlerFunc(s.handleSourceRefresh)))
 	mux.Handle("POST /api/v1/sources/{id}/apply", s.auth(http.HandlerFunc(s.handleSourceApply)))
+	mux.Handle("GET /api/v1/sources/{id}/snapshot-location", s.auth(http.HandlerFunc(s.handleSourceSnapshotLocation)))
+	mux.Handle("POST /api/v1/sources/{id}/reveal", s.auth(http.HandlerFunc(s.handleSourceReveal)))
+	mux.Handle("POST /api/v1/sources/{id}/export", s.auth(http.HandlerFunc(s.handleSourceExport)))
 	mux.Handle("GET /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
@@ -1422,7 +1431,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 		sources = s.decorateSourceStates(sources)
 		revision := fileDigest(s.configPath)
 		w.Header().Set("ETag", `"`+revision+`"`)
-		writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "revision": revision, "sources": publicSources(sources)})
+		writeJSON(w, http.StatusOK, map[string]any{"schema_version": SchemaVersion, "revision": revision, "sources": publicSources(sources, s.store.Dir())})
 		return
 	}
 	var source Source
@@ -2030,9 +2039,13 @@ func (s *Server) sourceByID(id string) (Source, error) {
 	return Source{}, fmt.Errorf("source %q not found", id)
 }
 
-func publicSources(sources []Source) []Source {
+func publicSources(sources []Source, storeDir string) []Source {
 	result := append([]Source{}, sources...)
 	for i := range result {
+		result[i].SnapshotDisplayPath = ""
+		if path, err := managedSourceSnapshotPath(storeDir, result[i]); err == nil {
+			result[i].SnapshotDisplayPath = displayLocalPath(path, storeDir)
+		}
 		result[i].Inventory = normalizeInventory(result[i].Inventory)
 		if result[i].Versions == nil {
 			result[i].Versions = []SourceVersion{}

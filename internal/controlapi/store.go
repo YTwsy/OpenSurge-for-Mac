@@ -24,7 +24,7 @@ func NewStore(dir string) *Store { return &Store{dir: dir} }
 func (s *Store) Dir() string { return s.dir }
 
 func (s *Store) Ensure() error {
-	for _, dir := range []string{s.dir, filepath.Join(s.dir, "sources"), filepath.Join(s.dir, "operations")} {
+	for _, dir := range []string{s.dir, filepath.Join(s.dir, "sources"), filepath.Join(s.dir, "operations"), filepath.Join(s.dir, "exports")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
