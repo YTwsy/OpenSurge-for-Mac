@@ -113,7 +113,7 @@ struct MenuContentView: View {
             Divider()
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
-                    Text("版本 \(model.currentVersion)")
+                    Text("版本 \(releaseDisplayVersion(model.currentVersion))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()

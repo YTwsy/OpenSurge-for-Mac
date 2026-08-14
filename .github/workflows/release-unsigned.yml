@@ -157,11 +157,19 @@ jobs:
           else
             channel_flag=--latest
           fi
+          case "$package_version" in
+            0.2.*) release_codename="Wind Rose" ;;
+            *) release_codename="" ;;
+          esac
+          release_title="OpenSurge for Mac $GITHUB_REF_NAME"
+          if [[ -n "$release_codename" ]]; then
+            release_title="$release_title — $release_codename"
+          fi
           gh release create "$GITHUB_REF_NAME" \
             "$release_dir/OpenSurge-for-Mac-${package_version}-arm64-unsigned.pkg#Apple Silicon 安装包 / Apple Silicon installer" \
             "$release_dir/OpenSurge-for-Mac-${package_version}-x86_64-unsigned.pkg#Intel 安装包 / Intel installer" \
             "$release_dir/SHA256SUMS#SHA-256 校验文件 / SHA-256 checksums" \
             --verify-tag \
             "$channel_flag" \
-            --title "OpenSurge for Mac $GITHUB_REF_NAME" \
+            --title "$release_title" \
             --notes-file packaging/unsigned-release-notes.md

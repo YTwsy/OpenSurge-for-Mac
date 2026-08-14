@@ -53,6 +53,18 @@ struct MenuBarChecks {
             installedReleaseVersion(releaseTag: nil, shortVersion: "0.1.23") == "0.1.23",
             "older packages without a full release tag must retain numeric-version fallback"
         )
+        try require(
+            releaseDisplayVersion("0.2.0") == "0.2.0 · Wind Rose",
+            "v0.2 stable releases must show the Wind Rose series codename"
+        )
+        try require(
+            releaseDisplayVersion("0.2.1-rc.2") == "0.2.1-rc.2 · Wind Rose",
+            "v0.2 release candidates must show the Wind Rose series codename"
+        )
+        try require(
+            releaseDisplayVersion("0.3.0") == "0.3.0",
+            "other release series must not inherit the Wind Rose codename"
+        )
         CheckURLProtocol.handler = { request in
             try require(request.url?.absoluteString == "https://api.github.com/repos/YTwsy/OpenSurge-for-Mac/releases/latest", "latest release path mismatch")
             try require(request.value(forHTTPHeaderField: "Accept") == "application/vnd.github+json", "GitHub API accept header missing")

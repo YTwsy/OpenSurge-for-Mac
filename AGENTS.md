@@ -16,7 +16,9 @@ macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力�
    `docs/agent-wiki/wiki/concepts/gateway-lifecycle.md`。
 4. 如果改透明代理，读
    `docs/agent-wiki/wiki/concepts/macos-tun-transparent-proxy.md`。
-5. 如果判断测试或验收门槛，读
+5. 如果改下游 IPv6，读
+   `docs/agent-wiki/wiki/concepts/downstream-ipv6-takeover.md`。
+6. 如果判断测试或验收门槛，读
    `docs/agent-wiki/wiki/concepts/validation-gates.md`。
 
 ## 产品方向
@@ -25,6 +27,8 @@ macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力�
 - 当前代理引擎是 `mihomo`，它不是产品名。
 - 核心网关模型是：dnsmasq 提供 DHCP/DNS，mihomo 提供代理能力，pf
   提供 NAT，sysctl 管理 macOS IPv4 forwarding 状态。
+- 实验性的下游 IPv6 使用 dnsmasq RA/SLAAC/RDNSS 或手工 ULA 接入，并通过
+  macOS BPF broker 与本项目补丁构建的 mihomo `opensurge-packet`/gVisor 数据面处理。
 - 长期方向是：Mac-native、可审计、带透明路由、可复现实验室验证，并逐步
   具备更友好的控制面。
 
@@ -36,9 +40,10 @@ macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力�
 - TUN 是 macOS 上受支持的透明代理路径。
 - 除非项目明确重新打开该决策，否则 `mihomo.redir_port` 与
   `pf.redirect_tcp_to` 必须保持 inactive。
+- 下游 IPv6 ingress 不进入 macOS 系统 TUN，但仍要求整体
+  `transparent.mode: "tun"`；共享 L2 必须消除竞争 IPv6 RA/默认路由。
 - 高风险网络改动需要实验室验证，不能只依赖单元测试。
-- 结论必须精确说明是否实际运行了 `make lab-test` 或
-  `make lab-test-tun`。
+- 结论必须精确说明实际运行了哪些对应门槛。
 
 ## 验证
 
@@ -51,6 +56,11 @@ macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力�
 涉及透明代理的改动，需要用 `make lab-test-tun` 才能宣称 TUN 透明代理路径被
 验证。这个门槛会保持客户端无显式代理配置，并要求 HTTPS 流量出现在 mihomo
 TUN 路径的日志中。
+
+涉及下游 IPv6 RA/SLAAC/RDNSS、BPF broker、patched mihomo packet listener、设备身份
+或停止撤销的改动，按拓扑运行 `make lab-test-ipv6-userspace`、
+`make lab-test-ipv6-same-wifi` 或 `make lab-test-ipv6-same-lan`，才能宣称对应
+host-network IPv6 路径已验证。
 
 如果沙箱阻止 Go cache 写入，把 `GOCACHE` 指向 `/private/tmp` 下的路径。
 

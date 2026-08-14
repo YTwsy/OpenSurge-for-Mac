@@ -1,5 +1,8 @@
 [简体中文](#简体中文) · [English](#english)
 
+> **v0.2.x 系列代号：Wind Rose**<br>
+> **v0.2.x series codename: Wind Rose**
+
 ## 简体中文
 
 ### 主要变化

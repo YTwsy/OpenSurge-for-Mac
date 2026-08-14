@@ -11,6 +11,7 @@ button{cursor:pointer}
 .brand-mark{width:42px;height:42px;display:block;object-fit:contain;flex:0 0 auto}
 .brand strong,.brand small{display:block}
 .brand small{color:#71847d;margin-top:2px}
+.brand .brand-series{color:#79e6b3;font-size:9px;font-weight:750;letter-spacing:.055em}
 .sidebar nav{display:grid;gap:6px}
 .sidebar nav button{border:0;background:transparent;color:#869992;padding:11px 12px;border-radius:10px;text-align:left;display:flex;gap:13px;align-items:center}
 .sidebar nav button span{font-size:18px;width:20px;text-align:center}
@@ -470,6 +471,7 @@ button{cursor:pointer}
 html[data-theme="light"] body{background:radial-gradient(circle at 72% -12%,#ccecdf 0,transparent 34%),#f2f7f4;color:#183028}
 html[data-theme="light"] .sidebar{background:#f7fbf9e8;border-color:#cbded6}
 html[data-theme="light"] .brand small,html[data-theme="light"] .sidebar-status small,html[data-theme="light"] .page-header p,html[data-theme="light"] .gateway-card p,html[data-theme="light"] .metric span,html[data-theme="light"] .section-title p,html[data-theme="light"] .row small,html[data-theme="light"] .config-field small{color:#60776e}
+html[data-theme="light"] .brand .brand-series{color:#277454}
 html[data-theme="light"] .sidebar nav button{color:#536a61}
 html[data-theme="light"] .sidebar nav button:hover,html[data-theme="light"] .sidebar nav button.active{background:#dcece5;color:#17372c}
 html[data-theme="light"] .sidebar-status{border-color:#cbded6}

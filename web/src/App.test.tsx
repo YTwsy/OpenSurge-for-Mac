@@ -189,6 +189,7 @@ describe('OpenSurge app shell', () => {
     render(<App />)
     const brandIcon = document.querySelector<HTMLImageElement>('img.brand-mark')
     expect(brandIcon?.getAttribute('src')).toBe('/opensurge-icon.png')
+    expect(screen.getByText('v0.2.x · Wind Rose')).toBeTruthy()
     expect(await screen.findByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
     const gateway = screen.getByRole('article', { name: '网关状态' })
     expect(within(gateway).getByText('en0 · 192.168.1.20')).toBeTruthy()

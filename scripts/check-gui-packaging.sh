@@ -391,6 +391,14 @@ grep -Fq 'OpenSurgeReleaseTag' "$RELEASE_VERIFY" || {
   echo "package verification must inspect the full release tag" >&2
   exit 1
 }
+grep -Fq '0.2.*) release_codename="Wind Rose" ;;' "$RELEASE_WORKFLOW" || {
+  echo "v0.2 releases must use the Wind Rose series codename" >&2
+  exit 1
+}
+grep -Fq -- '--title "$release_title"' "$RELEASE_WORKFLOW" || {
+  echo "GitHub release title must include the version-aware series title" >&2
+  exit 1
+}
 grep -Fq 'actions/download-artifact@v8' "$RELEASE_WORKFLOW" || {
   echo "stable release workflow must aggregate both architecture packages" >&2
   exit 1
