@@ -1,7 +1,6 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App 图标">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>v0.2 · Wind Rose</strong></p>
   <p><strong>把 Mac 变成可按设备分流的 Surge 风格全屋透明代理网关——既可让指定设备通过旁路由手动接入，也支持 DHCP/DNS 自动接管与实验性下游 IPv6 接管</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
@@ -37,10 +36,7 @@
 OpenSurge for Mac 是一个开源的 Surge 风格 macOS 网关与控制面。多数用户可以先从
 旁路由模式开始：主路由 DHCP 保持开启，只让需要接入的设备使用稳定 IPv4，并把网关和
 DNS 指向 Mac。需要让同一局域网的设备自动接入时，也可以选择局域网 DHCP 接管；有独立
-AP、SSID 或 VLAN 时，则可以使用独立下游 LAN。
-
-三种模式均可按需启用实验性的下游 IPv6 接管；自动接入、旁路由手工接入及共享 LAN
-的前置条件见下文。
+AP、SSID 或 VLAN 时，则可以使用独立下游 LAN。三种模式均可按需启用实验性的 IPv6 接管。
 
 无论采用哪种模式，你都可以为已登记设备配置不同的出口策略：手机和 Mac 一起走规则
 分流、游戏机连美服、电视走流媒体节点。在局域网 DHCP 接管和独立下游 LAN 模式下，

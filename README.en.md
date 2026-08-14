@@ -1,7 +1,6 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App Icon">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>v0.2 · Wind Rose</strong></p>
   <p><strong>Turn a Mac into a Surge-style whole-home transparent gateway with per-device routing—onboard selected devices in same-LAN bypass-router mode, take over DHCP/DNS automatically, and optionally enable experimental downstream IPv6 takeover.</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
@@ -39,11 +38,8 @@ plane. Most users can start in same-LAN bypass-router mode: keep the main
 router's DHCP enabled, give selected devices stable IPv4 addresses, and point
 their gateway and DNS to the Mac. For automatic onboarding across an existing
 LAN, choose LAN DHCP takeover; for a separate AP, SSID, or VLAN, use an
-isolated downstream LAN.
+isolated downstream LAN. All three modes can optionally enable experimental downstream IPv6 takeover.
 
-All three modes can optionally enable experimental downstream IPv6 takeover;
-the automatic and manual onboarding paths and shared-LAN prerequisites are
-described below.
 
 Every mode supports independent egress policies for registered devices: use
 rule-based routing for both the phone and local Mac, route the game console
