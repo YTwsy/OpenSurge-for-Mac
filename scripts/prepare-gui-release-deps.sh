@@ -14,21 +14,17 @@ DNSMASQ_ARCHIVE="dnsmasq-${DNSMASQ_VERSION}.tar.gz"
 DNSMASQ_URL="https://thekelleys.org.uk/dnsmasq/${DNSMASQ_ARCHIVE}"
 
 MIHOMO_VERSION=1.19.27
+MIHOMO_SOURCE_SHA256=bf3a188a83475000df235178edf61cd70fda22b884b19a539d0cfd9b89a51e6a
+MIHOMO_SOURCE_ARCHIVE="mihomo-${MIHOMO_VERSION}-source.tar.gz"
+MIHOMO_SOURCE_URL="https://github.com/MetaCubeX/mihomo/archive/5184081ac327394d9e15fa5d5f9f4a61e723fd94.tar.gz"
 case "$RELEASE_ARCH" in
-  arm64)
-    MIHOMO_SHA256=3617c9d8a5a55aecfe1ebd0f55ff59f2706c8ad68fd65c6c4e5f7cf2b74263f1
-    MIHOMO_ARCHIVE="mihomo-darwin-arm64-v${MIHOMO_VERSION}.gz"
-    ;;
-  x86_64)
-    MIHOMO_SHA256=ddfafe6993e0adf97420d126d5ce7868113174630ccbf36d4a1bee2784085172
-    MIHOMO_ARCHIVE="mihomo-darwin-amd64-compatible-v${MIHOMO_VERSION}.gz"
+  arm64|x86_64)
     ;;
   *)
     echo "unsupported macOS release architecture: $RELEASE_ARCH" >&2
     exit 1
     ;;
 esac
-MIHOMO_URL="https://github.com/MetaCubeX/mihomo/releases/download/v${MIHOMO_VERSION}/${MIHOMO_ARCHIVE}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "GUI release dependencies must be prepared on macOS" >&2
@@ -56,9 +52,12 @@ MACOSX_DEPLOYMENT_TARGET="$MINIMUM_MACOS" \
     "CC=clang -arch $RELEASE_ARCH"
 install -m 0755 "$work_dir/dnsmasq-$DNSMASQ_VERSION/src/dnsmasq" "$BIN_ROOT/dnsmasq"
 
-download_and_verify "$MIHOMO_URL" "$CACHE_ROOT/$MIHOMO_ARCHIVE" "$MIHOMO_SHA256"
-gzip -dc "$CACHE_ROOT/$MIHOMO_ARCHIVE" >"$BIN_ROOT/mihomo"
-chmod 0755 "$BIN_ROOT/mihomo"
+MIHOMO_SOURCE="$CACHE_ROOT/$MIHOMO_SOURCE_ARCHIVE"
+download_and_verify "$MIHOMO_SOURCE_URL" "$MIHOMO_SOURCE" "$MIHOMO_SOURCE_SHA256"
+OPENSURGE_MIHOMO_SOURCE_ARCHIVE="$MIHOMO_SOURCE" \
+OPENSURGE_MIHOMO_OUTPUT="$BIN_ROOT/mihomo" \
+OPENSURGE_MIHOMO_ARCH="$RELEASE_ARCH" \
+  "$ROOT/scripts/build-opensurge-mihomo.sh"
 
 for executable in "$BIN_ROOT/dnsmasq" "$BIN_ROOT/mihomo"; do
   if [[ ! -x "$executable" ]]; then
@@ -73,6 +72,6 @@ if [[ "$(uname -m)" == "$RELEASE_ARCH" ]]; then
   echo "Prepared: $("$BIN_ROOT/mihomo" -v | head -1)"
 else
   echo "Prepared dnsmasq $DNSMASQ_VERSION for $RELEASE_ARCH (cross-compiled)"
-  echo "Prepared mihomo $MIHOMO_VERSION for $RELEASE_ARCH from $MIHOMO_ARCHIVE"
+  echo "Prepared OpenSurge mihomo $MIHOMO_VERSION for $RELEASE_ARCH from pinned source"
 fi
 echo "Release dependency directory: $BIN_ROOT"

@@ -51,6 +51,15 @@ Importing a draft does not change the current network. Applying a source while
 the gateway is running validates the full configuration before briefly
 restarting gateway services.
 
+Each imported-source card shows the local snapshot managed by OpenSurge. You
+can copy its full path or select **Finder 中显示** (Show in Finder) to reveal
+the file. Do not edit the managed snapshot because its digest, history, and
+apply state belong to OpenSurge. Select **导出副本** (Export copy) instead:
+OpenSurge writes a separate `0600` YAML file under
+`~/Library/Application Support/OpenSurge/exports/`, then opens Finder with the
+new file selected. Refreshing the source does not overwrite exported copies,
+and an edited copy must be imported as a local file before it becomes a draft.
+
 ### 2. Choose a network mode
 
 Open **网络设置** (Network Settings) and choose the topology that matches your
@@ -66,6 +75,21 @@ Set the downstream and upstream interfaces, Mac gateway IPv4, DHCP pool, and
 upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Enable
 **每设备策略** (Per-device policies) if devices need independent egress
 choices, then select **保存网络配置** (Save network configuration).
+
+All three topologies expose the two experimental IPv6 settings. **IPv6 DNS
+queries** controls AAAA answers, while **Downstream IPv6 takeover** establishes
+the userspace TCP/UDP path. **Auto** takes over only when the upstream has a
+public IPv6 address (ULA does not count) and an IPv6 default route. **Always**
+can establish the downstream path without it, but real public-IPv6 `DIRECT`
+traffic still needs an upstream route.
+
+An isolated downstream LAN publishes RA/SLAAC/RDNSS automatically. Same-LAN
+DHCP takeover can publish them to the whole LAN after main-router IPv6
+RA/DHCPv6 is disabled or RA Guard is in place; the page requires an explicit
+readiness confirmation. OpenSurge uses the normal Medium router preference.
+Bypass-router mode sends no RA. Its client setup card shows the stable IPv4,
+IPv6 ULA, and the same Mac link-local address for the default gateway and DNS on selected
+clients; remove the competing main-router IPv6 default route on those clients.
 
 If SafeDNS, DNS Proxy, content filtering, or another Network Extension causes
 local-Mac DNS or connectivity failures with TUN alone, enable **Mac local
@@ -101,8 +125,10 @@ recovery state active until the network has actually been restored.
 - **来源** (Sources) refreshes subscriptions and shows version differences. A
   refresh creates a draft that still needs to be applied.
 - **设备** (Devices) switches local-Mac Rule / Global / Direct and lets each
-  downstream device follow gateway rules or use an independent egress. Those
-  controls do not affect each other.
+  downstream device follow gateway rules, use an independent egress, or choose
+  IPv4 direct via the main router during DHCP takeover. Those controls do not
+  affect each other. The last mode blocks IPv6 egress for that device when
+  downstream IPv6 is enabled, although the client may retain SLAAC/RDNSS.
 - **策略** (Policies) tests proxy health and switches applied Selectors
   immediately.
 - **连通性** (Connectivity) shows latency, matched rules, and egress chains
@@ -110,6 +136,12 @@ recovery state active until the network has actually been restored.
   represent a downstream-device path.
 - **诊断** (Diagnostics) shows recent operations, connections, providers, and
   redacted logs.
+
+The menu bar panel and Web GUI sidebar both provide **合盖保持运行** (Keep
+Running with Lid Closed). It is off by default, applies only to the current
+OpenSurge run, and is independent of gateway state. Quitting OpenSurge or
+rebooting the Mac releases it. Lid-closed operation increases heat and battery
+use; never place a running Mac in an unventilated bag.
 
 The local-Mac mode affects only new connections entering OpenSurge through TUN
 or the local explicit proxy. The mode switch itself does not rewrite macOS

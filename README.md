@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App 图标">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>把 Mac 变成可按设备分流的 Surge 风格全屋透明代理网关——既可作为旁路由让指定设备手动接入，也支持 DHCP/DNS 自动接管</strong></p>
+  <p><strong>把 Mac 变成可按设备分流的 Surge 风格全屋透明代理网关——既可让指定设备通过旁路由手动接入，也支持 DHCP/DNS 自动接管与实验性下游 IPv6 接管</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
@@ -36,29 +36,12 @@
 OpenSurge for Mac 是一个开源的 Surge 风格 macOS 网关与控制面。多数用户可以先从
 旁路由模式开始：主路由 DHCP 保持开启，只让需要接入的设备使用稳定 IPv4，并把网关和
 DNS 指向 Mac。需要让同一局域网的设备自动接入时，也可以选择局域网 DHCP 接管；有独立
-AP、SSID 或 VLAN 时，则可以使用独立下游 LAN。
+AP、SSID 或 VLAN 时，则可以使用独立下游 LAN。三种模式均可按需启用实验性的 IPv6 接管。
 
 无论采用哪种模式，你都可以为已登记设备配置不同的出口策略：手机和 Mac 一起走规则
 分流、游戏机连美服、电视走流媒体节点。在局域网 DHCP 接管和独立下游 LAN 模式下，
 接入相应网络的手机、电视、PS5 和 VR 设备，都可以自动从 Mac 获取 DHCP/DNS，无需逐台
 修改网关和 DNS。
-
-| 模式 | 适合场景 | 对现有网络的影响 |
-| --- | --- | --- |
-| **旁路由模式（常用，推荐首次体验）** | 先接入手机、电视、游戏机等指定设备 | 主路由 DHCP 保持开启；指定设备使用稳定 IPv4，并手工设置网关和 DNS |
-| **局域网 DHCP 接管（进阶 · 自动接入）** | 希望同一 LAN 的设备自动使用 OpenSurge | 需要按引导关闭主路由 DHCP，停止时按恢复流程重新开启 |
-| **独立下游 LAN** | 独立 AP、SSID 或 VLAN | 不改变现有 LAN 的 DHCP；Mac 为独立下游网络提供 DHCP/DNS 和网关 |
-
-- 可导入已有的 mihomo 配置或订阅，保留原有节点、代理组和规则
-- Web GUI 实时展示每台设备的连接、上下行流量和实际出口链；菜单栏随时查看网关状态与恢复提醒。
-
-底层由 dnsmasq 提供 DHCP/DNS，mihomo 作为代理引擎，macOS pf 与 IPv4
-forwarding 提供原生网关路径。
-
-这个仓库也被有意设计成一个
-[AI Agent 友好工作区](#ai-agent-友好工作区)：项目知识与代码一起版本化，高风险
-网络行为有可执行的证据门槛，Virtual Lab 与真实设备产生的证据会回流到下一轮工程
-循环。
 
 <details>
   <summary><strong>十张图带你了解 OpenSurge</strong></summary>
@@ -68,12 +51,33 @@ forwarding 提供原生网关路径。
   <pre><img src="docs/promo/xiaohongshu/final-10/01-cover.png" width="240" alt="OpenSurge for Mac 介绍封面"><img src="docs/promo/xiaohongshu/final-10/02-pain-points.png" width="240" alt="全屋网络的常见痛点"><img src="docs/promo/xiaohongshu/final-10/03-dhcp-explainer.png" width="240" alt="DHCP 工作原理"><img src="docs/promo/xiaohongshu/final-10/04-default-gateway.png" width="240" alt="默认网关工作原理"><img src="docs/promo/xiaohongshu/final-10/05-device-routing.png" width="240" alt="按设备分流"><img src="docs/promo/xiaohongshu/final-10/06-network-modes.png" width="240" alt="OpenSurge 网络模式"><img src="docs/promo/xiaohongshu/final-10/07-dhcp-takeover-steps.png" width="240" alt="DHCP 接管步骤"><img src="docs/promo/xiaohongshu/final-10/08-device-egress.png" width="240" alt="设备出口策略"><img src="docs/promo/xiaohongshu/final-10/09-dashboard.png" width="240" alt="OpenSurge 控制面板"><img src="docs/promo/xiaohongshu/final-10/10-closing.png" width="240" alt="OpenSurge for Mac 结语"></pre>
 </details>
 
+| 模式 | 适合场景 | 对现有网络的影响 |
+| --- | --- | --- |
+| **旁路由模式（常用，推荐首次体验）** | 先接入手机、电视、游戏机等指定设备 | 主路由 DHCP 保持开启；指定设备使用稳定 IPv4，并手工设置网关和 DNS |
+| **局域网 DHCP 接管（进阶 · 自动接入）** | 希望同一 LAN 的设备自动使用 OpenSurge | 需要按引导关闭主路由 DHCP，停止时按恢复流程重新开启 |
+| **独立下游 LAN** | 独立 AP、SSID 或 VLAN | 不改变现有 LAN 的 DHCP；Mac 为独立下游网络提供 DHCP/DNS 和网关 |
+
+- 可导入已有的 mihomo 配置或订阅，保留原有节点、代理组和规则
+- Web GUI 实时展示每台设备的连接、上下行流量和实际出口链；菜单栏随时查看网关状态与恢复提醒。
+- 菜单栏与 Web GUI 提供默认关闭、仅本次运行有效的**合盖保持运行**开关。
+
+底层由 dnsmasq 提供 DHCP/DNS，mihomo 作为代理引擎。IPv4 使用 macOS pf 与
+forwarding 提供原生网关路径；实验性的下游 IPv6 则由 dnsmasq RA/SLAAC/RDNSS、
+macOS BPF packet broker 和本项目补丁构建的 mihomo 用户态数据面共同接管。
+
+这个仓库也被有意设计成一个
+[AI Agent 友好工作区](#ai-agent-友好工作区)：项目知识与代码一起版本化，高风险
+网络行为有可执行的证据门槛，Virtual Lab 与真实设备产生的证据会回流到下一轮工程
+循环。
+
 ## 能力
 
 **友好的 App 体验**
 
 - 通过 macOS 菜单栏 App 随时查看状态、接收网络恢复提醒并打开本地 Web GUI；再次打开
   `/Applications/OpenSurge.app` 会直接展开与菜单栏图标相同的状态面板；
+- 按需临时阻止空闲与合盖睡眠；开关不依赖网关状态，不保存偏好，退出 OpenSurge 或重启
+  Mac 后恢复正常睡眠；
 - 在一个控制面中完成订阅导入、网络设置、设备分流、节点健康、连通性检查与诊断；
 - 使用恢复状态机引导局域网 DHCP 接管的启动、客户端验收、停止和网络恢复。
 
@@ -85,6 +89,10 @@ forwarding 提供原生网关路径。
 - 启停 DHCP/DNS、mihomo、pf NAT 与 IPv4 forwarding，并带 rollback；
 - 通过 mihomo `mixed-port` 提供显式代理；
 - 通过 mihomo TUN 提供 macOS 透明代理；
+- 在实验性的下游 IPv6 模式中，独立下游 LAN 与局域网 DHCP 接管通过 dnsmasq
+  RA/SLAAC/RDNSS 自动接入，旁路由模式则使用手工 ULA；IPv6 流量不经过 macOS 系统
+  TUN，而由 BPF packet broker 送入本项目补丁构建的 mihomo gVisor 数据面，覆盖 TCP、
+  UDP 和以 UDP/443 承载的 QUIC，并保留 MAC 设备身份用于独立策略；
 - 在不改变下游设备的前提下，为 Mac 本机经 TUN/显式代理的新连接切换
   **规则 / 全局 / 直连**；默认不修改 macOS 系统代理，也可在 TUN 模式下显式启用
   HTTP/HTTPS 系统代理协同，兼容 SafeDNS、DNS Proxy 等 Network Extension 干扰
@@ -131,7 +139,7 @@ OpenSurge 有意不内置家庭模板或第三方规则列表；策略内容由�
 通过安装包使用 OpenSurge 时，请从
 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)开始。
 
-本地 Control API、React Web GUI 和只读 SwiftUI 菜单栏 launcher 已进入仓库。开发构建：
+本地 Control API、React Web GUI 和以状态展示为主的 SwiftUI 菜单栏 launcher 已进入仓库。开发构建：
 
 ```sh
 make web-install
@@ -141,7 +149,8 @@ make menubar-build
 ```
 
 控制服务只监听 `127.0.0.1`，启动时会输出一次性 Web GUI 链接。菜单栏 App 显示
-状态、恢复警报并打开 Web GUI，不提供网关 start/stop 或策略切换。它区分“只退出菜单栏
+状态、恢复警报并打开 Web GUI；除独立的临时合盖运行开关外，不提供网关 start/stop 或
+策略切换。它区分“只退出菜单栏
 App”和“退出 OpenSurge”：后者只在网关数据面已经停止时退出菜单栏 App 与用户级
 Control Service；系统 launchd 托管的 root Helper 保持空闲加载，下次打开无需再次授权。
 菜单栏还提供独立的“卸载 OpenSurge”入口：只要网关已经停止即可通过 macOS 管理员授权
@@ -182,16 +191,62 @@ pkg 升级会在同一 LAN DHCP 恢复未完成时拒绝执行。替换 payload 
 卸载 root helper。升级会保留现有配置、导入源、策略数据和 runtime 历史；只有首次安装
 才会用包内示例生成 `config.yaml`。
 
-## 透明代理
+## 透明代理与下游 IPv6 接管
 
-macOS 上支持的透明代理路径是 TUN。mihomo `redir-port` 和 PF TCP 重定向被
-有意禁用，因为当前 Darwin 构建在运行时报告 redir 不受支持。请保持
-`mihomo.redir_port` 和 `pf.redirect_tcp_to` 为 `0`，并通过
-`transparent.mode: "tun"` 启用透明代理。
+OpenSurge 使用两条入口机制不同、但共享 mihomo 规则与出口的透明数据路径：下游 IPv4
+与 Mac 本机透明代理使用 mihomo TUN 主线；实验性的下游 IPv6 则通过 macOS BPF packet
+broker 和本项目补丁增加的 `opensurge-packet` listener 进入 mihomo gVisor。
+
+两条路径都以 `transparent.mode: "tun"` 作为网关整体前置条件，但下游 IPv6 流量不会
+进入 macOS 系统 utun。这不会重新启用 `redir-port` 或 PF TCP 重定向。
+
+### mihomo TUN 主线
+
+下游 IPv4 与 Mac 本机透明代理使用 mihomo TUN。mihomo `redir-port` 和 PF TCP 重定向
+被有意禁用，因为当前 Darwin 构建在运行时报告 redir 不受支持。请保持
+`mihomo.redir_port` 和 `pf.redirect_tcp_to` 为 `0`。
 
 OpenSurge 不会在启动前根据现有 utun 或公网路由猜测冲突。实际启动会等待 mihomo
 运行时确认 TUN ready；失败时给进程短暂清理窗口、回滚网关运行时，并根据实际
 TUN 错误补充冲突路由的接口/网关信息。默认不支持两个全局 TUN 同时占有公网路由。
+
+### 下游 IPv6 接管（实验性）
+
+网络设置页提供两个独立开关：`dns.ipv6` 决定 OpenSurge DNS 是否回答 AAAA 并生成
+fake IPv6；`transparent.tun_ipv6` 决定是否在下游发布 IPv6 网关、SLAAC/RDNSS 和
+用户态透明数据面，可选 `off`、`auto` 或 `always`。`auto` 只在上游接口有公网全局
+IPv6 地址（不把 ULA 当成公网能力）和 IPv6 默认路由时启用；`always` 即使上游没有
+原生 IPv6 也会建立下游路径。
+
+三种拓扑均要求 `transparent.mode: "tun"`。独立下游 LAN 自动发布 RA/SLAAC/RDNSS；
+局域网 DHCP 接管也可作为全 LAN IPv6 提供者，但必须先关闭主路由 IPv6 RA/DHCPv6，
+或用 RA Guard 保证 OpenSurge 是唯一默认路由提供者，再确认
+`transparent.ipv6_shared_l2_ready: true`。两种自动模式都使用标准 Medium RA 路由器
+优先级。旁路由模式不广播 RA，只接入逐台手工设置 OpenSurge ULA、Mac link-local
+默认网关和 link-local DNS，且移除原主路由 IPv6 默认路由的设备；网络设置页会显示可照填的
+IPv4/IPv6 速查卡。
+
+这条 IPv6 数据面依赖本项目为 mihomo 新增的 `opensurge-packet` listener。OpenSurge
+安装包中的 mihomo 由固定上游源码应用本仓库
+[`patches/mihomo`](patches/mihomo/) 中的 packet-listener 补丁后构建，并非上游原版
+二进制；对应版本、许可证和上游来源记录在[第三方声明](THIRD_PARTY_NOTICES.md)中。
+
+下游 IPv6 流量不会进入 macOS 系统 utun。macOS BPF broker 从物理 Ethernet 帧读取
+IPv6 L3 packet 和 source MAC，通过权限为 `0600` 的 Unix datagram 交给
+`opensurge-packet` listener；listener 再把 packet 注入 mihomo gVisor，将 MAC 映射成
+`IN-USER(device:<id>)`，并复用现有设备规则和 outbound。返回包沿相反路径由 broker
+写回下游 Ethernet。该路径覆盖 TCP 与 UDP；QUIC 按 UDP/443 承载，不代表任意 IPv6
+协议均可代理。
+
+局域网 DHCP 接管中的按设备“直连主路由”只绕行 IPv4。启用下游 IPv6 时，该设备经过
+OpenSurge packet path 的 IPv6 会以最高优先级 `REJECT`，其他设备的 IPv6 不受影响。
+设备仍可能保留 SLAAC 地址或 RDNSS，因此界面只显示“IPv6 出站已阻止”。如果主路由
+仍发布 RA，设备可能直接从主路由走 IPv6、完全绕过 OpenSurge；必须关闭主路由
+RA/DHCPv6 或使用 RA Guard。
+
+`always` 也不会凭空提供公网 IPv6。上游无原生 IPv6 时，fake IPv6 目标仍可通过支持
+相应流量的代理出口；真实公网 IPv6 的 `DIRECT` 会因没有上游路由而失败，HTTP-only
+代理也不能承载 UDP/QUIC。
 
 ## mihomo profile
 
@@ -432,6 +487,14 @@ CONNECT proxy，证明 `policy-select` 可以把 TUN 出口路径在 `DIRECT` �
 选择不同的 TUN 出口，并验证设备级域名 `REJECT` 生效。域名/协议规则编译、模板和
 HTTP/MRS rule-provider 配置由单元测试覆盖；不需要为每条操作者规则运行 Lab。
 
+修改下游 IPv6 RA/SLAAC、BPF broker、patched Mihomo packet listener、IPv6 设备身份
+或停止撤销时，按拓扑使用 `make lab-test-ipv6-userspace`、
+`make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。自动 RA 门槛要求两台
+客户端获得 OpenSurge IPv6 地址、Medium 优先级默认路由与 link-local DNS；旁路由门槛
+要求手工 ULA、Mac link-local 默认网关与 link-local DNS 且不产生 RA。三者都通过本机受控
+fixture 验证 TCP、UDP request/response、QUIC-shaped UDP carrier、设备策略和 stop
+rollback。QUIC 项只证明 UDP carrier，不等于完整 HTTP/3 握手。
+
 策略组控制面和机器可读 CLI 改动优先使用 `make policy-control-test`。它会启动真实
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller
 API 检查 `policies`、`policy-select`、mihomo 重启后的策略选择恢复、通过
@@ -475,6 +538,9 @@ make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
+make lab-test-ipv6-userspace
+make lab-test-ipv6-same-wifi
+make lab-test-ipv6-same-lan
 make lab-down
 ```
 

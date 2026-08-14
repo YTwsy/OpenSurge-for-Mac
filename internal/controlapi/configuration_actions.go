@@ -167,7 +167,7 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	if err := decoder.Decode(&policy); err != nil {
 		return "", err
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == config.GatewayModeSameLAN); err != nil {
+	if err := config.ValidateDevicePolicyCandidate(cfg, policy); err != nil {
 		return "", err
 	}
 	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN)
@@ -237,10 +237,21 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.DHCP.RangeEnd = input.DHCP.RangeEnd
 	cfg.DHCP.LeaseTime = input.DHCP.LeaseTime
 	cfg.DHCP.Domain = input.DHCP.Domain
+	cfg.DHCP.BypassGateway = input.DHCP.BypassGateway
+	cfg.DHCP.BypassDNS = append([]string(nil), input.DHCP.BypassDNS...)
 	cfg.DNS.Listen = input.DNS.Listen
 	cfg.DNS.Upstream = input.DNS.Upstream
+	cfg.DNS.IPv6 = input.DNS.IPv6
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
+	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6
+	cfg.Transparent.IPv6SharedL2Ready = input.Transparent.IPv6SharedL2Ready
+	if cfg.Transparent.TUNIPv6 == "" {
+		// Schema v1 clients predating the IPv6 control omit this field. Treat
+		// omission as the fail-safe default instead of making an otherwise valid
+		// legacy save fail validation.
+		cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
+	}
 	cfg.LocalSystemProxy.Enabled = input.LocalSystemProxy.Enabled
 	cfg.DevicePolicy.ProtectedIPv4 = append([]string(nil), input.DevicePolicy.ProtectedIPv4...)
 	createdPolicy := ""

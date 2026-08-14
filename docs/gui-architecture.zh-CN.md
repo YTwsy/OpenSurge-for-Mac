@@ -244,6 +244,14 @@ DHCPDISCOVER：仍收到任何 OFFER 就硬阻塞。成功 stop 后状态进入
 Web GUI 的侧边栏提供浅色 / 深色主题切换，选择保存在浏览器本地存储中，不进入 Control
 API 配置或 root-owned gateway 配置。
 
+网络页把 `dns.ipv6` 与 `transparent.tun_ipv6` 集中在“下游 IPv6”卡片中。三个拓扑在
+TUN 开启时均可配置：独立下游 LAN 自动提供 RA/SLAAC/RDNSS；局域网 DHCP 接管也自动
+提供，但要求操作者确认主路由 RA/DHCPv6 已关闭或存在 RA Guard；旁路由不发布 RA，
+只接入手工 ULA，并把 Mac link-local 地址同时作为默认网关和 DNS 的设备。共享 L2 确认不能跨拓扑
+沿用。旁路由页面另显示可照填的 IPv4/IPv6 速查卡，并从接口发现 API 动态读取 link-local
+地址。IPv6 卡片先展示设备获得的地址、经 Mac 的默认路由与 OpenSurge DNS，再展示
+`auto` 上游探测或运行时数据面状态；关闭 TUN 才会关闭接管路径，不修改 IPv4 字段。
+
 启动后推荐先输入验收客户端 IPv4，后端要求活跃租约、
 DHCPACK、该源 IP 的 DNS 查询和 mihomo TUN 日志，同时操作者确认客户端网关/DNS 指向
 Mac 且无显式代理；若快照存在 IPv6 default，还必须确认绕过警告。紧急 stop API 始终
@@ -261,6 +269,14 @@ connecting 从第一帧就使用半透明 OpenSurge 品牌图标；只有真实�
 的 `network.slash`。恢复警报优先于其他状态。
 网关明确处于 `stopped` 时显示“OpenSurge 网关已停止”；此时 runtime-oriented doctor
 未通过或存在待应用配置都不能把“未启动”误报成“运行异常”。
+
+Doctor 的完整检查包含最长 90 秒的真实 `mihomo -t`，不再由 overview、菜单栏或 SSE
+轮询触发。诊断页只有在用户点击后才调用 `POST /api/v1/doctor` 启动 Control Service 内的
+single-flight 后台任务，并通过 `GET /api/v1/doctor` 读取进度和最近结果；离开页面不会取消
+任务，也不会启动第二份。缓存结果绑定主配置、设备策略与 imported profile 摘要，配置变化
+后标记为旧结果且不影响当前菜单栏健康。Doctor 的历史结果不参与 start/reload 判定；真实
+生命周期动作继续执行各自的配置预检与 TUN readiness。
+
 “只退出菜单栏 App”只终止菜单栏 App；点击后会先提示后台 Control Service 仍会继续，若网关正在
 运行，还会明确 DHCP/DNS、mihomo、PF/转发不会随菜单栏退出。停止网关仍须进入 Web GUI。
 

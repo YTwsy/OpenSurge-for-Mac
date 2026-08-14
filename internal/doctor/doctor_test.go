@@ -61,6 +61,28 @@ func TestCheckInterfaceIPv4RejectsInvalidIP(t *testing.T) {
 	}
 }
 
+func TestCheckIPv6PacketBrokerResolvesInstalledSiblingBin(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	broker := filepath.Join(binDir, "opensurge-network")
+	if err := os.WriteFile(broker, []byte("broker"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Runtime.Dir = filepath.Join(root, "runtime")
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.Transparent.IPv6PacketBrokerBinary = "opensurge-network"
+	t.Setenv("PATH", t.TempDir())
+
+	check := checkIPv6PacketBroker(cfg)
+	if !check.OK || check.Message != broker {
+		t.Fatalf("checkIPv6PacketBroker() = %#v, want resolved %q", check, broker)
+	}
+}
+
 func TestCheckMihomoConfigRenderAcceptsImportedProfile(t *testing.T) {
 	useRenderOnlyValidation(t)
 	dir := t.TempDir()

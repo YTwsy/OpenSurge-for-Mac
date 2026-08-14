@@ -37,32 +37,62 @@ type Overview struct {
 	StatusError          string                   `json:"status_error,omitempty"`
 	Doctor               []doctor.Check           `json:"doctor"`
 	DoctorHealthy        bool                     `json:"doctor_healthy"`
+	DoctorStatus         DoctorRunStatus          `json:"doctor_status"`
 	Leases               []device.Client          `json:"leases"`
 	Policies             []mihomo.ProxyGroup      `json:"policies"`
 	Providers            mihomo.ProvidersSnapshot `json:"providers"`
 	Recovery             RecoveryState            `json:"recovery"`
+	MihomoRecovery       MihomoRecoveryStatus     `json:"mihomo_recovery"`
+	SleepPrevention      SleepPreventionStatus    `json:"sleep_prevention"`
+}
+
+type DoctorRunStatus struct {
+	SchemaVersion int            `json:"schema_version"`
+	State         string         `json:"state"`
+	Revision      string         `json:"revision,omitempty"`
+	Current       bool           `json:"current"`
+	Checks        []doctor.Check `json:"checks"`
+	Healthy       bool           `json:"healthy"`
+	Error         string         `json:"error,omitempty"`
+	StartedAt     *time.Time     `json:"started_at,omitempty"`
+	CompletedAt   *time.Time     `json:"completed_at,omitempty"`
 }
 
 type MenuBarStatus struct {
-	SchemaVersion int      `json:"schema_version"`
-	Revision      string   `json:"revision"`
-	Gateway       string   `json:"gateway"`
-	Topology      string   `json:"topology"`
-	LANIP         string   `json:"lan_ip"`
-	DHCP          string   `json:"dhcp"`
-	Mihomo        string   `json:"mihomo"`
-	TUN           string   `json:"tun"`
-	TUNInterface  string   `json:"tun_interface,omitempty"`
-	TUNError      string   `json:"tun_error,omitempty"`
-	PFAnchor      string   `json:"pf_anchor"`
-	Forwarding    string   `json:"forwarding"`
-	ClientCount   int      `json:"client_count"`
-	Drift         bool     `json:"drift"`
-	DoctorHealthy bool     `json:"doctor_healthy"`
-	Recovery      bool     `json:"recovery_required"`
-	RecoveryStage string   `json:"recovery_stage,omitempty"`
-	Warnings      []string `json:"warnings"`
-	ErrorCode     string   `json:"error_code,omitempty"`
+	SchemaVersion   int                   `json:"schema_version"`
+	Revision        string                `json:"revision"`
+	Gateway         string                `json:"gateway"`
+	Topology        string                `json:"topology"`
+	LANIP           string                `json:"lan_ip"`
+	DHCP            string                `json:"dhcp"`
+	Mihomo          string                `json:"mihomo"`
+	MihomoError     string                `json:"mihomo_error,omitempty"`
+	TUN             string                `json:"tun"`
+	TUNInterface    string                `json:"tun_interface,omitempty"`
+	TUNError        string                `json:"tun_error,omitempty"`
+	PFAnchor        string                `json:"pf_anchor"`
+	Forwarding      string                `json:"forwarding"`
+	ClientCount     int                   `json:"client_count"`
+	Drift           bool                  `json:"drift"`
+	DoctorHealthy   bool                  `json:"doctor_healthy"`
+	Recovery        bool                  `json:"recovery_required"`
+	RecoveryStage   string                `json:"recovery_stage,omitempty"`
+	Warnings        []string              `json:"warnings"`
+	ErrorCode       string                `json:"error_code,omitempty"`
+	MihomoRecovery  MihomoRecoveryStatus  `json:"mihomo_recovery"`
+	SleepPrevention SleepPreventionStatus `json:"sleep_prevention"`
+}
+
+type MihomoRecoveryStatus struct {
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+type SleepPreventionStatus struct {
+	Enabled bool   `json:"enabled"`
+	Active  bool   `json:"active"`
+	Error   string `json:"error,omitempty"`
 }
 
 type RecoveryState struct {
@@ -106,6 +136,19 @@ type NetworkInterfacesResponse struct {
 	Interfaces    []macosnetwork.InterfaceOption `json:"interfaces"`
 }
 
+type NetworkDefaultsResponse struct {
+	SchemaVersion  int                   `json:"schema_version"`
+	Mode           string                `json:"mode"`
+	Snapshot       macosnetwork.Snapshot `json:"snapshot"`
+	GatewayIPv4    string                `json:"gateway_ipv4"`
+	DHCPRangeStart string                `json:"dhcp_range_start,omitempty"`
+	DHCPRangeEnd   string                `json:"dhcp_range_end,omitempty"`
+	BypassGateway  string                `json:"bypass_gateway,omitempty"`
+	BypassDNS      []string              `json:"bypass_dns"`
+	Warnings       []string              `json:"warnings"`
+	Blockers       []string              `json:"blockers"`
+}
+
 type ManualRecoveryFinishRequest struct {
 	RouterDHCPRestoredConfirmed bool `json:"router_dhcp_restored_confirmed"`
 }
@@ -137,21 +180,26 @@ type GatewayConfigInput struct {
 }
 
 type DHCPConfigInput struct {
-	Enabled    bool   `json:"enabled"`
-	RangeStart string `json:"range_start"`
-	RangeEnd   string `json:"range_end"`
-	LeaseTime  string `json:"lease_time"`
-	Domain     string `json:"domain"`
+	Enabled       bool     `json:"enabled"`
+	RangeStart    string   `json:"range_start"`
+	RangeEnd      string   `json:"range_end"`
+	LeaseTime     string   `json:"lease_time"`
+	Domain        string   `json:"domain"`
+	BypassGateway string   `json:"bypass_gateway"`
+	BypassDNS     []string `json:"bypass_dns"`
 }
 
 type DNSConfigInput struct {
 	Listen   string `json:"listen"`
 	Upstream string `json:"upstream"`
+	IPv6     bool   `json:"ipv6"`
 }
 
 type TransparentConfigInput struct {
-	Mode        string `json:"mode"`
-	StrictRoute bool   `json:"strict_route"`
+	Mode              string `json:"mode"`
+	StrictRoute       bool   `json:"strict_route"`
+	TUNIPv6           string `json:"tun_ipv6"`
+	IPv6SharedL2Ready bool   `json:"ipv6_shared_l2_ready"`
 }
 
 type LocalSystemProxyConfigInput struct {
@@ -203,23 +251,32 @@ type Operation struct {
 }
 
 type Source struct {
-	SchemaVersion int             `json:"schema_version"`
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	Kind          string          `json:"kind"`
-	Origin        string          `json:"origin"`
-	FetchURL      string          `json:"fetch_url,omitempty"`
-	SnapshotPath  string          `json:"snapshot_path,omitempty"`
-	Digest        string          `json:"digest"`
-	Size          int64           `json:"size"`
-	Valid         bool            `json:"valid"`
-	Validation    string          `json:"validation,omitempty"`
-	Inventory     Inventory       `json:"inventory"`
-	ImportedAt    time.Time       `json:"imported_at"`
-	Desired       bool            `json:"desired"`
-	Applied       bool            `json:"applied"`
-	Versions      []SourceVersion `json:"versions"`
-	Diff          SourceDiff      `json:"diff"`
+	SchemaVersion       int             `json:"schema_version"`
+	ID                  string          `json:"id"`
+	Name                string          `json:"name"`
+	Kind                string          `json:"kind"`
+	Origin              string          `json:"origin"`
+	FetchURL            string          `json:"fetch_url,omitempty"`
+	SnapshotPath        string          `json:"snapshot_path,omitempty"`
+	SnapshotDisplayPath string          `json:"snapshot_display_path,omitempty"`
+	Digest              string          `json:"digest"`
+	Size                int64           `json:"size"`
+	Valid               bool            `json:"valid"`
+	Validation          string          `json:"validation,omitempty"`
+	Inventory           Inventory       `json:"inventory"`
+	ImportedAt          time.Time       `json:"imported_at"`
+	Desired             bool            `json:"desired"`
+	Applied             bool            `json:"applied"`
+	Versions            []SourceVersion `json:"versions"`
+	Diff                SourceDiff      `json:"diff"`
+}
+
+type SourceSnapshotFile struct {
+	SchemaVersion int    `json:"schema_version"`
+	SourceID      string `json:"source_id"`
+	Kind          string `json:"kind"`
+	Path          string `json:"path"`
+	DisplayPath   string `json:"display_path"`
 }
 
 type SourceVersion struct {
@@ -336,6 +393,8 @@ type DeviceTraffic struct {
 	PrimaryEgress     string `json:"primary_egress,omitempty"`
 	IdentitySource    string `json:"identity_source"`
 	Transport         string `json:"transport,omitempty"`
+	GatewayTarget     string `json:"gateway_target,omitempty"`
+	IPv6Blocked       bool   `json:"ipv6_blocked,omitempty"`
 }
 
 type DeviceTrafficTotals struct {
@@ -365,16 +424,17 @@ type BootstrapResponse struct {
 }
 
 type StateEvent struct {
-	SchemaVersion        int           `json:"schema_version"`
-	Revision             string        `json:"revision"`
-	Gateway              string        `json:"gateway"`
-	DesiredDigest        string        `json:"desired_digest,omitempty"`
-	AppliedDigest        string        `json:"applied_digest,omitempty"`
-	DesiredProfileDigest string        `json:"desired_profile_digest,omitempty"`
-	AppliedProfileDigest string        `json:"applied_profile_digest,omitempty"`
-	Drift                bool          `json:"drift"`
-	Recovery             RecoveryState `json:"recovery"`
-	At                   time.Time     `json:"at"`
+	SchemaVersion        int                   `json:"schema_version"`
+	Revision             string                `json:"revision"`
+	Gateway              string                `json:"gateway"`
+	DesiredDigest        string                `json:"desired_digest,omitempty"`
+	AppliedDigest        string                `json:"applied_digest,omitempty"`
+	DesiredProfileDigest string                `json:"desired_profile_digest,omitempty"`
+	AppliedProfileDigest string                `json:"applied_profile_digest,omitempty"`
+	Drift                bool                  `json:"drift"`
+	Recovery             RecoveryState         `json:"recovery"`
+	SleepPrevention      SleepPreventionStatus `json:"sleep_prevention"`
+	At                   time.Time             `json:"at"`
 }
 
 type DiagnosticsResponse struct {

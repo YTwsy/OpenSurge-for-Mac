@@ -43,12 +43,15 @@ mode; a dedicated device default also precedes global rules, while an inherited
 device has no default selector. An imported profile's terminal `MATCH` stays
 last. Reject an imported profile with rules after `MATCH`.
 
-The supported identity boundary is MAC-backed IPv4 DHCP reservations plus
-`SRC-IP-CIDR`. It is not IPv6 identity or MAC matching performed inside mihomo.
-Registered addresses must stay in the gateway `/24` and cannot be its network,
-broadcast, gateway, or declared protected address. same-Wi-Fi DHCP start also
-rejects a reservation when ARP observes a different MAC at that IPv4; no ARP
-reply is only an inconclusive signal, not proof of vacancy.
+The system-TUN identity boundary is MAC-backed IPv4 DHCP reservations plus
+`SRC-IP-CIDR`. The downstream IPv6 packet path separately carries the observed
+source MAC into patched Mihomo as `IN-USER(device:<id>)`; this is routing
+identity, not anti-spoof authentication. An `upstream_router` device retains
+that mapping only for a highest-priority IPv6 `REJECT`, because its bypass is
+IPv4-only. Registered addresses must stay in the gateway `/24` and cannot be
+its network, broadcast, gateway, or declared protected address. same-Wi-Fi DHCP
+start also rejects a reservation when ARP observes a different MAC at that
+IPv4; no ARP reply is only an inconclusive signal, not proof of vacancy.
 
 The configured policy is desired state. One start compiles it exactly once into
 an immutable bundle, validates the final mihomo configuration before forwarding

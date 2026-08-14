@@ -44,6 +44,36 @@ selector 上 UDP/443 记录为 `REJECT` 而非 fall through 到 `DIRECT`。它�
 路由模式、设备默认出口和设备覆盖；模板、domain/protocol 组合与 HTTP/MRS rule-provider 的编译由
 `make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
 
+IPv6 数据面按拓扑使用 `make lab-test-ipv6-userspace`、
+`make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。前两条要求两台客户端
+通过 dnsmasq RA/SLAAC 获得 `fdfe:dcba:9878::/64` 地址、Medium 优先级默认路由和
+RDNSS；第三条要求手工 ULA、Mac link-local 默认网关与 link-local DNS，并证明 dnsmasq 不
+发布 RA。三者都要求 TCP、本机受控 UDP request/response 和 QUIC Initial-shaped UDP
+carrier 通过 macOS BPF broker、Unix sideband 和 patched Mihomo gVisor 路径按
+MAC/InUser 命中各自设备规则。
+TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案；公网上游不是唯一
+捕获证据。stop 必须撤销
+自动模式的 default route（或旁路由手工配置）、gateway alias、broker 和 runtime paths；RFC 4862 允许 SLAAC 地址暂时
+以 deprecated/等待过期状态保留。QUIC 项只证明 UDP carrier，不宣称完成 HTTP/3
+握手。
+
+`make lab-test-ipv6-imported-egress` 是真实订阅与公网 IPv6 的非确定性补充门槛，不能
+替代上面的本机受控 fixture。它要求通过 `OMG_LAB_IPV6_REAL_PROFILE` 显式提供 profile，
+将其复制为 Lab runtime 下的 mode `0600` 文件，并以 `tun_ipv6: auto` 要求宿主机状态
+证明原生公网 IPv6 可用。门槛先用第一台 VM 的 MAC/InUser 域名 `REJECT` 保留身份断言，
+再要求它用 `DIRECT` 完成 IPv6-only HTTPS、IPv6 UDP DNS 回包和 QUIC 形态 UDP；HTTPS
+回显与 Mac 基线都必须分别属于所选上游接口的 GUA；不同 socket 允许选择不同的 IPv6
+隐私地址。随后从 profile 选择不打印名称、且已通过 SOCKS5 UDP ASSOCIATE 公网 IPv6
+DNS 回包的实际叶子节点，要求第二台 VM 完成 fake-AAAA HTTPS、公网 IPv6 字面地址
+HTTPS、IPv6 UDP DNS 回包和 QUIC 形态 UDP 的 `GLOBAL` 命中。VM 的 ULA 是真实下游
+IPv6 包，但不代表运营商 Prefix Delegation/GUA；`DIRECT` 是 Mihomo/gVisor 从 Mac
+重新发起连接，不是将 ULA 原样转发到公网。
+
+真实 profile 门槛的 artifact 契约是 fail closed：不得复制订阅、生成的 `mihomo.yaml`、
+原始 Mihomo 日志、selector/API 输出或 cache，并要用 profile 中的 server、credential 和
+较长节点名 marker 扫描保留文件。正常回滚后删除 runtime secret；若 stop 失败则保留
+mode `0600` 的恢复材料并让门槛失败。
+
 ## 什么时候必须跑 lab
 
 宣称下列改动具备 runtime 覆盖前，应运行 `make lab-test`：
@@ -76,6 +106,27 @@ make lab-down`。`require_cached_sudo` 会在 `sudo -n true` 失败时内部执�
 仍保留 `192.168.50.1`，macOS 可能把 `192.168.50.0/24` 的回程路由选到错误接口，
 表现为 `dig @192.168.50.1 example.com A` timeout，而 dnsmasq 日志仍显示收到了
 查询。先运行 `make real-device-stop`，或手动删除重复地址。
+
+## 可复用的 Lab 故障边界
+
+- `tests/lab/lima/client.yaml` 的任何变化都会让 Lima 重建客户端。VZ 冷启动可能
+  静默约两分钟，再从 vsock SSH 回退到 usernet forwarder 并进入 `READY`。
+  在提前终止前检查 `limactl list` 和 `~/.lima/<client>/ha.stderr.log`。
+- 每次启动/清理都要把 guest resolver 恢复到 Lima 控制网关，并保证 guest hostname
+  可解析。`sudo: unable to resolve host` 或对已停止 `192.168.50.1` 的 DNS 查询
+  是 provisioning/control-plane 失败，不是数据面证据。
+- `omg0` 必须由 `05-open-mihomo-gateway-lab.network` 在 netplan 生成文件之前单一
+  接管。重复默认路由表示存在竞争管理者；IPv6 READY 必须是非 `tentative` / 非
+  `dadfailed` 且 `preferred_lft` 为正的 ULA。
+- 不可达的 `runtime/lab/proxy.env` 和残缺的专用 Go module cache 都在 patched
+  Mihomo 建置前发生。先看 `runtime/lab/logs/mihomo-build.log`；脚本会对 Go mirror
+  绕过旧代理，并且只在确认专用 cache 缺文件时清理并重试一次。
+- agent 沙箱里的 macOS `sysctl` permission error 是环境权限信号。需要
+  host-network 结论时，在已批准的同一 PTY 重跑真实门槛。
+- VZ 停止期间的 `use of closed network connection` 只有在没有后续
+  `has shut down` / `lab network stopped` 时才算清理失败。
+- 只检查当次新生成的 `artifacts/lab/<timestamp>`。每个 IPv6 运行会在开始时
+  清除可选 egress fixture 的旧日志，避免用历史命中完成新断言。
 
 ## TUN 验收信号
 

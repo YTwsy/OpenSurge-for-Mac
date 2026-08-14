@@ -93,7 +93,7 @@ done
 
 if [[ -n "${OPENSURGE_CODESIGN_IDENTITY:-}" ]]; then
   codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Library/PrivilegedHelperTools/com.opensurge.helper"
-  codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PKG_SCRIPTS/omg-recovery" "$APP_ROOT/bin/omg" "$APP_ROOT/bin/opensurge-install-config" "$APP_ROOT/share/opensurge-control"
+  codesign --force --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PKG_SCRIPTS/omg-recovery" "$APP_ROOT/bin/omg" "$APP_ROOT/bin/opensurge-install-config" "$APP_ROOT/bin/opensurge-network" "$APP_ROOT/share/opensurge-control"
   codesign --force --deep --options runtime --timestamp --sign "$OPENSURGE_CODESIGN_IDENTITY" "$PAYLOAD/Applications/OpenSurge.app"
 fi
 

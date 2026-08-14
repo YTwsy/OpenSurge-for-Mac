@@ -45,5 +45,9 @@ if [[ -x "$ROOT/bin/omg" && -f "$ROOT/config.yaml" ]]; then
   "$RECOVERY_CLI" stop --config "$ROOT/config.yaml"
 fi
 
+if [[ -f "$ROOT/runtime/sleep-prevention-owned" ]]; then
+  /usr/bin/pmset -a disablesleep 0
+  rm -f "$ROOT/runtime/sleep-prevention-owned"
+fi
 launchctl bootout system/com.opensurge.helper 2>/dev/null || true
 exit 0

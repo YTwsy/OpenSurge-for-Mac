@@ -17,10 +17,11 @@ type policySections struct {
 	preRules  []string
 	dedicated []string
 	defaults  []string
+	ipv6      bool
 }
 
 func renderPolicySections(cfg config.Config, imported *importedProfile) (string, error) {
-	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN, cfg.Transparent.TUNIPv6 != config.TUNIPv6Off)
 	if err != nil {
 		return "", err
 	}
@@ -40,7 +41,7 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 	return composeManagedPolicySections(cfg, sections, localRouting), nil
 }
 
-func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesActive bool) (policySections, error) {
+func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesActive bool, ipv6 bool) (policySections, error) {
 	if bundle == nil && strings.TrimSpace(path) == "" {
 		return policySections{}, nil
 	}
@@ -51,14 +52,21 @@ func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesA
 		}
 		bundle = &loaded
 	}
-	return policySections{
+	sections := policySections{
 		bundle:    bundle,
 		groups:    bundle.Compiled.SelectorGroups,
 		providers: bundle.Compiled.RuleProviders,
 		preRules:  bundle.Compiled.OverrideRules,
 		dedicated: bundle.Compiled.DedicatedRules,
 		defaults:  bundle.Compiled.DefaultRules,
-	}, nil
+		ipv6:      ipv6,
+	}
+	if ipv6 {
+		sections.preRules = addIPv6IdentityRules(sections.preRules, bundle.Compiled.Devices)
+		sections.dedicated = addIPv6IdentityRules(sections.dedicated, bundle.Compiled.Devices)
+		sections.defaults = addIPv6IdentityRules(sections.defaults, bundle.Compiled.Devices)
+	}
+	return sections, nil
 }
 
 func composeManagedPolicySections(cfg config.Config, policy policySections, localRouting localRoutingGeneratedPolicy) string {
@@ -67,6 +75,9 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 		out.WriteString("proxies:\n")
 		out.WriteString("  - name: " + yamlQuote(cfg.UpstreamProxy.Name) + "\n")
 		out.WriteString("    type: " + cfg.UpstreamProxy.Type + "\n")
+		if cfg.UpstreamProxy.Type == "socks5" {
+			out.WriteString("    udp: true\n")
+		}
 		out.WriteString("    server: " + yamlQuote(cfg.UpstreamProxy.Server) + "\n")
 		out.WriteString(fmt.Sprintf("    port: %d\n", cfg.UpstreamProxy.Port))
 		if cfg.UpstreamProxy.Username != "" {
@@ -98,7 +109,8 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 		out.WriteString("\n")
 	}
 
-	rules := append([]string{}, localRouting.Rules...)
+	rules := routerBypassIPv6RejectRules(policy)
+	rules = append(rules, localRouting.Rules...)
 	rules = append(rules, orderedDevicePreRules(policy)...)
 	if cfg.UpstreamProxy.Enabled {
 		rules = append(rules, "DOMAIN,"+cfg.UpstreamProxy.MatchDomain+",open-surge-egress")
@@ -118,7 +130,8 @@ func composeImportedPolicySections(imported *importedProfile, policy policySecti
 	if len(policy.providers) > 0 {
 		appendImportedRuleProviders(imported, policy.providers)
 	}
-	preRules := append([]string{}, localRouting.Rules...)
+	preRules := routerBypassIPv6RejectRules(policy)
+	preRules = append(preRules, localRouting.Rules...)
 	preRules = append(preRules, orderedDevicePreRules(policy)...)
 	if err := composeImportedRules(imported.sections["rules"], preRules, policy.defaults); err != nil {
 		return "", err
@@ -264,6 +277,29 @@ var dedicatedLocalCIDRs = []string{
 	"224.0.0.0/4",
 }
 
+// Mihomo's IN-USER rule treats '/' as a separator between multiple accepted
+// users. Device policy group names intentionally use device/<id>/..., but the
+// packet listener identity must therefore use a delimiter-free namespace so a
+// complete device identity remains one rule value.
+func deviceInboundUser(deviceID string) string { return "device:" + deviceID }
+
+// Router bypass is IPv4-only. Keep the packet-listener identity solely to
+// reject IPv6 before local-Mac, imported, global, or ordinary device rules can
+// select an OpenSurge egress for this device.
+func routerBypassIPv6RejectRules(policy policySections) []string {
+	if policy.bundle == nil || !policy.ipv6 {
+		return nil
+	}
+	rules := []string{}
+	for _, managed := range policy.bundle.Compiled.Devices {
+		if managed.GatewayTarget != device.GatewayTargetUpstreamRouter || managed.MAC == "" {
+			continue
+		}
+		rules = append(rules, fmt.Sprintf("AND,((IN-TYPE,TUN),(IN-USER,%s)),REJECT", deviceInboundUser(managed.ID)))
+	}
+	return rules
+}
+
 // Dedicated device egress is a public-Internet routing choice. Keep local,
 // link-local, carrier-grade NAT, and multicast destinations direct before any
 // device-owned override or catch-all selector so gateway and LAN access cannot
@@ -278,11 +314,41 @@ func orderedDevicePreRules(policy policySections) []string {
 			for _, cidr := range dedicatedLocalCIDRs {
 				rules = append(rules, fmt.Sprintf("AND,((SRC-IP-CIDR,%s/32),(IP-CIDR,%s)),DIRECT", managed.IPv4, cidr))
 			}
+			if policy.ipv6 && managed.MAC != "" {
+				user := deviceInboundUser(managed.ID)
+				// Do not direct the whole ULA space: Mihomo's fake IPv6 pool is
+				// itself ULA. The downstream /64 is the only product-owned ULA
+				// segment that is always local.
+				for _, cidr := range []string{config.DownstreamIPv6Prefix, "fe80::/10", "ff00::/8"} {
+					rules = append(rules, fmt.Sprintf("AND,((IN-USER,%s),(IP-CIDR6,%s)),DIRECT", user, cidr))
+				}
+			}
 		}
 	}
 	rules = append(rules, policy.preRules...)
 	rules = append(rules, policy.dedicated...)
 	return rules
+}
+
+func addIPv6IdentityRules(rules []string, devices []device.CompiledDevice) []string {
+	if len(rules) == 0 || len(devices) == 0 {
+		return rules
+	}
+	out := make([]string, 0, len(rules)*2)
+	for _, rule := range rules {
+		out = append(out, rule)
+		for _, managed := range devices {
+			if managed.MAC == "" {
+				continue
+			}
+			needle := "SRC-IP-CIDR," + managed.IPv4 + "/32"
+			if strings.Contains(rule, needle) {
+				out = append(out, strings.ReplaceAll(rule, needle, "IN-USER,"+deviceInboundUser(managed.ID)))
+				break
+			}
+		}
+	}
+	return out
 }
 
 func validateImportedPolicySections(inventory importedProfileInventory, policy policySections) error {

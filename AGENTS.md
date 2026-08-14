@@ -1,22 +1,25 @@
 # Agent 指南
 
-OpenSurge for Mac 的最终目标，是成为一个开源的 Surge for Mac 风格
-macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力是全屋代理
-网关：Mac 为下游局域网提供 DHCP/DNS，mihomo 作为当前代理引擎，macOS
-网络能力负责 NAT、转发与透明路由。
+OpenSurge for Mac 是一个开源的 Surge for Mac 风格 macOS 网关与控制面。
+面向用户的主要操作入口已经是 React Web GUI 与 SwiftUI 菜单栏 App；`omg`
+CLI 保留为运维、诊断、自动化和恢复接口。核心能力是全屋代理网关：Mac 为
+下游设备承担网关职责，并按拓扑提供 DHCP/DNS；mihomo 作为当前代理引擎，
+macOS 网络能力负责 NAT、转发与透明路由。
 
 这个文件是 coding agent 进入本仓库时的第一站。凡是改动网关行为、网络
 验证、配置语义或项目定位，都应先读这里。
 
 ## 先读这些
 
-1. 读 `README.md`，了解面向用户的范围和当前 CLI 工作流。
+1. 读 `README.md`，了解面向用户的范围和当前 App/CLI 工作流。
 2. 读 `docs/agent-wiki/wiki/index.md`，获取 agent 专用项目上下文。
 3. 如果改网关行为，读
    `docs/agent-wiki/wiki/concepts/gateway-lifecycle.md`。
 4. 如果改透明代理，读
    `docs/agent-wiki/wiki/concepts/macos-tun-transparent-proxy.md`。
-5. 如果判断测试或验收门槛，读
+5. 如果改下游 IPv6，读
+   `docs/agent-wiki/wiki/concepts/downstream-ipv6-takeover.md`。
+6. 如果判断测试或验收门槛，读
    `docs/agent-wiki/wiki/concepts/validation-gates.md`。
 
 ## 产品方向
@@ -25,8 +28,12 @@ macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力�
 - 当前代理引擎是 `mihomo`，它不是产品名。
 - 核心网关模型是：dnsmasq 提供 DHCP/DNS，mihomo 提供代理能力，pf
   提供 NAT，sysctl 管理 macOS IPv4 forwarding 状态。
-- 长期方向是：Mac-native、可审计、带透明路由、可复现实验室验证，并逐步
-  具备更友好的控制面。
+- 实验性的下游 IPv6 使用 dnsmasq RA/SLAAC/RDNSS 或手工 ULA 接入，并通过
+  macOS BPF broker 与本项目补丁构建的 mihomo `opensurge-packet`/gVisor 数据面处理。
+- Web GUI 是主要操作控制面；菜单栏 App 负责状态、恢复提醒和入口，CLI 负责
+  运维、诊断、自动化与恢复。三者应复用现有 Go 业务规则，不建立平行业务实现。
+- 工程方向是：Mac-native、可审计、带透明路由，并以可复现实验室验证约束
+  高风险网络能力。
 
 不要把产品重新命名为 mihomo。`omg` 与 `open-mihomo-gateway` 是当前实现期
 遗留的技术命名，除非任务明确要求迁移，否则不要在品牌层面扩大它们。
@@ -36,9 +43,10 @@ macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力�
 - TUN 是 macOS 上受支持的透明代理路径。
 - 除非项目明确重新打开该决策，否则 `mihomo.redir_port` 与
   `pf.redirect_tcp_to` 必须保持 inactive。
+- 下游 IPv6 ingress 不进入 macOS 系统 TUN，但仍要求整体
+  `transparent.mode: "tun"`；共享 L2 必须消除竞争 IPv6 RA/默认路由。
 - 高风险网络改动需要实验室验证，不能只依赖单元测试。
-- 结论必须精确说明是否实际运行了 `make lab-test` 或
-  `make lab-test-tun`。
+- 结论必须精确说明实际运行了哪些对应门槛。
 
 ## 验证
 
@@ -51,6 +59,11 @@ macOS 网关与控制面。当前 CLI 只是 MVP 形态；真正的核心能力�
 涉及透明代理的改动，需要用 `make lab-test-tun` 才能宣称 TUN 透明代理路径被
 验证。这个门槛会保持客户端无显式代理配置，并要求 HTTPS 流量出现在 mihomo
 TUN 路径的日志中。
+
+涉及下游 IPv6 RA/SLAAC/RDNSS、BPF broker、patched mihomo packet listener、设备身份
+或停止撤销的改动，按拓扑运行 `make lab-test-ipv6-userspace`、
+`make lab-test-ipv6-same-wifi` 或 `make lab-test-ipv6-same-lan`，才能宣称对应
+host-network IPv6 路径已验证。
 
 如果沙箱阻止 Go cache 写入，把 `GOCACHE` 指向 `/private/tmp` 下的路径。
 

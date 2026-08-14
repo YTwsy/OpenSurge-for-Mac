@@ -135,6 +135,10 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.DHCP.LeaseTime = value
 	case "dhcp.domain":
 		cfg.DHCP.Domain = value
+	case "dhcp.bypass_gateway":
+		cfg.DHCP.BypassGateway = value
+	case "dhcp.bypass_dns":
+		cfg.DHCP.BypassDNS = splitCommaSeparated(value)
 	case "device_policy.file":
 		cfg.DevicePolicy.File = value
 	case "device_policy.protected_ipv4":
@@ -149,6 +153,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.DNS.Port = port
 	case "dns.upstream":
 		cfg.DNS.Upstream = value
+	case "dns.ipv6":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("dns.ipv6 must be a boolean")
+		}
+		cfg.DNS.IPv6 = enabled
 	case "mihomo.binary":
 		cfg.Mihomo.Binary = value
 	case "mihomo.config":
@@ -205,6 +215,22 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("transparent.tun_strict_route must be a boolean")
 		}
 		cfg.Transparent.TUNStrictRoute = enabled
+	case "transparent.tun_ipv6":
+		cfg.Transparent.TUNIPv6 = strings.ToLower(value)
+	case "transparent.ipv6_shared_l2_ready":
+		ready, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("transparent.ipv6_shared_l2_ready must be a boolean")
+		}
+		cfg.Transparent.IPv6SharedL2Ready = ready
+	case "transparent.ipv6_packet_broker_binary":
+		cfg.Transparent.IPv6PacketBrokerBinary = value
+	case "transparent.ipv6_packet_mtu":
+		mtu, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("transparent.ipv6_packet_mtu must be a number")
+		}
+		cfg.Transparent.IPv6PacketMTU = mtu
 	case "local_system_proxy.enabled":
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {

@@ -44,11 +44,14 @@ runtime:
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{cfg.DHCP.Binary, cfg.Mihomo.Binary, cfg.Mihomo.Config, cfg.Mihomo.Profile, cfg.DevicePolicy.File, cfg.Runtime.Dir} {
+	for _, path := range []string{cfg.DHCP.Binary, cfg.Mihomo.Binary, cfg.Mihomo.Config, cfg.Mihomo.Profile, cfg.DevicePolicy.File, cfg.Transparent.IPv6PacketBrokerBinary, cfg.Runtime.Dir} {
 		relative, err := filepath.Rel(root, path)
 		if err != nil || relative == ".." || len(relative) > 3 && relative[:3] == "../" {
 			t.Fatalf("path escaped install root: %s", path)
 		}
+	}
+	if want := filepath.Join(root, "bin", "opensurge-network"); cfg.Transparent.IPv6PacketBrokerBinary != want {
+		t.Fatalf("IPv6 packet broker path = %q, want %q", cfg.Transparent.IPv6PacketBrokerBinary, want)
 	}
 	if info, err := os.Stat(cfg.Mihomo.Profile); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("profile mode: info=%v err=%v", info, err)

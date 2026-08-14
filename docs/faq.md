@@ -1,7 +1,8 @@
 # OpenSurge for Mac FAQ
 
-This page records common v0.1.25 questions about reboot recovery, local-Mac
-connectivity, TUN startup, device identity, and per-device egress. Follow the
+This page records common v0.1.26 questions about reboot recovery, automatic
+Mihomo recovery, lid-closed operation, local-Mac connectivity, TUN startup,
+device identity, and per-device egress. Follow the
 [OpenSurge for Mac App User Guide](app-user-guide.md) for the complete install
 and DHCP recovery workflow.
 
@@ -16,6 +17,35 @@ does not signal the old PIDs, and does not change PF or forwarding owned by the
 current boot. Follow the page to restore the network or start the complete
 gateway again after cleanup. Do not use **Restart Mihomo only** in this state,
 because DHCP/DNS, PF, and forwarding were not restored with it.
+
+## Why did Mihomo refuse connections after the Mac woke up?
+
+A `connection refused` error from `127.0.0.1:9090` means the local Mihomo
+controller was not listening; it is not an ordinary proxy-node timeout. When
+the current-boot gateway runtime is still valid, v0.1.26 automatically makes
+one Mihomo-only recovery attempt. It validates the applied configuration,
+archives the old log, and restarts Mihomo without stopping DHCP/DNS, unloading
+PF, or changing IPv4 forwarding. A missing process triggers immediately; a
+refused controller must be observed twice to avoid reacting to a brief flap.
+
+No manual card appears while the runtime is healthy, being observed, or being
+recovered. **Restart Mihomo** appears on Connectivity only if the automatic
+attempt does not restore health. An interrupted runtime from a previous boot
+still requires **Safely Clear Old State** and a complete gateway restart.
+
+## How can OpenSurge keep running while the MacBook lid is closed?
+
+Enable **合盖保持运行** (Keep Running with Lid Closed) in the menu bar panel or
+Web GUI sidebar. It temporarily disables system sleep, including idle and
+lid-close sleep, independently of gateway state. The switch is off by default
+and is not persisted. Quitting OpenSurge, losing the Control Service, or
+rebooting the Mac releases OpenSurge's temporary ownership.
+
+Plain `caffeinate` does not override lid-close sleep, so OpenSurge uses the
+system-wide `pmset disablesleep` setting behind a live Helper lease and a
+persistent ownership marker. It refuses to take ownership if another tool has
+already disabled sleep. Lid-closed operation can significantly increase heat
+and battery drain; never place a running Mac in an unventilated bag.
 
 ## Downstream devices work, but the Mac itself has no network access
 
@@ -94,3 +124,22 @@ save, and reload. Never invent a MAC address.
 **Independent device egress** prioritizes the device's own public egress while
 keeping LAN and private destinations direct. The local Mac's
 **Rule / Fixed egress / Direct** control does not change downstream policies.
+
+## How do I let one device bypass the OpenSurge gateway?
+
+This option is available only in **Same-LAN DHCP takeover**. Confirm the
+main-router gateway and DNS under **Network Settings**, then open
+**Devices → Device egress**, change that device's routing mode to **IPv4 direct
+via main router**, save, and reload. OpenSurge still reserves and assigns the
+fixed IPv4, while DHCP sends that MAC the main router as its Router and DNS.
+
+Reconnect the device after applying so the new IPv4 Router and DNS take effect.
+Its IPv4 proxying, ordinary device rules, and OpenSurge traffic accounting are
+paused; its Profile and rules return after switching back and renewing the
+lease.
+
+When downstream IPv6 is enabled, OpenSurge blocks IPv6 egress from that device
+on the packet path without disabling IPv6 for other devices. The client may
+still show a SLAAC address or RDNSS; this means **IPv6 egress blocked**, not
+that IPv6 is absent. Disable the main-router RA/DHCPv6 or enforce RA Guard,
+otherwise the client can bypass OpenSurge and use the main router over IPv6.

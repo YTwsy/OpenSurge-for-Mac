@@ -239,6 +239,55 @@ func TestValidateSameWiFiDHCPGatewayMode(t *testing.T) {
 	}
 }
 
+func TestValidateDevicePolicyCandidateEnforcesRouterBypassTopology(t *testing.T) {
+	baseConfig := func() Config {
+		cfg := Default()
+		cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
+		cfg.Gateway.Interface = "en0"
+		cfg.Gateway.UpstreamInterface = "en0"
+		cfg.Gateway.LANIP = "192.168.1.20"
+		cfg.DHCP.Enabled = true
+		cfg.DHCP.RangeStart = "192.168.1.120"
+		cfg.DHCP.RangeEnd = "192.168.1.199"
+		cfg.DHCP.BypassGateway = "192.168.1.1"
+		cfg.DHCP.BypassDNS = []string{"192.168.1.1", "1.1.1.1"}
+		cfg.DNS.Listen = cfg.Gateway.LANIP
+		cfg.Transparent.Mode = TransparentModeTUN
+		return cfg
+	}
+	policy := device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices: []device.ManagedDevice{{
+			ID: "console", MAC: "aa:bb:cc:dd:ee:05", IPv4: "192.168.1.190", Profile: "home", GatewayTarget: device.GatewayTargetUpstreamRouter,
+		}},
+	}
+
+	if err := ValidateDevicePolicyCandidate(baseConfig(), policy); err != nil {
+		t.Fatalf("valid router bypass rejected: %v", err)
+	}
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{name: "missing gateway", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "" }, want: "requires dhcp.bypass_gateway"},
+		{name: "missing DNS", edit: func(cfg *Config) { cfg.DHCP.BypassDNS = nil }, want: "requires at least one dhcp.bypass_dns"},
+		{name: "different subnet", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "192.168.2.1" }, want: "must remain in gateway LAN"},
+		{name: "inside pool", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "192.168.1.150" }, want: "must not be inside the DHCP range"},
+		{name: "unsupported topology", edit: func(cfg *Config) { cfg.Gateway.Mode = GatewayModeSameLAN; cfg.DHCP.Enabled = false }, want: "only available in gateway.mode same_wifi_dhcp"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := baseConfig()
+			tt.edit(&cfg)
+			err := ValidateDevicePolicyCandidate(cfg, policy)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("ValidateDevicePolicyCandidate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateAcceptsUpstreamProxy(t *testing.T) {
 	cfg := Default()
 	cfg.UpstreamProxy.Enabled = true
@@ -377,6 +426,56 @@ func TestValidateRejectsInvalidUpstreamProxy(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Validate() error = %q, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateDownstreamIPv6TakeoverContract(t *testing.T) {
+	valid := Default()
+	valid.Transparent.Mode = TransparentModeTUN
+	valid.Transparent.TUNIPv6 = TUNIPv6Always
+	if err := Validate(valid); err != nil {
+		t.Fatalf("Validate(valid IPv6 takeover) error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{"same LAN without shared-L2 readiness", func(cfg *Config) {
+			cfg.Gateway.Mode = GatewayModeSameLAN
+			cfg.DHCP.Enabled = false
+			cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
+		}, "ipv6_shared_l2_ready"},
+		{"transparent off", func(cfg *Config) { cfg.Transparent.Mode = TransparentModeOff }, "requires transparent.mode"},
+		{"missing broker", func(cfg *Config) { cfg.Transparent.IPv6PacketBrokerBinary = "" }, "ipv6_packet_broker_binary is required"},
+		{"MTU too small", func(cfg *Config) { cfg.Transparent.IPv6PacketMTU = 1279 }, "ipv6_packet_mtu must be between"},
+		{"unknown mode", func(cfg *Config) { cfg.Transparent.TUNIPv6 = "sometimes" }, "tun_ipv6 must be off, auto, or always"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := valid
+			tt.edit(&cfg)
+			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+
+	for _, mode := range []string{GatewayModeSameLAN, GatewayModeSameWiFiDHCP} {
+		t.Run(mode+" with shared-L2 readiness", func(t *testing.T) {
+			cfg := valid
+			cfg.Gateway.Mode = mode
+			cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
+			cfg.Transparent.IPv6SharedL2Ready = true
+			cfg.DHCP.Enabled = mode == GatewayModeSameWiFiDHCP
+			if mode == GatewayModeSameWiFiDHCP {
+				cfg.Gateway.LANIP = "192.168.50.1"
+			}
+			if err := Validate(cfg); err != nil {
+				t.Fatalf("Validate(%s shared-L2 IPv6) error = %v", mode, err)
 			}
 		})
 	}

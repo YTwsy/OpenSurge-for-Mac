@@ -1,0 +1,30 @@
+diff --git a/listener/parse.go b/listener/parse.go
+--- a/listener/parse.go
++++ b/listener/parse.go
+@@ -74,0 +75,7 @@ func ParseListener(mapping map[string]any) (C.InboundListener, error) {
++	case "opensurge-packet":
++		packetOption := &IN.OpenSurgePacketOption{MTU: 1500}
++		err = decoder.Decode(mapping, packetOption)
++		if err != nil {
++			return nil, err
++		}
++		listener, err = IN.NewOpenSurgePacket(packetOption)
+diff --git a/config/config.go b/config/config.go
+--- a/config/config.go
++++ b/config/config.go
+@@ -1649,0 +1650,9 @@ func parseAuthentication(rawRecords []string) []auth.AuthUser {
++func hasOpenSurgePacketListener(listeners []map[string]any) bool {
++	for _, listener := range listeners {
++		if listener["type"] == "opensurge-packet" {
++			return true
++		}
++	}
++	return false
++}
++
+@@ -1651 +1660,4 @@ func parseIPV6(rawCfg *RawConfig) {
+-	if !rawCfg.IPv6 || !verifyIP6() {
++	// OpenSurge's userspace packet listener is an IPv6 data plane in its own
++	// right. DNS IPv6 is also an explicit operator choice. Neither must be
++	// erased merely because the macOS host lacks a native IPv6 address.
++	if !rawCfg.IPv6 || (!rawCfg.DNS.IPv6 && !hasOpenSurgePacketListener(rawCfg.Listeners) && !verifyIP6()) {

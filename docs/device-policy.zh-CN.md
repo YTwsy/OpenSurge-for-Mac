@@ -34,8 +34,8 @@ reservation 可位于动态 DHCP 池内，`devices --format json` 会显式标�
 
 项目不内置儿童、影音、IoT 或第三方规则内容；规则和模板由操作者自己提供。JSON 中有：
 
-- `devices`：稳定 `id`、可选显示名称 `name`、MAC、固定 IPv4、profile 与明确的
-  `egress_mode`；
+- `devices`：稳定 `id`、可选显示名称 `name`、MAC、固定 IPv4、profile、
+  `gateway_target` 与明确的 `egress_mode`；
 - `profiles`：默认 selector 候选项与设备覆盖规则；
 - `templates`：可复用的 profile 默认值和规则片段；
 - `rule_sets`：inline 或 HTTP mihomo rule-provider。
@@ -82,6 +82,19 @@ reservation 可位于动态 DHCP 池内，`devices --format json` 会显式标�
 Web GUI 新登记设备默认使用 `inherit_global`。旧文件没有 `egress_mode` 时不会被静默改变，
 而会以 `legacy_fallback` 保留原来的“全局规则优先、设备出口兜底”语义；GUI 会明确提示
 用户选择一种新模式。
+
+`gateway_target` 默认为 `opensurge`。只有 `same_wifi_dhcp`（局域网 DHCP
+接管）可显式选择 `upstream_router`：dnsmasq 仍按 MAC 为设备分配登记的固定
+IPv4，但通过 tag 向它单独下发 `dhcp.bypass_gateway` 和
+`dhcp.bypass_dns`。此时不生成该设备的代理 selector 或普通设备规则，Profile
+和规则只保留不删除；切回 `opensurge` 后重新生效。这是仅限 IPv4 的绕行：启用
+下游 IPv6 时，packet listener 仍保留该设备基于 MAC 的 `device:<id>` 身份，只用于
+最优先的 `IN-TYPE,TUN + IN-USER,REJECT`，其他设备继续使用各自正常的 IPv6 策略。该设备
+仍可能保留 SLAAC 地址或 RDNSS，因此 UI 只显示“IPv6 出站已阻止”，不声称设备
+没有 IPv6。必须关闭主路由 RA/DHCPv6 或由 RA Guard 消除，否则 IPv6 仍可能完全
+绕过 OpenSurge。切换后必须让设备续租或重新连接网络，新的 IPv4 Router/DNS 才会
+生效。该选项必须有真实 MAC，且主路由网关必须与 Mac 网关处于同一 `/24`、不得
+位于 DHCP 动态地址池内。
 
 只有跟随设备使用的 Profile 仍会保留 `default_policies` 作为以后切换独立模式的配置，
 但这些未渲染的候选不会参与当前 imported profile 引用校验；真正生成独立或兼容 selector
@@ -202,9 +215,12 @@ IP-only 登记，GUI 会按其原固定 IPv4 查找唯一、有效且未被其�
 没有当前观察证据的离线设备仍可预设 selector，但会明确提示“设备按登记 IP 接入后生效”。
 多个同 MAC 活跃 IPv4、MAC 冲突或仅有不完整观察都不会触发自动猜测或静默改写。
 
-当前设备策略仍以 IPv4 `SRC-IP-CIDR` 执行。DHCP 模式提供 MAC 绑定租约的精确身份证据；
-`same_lan` 只提供静态登记、当前流量与可选 ARP 邻居观察，不把这些证据冒充 DHCP 验证。
-尚未提供 IPv6 设备身份、mihomo 内 MAC 匹配或预置第三方规则内容。
+现有系统 TUN 设备策略路径仍以 IPv4 `SRC-IP-CIDR` 执行。下游 IPv6 packet path
+在三种受支持拓扑中都会保留观察到的 source MAC，并在 patched Mihomo 中映射为
+`IN-USER(device:<id>)` 复用设备规则；`upstream_router` 设备是例外，只获得最优先的
+IPv6 出站 `REJECT`。DHCP 模式提供 MAC 绑定租约的精确身份证据；`same_lan` 只提供
+静态登记、当前流量与可选邻居观察，不把这些证据冒充 DHCP 验证。packet path 中的
+MAC 是路由身份，不是防伪造认证。当前仍不预置第三方规则内容。
 
 数据面 gate：
 

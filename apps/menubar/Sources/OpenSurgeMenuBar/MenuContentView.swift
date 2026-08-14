@@ -90,10 +90,30 @@ struct MenuContentView: View {
                 }
             )).font(.caption)
 
+            Toggle("合盖保持运行", isOn: Binding(
+                get: { model.status?.sleepPrevention?.active == true },
+                set: { value in Task { await model.setSleepPrevention(value) } }
+            ))
+                .font(.caption)
+                .disabled(model.status == nil || model.isChangingSleepPrevention)
+                .help("临时禁用系统睡眠，包括合盖睡眠；默认关闭，退出 OpenSurge 或重启 Mac 后自动释放。")
+
+            if model.status?.sleepPrevention?.active == true {
+                Label("合盖后仍会运行，请注意耗电与散热，不要放入不通风的包内。", systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let sleepError = model.status?.sleepPrevention?.error {
+                Text(sleepError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Divider()
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
-                    Text("版本 \(model.currentVersion)")
+                    Text("版本 \(releaseDisplayVersion(model.currentVersion))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()

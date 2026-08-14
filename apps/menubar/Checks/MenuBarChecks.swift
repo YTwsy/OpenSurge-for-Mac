@@ -53,6 +53,18 @@ struct MenuBarChecks {
             installedReleaseVersion(releaseTag: nil, shortVersion: "0.1.23") == "0.1.23",
             "older packages without a full release tag must retain numeric-version fallback"
         )
+        try require(
+            releaseDisplayVersion("0.2.0") == "0.2.0 · Wind Rose",
+            "v0.2 stable releases must show the Wind Rose series codename"
+        )
+        try require(
+            releaseDisplayVersion("0.2.1-rc.2") == "0.2.1-rc.2 · Wind Rose",
+            "v0.2 release candidates must show the Wind Rose series codename"
+        )
+        try require(
+            releaseDisplayVersion("0.3.0") == "0.3.0",
+            "other release series must not inherit the Wind Rose codename"
+        )
         CheckURLProtocol.handler = { request in
             try require(request.url?.absoluteString == "https://api.github.com/repos/YTwsy/OpenSurge-for-Mac/releases/latest", "latest release path mismatch")
             try require(request.value(forHTTPHeaderField: "Accept") == "application/vnd.github+json", "GitHub API accept header missing")
@@ -185,6 +197,30 @@ struct MenuBarChecks {
         try require(stopped.canQuitOpenSurge && openSurgeQuitWarning(for: stopped).contains("root Helper 仍保持空闲加载"), "stopped gateway must allow the explicit OpenSurge quit path")
         try require(!active.canQuitOpenSurge && !recovery.canQuitOpenSurge, "active or recovery state must block the OpenSurge quit path")
         try require(!active.canUninstall && recovery.canUninstall, "uninstall must depend only on whether the gateway is stopped")
+        var staleSleepStatus = stopped
+        staleSleepStatus.sleepPrevention = SleepPreventionStatus(enabled: false, active: false, error: nil)
+        var currentSleepStatus = stopped
+        currentSleepStatus.sleepPrevention = SleepPreventionStatus(enabled: true, active: true, error: nil)
+        let protectedSleepStatus = menuBarStatusAfterRefresh(
+            staleSleepStatus,
+            currentStatus: currentSleepStatus,
+            requestSleepGeneration: 1,
+            currentSleepGeneration: 2
+        )
+        try require(
+            protectedSleepStatus.sleepPrevention?.active == true,
+            "a refresh started before sleep-prevention mutation completed must not overwrite its result"
+        )
+        let currentSleepRefresh = menuBarStatusAfterRefresh(
+            staleSleepStatus,
+            currentStatus: currentSleepStatus,
+            requestSleepGeneration: 2,
+            currentSleepGeneration: 2
+        )
+        try require(
+            currentSleepRefresh.sleepPrevention?.active == false,
+            "a current-generation refresh must adopt the Control Service sleep-prevention state"
+        )
         let forwardingAlreadyEnabled = MenuBarStatus(schemaVersion: 1, revision: "r", gateway: "stopped", topology: "isolated_lan", lanIp: "192.168.50.1", dhcp: "stopped", mihomo: "stopped", pfAnchor: "unloaded", forwarding: "enabled", clientCount: 0, drift: false, doctorHealthy: true, recoveryRequired: false, recoveryStage: nil, warnings: [], errorCode: nil)
         try require(!forwardingAlreadyEnabled.gatewayServicesActive && forwardingAlreadyEnabled.canQuitOpenSurge && forwardingAlreadyEnabled.canUninstall, "host forwarding must not block quit or uninstall")
 

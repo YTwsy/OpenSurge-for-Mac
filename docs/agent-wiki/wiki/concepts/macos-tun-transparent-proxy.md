@@ -11,6 +11,12 @@ transparent:
   mode: "tun"
 ```
 
+这里的决策仍约束 IPv4 下游流量与 Mac 本机透明代理。三种受支持拓扑的实验性下游
+IPv6 在物理 Ethernet ingress 使用 BPF → Unix sideband → patched Mihomo
+`opensurge-packet`/gVisor，以保留 source MAC；它不会重新启用 redir/PF redirect，
+也不改变 `transparent.mode: "tun"` 作为整体网关前置条件。详见
+[下游 IPv6 接管](downstream-ipv6-takeover.md)。
+
 旧的 redir/PF redirect 路线不是当前 active implementation path：
 
 ```yaml

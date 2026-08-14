@@ -21,6 +21,15 @@ mihomo YAML”。
 - `domains`、`ip_cidrs`、`protocols`、`ports` 和 `rule_sets` 可组合；字段之间为
   AND，同字段多个值为 OR。
 - `templates` 只复用默认候选与规则片段；项目不预置儿童、影音或第三方规则内容。
+- `gateway_target` 默认为 `opensurge`。只有 `same_wifi_dhcp` 可选
+  `upstream_router`：保留 MAC 固定租约，但 dnsmasq 通过 tag 向该客户端下发
+  `dhcp.bypass_gateway` 和 `dhcp.bypass_dns`。这是 IPv4-only 绕行：编译结果不为其
+  生成代理 selector/普通设备规则，但必须保留 Profile、规则和 `egress_mode`，切回后
+  恢复。若下游 IPv6 开启，仍保留 MAC→`device:<id>` 映射，只在所有其他规则之前生成
+  `AND,((IN-TYPE,TUN),(IN-USER,device:<id>)),REJECT`；其他设备 IPv6 不受影响。
+  切换是 save-and-reload，且只有客户端 DHCP 续租/重连后新 IPv4 Router/DNS 才生效。
+  设备可能仍有 SLAAC/RDNSS，控制面只能写“IPv6 出站已阻止”。共享 L2 必须关闭主路由
+  RA/DHCPv6 或使用 RA Guard，否则 IPv6 会绕过 OpenSurge。
 
 Web GUI 的设备主路径不要求用户先理解这些复用对象：登记默认创建
 `<device-id>-policy` 私有 Profile，并默认选择 `inherit_global`。路由模式修改属于
@@ -108,6 +117,8 @@ applied snapshot/state digest 与 desired 收敛、精确 lease identity 仍成�
 `REJECT`。它不需要、也不会为
 操作者写的每条 domain/protocol/template 规则重复运行 Lab。
 
-当前策略执行只支持 IPv4 `SRC-IP-CIDR`。DHCP 模式提供 MAC 绑定租约证据；`same_lan`
-提供静态配置与近期流量/ARP 观察，但不冒充 DHCP identity。未提供 IPv6 设备身份或
-mihomo 内 MAC 匹配。
+系统 TUN 路径仍只用 IPv4 `SRC-IP-CIDR`。IPv6 packet path 在三种拓扑中把观察到的
+source MAC 映射成 patched Mihomo 的 `IN-USER(device:<id>)`；普通设备复用设备策略，
+`upstream_router` 设备只命中最优先的全 IPv6 `REJECT`。DHCP 模式提供 MAC 绑定租约
+证据；`same_lan` 提供静态配置与近期流量/邻居观察，但不冒充 DHCP identity。这里的
+MAC 是路由身份，不是防伪造认证。

@@ -1,7 +1,7 @@
-.PHONY: test build doctor status policy-control-test
+.PHONY: test build mihomo-build doctor status policy-control-test
 .PHONY: web-install web-build web-test control-build control-run menubar-build menubar-test gui-build gui-test gui-installer gui-notarize
 .PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
-.PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-test-tun-local-routing lab-test-tun-device-policy lab-down lab-destroy
+.PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-test-tun-local-routing lab-test-tun-device-policy lab-test-ipv6-userspace lab-test-ipv6-same-wifi lab-test-ipv6-same-lan lab-test-ipv6-imported-egress lab-down lab-destroy
 .PHONY: real-device-start-off real-device-start-tun real-device-start-tun-proxy
 .PHONY: real-device-stop real-device-status real-device-client-check
 .PHONY: same-lan-start-tun same-lan-start-tun-proxy same-lan-start-tun-imported-egress
@@ -17,6 +17,9 @@ test:
 
 build:
 	go build -o bin/omg ./cmd/omg
+
+mihomo-build:
+	./scripts/build-opensurge-mihomo.sh
 
 web-install:
 	cd web && pnpm install
@@ -94,6 +97,19 @@ lab-test-tun-local-routing:
 
 lab-test-tun-device-policy:
 	./tests/lab/lab.sh test-tun-device-policy
+
+lab-test-ipv6-userspace:
+	./tests/lab/lab.sh test-ipv6-userspace
+
+lab-test-ipv6-same-wifi:
+	./tests/lab/lab.sh test-ipv6-same-wifi
+
+lab-test-ipv6-same-lan:
+	./tests/lab/lab.sh test-ipv6-same-lan
+
+lab-test-ipv6-imported-egress:
+	@test -n "$(OMG_LAB_IPV6_REAL_PROFILE)" || (echo "usage: OMG_LAB_IPV6_REAL_PROFILE=/absolute/path/to/profile.yaml make lab-test-ipv6-imported-egress" >&2; exit 1)
+	./tests/lab/lab.sh test-ipv6-imported-egress
 
 lab-down:
 	./tests/lab/lab.sh down

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App Icon">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>Turn a Mac into a Surge-style whole-home transparent gateway with per-device routing—use it in same-LAN bypass-router mode, or take over DHCP/DNS automatically.</strong></p>
+  <p><strong>Turn a Mac into a Surge-style whole-home transparent gateway with per-device routing—onboard selected devices in same-LAN bypass-router mode, take over DHCP/DNS automatically, and optionally enable experimental downstream IPv6 takeover.</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
@@ -38,7 +38,8 @@ plane. Most users can start in same-LAN bypass-router mode: keep the main
 router's DHCP enabled, give selected devices stable IPv4 addresses, and point
 their gateway and DNS to the Mac. For automatic onboarding across an existing
 LAN, choose LAN DHCP takeover; for a separate AP, SSID, or VLAN, use an
-isolated downstream LAN.
+isolated downstream LAN. All three modes can optionally enable experimental downstream IPv6 takeover.
+
 
 Every mode supports independent egress policies for registered devices: use
 rule-based routing for both the phone and local Mac, route the game console
@@ -57,9 +58,13 @@ gateway or DNS changes.
   gateway-critical fields without replacing its nodes or rules.
 - Use the Web GUI and menu bar app to see which devices are active, how much
   traffic they are moving, and which egress chain they use.
+- Temporarily keep the Mac running with its lid closed from either UI. The
+  switch is off by default and applies only to the current OpenSurge run.
 
-Under the hood, dnsmasq provides DHCP/DNS, mihomo serves as the proxy engine,
-and macOS pf plus IPv4 forwarding provide the native gateway path.
+Under the hood, dnsmasq provides DHCP/DNS and mihomo serves as the proxy
+engine. IPv4 uses macOS pf plus forwarding for the native gateway path;
+experimental downstream IPv6 uses dnsmasq RA/SLAAC/RDNSS, a macOS BPF packet
+broker, and the userspace data plane in the OpenSurge-patched mihomo build.
 
 The repository is also designed as an
 [AI-agent-friendly engineering workspace](#an-ai-agent-friendly-engineering-workspace):
@@ -73,6 +78,8 @@ into the next engineering loop.
 
 - Use the macOS menu bar app to check status, receive recovery warnings, and
   open the local Web GUI.
+- Temporarily prevent idle and lid-close sleep independently of gateway state;
+  the non-persistent switch releases when OpenSurge quits or the Mac reboots.
 - Import sources, configure the network, route individual devices, check proxy
   health and connectivity, and inspect diagnostics from one control surface.
 - Follow a recovery state machine through same-LAN DHCP takeover startup,
@@ -87,6 +94,12 @@ common local-network, TUN, and device configuration questions, see the
 - Start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback.
 - Provide explicit proxying through mihomo `mixed-port`.
 - Provide transparent proxying through mihomo TUN on macOS.
+- In experimental downstream IPv6 mode, isolated-LAN and whole-LAN DHCP
+  takeover use dnsmasq RA/SLAAC/RDNSS for automatic onboarding, while
+  bypass-router mode uses manual ULAs. IPv6 traffic does not enter a macOS
+  system TUN; the BPF packet broker sends it to the OpenSurge-patched mihomo
+  gVisor data plane, which covers TCP, UDP, and QUIC carried over UDP/443 while
+  retaining MAC-backed device identity.
 - Switch **Rule / Global / Direct** for new local-Mac connections entering
   TUN or the explicit proxy without changing downstream devices. OpenSurge
   leaves macOS system-proxy settings unchanged by default, with an explicit
@@ -143,7 +156,7 @@ If you installed OpenSurge from a package, start with the
 [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 
 The repository now includes the loopback Go Control API, an embedded React Web
-GUI, and a read-only native SwiftUI menu bar launcher. For a development build:
+GUI, and a status-focused native SwiftUI menu bar launcher. For a development build:
 
 ```sh
 make web-install
@@ -154,8 +167,9 @@ make menubar-build
 
 The control service listens only on `127.0.0.1` and prints a one-time Web GUI
 bootstrap link. The menu bar app shows status and recovery warnings and opens
-the Web GUI; it deliberately has no gateway start/stop or policy-selection
-actions. It separates quitting only the menu bar app from quitting OpenSurge.
+the Web GUI. Apart from the independent temporary lid-closed-operation switch,
+it deliberately has no gateway start/stop or policy-selection actions. It
+separates quitting only the menu bar app from quitting OpenSurge.
 The latter is available only after the gateway data plane has stopped, and
 quits the menu bar app plus the user-level Control Service. The launchd-managed
 root Helper remains loaded and idle, so reopening OpenSurge needs no new
@@ -207,19 +221,79 @@ config, and unloads the root helper. The existing config,
 imported sources, policy data, and runtime history are kept;
 only a first installation seeds `config.yaml` from the packaged example.
 
-## Transparent proxying
+## Transparent proxying and downstream IPv6 takeover
 
-TUN is the supported transparent proxy path on macOS. Mihomo `redir-port` and
-PF TCP redirection are intentionally unsupported because the current Darwin
-build reports redir as unsupported at runtime. Keep `mihomo.redir_port` and
-`pf.redirect_tcp_to` at `0`; enable transparent proxying with
-`transparent.mode: "tun"`.
+OpenSurge uses two transparent data paths with different ingress mechanisms
+but shared mihomo rules and outbounds. Downstream IPv4 and local-Mac transparent
+proxying use the mihomo TUN mainline; experimental downstream IPv6 enters
+mihomo gVisor through the macOS BPF packet broker and the OpenSurge-patched
+`opensurge-packet` listener.
+
+Both paths require `transparent.mode: "tun"` as an overall gateway prerequisite,
+but downstream IPv6 traffic does not enter a macOS system utun. This does not
+reactivate `redir-port` or PF TCP redirection.
+
+### mihomo TUN mainline
+
+Downstream IPv4 and local-Mac transparent proxying use mihomo TUN. Mihomo
+`redir-port` and PF TCP redirection remain intentionally unsupported because
+the current Darwin build reports redir as unsupported at runtime. Keep
+`mihomo.redir_port` and `pf.redirect_tcp_to` at `0`.
 
 OpenSurge does not predict conflicts from existing utun interfaces or public
 routes before startup. It waits for mihomo to report the TUN runtime as ready.
 Failure gives the process a short cleanup window, rolls back the gateway
 runtime, and enriches the actual TUN error with the selected route interface
 and gateway. Two full-route TUNs are not supported by default.
+
+### Downstream IPv6 takeover (experimental)
+
+The Network page exposes two independent controls. `dns.ipv6` decides whether
+OpenSurge DNS answers AAAA queries and creates fake IPv6 addresses.
+`transparent.tun_ipv6` controls the downstream IPv6 gateway, SLAAC/RDNSS, and
+userspace packet path, with `off`, `auto`, and `always` modes. `auto` activates
+only when the upstream interface has both a public global IPv6 address (ULA
+does not count as public reachability) and an IPv6 default route. `always`
+establishes the downstream path even without native upstream IPv6.
+
+All three topologies require `transparent.mode: "tun"`. Isolated downstream
+LAN publishes RA/SLAAC/RDNSS automatically. Same-LAN DHCP takeover can do the
+same for the whole LAN after the main router's IPv6 RA/DHCPv6 is disabled (or
+RA Guard makes OpenSurge the only default-router provider) and
+`transparent.ipv6_shared_l2_ready: true` is confirmed. Both automatic modes
+use the standard Medium RA router preference. Bypass-router mode sends no RA:
+only clients manually configured with an OpenSurge ULA, the Mac's link-local
+default gateway and DNS address, and no competing router default route
+are enrolled. The Network page shows an IPv4/IPv6 fill-in card.
+
+This IPv6 data plane depends on the `opensurge-packet` listener added to mihomo
+by OpenSurge. The mihomo binary in OpenSurge packages is built from pinned
+upstream source after applying the packet-listener patch in
+[`patches/mihomo`](patches/mihomo/); it is not an unmodified upstream binary.
+Exact versions, licenses, and upstream sources are listed in
+[Third-Party Notices](THIRD_PARTY_NOTICES.md).
+
+Downstream IPv6 traffic does not enter a macOS system utun. The macOS BPF
+broker reads the IPv6 L3 packet and source MAC from the physical Ethernet frame
+and passes them through a mode-`0600` Unix datagram to the `opensurge-packet`
+listener. The listener injects the packet into mihomo gVisor, maps the MAC to
+`IN-USER(device:<id>)`, and reuses the existing device rules and outbounds.
+Return packets travel back through the broker to the downstream Ethernet. This
+path covers TCP and UDP. QUIC is carried over UDP/443; this is not a claim that
+arbitrary IPv6 protocols are proxied.
+
+Per-device **Direct via main router** in DHCP takeover bypasses only IPv4.
+When downstream IPv6 is enabled, IPv6 from that device that reaches the
+OpenSurge packet path receives a highest-priority `REJECT`; other devices keep
+their normal IPv6 policy. The client may still retain SLAAC addresses or RDNSS,
+so the UI says **IPv6 egress blocked** rather than claiming IPv6 is absent. If
+the main router still publishes RA, the client can bypass OpenSurge over IPv6;
+disable the main-router RA/DHCPv6 or enforce RA Guard.
+
+`always` does not invent public IPv6 connectivity. With no native upstream
+IPv6, fake IPv6 destinations can still use a proxy that supports the required
+traffic, while `DIRECT` to a real public IPv6 address has no upstream route.
+An HTTP-only proxy cannot carry UDP/QUIC.
 
 ## Mihomo profiles
 
@@ -485,6 +559,17 @@ egress paths, and enforce a device-level domain `REJECT`. Domain/protocol rule
 compilation, templates, and HTTP/MRS rule-provider configuration are covered by
 unit tests; they do not require one Lab run per operator-defined rule.
 
+When changing downstream RA/SLAAC, the BPF broker, the patched Mihomo packet
+listener, IPv6 device identity, or withdrawal on stop, run the topology gates:
+`make lab-test-ipv6-userspace`, `make lab-test-ipv6-same-wifi`, and
+`make lab-test-ipv6-same-lan`. Automatic-RA gates require two clients to
+obtain OpenSurge IPv6 addresses, Medium-preference default routes, and
+link-local DNS. The bypass-router gate requires manual ULAs, the Mac
+link-local default gateway and DNS, and no RA. All three use controlled local
+fixtures to verify TCP, a UDP request/response, a QUIC-shaped UDP carrier,
+per-device policy, and rollback. The QUIC check proves the UDP carrier, not a
+complete HTTP/3 handshake.
+
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
 checks `policies`, invalid and valid `policy-select`, persisted selection
@@ -533,6 +618,9 @@ make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
+make lab-test-ipv6-userspace
+make lab-test-ipv6-same-wifi
+make lab-test-ipv6-same-lan
 make lab-down
 ```
 

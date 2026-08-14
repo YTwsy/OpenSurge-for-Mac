@@ -10,6 +10,10 @@ dhcp:
   range_end: "192.168.50.200"
   lease_time: "12h"
   domain: "lan"
+  # Used only by same_wifi_dhcp devices whose gateway_target is
+  # "upstream_router". The router must stay outside the dynamic pool.
+  bypass_gateway: ""
+  bypass_dns: ""
 
 # Optional JSON control-plane file for fixed device leases and per-device
 # mihomo policy overlays. Leave empty unless device policy is enabled.
@@ -22,6 +26,8 @@ dns:
   # Recommended: dnsmasq -> mihomo fake-IP DNS. Use 1.1.1.1 only as an
   # explicit diagnostic resolver; TUN dns-hijack may still capture it.
   upstream: "127.0.0.1#1053"
+  # Controls AAAA answers independently from downstream IPv6 takeover.
+  ipv6: false
 
 mihomo:
   binary: "./bin/mihomo"
@@ -49,6 +55,12 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
+  # off | auto | always. Shared-L2 topologies additionally require the
+  # readiness assertion below; transparent.mode must be "tun".
+  tun_ipv6: "off"
+  ipv6_shared_l2_ready: false
+  ipv6_packet_broker_binary: "opensurge-network"
+  ipv6_packet_mtu: 1500
 
 local_system_proxy:
   # Optional compatibility layer for local Mac apps that honor HTTP/HTTPS

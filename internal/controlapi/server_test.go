@@ -326,6 +326,48 @@ func TestRecoveryTransitionsPersist(t *testing.T) {
 	}
 }
 
+func TestGatewayPlanWarnsOnlyForCompetingIPv6DefaultRoute(t *testing.T) {
+	server := newTestServer(t)
+	selfOnly := true
+	server.discoverNetwork = func(context.Context, string, string) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{
+			NetworkService:      "Wi-Fi",
+			Interface:           "en0",
+			IPv4:                "192.168.1.20",
+			SubnetMask:          "255.255.255.0",
+			Router:              "192.168.1.1",
+			DNS:                 []string{"192.168.1.1"},
+			IPv6Default:         true,
+			IPv6DefaultSelfOnly: selfOnly,
+		}, nil
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("self-only plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	var plan GatewayPlan
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 0 || !plan.Snapshot.IPv6DefaultSelfOnly {
+		t.Fatalf("self-only plan = %#v", plan)
+	}
+
+	selfOnly = false
+	plan = GatewayPlan{}
+	response = performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("competing plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "per-device IPv4 policy can be bypassed") {
+		t.Fatalf("competing plan = %#v", plan)
+	}
+}
+
 func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	server := newTestServer(t)
 	response := performAuthorized(server, http.MethodGet, "/api/v1/network/interfaces", nil)
@@ -339,8 +381,55 @@ func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	if payload.SchemaVersion != SchemaVersion || len(payload.Interfaces) != 2 {
 		t.Fatalf("interfaces response = %#v", payload)
 	}
-	if payload.Interfaces[0].Interface != "en0" || payload.Interfaces[0].NetworkService != "Wi-Fi" {
+	if payload.Interfaces[0].Interface != "en0" || payload.Interfaces[0].NetworkService != "Wi-Fi" || payload.Interfaces[0].IPv6LinkLocal != "fe80::100" {
 		t.Fatalf("first interface = %#v", payload.Interfaces[0])
+	}
+}
+
+func TestNetworkDefaultsUseCurrentDefaultNetworkForSameLANModes(t *testing.T) {
+	server := newTestServer(t)
+	server.discoverDefault = func(context.Context) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{
+			NetworkService: "USB LAN",
+			Interface:      "en7",
+			IPv4Mode:       macosnetwork.IPv4ModeDHCP,
+			IPv4:           "192.168.1.190",
+			SubnetMask:     "255.255.255.0",
+			Router:         "192.168.1.1",
+			DNS:            []string{"192.168.1.1"},
+		}, nil
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=same_wifi_dhcp", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+	var takeover NetworkDefaultsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &takeover); err != nil {
+		t.Fatal(err)
+	}
+	if takeover.GatewayIPv4 != "192.168.1.190" || takeover.Snapshot.Interface != "en7" || takeover.DHCPRangeStart != "192.168.1.100" || takeover.DHCPRangeEnd != "192.168.1.189" || takeover.BypassGateway != "192.168.1.1" || !reflect.DeepEqual(takeover.BypassDNS, []string{"192.168.1.1"}) || len(takeover.Blockers) != 0 {
+		t.Fatalf("takeover defaults = %#v", takeover)
+	}
+
+	response = performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=same_lan", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("same-LAN defaults status=%d body=%s", response.Code, response.Body.String())
+	}
+	var bypass NetworkDefaultsResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &bypass); err != nil {
+		t.Fatal(err)
+	}
+	if bypass.GatewayIPv4 != "192.168.1.190" || bypass.DHCPRangeStart != "" || bypass.DHCPRangeEnd != "" || len(bypass.Warnings) != 1 {
+		t.Fatalf("bypass defaults = %#v", bypass)
+	}
+}
+
+func TestNetworkDefaultsDoNotSupportIsolatedLAN(t *testing.T) {
+	server := newTestServer(t)
+	response := performAuthorized(server, http.MethodGet, "/api/v1/network/defaults?mode=isolated_lan", nil)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "network_defaults_mode_unsupported") {
+		t.Fatalf("isolated defaults status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -788,6 +877,9 @@ func TestHelperAllowlistIncludesNamedLifecycleActions(t *testing.T) {
 	if !helperActionAllowed("restart-mihomo") {
 		t.Fatal("restart-mihomo is not available to the privileged helper")
 	}
+	if !helperActionAllowed("sleep-prevention-hold") {
+		t.Fatal("sleep-prevention-hold is not available to the privileged helper")
+	}
 	for _, action := range []string{"hot-reload", "restart", "shell"} {
 		if helperActionAllowed(action) {
 			t.Fatalf("unexpected helper action %q", action)
@@ -833,7 +925,7 @@ func TestTrustedPathRejectsEscapesAndUserOwnedFiles(t *testing.T) {
 }
 
 func TestPublicSourcesKeepsEmptyArray(t *testing.T) {
-	if sources := publicSources([]Source{}); sources == nil {
+	if sources := publicSources([]Source{}, t.TempDir()); sources == nil {
 		t.Fatal("publicSources returned nil for an empty collection")
 	}
 }
@@ -842,7 +934,7 @@ func TestPublicSourcesNormalizesCurrentAndHistoricalInventory(t *testing.T) {
 	public := publicSources([]Source{{
 		Inventory: Inventory{},
 		Versions:  []SourceVersion{{Inventory: Inventory{}}},
-	}})
+	}}, t.TempDir())
 	data, err := json.Marshal(public)
 	if err != nil {
 		t.Fatal(err)
@@ -855,9 +947,28 @@ func TestPublicSourcesNormalizesCurrentAndHistoricalInventory(t *testing.T) {
 }
 
 func TestPublicSourcesRedactsFetchURLAndPath(t *testing.T) {
-	public := publicSources([]Source{{Origin: "https://example.com/profile", FetchURL: "https://token@example.com/profile?secret=1", SnapshotPath: "/private/source.yaml"}})
+	public := publicSources([]Source{{Origin: "https://example.com/profile", FetchURL: "https://token@example.com/profile?secret=1", SnapshotPath: "/private/source.yaml", SnapshotDisplayPath: "/injected/path.yaml"}}, t.TempDir())
 	if public[0].FetchURL != "" || public[0].SnapshotPath != "" {
 		t.Fatalf("public source leaked private fields: %#v", public[0])
+	}
+	if public[0].SnapshotDisplayPath != "" {
+		t.Fatalf("untrusted source path received a display location: %#v", public[0])
+	}
+}
+
+func TestPublicSourcesAddsManagedDisplayPath(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("dg5.org-0715", "mihomo_profile", "file:dg5.yaml", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	public := publicSources([]Source{source}, server.store.Dir())
+	if public[0].SnapshotPath != "" {
+		t.Fatalf("public source leaked the absolute snapshot path: %#v", public[0])
+	}
+	want := filepath.Join("OpenSurge", "sources", source.ID, source.Digest+".yaml")
+	if public[0].SnapshotDisplayPath != want {
+		t.Fatalf("snapshot display path=%q want=%q", public[0].SnapshotDisplayPath, want)
 	}
 }
 
@@ -933,9 +1044,114 @@ func TestSourceRefreshPreservesAppliedVersionAndBuildsInventoryDiff(t *testing.T
 	if second.Diff.PreviousDigest != first.Digest || len(second.Diff.ProxiesAdded) != 1 || second.Diff.ProxiesAdded[0] != "new" || second.Diff.RuleCountDelta != 1 {
 		t.Fatalf("diff = %#v", second.Diff)
 	}
-	public := publicSources([]Source{second})[0]
+	public := publicSources([]Source{second}, server.store.Dir())[0]
 	if public.Versions[0].SnapshotPath != "" {
 		t.Fatal("public version leaked snapshot path")
+	}
+}
+
+func TestSourceSnapshotFileActionsRevealAndExport(t *testing.T) {
+	server := newTestServer(t)
+	sourceBody := "proxies:\n  - {name: edge, type: http, server: 127.0.0.1, port: 18080}\nrules:\n  - MATCH,edge\n"
+	source, err := server.importReader("dg5.org-0715", "mihomo_profile", "file:dg5.yaml", strings.NewReader(sourceBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	revealed := []string{}
+	server.revealInFinder = func(_ context.Context, path string) error {
+		revealed = append(revealed, path)
+		return nil
+	}
+
+	locationResponse := performAuthorized(server, http.MethodGet, "/api/v1/sources/"+source.ID+"/snapshot-location", nil)
+	if locationResponse.Code != http.StatusOK {
+		t.Fatalf("location status=%d body=%s", locationResponse.Code, locationResponse.Body.String())
+	}
+	var location SourceSnapshotFile
+	if err := json.Unmarshal(locationResponse.Body.Bytes(), &location); err != nil {
+		t.Fatal(err)
+	}
+	if location.Kind != "managed_snapshot" || location.Path != source.SnapshotPath || location.DisplayPath == "" {
+		t.Fatalf("location=%#v", location)
+	}
+
+	revealResponse := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/reveal", nil)
+	if revealResponse.Code != http.StatusOK || len(revealed) != 1 || revealed[0] != source.SnapshotPath {
+		t.Fatalf("reveal status=%d body=%s paths=%v", revealResponse.Code, revealResponse.Body.String(), revealed)
+	}
+
+	exportResponse := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/export", nil)
+	if exportResponse.Code != http.StatusCreated {
+		t.Fatalf("export status=%d body=%s", exportResponse.Code, exportResponse.Body.String())
+	}
+	var exported SourceSnapshotFile
+	if err := json.Unmarshal(exportResponse.Body.Bytes(), &exported); err != nil {
+		t.Fatal(err)
+	}
+	if exported.Kind != "editable_export" || !strings.HasPrefix(exported.Path, filepath.Join(server.store.Dir(), "exports")+string(os.PathSeparator)) {
+		t.Fatalf("exported=%#v", exported)
+	}
+	if !strings.HasPrefix(filepath.Base(exported.Path), "dg5.org-0715-"+source.Digest[:8]+"-") || filepath.Ext(exported.Path) != ".yaml" {
+		t.Fatalf("export filename=%q", filepath.Base(exported.Path))
+	}
+	data, err := os.ReadFile(exported.Path)
+	if err != nil || string(data) != sourceBody {
+		t.Fatalf("exported data=%q err=%v", data, err)
+	}
+	info, err := os.Stat(exported.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("exported mode=%v", info.Mode().Perm())
+	}
+	if len(revealed) != 2 || revealed[1] != exported.Path {
+		t.Fatalf("Finder reveal paths=%v", revealed)
+	}
+}
+
+func TestSourceSnapshotActionsRejectModifiedManagedFile(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source.SnapshotPath, []byte("rules:\n  - MATCH,REJECT\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	server.revealInFinder = func(context.Context, string) error {
+		called = true
+		return nil
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/reveal", nil)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "source_snapshot_unavailable") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if called {
+		t.Fatal("Finder was opened for a modified managed snapshot")
+	}
+}
+
+func TestSourceExportKeepsCopyWhenFinderRevealFails(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("rules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.revealInFinder = func(context.Context, string) error {
+		return errors.New("Finder unavailable")
+	}
+	response := performAuthorized(server, http.MethodPost, "/api/v1/sources/"+source.ID+"/export", nil)
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "editable copy was exported") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	exports, err := filepath.Glob(filepath.Join(server.store.Dir(), "exports", "*.yaml"))
+	if err != nil || len(exports) != 1 {
+		t.Fatalf("exports=%v err=%v", exports, err)
+	}
+	if data, err := os.ReadFile(exports[0]); err != nil || string(data) != "rules:\n  - MATCH,DIRECT\n" {
+		t.Fatalf("exported data=%q err=%v", data, err)
 	}
 }
 
@@ -1145,6 +1361,16 @@ func TestGatewayRestartMihomoRejectsMissingRuntimeState(t *testing.T) {
 	}
 }
 
+func TestGatewayLifecycleActionRejectsConcurrentOperation(t *testing.T) {
+	server := newTestServer(t)
+	server.lifecycleMu.Lock()
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/stop", nil)
+	server.lifecycleMu.Unlock()
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "operation_in_progress") {
+		t.Fatalf("concurrent lifecycle status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestGatewayRestartMihomoRejectsPreviousBootRuntime(t *testing.T) {
 	server := newTestServer(t)
 	cfg, err := config.LoadRuntime(server.configPath)
@@ -1317,13 +1543,77 @@ func TestControlConfigRoundTripsLocalSystemProxyCompatibilityMode(t *testing.T) 
 	}
 }
 
+func TestControlConfigRoundTripsIPv6Controls(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	input.DNS.IPv6 = true
+	input.Transparent.TUNIPv6 = config.TUNIPv6Always
+	input.Transparent.IPv6SharedL2Ready = true
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.DNS.IPv6 || updated.Transparent.TUNIPv6 != config.TUNIPv6Always || !updated.Transparent.IPv6SharedL2Ready {
+		t.Fatalf("IPv6 controls were not persisted: DNS=%v takeover=%q sharedL2=%v", updated.DNS.IPv6, updated.Transparent.TUNIPv6, updated.Transparent.IPv6SharedL2Ready)
+	}
+}
+
+func TestControlConfigAcceptsLegacyPayloadWithoutIPv6TakeoverMode(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	input.Transparent.TUNIPv6 = ""
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		t.Fatalf("legacy payload takeover mode = %q", updated.Transparent.TUNIPv6)
+	}
+}
+
 func TestStateEventCarriesConfigGatewayAndRecoveryState(t *testing.T) {
 	server := newTestServer(t)
+	runner := &fakeSleepPreventionRunner{}
+	server.sleepPrevention = newSleepPreventionController(runner, server.configPath)
+	if _, err := server.sleepPrevention.SetEnabled(t.Context(), true); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.sleepPrevention.Close() })
 	state, err := server.stateEvent(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Revision == "" || state.Gateway == "" || state.Recovery.Stage != RecoveryIdle {
+	if state.Revision == "" || state.Gateway == "" || state.Recovery.Stage != RecoveryIdle || !state.SleepPrevention.Active {
 		t.Fatalf("state event = %#v", state)
 	}
 }
@@ -1348,7 +1638,7 @@ func TestClientAcceptanceRequiresLeaseDNSAndTUNEvidence(t *testing.T) {
 	if err := os.WriteFile(paths.MihomoLog, []byte("[TCP] 192.168.1.121:50000 --> example.com:443 using DIRECT\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true}); err != nil {
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true, NetworkSnapshot: &macosnetwork.Snapshot{IPv6Default: true, IPv6DefaultSelfOnly: true}}); err != nil {
 		t.Fatal(err)
 	}
 	response := performAuthorized(server, http.MethodPost, "/api/v1/recovery/client-validated", []byte(`{"client_ipv4":"192.168.1.121","gateway_dns_confirmed":true,"no_explicit_proxy_confirmed":true,"ipv6_bypass_warning_confirmed":false}`))
@@ -1358,6 +1648,14 @@ func TestClientAcceptanceRequiresLeaseDNSAndTUNEvidence(t *testing.T) {
 	state, _ := server.store.Recovery()
 	if state.Stage != RecoveryClientValidated {
 		t.Fatalf("state=%#v", state)
+	}
+
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true, NetworkSnapshot: &macosnetwork.Snapshot{IPv6Default: true}}); err != nil {
+		t.Fatal(err)
+	}
+	response = performAuthorized(server, http.MethodPost, "/api/v1/recovery/client-validated", []byte(`{"client_ipv4":"192.168.1.121","gateway_dns_confirmed":true,"no_explicit_proxy_confirmed":true,"ipv6_bypass_warning_confirmed":false}`))
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "ipv6_warning_unacknowledged") {
+		t.Fatalf("unacknowledged competing IPv6 status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -1583,6 +1881,21 @@ func TestSameLANDevicesEndpointListsSourcesCurrentlyPassingThroughMac(t *testing
 	}
 }
 
+func TestAnnotateCompiledDeviceIPv6BlockState(t *testing.T) {
+	devices := []device.CompiledDevice{
+		{ID: "console", GatewayTarget: device.GatewayTargetUpstreamRouter},
+		{ID: "phone", GatewayTarget: device.GatewayTargetOpenSurge},
+	}
+	annotateCompiledDeviceIPv6BlockState(devices, true)
+	if !devices[0].IPv6Blocked || devices[1].IPv6Blocked {
+		t.Fatalf("compiled device IPv6 state = %#v", devices)
+	}
+	annotateCompiledDeviceIPv6BlockState(devices, false)
+	if devices[0].IPv6Blocked {
+		t.Fatalf("disabled downstream IPv6 still reported blocked = %#v", devices)
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	server, _ := newTestServerWithNetwork(t)
 	return server
@@ -1626,7 +1939,7 @@ runtime:
 		return macosnetwork.Snapshot{NetworkService: "Wi-Fi", Interface: "en0", IPv4Mode: mode, IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"192.168.1.1"}}, nil
 	}
 	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
-		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi"}, {Interface: "en7", NetworkService: "USB LAN"}}, nil
+		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi", IPv6LinkLocal: "fe80::100"}, {Interface: "en7", NetworkService: "USB LAN", IPv6LinkLocal: "fe80::700"}}, nil
 	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)

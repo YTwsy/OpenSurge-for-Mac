@@ -94,6 +94,21 @@ func installedReleaseVersion(
     return value.hasPrefix("v") ? String(value.dropFirst()) : value
 }
 
+func releaseCodename(for version: String) -> String? {
+    guard let parsed = ProductVersion(version) else { return nil }
+    switch (parsed.major, parsed.minor) {
+    case (0, 2):
+        return "Wind Rose"
+    default:
+        return nil
+    }
+}
+
+func releaseDisplayVersion(_ version: String) -> String {
+    guard let codename = releaseCodename(for: version) else { return version }
+    return "\(version) · \(codename)"
+}
+
 private struct GitHubRelease: Decodable {
     let tagName: String
     let htmlURL: URL

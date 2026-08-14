@@ -50,6 +50,9 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 			return fmt.Errorf("dhcp.lease_time is required")
 		}
 	}
+	if err := validateOptionalBypassAddresses(cfg.DHCP); err != nil {
+		return err
+	}
 	if checkDevicePolicy {
 		if err := validateDevicePolicy(cfg); err != nil {
 			return err
@@ -96,6 +99,12 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	}
 	if err := validateTransparent(cfg.Transparent); err != nil {
 		return err
+	}
+	if cfg.Transparent.IPv6Requested() && cfg.Gateway.SameLAN() && !cfg.Transparent.IPv6SharedL2Ready {
+		if cfg.Gateway.Mode == GatewayModeSameLAN {
+			return fmt.Errorf("transparent.tun_ipv6 in gateway.mode same_lan requires transparent.ipv6_shared_l2_ready: true after selected clients use the OpenSurge ULA, link-local default gateway, and DNS without a competing IPv6 default route")
+		}
+		return fmt.Errorf("transparent.tun_ipv6 in gateway.mode same_wifi_dhcp requires transparent.ipv6_shared_l2_ready: true after competing IPv6 RA/default routes have been removed from the shared LAN")
 	}
 	if cfg.LocalSystemProxy.Enabled && !cfg.Transparent.TUNEnabled() {
 		return fmt.Errorf("local_system_proxy.enabled requires transparent.mode: \"tun\"")
@@ -167,10 +176,85 @@ func validateDevicePolicy(cfg Config) error {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(bundle.Policy, cfg.Gateway.LANIP, cfg.DevicePolicy.ProtectedIPv4, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
+	if err := validateRouterBypass(cfg, bundle.Policy); err != nil {
+		return fmt.Errorf("device_policy.file: %w", err)
+	}
+	protected := append([]string(nil), cfg.DevicePolicy.ProtectedIPv4...)
+	if device.UsesUpstreamRouter(bundle.Policy) {
+		protected = append(protected, cfg.DHCP.BypassGateway)
+	}
+	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(bundle.Policy, cfg.Gateway.LANIP, protected, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	return nil
+}
+
+// ValidateDevicePolicyCandidate applies the complete topology and DHCP
+// contract to a candidate policy before the root helper writes it.
+func ValidateDevicePolicyCandidate(cfg Config, policy device.PolicySet) error {
+	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == GatewayModeSameLAN)
+	if err != nil {
+		return err
+	}
+	candidate := cfg
+	if strings.TrimSpace(candidate.DevicePolicy.File) == "" {
+		candidate.DevicePolicy.File = "<candidate>"
+	}
+	candidate.DevicePolicy.Bundle = &bundle
+	return validate(candidate, true)
+}
+
+func validateOptionalBypassAddresses(cfg DHCPConfig) error {
+	if value := strings.TrimSpace(cfg.BypassGateway); value != "" && net.ParseIP(value).To4() == nil {
+		return fmt.Errorf("dhcp.bypass_gateway must be a valid IPv4 address")
+	}
+	for _, value := range cfg.BypassDNS {
+		if net.ParseIP(strings.TrimSpace(value)).To4() == nil {
+			return fmt.Errorf("dhcp.bypass_dns entry %q must be a valid IPv4 address", value)
+		}
+	}
+	return nil
+}
+
+func validateRouterBypass(cfg Config, policy device.PolicySet) error {
+	if !device.UsesUpstreamRouter(policy) {
+		return nil
+	}
+	if cfg.Gateway.Mode != GatewayModeSameWiFiDHCP {
+		return fmt.Errorf("gateway_target %q is only available in gateway.mode same_wifi_dhcp", device.GatewayTargetUpstreamRouter)
+	}
+	gateway := net.ParseIP(strings.TrimSpace(cfg.DHCP.BypassGateway)).To4()
+	lan := cfg.LANIP().To4()
+	if gateway == nil {
+		return fmt.Errorf("gateway_target %q requires dhcp.bypass_gateway", device.GatewayTargetUpstreamRouter)
+	}
+	if len(cfg.DHCP.BypassDNS) == 0 {
+		return fmt.Errorf("gateway_target %q requires at least one dhcp.bypass_dns address", device.GatewayTargetUpstreamRouter)
+	}
+	if gateway[0] != lan[0] || gateway[1] != lan[1] || gateway[2] != lan[2] {
+		return fmt.Errorf("dhcp.bypass_gateway %s must remain in gateway LAN %d.%d.%d.0/24", gateway.String(), lan[0], lan[1], lan[2])
+	}
+	if gateway[3] == 0 || gateway[3] == 255 || gateway.Equal(lan) {
+		return fmt.Errorf("dhcp.bypass_gateway must be a usable host address different from gateway.lan_ip")
+	}
+	start := net.ParseIP(cfg.DHCP.RangeStart).To4()
+	end := net.ParseIP(cfg.DHCP.RangeEnd).To4()
+	if start != nil && end != nil && bytesCompareIPv4(gateway, start) >= 0 && bytesCompareIPv4(gateway, end) <= 0 {
+		return fmt.Errorf("dhcp.bypass_gateway must not be inside the DHCP range")
+	}
+	return nil
+}
+
+func bytesCompareIPv4(left, right net.IP) int {
+	for index := 0; index < net.IPv4len; index++ {
+		if left[index] < right[index] {
+			return -1
+		}
+		if left[index] > right[index] {
+			return 1
+		}
+	}
+	return 0
 }
 
 // PrepareDevicePolicy loads and compiles the policy exactly once for a config
@@ -258,6 +342,22 @@ func validateMihomoProfile(cfg Config) error {
 }
 
 func validateTransparent(cfg TransparentConfig) error {
+	switch cfg.TUNIPv6 {
+	case TUNIPv6Off, TUNIPv6Auto, TUNIPv6Always:
+	default:
+		return fmt.Errorf("transparent.tun_ipv6 must be off, auto, or always")
+	}
+	if cfg.TUNIPv6 != TUNIPv6Off {
+		if cfg.Mode != TransparentModeTUN {
+			return fmt.Errorf("transparent.tun_ipv6 %s requires transparent.mode: \"tun\"", cfg.TUNIPv6)
+		}
+		if strings.TrimSpace(cfg.IPv6PacketBrokerBinary) == "" {
+			return fmt.Errorf("transparent.ipv6_packet_broker_binary is required when downstream IPv6 takeover is enabled")
+		}
+		if cfg.IPv6PacketMTU < 1280 || cfg.IPv6PacketMTU > 9000 {
+			return fmt.Errorf("transparent.ipv6_packet_mtu must be between 1280 and 9000")
+		}
+	}
 	switch cfg.Mode {
 	case TransparentModeOff:
 		return nil

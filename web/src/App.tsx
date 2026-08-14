@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
+import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './components/OperationNotifications'
 import { RecoveryBanner, StatusDot } from './components/Common'
 import { DashboardPage } from './pages/DashboardPage'
 import { ConnectivityPage } from './pages/ConnectivityPage'
@@ -62,6 +63,10 @@ export function App() {
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [devicesDirty, setDevicesDirty] = useState(false)
+  const [sleepPreventionChanging, setSleepPreventionChanging] = useState(false)
+  const [notifications, setNotifications] = useState<OperationNotificationItem[]>([])
+  const notificationID = useRef(0)
+  const sleepPreventionGeneration = useRef(0)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
   pageRef.current = page
@@ -73,8 +78,12 @@ export function App() {
   }, [theme])
 
   const refresh = useCallback(async () => {
+    const sleepGeneration = sleepPreventionGeneration.current
     try {
-      setOverview(await api.overview())
+      const nextOverview = await api.overview()
+      setOverview(current => sleepGeneration === sleepPreventionGeneration.current || !current
+        ? nextOverview
+        : { ...nextOverview, sleep_prevention: current.sleep_prevention })
       setError('')
     } catch (cause) {
       if (cause instanceof RequestError && cause.status === 401) {
@@ -132,14 +141,44 @@ export function App() {
     setPage(next)
   }
 
+  const setSleepPrevention = async (enabled: boolean) => {
+    if (sleepPreventionChanging) return
+    sleepPreventionGeneration.current += 1
+    setSleepPreventionChanging(true)
+    try {
+      const sleepPrevention = await api.setSleepPrevention(enabled)
+      sleepPreventionGeneration.current += 1
+      setOverview(current => current ? { ...current, sleep_prevention: sleepPrevention } : current)
+      await refresh()
+    } catch (cause) {
+      sleepPreventionGeneration.current += 1
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSleepPreventionChanging(false)
+    }
+  }
+
+  const notify = useCallback((notification: OperationNotification) => {
+    const item = { ...notification, id: ++notificationID.current }
+    setNotifications(current => [...current, item].slice(-3))
+  }, [])
+
+  const dismissNotification = useCallback((id: number) => {
+    setNotifications(current => current.filter(notification => notification.id !== id))
+  }, [])
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
       <nav aria-label="OpenSurge sections">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}
       </nav>
-      <button type="button" className="theme-toggle" aria-pressed={theme === 'light'} aria-label={theme === 'dark' ? '切换为浅色模式' : '切换为深色模式'} onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}><span aria-hidden="true">{theme === 'dark' ? '☀' : '◐'}</span>{theme === 'dark' ? '浅色模式' : '深色模式'}</button>
-      <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway, overview?.status.runtime_state)}</strong><small>{overview?.status.lan_ip || 'Control API'}</small></div></div>
+      <div className="sidebar-controls">
+        <label className={`sidebar-switch ${overview?.sleep_prevention?.active ? 'active' : ''}`} title="阻止空闲睡眠和合盖睡眠。合盖运行可能明显增加耗电与发热，请勿放入不通风的包内。"><input type="checkbox" checked={overview?.sleep_prevention?.active ?? false} disabled={!overview || sleepPreventionChanging} onChange={event => void setSleepPrevention(event.target.checked)} /><span><strong>{sleepPreventionChanging ? '正在切换…' : '合盖保持运行'}</strong><small>{overview?.sleep_prevention?.active ? '系统睡眠已临时禁用' : '默认关闭 · 本次运行有效'}</small></span></label>
+        {overview?.sleep_prevention?.error && <small className="sidebar-control-error" role="status">{overview.sleep_prevention.error}</small>}
+        <button type="button" className="theme-toggle" aria-pressed={theme === 'light'} aria-label={theme === 'dark' ? '切换为浅色模式' : '切换为深色模式'} onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}><span aria-hidden="true">{theme === 'dark' ? '☀' : '◐'}</span>{theme === 'dark' ? '浅色模式' : '深色模式'}</button>
+      </div>
+      <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway, overview?.status.runtime_state)}</strong><small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose</small></div></div>
     </aside>
     <main className="workspace">
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>Web GUI 与 OpenSurge 的安全连接已过期</h1><p>请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。</p></div></section> : <>
@@ -147,14 +186,15 @@ export function App() {
         {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>重试</button></div>}
         <PageErrorBoundary key={page}>
           {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={action => go('network', action === 'cleanup' ? 'control' : action === 'stop' ? 'bottom' : 'none')} />}
-          {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} />}
-          {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} />}
-          {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} />}
+          {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} />}
+          {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} />}
+          {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} />}
           {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
           {page === 'connectivity' && <ConnectivityPage overview={overview} onChanged={refresh} />}
           {page === 'diagnostics' && <DiagnosticsPage overview={overview} />}
         </PageErrorBoundary>
       </>}
     </main>
+    <OperationNotifications notifications={notifications} onDismiss={dismissNotification} />
   </div>
 }

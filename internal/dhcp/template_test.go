@@ -2,6 +2,7 @@ package dhcp
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -66,6 +67,44 @@ func TestRenderConfigWithDevicePolicyReservations(t *testing.T) {
 	for _, want := range []string{
 		"dhcp-host=aa:bb:cc:dd:ee:01,192.168.50.101",
 		"dhcp-host=aa:bb:cc:dd:ee:02,192.168.50.102",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestRenderConfigWithPerDeviceRouterBypass(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policy := `{
+  "profiles":[{"id":"default","default_policies":["DIRECT"]}],
+  "devices":[
+    {"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.1.181","profile":"default"},
+    {"id":"console","mac":"aa:bb:cc:dd:ee:05","ipv4":"192.168.1.190","profile":"default","gateway_target":"upstream_router"}
+  ]
+}`
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
+	cfg.Gateway.LANIP = "192.168.1.20"
+	cfg.DHCP.RangeStart = "192.168.1.120"
+	cfg.DHCP.RangeEnd = "192.168.1.199"
+	cfg.DHCP.BypassGateway = "192.168.1.1"
+	cfg.DHCP.BypassDNS = []string{"192.168.1.1", "1.1.1.1"}
+	cfg.DevicePolicy.File = policyPath
+
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"dhcp-option=tag:opensurge-router-bypass,option:router,192.168.1.1",
+		"dhcp-option=tag:opensurge-router-bypass,option:dns-server,192.168.1.1,1.1.1.1",
+		"dhcp-host=aa:bb:cc:dd:ee:05,set:opensurge-router-bypass,192.168.1.190",
+		"dhcp-host=aa:bb:cc:dd:ee:01,192.168.1.181",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
@@ -152,5 +191,80 @@ func TestRenderConfigSameWiFiDHCP(t *testing.T) {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestRenderConfigWithDownstreamIPv6RAAndRDNSS(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"enable-ra",
+		"dhcp-range=fdfe:dcba:9878::,ra-stateless,64,12h",
+		"dhcp-option=option6:dns-server,[fe80::]",
+		"ra-param=en0,20,60",
+		"listen-address=fdfe:dcba:9878::1",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered IPv6 dnsmasq config missing %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "ra-param=en0,high") || strings.Contains(rendered, "ra-param=en0,low") {
+		t.Fatalf("rendered IPv6 dnsmasq config overrides the default medium router preference:\n%s", rendered)
+	}
+	// dnsmasq replaces [fe80::] with the interface's link-local address for
+	// DHCPv6 and RDNSS. An explicit value is required because its automatic
+	// DHCPv6 option otherwise prefers the downstream ULA when one is present.
+	if strings.Contains(rendered, "option6:dns-server,[fdfe:") {
+		t.Fatalf("rendered IPv6 dnsmasq config advertises a ULA DNS endpoint:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigSameLANIPv6ListensWithoutAdvertisingRA(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.Mode = config.GatewayModeSameLAN
+	cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
+	cfg.DHCP.Enabled = false
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	cfg.Transparent.IPv6SharedL2Ready = true
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "listen-address="+config.DownstreamIPv6Gateway) {
+		t.Fatalf("same-LAN IPv6 DNS listener missing:\n%s", rendered)
+	}
+	for _, forbidden := range []string{"enable-ra", "ra-stateless", "option6:dns-server", "ra-param="} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("same-LAN selective IPv6 config unexpectedly advertises %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
+func TestDNSMasqAcceptsDownstreamIPv6RAConfig(t *testing.T) {
+	binary := os.Getenv("OPENSURGE_TEST_DNSMASQ")
+	if binary == "" {
+		t.Skip("OPENSURGE_TEST_DNSMASQ is not set")
+	}
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	paths := runtime.NewPaths(cfg)
+	rendered, err := RenderConfig(cfg, paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(cfg.Runtime.Dir, "dnsmasq.conf")
+	if err := os.WriteFile(conf, []byte(rendered), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(binary, "--test", "--conf-file="+conf).CombinedOutput(); err != nil {
+		t.Fatalf("dnsmasq rejected IPv6 RA config: %v: %s", err, strings.TrimSpace(string(output)))
 	}
 }

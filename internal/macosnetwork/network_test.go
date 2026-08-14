@@ -2,6 +2,7 @@ package macosnetwork
 
 import (
 	"context"
+	"net"
 	"testing"
 )
 
@@ -27,6 +28,64 @@ func TestParseDNSAndIPv6Default(t *testing.T) {
 	}
 	if hasIPv6DefaultRoute(routes, "en7") {
 		t.Fatal("IPv6 default route detected on wrong interface")
+	}
+}
+
+func TestIPv6DefaultRouteStateDistinguishesSelfAndCompetingGateways(t *testing.T) {
+	localAddresses := []net.Addr{
+		stringAddr("fe80::1851:c102:7eba:c3a9%en0/64"),
+		stringAddr("fdfe:dcba:9878::1/64"),
+	}
+
+	tests := []struct {
+		name     string
+		routes   string
+		active   bool
+		selfOnly bool
+	}{
+		{
+			name:     "OpenSurge self route",
+			routes:   "default fe80::1851:c102:7eba:c3a9%en0 UGcg en0\n",
+			active:   true,
+			selfOnly: true,
+		},
+		{
+			name:     "external router",
+			routes:   "default fe80::1%en0 UGcg en0 1200\n",
+			active:   true,
+			selfOnly: false,
+		},
+		{
+			name: "self and external routers",
+			routes: "default fe80::1851:c102:7eba:c3a9%en0 UGcg en0\n" +
+				"default fe80::1%en0 UGcg en0\n",
+			active:   true,
+			selfOnly: false,
+		},
+		{
+			name:     "other interface",
+			routes:   "default fe80::1%en7 UGcg en7\n",
+			active:   false,
+			selfOnly: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			active, selfOnly := ipv6DefaultRouteState(test.routes, "en0", localAddresses)
+			if active != test.active || selfOnly != test.selfOnly {
+				t.Fatalf("route state = active %t, self-only %t", active, selfOnly)
+			}
+		})
+	}
+}
+
+func TestSnapshotCompetingIPv6DefaultIsConservativeForLegacySnapshots(t *testing.T) {
+	if (Snapshot{IPv6Default: true, IPv6DefaultSelfOnly: true}).CompetingIPv6Default() {
+		t.Fatal("self-only IPv6 default route was treated as competing")
+	}
+	if !(Snapshot{IPv6Default: true}).CompetingIPv6Default() {
+		t.Fatal("legacy IPv6 default route snapshot lost its conservative warning")
 	}
 }
 
@@ -68,6 +127,22 @@ func TestInterfaceOptionsAreSortedAndNamed(t *testing.T) {
 		t.Fatalf("second option = %#v", options[1])
 	}
 }
+
+func TestFirstLinkLocalIPv6IgnoresOtherAddressesAndScope(t *testing.T) {
+	addrs := []net.Addr{
+		&net.IPNet{IP: net.ParseIP("192.168.1.20"), Mask: net.CIDRMask(24, 32)},
+		stringAddr("2001:db8::20/64"),
+		stringAddr("fe80::abcd%en0/64"),
+	}
+	if got := firstLinkLocalIPv6(addrs); got != "fe80::abcd" {
+		t.Fatalf("link-local IPv6 = %q", got)
+	}
+}
+
+type stringAddr string
+
+func (address stringAddr) Network() string { return "ip" }
+func (address stringAddr) String() string  { return string(address) }
 
 func TestValidateManual(t *testing.T) {
 	valid := ManualConfig{NetworkService: "Wi-Fi", Interface: "en0", IPv4: "192.168.1.20", SubnetMask: "255.255.255.0", Router: "192.168.1.1", DNS: []string{"1.1.1.1"}}
@@ -114,6 +189,36 @@ func TestLookupRouteReturnsSelectedInterface(t *testing.T) {
 	}
 	if route.Interface != "utun42" || route.Gateway != "198.18.0.1" {
 		t.Fatalf("route = %#v", route)
+	}
+}
+
+func TestDiscoverDefaultUsesDefaultRouteNetworkService(t *testing.T) {
+	original := runCommand
+	t.Cleanup(func() { runCommand = original })
+	runCommand = func(_ context.Context, binary string, args ...string) (string, error) {
+		switch {
+		case binary == "/sbin/route":
+			return "   gateway: 192.168.1.1\n interface: en7\n", nil
+		case binary == "/usr/sbin/networksetup" && len(args) == 1 && args[0] == "-listnetworkserviceorder":
+			return "(1) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en0)\n(2) USB LAN\n(Hardware Port: USB LAN, Device: en7)\n", nil
+		case binary == "/usr/sbin/networksetup" && len(args) == 2 && args[0] == "-getinfo" && args[1] == "USB LAN":
+			return "DHCP Configuration\nIP address: 192.168.1.190\nSubnet mask: 255.255.255.0\nRouter: 192.168.1.1\n", nil
+		case binary == "/usr/sbin/networksetup" && len(args) == 2 && args[0] == "-getdnsservers" && args[1] == "USB LAN":
+			return "192.168.1.1\n", nil
+		case binary == "/usr/sbin/netstat":
+			return "", nil
+		default:
+			t.Fatalf("unexpected command: %s %#v", binary, args)
+			return "", nil
+		}
+	}
+
+	snapshot, err := DiscoverDefault(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.NetworkService != "USB LAN" || snapshot.Interface != "en7" || snapshot.IPv4 != "192.168.1.190" || snapshot.SubnetMask != "255.255.255.0" {
+		t.Fatalf("snapshot = %#v", snapshot)
 	}
 }
 

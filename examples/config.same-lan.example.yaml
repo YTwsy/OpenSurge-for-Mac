@@ -16,6 +16,7 @@ dns:
   listen: "192.168.1.20"
   port: 53
   upstream: "127.0.0.1#1053"
+  ipv6: false
 
 mihomo:
   binary: "./runtime/tools/bin/mihomo"
@@ -38,6 +39,13 @@ transparent:
   tun_auto_route: true
   tun_auto_detect_interface: false
   tun_strict_route: false
+  # same_lan never broadcasts OpenSurge RA. Set this true only after selected
+  # clients are prepared for a manual ULA plus link-local gateway/DNS and cannot keep a competing
+  # router-advertised IPv6 default route.
+  tun_ipv6: "off"
+  ipv6_shared_l2_ready: false
+  ipv6_packet_broker_binary: "opensurge-network"
+  ipv6_packet_mtu: 1500
 
 local_system_proxy:
   enabled: false

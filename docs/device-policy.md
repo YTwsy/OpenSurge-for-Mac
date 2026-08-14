@@ -43,7 +43,7 @@ lists. Operators own the policy content. The JSON model has four independent
 collections:
 
 - `devices`: stable identity (`id`, MAC, reserved IPv4, profile id), an optional
-  human-readable `name`, plus an explicit `egress_mode`;
+  human-readable `name`, plus `gateway_target` and an explicit `egress_mode`;
 - `profiles`: default selector candidates plus device rule overlays;
 - `templates`: optional reusable profile defaults and rule fragments;
 - `rule_sets`: inline or HTTP mihomo rule-provider definitions.
@@ -118,6 +118,22 @@ New devices created in the Web GUI default to `inherit_global`. A document that
 omits `egress_mode` keeps the previous global-first/device-fallback behavior as
 `legacy_fallback`; the GUI displays that state explicitly and asks the operator
 to choose either new mode instead of silently migrating it.
+
+`gateway_target` defaults to `opensurge`. Only `same_wifi_dhcp` may explicitly
+select `upstream_router`: dnsmasq still reserves the device's IPv4 by MAC, but
+uses a client tag to send `dhcp.bypass_gateway` and `dhcp.bypass_dns` instead.
+OpenSurge emits no proxy selectors or ordinary device rules for that device
+while bypass is active; its profile and rules remain stored and return when it
+switches back to `opensurge`. This is an IPv4-only bypass. When downstream IPv6
+is enabled, the packet listener keeps the device's MAC-backed `device:<id>`
+identity solely for a highest-priority `IN-TYPE,TUN + IN-USER,REJECT`; other devices
+keep their normal IPv6 policy. The client may still retain a SLAAC address or
+RDNSS, so the UI reports **IPv6 egress blocked** rather than claiming that IPv6
+is absent. The main router's RA/DHCPv6 must be disabled or removed by RA Guard,
+otherwise IPv6 can bypass OpenSurge entirely. The client must renew its lease
+or reconnect before the new IPv4 Router and DNS options take effect. This
+target requires a real MAC, and the upstream router must be in the gateway
+`/24` but outside the dynamic DHCP pool.
 
 An inherit-only device retains its profile's `default_policies` as future
 configuration, but those unused candidates are not rendered or checked against
@@ -284,11 +300,15 @@ applied reservation.
 
 ## Validation boundary
 
-The feature still enforces device policy through IPv4 `SRC-IP-CIDR` rules. DHCP
-mode provides exact MAC-backed lease evidence; `same_lan` provides separate
-static-registration, active-traffic, and optional ARP-neighbor observations and
-does not present them as DHCP verification. It does not provide IPv6 device
-identity, MAC matching inside mihomo, or curated third-party rule content.
+The system-TUN device-policy path still uses IPv4 `SRC-IP-CIDR` rules. The
+downstream IPv6 packet path carries the observed source MAC into patched Mihomo
+as `IN-USER(device:<id>)` in all three supported topologies; it reuses ordinary
+device rules, except that `upstream_router` devices receive only the
+highest-priority IPv6 egress `REJECT`. DHCP mode provides exact MAC-backed lease
+evidence; `same_lan` provides separate static-registration, active-traffic, and
+optional neighbor observations and does not present them as DHCP verification.
+The packet-path MAC is routing identity, not anti-spoof authentication, and the
+project does not ship curated third-party rule content.
 
 The required data-plane gate is:
 

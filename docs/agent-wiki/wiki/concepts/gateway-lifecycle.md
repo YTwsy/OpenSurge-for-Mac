@@ -3,8 +3,8 @@
 当任务涉及 gateway startup、shutdown、rollback、runtime state 或服务职责边界
 时，先读这个页面。
 
-OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtime path
-协调四类职责：
+OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。当前 runtime path
+协调这些职责：
 
 - dnsmasq 为下游客户端提供 DHCP 和 DNS；
 - mihomo 提供代理能力，并在启用时承担透明 TUN 处理；
@@ -12,6 +12,8 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtim
 - macOS IPv4 forwarding 由 sysctl 管理，并在停止时恢复。
 - 显式启用时，macOS 上游网络服务的 HTTP/HTTPS 系统代理作为 TUN 兼容层，并由
   runtime state 保存启动前快照。
+- 启用下游 IPv6 接管时，BPF broker 和 IPv6 gateway alias 纳入同一个
+  runtime/rollback 所有权；自动拓扑还拥有 dnsmasq RA/SLAAC，手工旁路由不发布 RA。
 
 ## Start 顺序
 
@@ -31,9 +33,12 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 IPv4 LAN gateway。当前 runtim
 9. 启动 mihomo；
 10. 最多等待 10 秒让 mihomo 运行时确认 TUN ready；若失败，先给 mihomo 3 秒
     SIGTERM 清理窗口，再按需 SIGKILL 并 rollback；
-11. 启动 dnsmasq；
-12. 加载 PF anchor；
-13. 所有网关服务 ready 后，才把上游 network service 的 HTTP/HTTPS 代理指向本机
+11. 若下游 IPv6 生效，启动 BPF broker、记录 PID/fingerprint，再添加并等待 IPv6
+    gateway alias 完成 DAD；
+12. 启动 dnsmasq；自动拓扑此时才开始发布 RA/SLAAC/RDNSS，手工旁路由只启动 IPv6
+    DNS listener；
+13. 加载 PF anchor；
+14. 所有网关服务 ready 后，才把上游 network service 的 HTTP/HTTPS 代理指向本机
     mihomo mixed-port。
 
 Rollback 是 start 契约的一部分。如果系统代理可能已经写入，会先恢复其启动前状态，
@@ -62,10 +67,12 @@ runtime state 和服务，避免 macOS 继续指向已经停止的本机代理�
 2. 如果存在 runtime state，则加载它；
 3. 若 runtime state 有系统代理快照，先恢复 HTTP/HTTPS 代理；恢复失败则保留服务和 state；
 4. 停止 dnsmasq；
-5. 停止 mihomo；
-6. 如果 PF anchor 已加载，则卸载 PF anchor；
-7. 恢复 IPv4 forwarding 到启动前的值；
-8. 移除 runtime state。
+5. 若拥有下游 IPv6，且 runtime state 记录 RA 实际生效，则发送 router/prefix
+   lifetime-zero withdrawal；随后删除 gateway alias，并停止 BPF broker；
+6. 停止 mihomo；
+7. 如果 PF anchor 已加载，则卸载 PF anchor；
+8. 恢复 IPv4 forwarding 到启动前的值；
+9. 移除 runtime state。
 
 Stop 应该能容忍部分 runtime pieces 已经缺失。这个项目会修改 host network，
 所以清理质量是正确性的一部分。
@@ -132,8 +139,18 @@ router 或 DNS。若已启用系统代理协同，替代进程失败时先恢复
 client validated 或明确跳过客户端验收的接管阶段执行，且成功或失败都不改变 DHCP 恢复
 状态机。替代进程必须通过 TUN readiness。
 
-这是一条显式恢复路径，不是自动 watchdog。只有真实 same-WiFi 链路断开/重连门槛证明
-触发条件不会误判、恢复后本机 DIRECT 和代理出口均重新可用，才应增加自动触发。
+Control Service 会在当前 boot、有效 active runtime 和允许的 DHCP 接管阶段内监测这条
+恢复路径。Mihomo 进程缺失立即触发一次自动恢复；controller 的 `connection refused`
+需要连续两次观测才触发。每个未恢复 incident 最多自动尝试一次；命令完成后仍要等新的
+连续健康 status 才算恢复，持续异常会转为 `failed` 并在连通性页显示手动兜底。配置或
+status 读取失败、runtime 非 active、以及不允许恢复的 DHCP 接管阶段都属于 unknown：
+既不触发恢复，也不能累计健康确认或清除本次 incident 的单次尝试保护。上次开机留下的
+interrupted runtime 同样不会触发。
+
+start、stop、reload、手动/自动 `restart-mihomo` 和运行中 source apply 共享 Control
+Service 生命周期互斥锁，避免两个 helper 动作同时修改 runtime。这个自动化只实现了窄的
+Mihomo-only 重启边界；在真实 same-WiFi 断开/重连门槛完成前，不得把单元测试描述成物理
+链路恢复已经验收。
 
 ## same-WiFi 固定 IPv4 确认
 
@@ -152,3 +169,6 @@ macOS“系统设置 → 网络 → 详细信息 → TCP/IP”，并且不得进
 
 用 `make test` 验证代码层行为。宣称真实网关生命周期在 host network 上
 工作前，运行 `make lab-test`。涉及透明代理行为时，运行 `make lab-test-tun`。
+涉及下游 IPv6 alias、RA/SLAAC、BPF packet path 或撤销时，按拓扑运行
+`make lab-test-ipv6-userspace`、`make lab-test-ipv6-same-wifi` 或
+`make lab-test-ipv6-same-lan`。

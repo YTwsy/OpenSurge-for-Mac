@@ -73,6 +73,7 @@ func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 		appliedPolicy = loadAppliedDevicePolicy(paths)
 	}
 	response := aggregateDeviceTrafficWithPolicy(leases, appliedPolicy, connections, cfg.Gateway.LANIP, true)
+	annotateDeviceTrafficIPv6BlockState(response.Devices, cfg.Transparent.TUNIPv6 != config.TUNIPv6Off)
 	if response.GatewayLocal.Transport == localTransportNone && cfg.Transparent.TUNEnabled() {
 		response.GatewayLocal.Transport = localTransportTUN
 	}
@@ -92,6 +93,12 @@ func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 	response.Scope = deviceTrafficScope
 	response.ConnectionError = errorString(connectionErr)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func annotateDeviceTrafficIPv6BlockState(rows []DeviceTraffic, enabled bool) {
+	for index := range rows {
+		rows[index].IPv6Blocked = enabled && rows[index].GatewayTarget == device.GatewayTargetUpstreamRouter
+	}
 }
 
 func (s *trafficRateSampler) annotate(response *DeviceTrafficResponse, snapshot mihomo.ConnectionsSnapshot, sampledAt time.Time) {
@@ -236,6 +243,7 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 		if index, exists := byIP[ip]; exists {
 			if (observeLAN && strings.TrimSpace(managed.MAC) == "") || strings.EqualFold(rows[index].MAC, managed.MAC) {
 				rows[index].Name = device.DisplayName(managed)
+				rows[index].GatewayTarget = device.EffectiveGatewayTarget(managed.GatewayTarget)
 			}
 			continue
 		}
@@ -245,6 +253,7 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 			IP:             ip,
 			MAC:            strings.ToLower(strings.TrimSpace(managed.MAC)),
 			IdentitySource: identitySourceRegisteredStatic,
+			GatewayTarget:  device.EffectiveGatewayTarget(managed.GatewayTarget),
 		})
 	}
 	for _, connection := range snapshot.Connections {
@@ -321,6 +330,9 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 
 	for index := range rows {
 		rows[index].PrimaryEgress = primaryEgress(egressByDevice[index])
+		if rows[index].GatewayTarget == device.GatewayTargetUpstreamRouter && rows[index].PrimaryEgress == "" {
+			rows[index].PrimaryEgress = "主路由直连"
+		}
 	}
 	gatewayLocal.PrimaryEgress = primaryEgress(localEgress)
 	gatewayLocal.Transport = combinedLocalTransport(localHasTUN, localHasExplicitProxy, gatewayLocal.ActiveConnections > 0)

@@ -31,6 +31,7 @@ func Prepare(sourcePath, root string) (config.Config, error) {
 	cfg.DHCP.Binary = filepath.Join(root, "bin", "dnsmasq")
 	cfg.Mihomo.Binary = filepath.Join(root, "bin", "mihomo")
 	cfg.Mihomo.Config = filepath.Join(root, "runtime", "mihomo.yaml")
+	cfg.Transparent.IPv6PacketBrokerBinary = filepath.Join(root, "bin", "opensurge-network")
 	cfg.Runtime.Dir = filepath.Join(root, "runtime")
 	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
 		destination := filepath.Join(root, "data", "imported-profile.yaml")

@@ -146,6 +146,51 @@ func TestCompileInheritedDeviceDoesNotReferenceUnusedDefaultPolicies(t *testing.
 	}
 }
 
+func TestCompileRouterBypassKeepsReservationWithoutMihomoRules(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{
+			ID:              "living-room",
+			DefaultPolicies: []string{"DIRECT", "Proxy"},
+			Rules:           []Rule{{ID: "video", Match: RuleMatch{Domains: []string{"video.example"}}, Action: "REJECT"}},
+		}},
+		Devices: []ManagedDevice{{
+			ID:            "playstation-5",
+			Name:          "PlayStation 5",
+			MAC:           "aa:bb:cc:dd:ee:05",
+			IPv4:          "192.168.1.190",
+			Profile:       "living-room",
+			GatewayTarget: GatewayTargetUpstreamRouter,
+			EgressMode:    EgressModeDedicated,
+		}},
+	}
+
+	compiled, err := CompilePolicySet(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compiled.Devices) != 1 || compiled.Devices[0].GatewayTarget != GatewayTargetUpstreamRouter || len(compiled.Devices[0].Groups) != 0 {
+		t.Fatalf("compiled device = %#v", compiled.Devices)
+	}
+	if len(compiled.Reservations) != 1 || compiled.Reservations[0].GatewayTarget != GatewayTargetUpstreamRouter {
+		t.Fatalf("reservations = %#v", compiled.Reservations)
+	}
+	if len(compiled.SelectorGroups) != 0 || len(compiled.OverrideRules) != 0 || len(compiled.DedicatedRules) != 0 || len(compiled.DefaultRules) != 0 {
+		t.Fatalf("router bypass emitted mihomo policy: %#v", compiled)
+	}
+}
+
+func TestValidateRouterBypassRequiresMAC(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices: []ManagedDevice{{
+			ID: "console", IPv4: "192.168.1.190", Profile: "home", GatewayTarget: GatewayTargetUpstreamRouter,
+		}},
+	}
+	if err := ValidatePolicySet(set); err == nil || !strings.Contains(err.Error(), "requires a MAC address") {
+		t.Fatalf("ValidatePolicySet() error = %v", err)
+	}
+}
+
 func TestCompilePolicySetTreatsMACAsOptionalIdentityForIPOnlyMode(t *testing.T) {
 	set := PolicySet{
 		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT", "Proxy"}}},

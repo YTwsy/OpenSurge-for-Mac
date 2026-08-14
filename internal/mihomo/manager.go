@@ -3,6 +3,7 @@ package mihomo
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -92,7 +93,43 @@ func (m Manager) Start() (int, error) {
 			return 0, err
 		}
 	}
+	if m.cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		if err := m.waitForIPv6PacketListener(pid, tunStartupTimeout); err != nil {
+			m.stopStartedProcess(pid)
+			return 0, err
+		}
+	}
 	return pid, nil
+}
+
+func (m Manager) waitForIPv6PacketListener(pid int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !process.IsAlive(pid) {
+			return fmt.Errorf("mihomo pid %d exited while the IPv6 packet listener was starting", pid)
+		}
+		data, _ := os.ReadFile(m.paths.MihomoLog)
+		logText := string(data)
+		if strings.Contains(logText, "OpenSurge packet listener ready:") {
+			return nil
+		}
+		if detail := ipv6PacketStartupError(logText); detail != "" {
+			return fmt.Errorf("mihomo IPv6 packet listener failed to start: %s", detail)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("mihomo IPv6 packet listener not ready after %s", timeout)
+}
+
+func ipv6PacketStartupError(logText string) string {
+	marker := "Listener " + config.IPv6PacketListenerName + " listen err:"
+	var detail string
+	for _, line := range strings.Split(logText, "\n") {
+		if index := strings.Index(line, marker); index >= 0 {
+			detail = strings.TrimSpace(line[index+len(marker):])
+		}
+	}
+	return detail
 }
 
 func (m Manager) stopStartedProcess(pid int) {
@@ -101,6 +138,7 @@ func (m Manager) stopStartedProcess(pid int) {
 		stopPID = process.StopPID
 	}
 	_ = stopPID(pid, startupProcessStopTimeout)
+	_ = m.cleanupIPv6PacketSocket()
 }
 
 func (m Manager) Check() error {
@@ -221,7 +259,28 @@ func tunStartupError(logPath string) string {
 }
 
 func (m Manager) Stop(pid int) error {
-	return process.StopPID(pid, 3*time.Second)
+	stopPID := m.stopPID
+	if stopPID == nil {
+		stopPID = process.StopPID
+	}
+	return errors.Join(stopPID(pid, 3*time.Second), m.cleanupIPv6PacketSocket())
+}
+
+func (m Manager) cleanupIPv6PacketSocket() error {
+	if m.cfg.Transparent.TUNIPv6 == config.TUNIPv6Off {
+		return nil
+	}
+	info, err := os.Lstat(m.paths.IPv6PacketSocket)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("refusing to remove non-socket IPv6 packet listener path %s", m.paths.IPv6PacketSocket)
+	}
+	return os.Remove(m.paths.IPv6PacketSocket)
 }
 
 func (m Manager) Running(pid int) bool {

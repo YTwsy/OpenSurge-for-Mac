@@ -2,11 +2,24 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { api, waitForOperation } from '../api'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
+import type { OperationNotification } from '../components/OperationNotifications'
 import { recoveryLabel } from '../status'
-import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
+import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkDefaults, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
 
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 type NetworkMode = ControlConfig['gateway']['mode']
+
+function isInstallerNetworkSeed(config: ControlConfig): boolean {
+  return config.gateway.mode === 'isolated_lan'
+    && config.gateway.interface === 'en0'
+    && config.gateway.upstream_interface === 'en0'
+    && config.gateway.lan_ip === '192.168.50.1'
+    && config.dhcp.enabled
+    && config.dhcp.range_start === '192.168.50.100'
+    && config.dhcp.range_end === '192.168.50.200'
+    && config.dns.listen === '192.168.50.1'
+}
+
 type PolicyMigrationDevice = Pick<PolicyDevice, 'id' | 'name' | 'ipv4'> & { mac?: string }
 type PolicyMigration = {
   target: ControlConfig
@@ -16,7 +29,7 @@ type PolicyMigration = {
   unresolved: PolicyMigrationDevice[]
 }
 
-export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void }) {
+export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void; onNotify: (notification: OperationNotification) => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -30,6 +43,10 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const gatewayControlFocused = useRef(false)
   const [interfaceOptions, setInterfaceOptions] = useState<NetworkInterfaceOption[]>([])
   const [interfaceDiscoveryError, setInterfaceDiscoveryError] = useState(false)
+  const [initialNetworkSetup, setInitialNetworkSetup] = useState(false)
+  const [networkDefaultsBusy, setNetworkDefaultsBusy] = useState(false)
+  const [networkDefaultsMessage, setNetworkDefaultsMessage] = useState('')
+  const [networkDefaultsError, setNetworkDefaultsError] = useState('')
   const [clientIPv4, setClientIPv4] = useState('')
   const [clientConfirmed, setClientConfirmed] = useState(false)
   const [ipv6Acknowledged, setIPv6Acknowledged] = useState(false)
@@ -45,7 +62,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const gatewayStopped = overview?.status.gateway === 'stopped'
   const gatewayInterrupted = overview?.status.runtime_state === 'interrupted'
   const dhcpRuntimeDisabled = config?.gateway.mode === 'same_lan'
-  const configurationEditable = !busy && gatewayStopped && !recoveryBlocksConfig
+  const configurationEditable = !busy && !networkDefaultsBusy && gatewayStopped && !recoveryBlocksConfig
   const planBlockersApply = ['idle', 'complete', 'complete_static', 'prepared', 'mac_static', 'router_dhcp_disabled_confirmed'].includes(current)
   const blockedByPlan = planBlockersApply && (plan?.blockers.length ?? 0) > 0
   const recoverySnapshot = overview?.recovery.network_snapshot
@@ -64,7 +81,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
 
   useEffect(() => {
     let active = true
-    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
+    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setInitialNetworkSetup(isInstallerNetworkSeed(value)); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
     void api.networkInterfaces().then(value => { if (active) setInterfaceOptions(value.interfaces) }).catch(() => { if (active) setInterfaceDiscoveryError(true) })
     return () => { active = false }
   }, [loadPlan])
@@ -90,13 +107,61 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   const selectMode = (mode: ControlConfig['gateway']['mode']) => setConfig(currentConfig => {
     if (!currentConfig) return currentConfig
     const sameLAN = mode === 'same_lan' || mode === 'same_wifi_dhcp'
-    return { ...currentConfig, gateway: { ...currentConfig.gateway, mode }, dhcp: { ...currentConfig.dhcp, enabled: mode !== 'same_lan' }, transparent: { ...currentConfig.transparent, mode: sameLAN ? 'tun' : currentConfig.transparent.mode } }
+    const topologyChanged = currentConfig.gateway.mode !== mode
+    return {
+      ...currentConfig,
+      gateway: { ...currentConfig.gateway, mode },
+      dhcp: { ...currentConfig.dhcp, enabled: mode !== 'same_lan' },
+      transparent: {
+        ...currentConfig.transparent,
+        mode: sameLAN ? 'tun' : currentConfig.transparent.mode,
+        ipv6_shared_l2_ready: topologyChanged ? false : currentConfig.transparent.ipv6_shared_l2_ready,
+      },
+    }
   })
+
+  const applyInitialNetworkDefaults = async (mode: NetworkDefaults['mode']) => {
+    setNetworkDefaultsBusy(true); setNetworkDefaultsError(''); setNetworkDefaultsMessage('')
+    try {
+      const defaults = await api.networkDefaults(mode)
+      if (defaults.blockers.length) throw new Error(defaults.blockers.join('；'))
+      setConfig(currentConfig => {
+        if (!currentConfig || currentConfig.gateway.mode !== mode) return currentConfig
+        const dhcp = mode === 'same_wifi_dhcp'
+          ? {
+              ...currentConfig.dhcp,
+              range_start: defaults.dhcp_range_start!,
+              range_end: defaults.dhcp_range_end!,
+              bypass_gateway: defaults.bypass_gateway || defaults.snapshot.router || '',
+              bypass_dns: defaults.bypass_dns.length ? defaults.bypass_dns : defaults.snapshot.router ? [defaults.snapshot.router] : [],
+            }
+          : currentConfig.dhcp
+        return {
+          ...currentConfig,
+          gateway: { ...currentConfig.gateway, interface: defaults.snapshot.interface, upstream_interface: defaults.snapshot.interface, lan_ip: defaults.gateway_ipv4 },
+          dhcp,
+          dns: { ...currentConfig.dns, listen: defaults.gateway_ipv4 },
+        }
+      })
+      const warning = defaults.warnings.length ? ` ${defaults.warnings.join('；')}。` : ''
+      const fields = mode === 'same_wifi_dhcp' ? 'IPv4、地址池和主路由建议值' : 'IPv4 建议值'
+      setNetworkDefaultsMessage(`已根据当前 ${defaults.snapshot.network_service}（${defaults.snapshot.interface}）填入 ${fields}，尚未保存。${warning}`)
+    } catch (cause) {
+      const fields = mode === 'same_lan' ? '接口和 IPv4' : '接口、IPv4、地址池、主路由网关和 DNS'
+      setNetworkDefaultsError(`无法自动填写当前网络：${cause instanceof Error ? cause.message : String(cause)}。请手工确认${fields}。`)
+    } finally {
+      setNetworkDefaultsBusy(false)
+    }
+  }
 
   const toggleMode = (mode: NetworkMode) => {
     setDetailMode(mode)
     setExpandedMode(currentMode => currentMode === mode ? null : mode)
-    if (config?.gateway.mode !== mode) selectMode(mode)
+    if (mode === 'isolated_lan') { setNetworkDefaultsMessage(''); setNetworkDefaultsError('') }
+    if (config?.gateway.mode !== mode) {
+      selectMode(mode)
+      if (initialNetworkSetup && mode !== 'isolated_lan') void applyInitialNetworkDefaults(mode)
+    }
   }
 
   const persistConfig = async (target: ControlConfig, migration?: PolicyMigration) => {
@@ -109,6 +174,7 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       }
       const updated = await api.saveConfig(target)
       setConfig(updated); setSavedConfig(updated); setPolicyMigration(null)
+      setInitialNetworkSetup(false); setNetworkDefaultsMessage(''); setNetworkDefaultsError('')
       await onChanged(); await loadPlan(updated)
       if (migration) {
         const messages = []
@@ -125,6 +191,21 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
 
   const save = async () => {
     if (!config || !savedConfig) return
+    const leavingTakeover = savedConfig.gateway.mode === 'same_wifi_dhcp' && config.gateway.mode !== 'same_wifi_dhcp' && config.device_policy.enabled
+    if (leavingTakeover) {
+      try {
+        const document = await api.devicePolicy()
+        const bypassDevices = document.policy.devices.filter(device => device.gateway_target === 'upstream_router')
+        if (bypassDevices.length) {
+          const names = bypassDevices.map(device => device.name || device.id).join('、')
+          setError(`${names} 正在使用“直连主路由”；该方式仅适用于局域网 DHCP 接管。请先在设备页将这些设备切回 OpenSurge。`)
+          return
+        }
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+        return
+      }
+    }
     const leavingSameLAN = savedConfig.gateway.mode === 'same_lan' && config.gateway.mode !== 'same_lan' && config.device_policy.enabled
     if (!leavingSameLAN) {
       await persistConfig(config)
@@ -172,8 +253,14 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       const operation = await api.gateway(action)
       await waitForOperation(operation.id)
       await onChanged()
-      setMessage(action === 'start' ? `${gatewayModeLabel(config.gateway.mode)}已启动。` : `${gatewayModeLabel(config.gateway.mode)}已停止。`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      const result = action === 'start' ? `${gatewayModeLabel(config.gateway.mode)}已启动。` : `${gatewayModeLabel(config.gateway.mode)}已停止。`
+      setMessage(result)
+      onNotify({ tone: 'success', title: action === 'start' ? '启动网关成功' : '停止网关成功', message: action === 'start' ? `OpenSurge 已完成${gatewayModeLabel(config.gateway.mode)}启动。` : `OpenSurge 已完成${gatewayModeLabel(config.gateway.mode)}停止。` })
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(failure)
+      onNotify({ tone: 'error', title: action === 'start' ? '启动网关失败' : '停止网关失败', message: failure })
+    }
     finally { setBusy(false) }
   }
 
@@ -185,10 +272,16 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       const operation = await api.gateway('stop')
       await waitForOperation(operation.id)
       await onChanged()
-      setMessage(config.gateway.mode === 'same_wifi_dhcp'
+      const result = config.gateway.mode === 'same_wifi_dhcp'
         ? '旧状态已安全清理。请继续完成路由器 DHCP 与 Mac 网络恢复。'
-        : `旧状态已安全清理。现在可以重新启动${gatewayModeLabel(config.gateway.mode)}。`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+        : `旧状态已安全清理。现在可以重新启动${gatewayModeLabel(config.gateway.mode)}。`
+      setMessage(result)
+      onNotify({ tone: 'success', title: '旧网关状态清理成功', message: '上次运行遗留的 runtime 已完成安全清理。' })
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(failure)
+      onNotify({ tone: 'error', title: '旧网关状态清理失败', message: failure })
+    }
     finally { setBusy(false) }
   }
 
@@ -197,6 +290,11 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       setError('网络配置尚未保存。请先保存配置；若恢复资料已准备，保存会清除该预备卡并从第 1 步重新开始。')
       return
     }
+    const lifecycleAction = current === 'router_dhcp_disabled_confirmed'
+      ? 'start'
+      : current === 'client_validated' || current === 'client_validation_skipped'
+        ? 'stop'
+        : null
     setBusy(true); setError('')
     try {
       switch (current) {
@@ -215,7 +313,13 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       // that normal transition into a false "incomplete IPv4" error after the
       // recovery action itself has succeeded.
       if (config && current !== 'router_dhcp_restored') await loadPlan(config)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      if (lifecycleAction === 'start') onNotify({ tone: 'success', title: '启动网关成功', message: '局域网 DHCP 接管网关已启动，请继续验证客户端接入。' })
+      if (lifecycleAction === 'stop') onNotify({ tone: 'success', title: '停止网关成功', message: '网关已停止，请继续恢复路由器 DHCP 与 Mac 网络。' })
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      setError(failure)
+      if (lifecycleAction) onNotify({ tone: 'error', title: lifecycleAction === 'start' ? '启动网关失败' : '停止网关失败', message: failure })
+    }
     finally { setBusy(false) }
   }
 
@@ -288,6 +392,10 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
         <SectionTitle title="Desired 网络配置" subtitle={`这是下次启动要使用的目标值；保存本身不会切换网络。revision ${config.revision.slice(0, 12)}`} />
         <fieldset disabled={!configurationEditable} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
           <div className="network-config-guide"><strong>填写顺序</strong><p>先选择上方网络模式，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址。保存不会立即改动网络；保存后的配置会在启动网关时应用。恢复资料已准备但网络尚未改动时仍可修正配置，保存后会从第 1 步重新开始。</p></div>
+          {initialNetworkSetup && <div className="notice">首次设置：选择旁路由模式或局域网 DHCP 接管后，OpenSurge 会读取当前主网络并填入未保存的建议值；独立下游 LAN 保持手工配置。</div>}
+          {networkDefaultsBusy && <div className="notice" role="status">正在读取当前主网络…</div>}
+          {networkDefaultsMessage && <div className="notice ok-notice" role="status">{networkDefaultsMessage}</div>}
+          {networkDefaultsError && <div className="notice warn" role="alert">{networkDefaultsError}</div>}
           <datalist id="network-interface-options">
             {interfaceOptions.map(option => <option key={`${option.interface}:${option.network_service}`} value={option.interface} label={`${option.network_service} · ${option.interface}`} />)}
           </datalist>
@@ -316,6 +424,22 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
               </ConfigField>
             </div>
           </fieldset>
+          {config.gateway.mode === 'same_wifi_dhcp' && <fieldset className="dhcp-config-group">
+            <legend><strong>直连主路由设备</strong><small>仅供设备页“直连主路由”使用；普通接管设备仍获得 Mac 网关和 DNS</small></legend>
+            <div className="dhcp-config-grid">
+              <ConfigField label="主路由网关" setting="dhcp.bypass_gateway" hint="向取消 OpenSurge IPv4 网关接管的设备下发。必须与 Mac 网关处于同一 /24，且不能位于 DHCP 地址池中。">
+                <input aria-label="直连主路由网关" placeholder="192.168.1.1" value={config.dhcp.bypass_gateway} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: event.target.value } })} />
+              </ConfigField>
+              <ConfigField label="主路由 DNS" setting="dhcp.bypass_dns" hint="向直连主路由设备下发，可填写原路由器或公共 DNS；多个地址用逗号分隔。">
+                <input aria-label="直连主路由 DNS" placeholder="192.168.1.1" value={config.dhcp.bypass_dns.join(', ')} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, bypass_dns: event.target.value.split(',').map(item => item.trim()).filter(Boolean) } })} />
+              </ConfigField>
+            </div>
+            <button type="button" className="text-link" disabled={!plan?.snapshot.router && !recoverySnapshot?.router} onClick={() => {
+              const snapshot = plan?.snapshot || recoverySnapshot
+              if (!snapshot) return
+              setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: snapshot.router || '', bypass_dns: snapshot.dns.length ? snapshot.dns : snapshot.router ? [snapshot.router] : [] } })
+            }}>使用当前网络快照中的路由器与 DNS</button>
+          </fieldset>}
           <ConfigField label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
             <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
               <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>
@@ -327,9 +451,23 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
           <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
             <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
               const mode = event.target.value as 'off' | 'tun'
-              setConfig({ ...config, transparent: { ...config.transparent, mode }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
+              setConfig({ ...config, dns: { ...config.dns, ipv6: mode === 'tun' && config.dns.ipv6 }, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
             }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
           </ConfigField>
+          <DownstreamIPv6Card
+            config={config}
+            editable={configurationEditable}
+            gatewayActive={gatewayActive}
+            runtimeStatus={overview?.status ?? null}
+            ipv6LinkLocalGateway={interfaceOptions.find(option => option.interface === config.gateway.interface)?.ipv6_link_local ?? ''}
+            onDNSChange={ipv6 => setConfig({ ...config, dns: { ...config.dns, ipv6 } })}
+            onTakeoverChange={tun_ipv6 => setConfig({ ...config, transparent: { ...config.transparent, tun_ipv6 } })}
+            onSharedL2ReadyChange={ipv6_shared_l2_ready => setConfig({ ...config, transparent: { ...config.transparent, ipv6_shared_l2_ready } })}
+          />
+          {config.gateway.mode === 'same_lan' && <BypassRouterClientGuide
+            config={config}
+            ipv6LinkLocalGateway={interfaceOptions.find(option => option.interface === config.gateway.interface)?.ipv6_link_local ?? ''}
+          />}
           <ConfigField label="Mac 本机系统代理协同" setting="local_system_proxy.enabled" hint="启动时把上游网络服务的 macOS Web Proxy（HTTP）和 Secure Web Proxy（HTTPS）指向 127.0.0.1:mihomo.mixed_port，停止、回滚或 mihomo 重启失败时恢复原状态。可用于兼容 SafeDNS、DNS Proxy、内容过滤或其他 Network Extension 干扰仅 TUN 本机 DNS 的问题；只覆盖遵循系统代理的 Mac 应用，不替代 TUN，也不影响下游设备。已有系统代理、PAC 或自动发现时会拒绝启动，避免覆盖用户配置。">
             <ConfigSwitch
               label="启用 macOS HTTP/HTTPS 系统代理"
@@ -401,10 +539,11 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
       <section className="section">
         <SectionTitle title="恢复状态机" subtitle="推荐路径保留真实系统动作与网络证据；可跳过节点会明确记录为未验证" />
         <div className="timeline">{stages.map((stage, index) => <div className={index < currentIndex ? 'done' : index === currentIndex ? 'current' : ''} key={stage}><span>{index < currentIndex ? '✓' : index + 1}</span><p>{recoveryLabel(stage)}</p></div>)}</div>
-        <div className="cooperative"><strong>合作式 IPv4 模式</strong><p>同一二层 LAN 中，客户端仍可能通过手工路由器网关或 IPv6 绕过 Mac。要求不可绕过时请选择独立 AP/SSID/VLAN。</p></div>
+        <div className="cooperative"><strong>{config.transparent.tun_ipv6 !== 'off' ? 'IPv4 与 IPv6 全 LAN 接管' : '合作式 IPv4 模式'}</strong><p>{config.transparent.tun_ipv6 !== 'off' ? 'OpenSurge 将同时提供 DHCP 与 IPv6 RA。继续前必须关闭主路由 IPv4 DHCP 和 IPv6 RA/DHCPv6，或用 RA Guard 保证客户端只收到 OpenSurge 默认路由。' : '同一二层 LAN 中，客户端仍可能通过手工路由器网关或 IPv6 绕过 Mac。要求不可绕过时请选择独立 AP/SSID/VLAN。'}</p></div>
         {current === 'prepared' && <div className="notice">恢复资料已经保存，但 Mac、路由器与 DHCP 都尚未改动。此时仍可修正并保存目标配置；保存会清除这张预备恢复卡，并从第 1 步重新开始。</div>}
         {configDirty && <div className="notice warn">网络配置有未保存的修改。先保存配置，再保存恢复资料或继续第 2 步。</div>}
         {current === 'mac_static' && <RouterDHCPGuide action="关闭" router={router} networkService={networkService} />}
+        {current === 'mac_static' && config.transparent.tun_ipv6 !== 'off' && <div className="notice warn">还需要关闭主路由的 IPv6 RA、SLAAC 或 DHCPv6 路由发布。仅关闭 IPv4 DHCP 不足以阻止 IPv6 绕过 Mac。</div>}
         {current === 'gateway_active' && <div className="form-stack"><input aria-label="验收客户端 IPv4" placeholder="客户端从 OpenSurge 获得的 IPv4" value={clientIPv4} onChange={event => setClientIPv4(event.target.value)} /><label><input type="checkbox" checked={clientConfirmed} onChange={event => setClientConfirmed(event.target.checked)} /> 已在客户端确认默认网关/DNS 为 Mac，且没有显式代理</label>{plan?.snapshot.ipv6_default && <label><input type="checkbox" checked={ipv6Acknowledged} onChange={event => setIPv6Acknowledged(event.target.checked)} /> 已知 IPv6 默认路由可能绕过 IPv4 设备策略</label>}</div>}
         {current === 'gateway_active' && <div className="notice">推荐完成客户端验收。若当前没有合适客户端，可跳过；跳过只解除 GUI 流程阻塞，不会产生 DHCP、DNS 或 TUN 验收证据。</div>}
         {current === 'client_validation_skipped' && <div className="notice warn">客户端验收已由用户跳过，本次运行没有客户端 DHCP、DNS 与 TUN 数据面验收结论。</div>}
@@ -426,6 +565,150 @@ export function NetworkPage({ overview, onChanged, onNavigate }: { overview: Ove
   </>
 }
 
+function DownstreamIPv6Card({ config, editable, gatewayActive, runtimeStatus, ipv6LinkLocalGateway, onDNSChange, onTakeoverChange, onSharedL2ReadyChange }: {
+  config: ControlConfig
+  editable: boolean
+  gatewayActive: boolean
+  runtimeStatus: Overview['status'] | null
+  ipv6LinkLocalGateway: string
+  onDNSChange: (enabled: boolean) => void
+  onTakeoverChange: (mode: ControlConfig['transparent']['tun_ipv6']) => void
+  onSharedL2ReadyChange: (ready: boolean) => void
+}) {
+  const isolated = config.gateway.mode === 'isolated_lan'
+  const bypassRouter = config.gateway.mode === 'same_lan'
+  const sharedL2 = !isolated
+  const tunReady = config.transparent.mode === 'tun'
+  const available = tunReady
+  const enabled = available && config.transparent.tun_ipv6 !== 'off'
+  const sharedL2Ready = Boolean(config.transparent.ipv6_shared_l2_ready)
+  const interfacesSeparated = config.gateway.interface.trim() !== '' && config.gateway.upstream_interface.trim() !== '' && config.gateway.interface !== config.gateway.upstream_interface
+  const interfacesShared = config.gateway.interface.trim() !== '' && config.gateway.interface === config.gateway.upstream_interface
+  const status = ipv6CardStatus(available, gatewayActive, runtimeStatus, config.transparent.tun_ipv6)
+  const automaticAddressing = !bypassRouter
+  const manualGateway = ipv6LinkLocalGateway ? `${ipv6LinkLocalGateway}%${config.gateway.interface}` : ''
+
+  return <article className={`downstream-ipv6-card ${available ? 'is-available' : 'is-safe-closed'}`} aria-labelledby="downstream-ipv6-title">
+    <header className="ipv6-card-header">
+      <div className="ipv6-card-identity"><span aria-hidden="true">6</span><div><small>IPV6 GATEWAY</small><h3 id="downstream-ipv6-title">下游 IPv6</h3><p>复用 OpenSurge 用户态数据面接管 TCP、UDP 与 QUIC；独立 LAN 和 DHCP 接管可自动下发，旁路由仅接入手工配置的设备。</p></div></div>
+      <span className={`pill ${status.tone}`.trim()}>{status.label}</span>
+    </header>
+
+    {!available ? <div className="ipv6-safe-state" role="status">
+      <span aria-hidden="true">✓</span>
+      <div><strong>先启用 mihomo TUN</strong><p>透明代理关闭时不会建立下游 IPv6 数据面。先在上方选择 mihomo TUN，再配置此卡片。</p></div>
+    </div> : <>
+      {sharedL2 && <div className="ipv6-card-step ipv6-shared-l2-step">
+        <div className="ipv6-step-copy"><span>1</span><div><small>共享局域网前置条件</small><strong>{bypassRouter ? '只接入手工配置的设备' : '确认 OpenSurge 是唯一 IPv6 路由提供者'}</strong><p>{bypassRouter ? 'OpenSurge 不广播 RA；选定设备必须手工使用 OpenSurge ULA、默认路由和 DNS，并且不能保留主路由 IPv6 默认路由。' : '此模式会向整个 LAN 广播 RA。请先关闭主路由 IPv6 RA/DHCPv6，或使用 RA Guard 确保客户端只能收到 OpenSurge。'}</p></div></div>
+        <label className={`ipv6-readiness-ack ${sharedL2Ready ? 'is-acknowledged' : ''} ${!editable ? 'is-disabled' : ''}`}>
+          <input
+            aria-label="我已知晓共享局域网 IPv6 前置条件"
+            type="checkbox"
+            checked={sharedL2Ready}
+            disabled={!editable}
+            onChange={event => onSharedL2ReadyChange(event.target.checked)}
+          />
+          <span className="ipv6-readiness-check" aria-hidden="true">{sharedL2Ready ? '✓' : ''}</span>
+          <span><strong>我已知晓上述前置条件</strong><small>{sharedL2Ready ? '已确认' : '勾选后才可启用共享 LAN IPv6'}</small></span>
+        </label>
+      </div>}
+
+      <div className="ipv6-card-step">
+        <div className="ipv6-step-copy"><span>{sharedL2 ? '2' : '1'}</span><div><small>接管策略</small><strong>何时为下游启用 IPv6</strong><p>推荐自动检测；需要依赖代理节点承载 IPv6 时再使用“总是开启”。</p></div></div>
+        <fieldset className="ipv6-mode-options" disabled={!editable} aria-label="下游 IPv6 接管策略">
+          <legend className="sr-only">下游 IPv6 接管策略</legend>
+          <IPv6ModeOption mode="off" current={config.transparent.tun_ipv6} title="关闭" description="不建立下游 IPv6 数据面" onSelect={onTakeoverChange} />
+          <IPv6ModeOption mode="auto" current={config.transparent.tun_ipv6} title="自动" badge="推荐" description="上游原生 IPv6 可用时启用" onSelect={onTakeoverChange} />
+          <IPv6ModeOption mode="always" current={config.transparent.tun_ipv6} title="总是开启" description="无论上游状态都建立接管路径" onSelect={onTakeoverChange} />
+        </fieldset>
+      </div>
+
+      <div className="ipv6-card-step ipv6-dns-step">
+        <div className="ipv6-step-copy"><span>{sharedL2 ? '3' : '2'}</span><div><small>域名解析</small><strong>解析 IPv6 域名</strong><p>开启后 OpenSurge DNS 回答 AAAA 并可生成 fake IPv6；它不会单独建立下游路由。</p></div></div>
+        <ConfigSwitch label="允许 AAAA 查询" accessibleLabel="解析 IPv6 域名" checked={config.dns.ipv6} disabled={!editable} onChange={onDNSChange} />
+      </div>
+
+      <div className={`ipv6-result ${enabled ? 'is-enabled' : ''}`}>
+        <div className="ipv6-result-heading"><div><small>设备最终获得</small><strong>{enabled ? (bypassRouter ? '一条手工接入 OpenSurge 的 IPv6 路径' : '一条由 OpenSurge 完整提供的 IPv6 路径') : '不使用 OpenSurge 下游 IPv6'}</strong></div><span>{enabled ? ipv6ModeLabel(config.transparent.tun_ipv6) : '已关闭'}</span></div>
+        <dl>
+          <div><dt>IPv6 地址</dt><dd>{enabled ? (automaticAddressing ? 'OpenSurge ULA · 自动' : 'OpenSurge ULA · 手工') : '不提供'}</dd></div>
+          <div><dt>默认路由</dt><dd>{enabled ? (automaticAddressing ? '经此 Mac · 自动' : '经此 Mac · 手工') : '不提供'}</dd></div>
+          <div><dt>DNS</dt><dd>{enabled ? `${bypassRouter ? '手工指向 OpenSurge' : 'OpenSurge 自动下发'} · ${config.dns.ipv6 ? 'AAAA 开启' : '仅 IPv4'}` : '不提供'}</dd></div>
+        </dl>
+        {enabled && <p>下游设备不需要运营商 Prefix Delegation；公网出口由 Mac 的原生 IPv6 或所选代理节点完成。</p>}
+      </div>
+
+      {enabled && <div className="ipv6-readiness">
+        <strong>启动前确认</strong>
+        {isolated ? <ul>
+          <li className={interfacesSeparated ? 'ready' : 'warn'}><span>{interfacesSeparated ? '✓' : '!'}</span><div><b>上游与下游使用不同接口</b><small>{interfacesSeparated ? `${config.gateway.upstream_interface} → ${config.gateway.interface}` : '当前接口相同，请先修正接口配置'}</small></div></li>
+          <li className="ready"><span>✓</span><div><b>自动发布 RA/SLAAC/RDNSS</b><small>连接独立下游网络的设备自动获得完整 IPv6 配置</small></div></li>
+          <li><span>•</span><div><b>下游没有其他 IPv6 路由器</b><small>请确认 AP、VLAN 或独立 LAN 不会发布竞争默认路由</small></div></li>
+        </ul> : bypassRouter ? <ul>
+          <li className={interfacesShared ? 'ready' : 'warn'}><span>{interfacesShared ? '✓' : '!'}</span><div><b>共享同一 LAN 接口</b><small>{interfacesShared ? config.gateway.interface : '旁路由模式要求上下游接口相同'}</small></div></li>
+          <li className="ready"><span>✓</span><div><b>OpenSurge 不会广播 RA</b><small>未选中的局域网设备不会被自动迁移到 Mac</small></div></li>
+          <li className={sharedL2Ready && Boolean(manualGateway) ? 'ready' : 'warn'}><span>{sharedL2Ready && manualGateway ? '✓' : '!'}</span><div><b>逐台手工设置 IPv6</b><small>地址 fdfe:dcba:9878::/64；默认网关与 DNS 均使用 {manualGateway || '尚未检测到的 Mac 接口链路本地 IPv6'}</small></div></li>
+        </ul> : <ul>
+          <li className={interfacesShared ? 'ready' : 'warn'}><span>{interfacesShared ? '✓' : '!'}</span><div><b>共享同一 LAN 接口</b><small>{interfacesShared ? config.gateway.interface : 'DHCP 接管模式要求上下游接口相同'}</small></div></li>
+          <li className={sharedL2Ready ? 'ready' : 'warn'}><span>{sharedL2Ready ? '✓' : '!'}</span><div><b>主路由 IPv6 RA 已停止</b><small>OpenSurge 将向整个 LAN 自动发布 RA/SLAAC/RDNSS</small></div></li>
+          <li><span>•</span><div><b>全 LAN IPv6 都会经 Mac</b><small>这不是只影响 DHCP 租约设备的局部设置</small></div></li>
+        </ul>}
+      </div>}
+
+      {enabled && sharedL2 && !sharedL2Ready && <div className="notice warn">保存会被后端拒绝：请先完成共享局域网 IPv6 前置条件并勾选确认。</div>}
+      {enabled && bypassRouter && <div className="notice">旁路由 IPv6 不发送 RA。只接入手工配置 <code>fdfe:dcba:9878::/64</code> 地址、默认网关与 DNS <code>{manualGateway || `Mac 的 fe80:: 链路本地地址%${config.gateway.interface}`}</code>，且已移除主路由 IPv6 默认路由的设备。</div>}
+      {enabled && config.dns.ipv6 === false && <div className="notice">接管路径已开启，但普通域名不会获得 AAAA；IPv6 字面地址仍可进入 OpenSurge。</div>}
+      {config.transparent.tun_ipv6 === 'always' && <div className="notice warn">“总是开启”只保证下游接管路径存在。若上游没有原生 IPv6，DIRECT IPv6 不可用，UDP/QUIC 还需要代理节点支持相应流量。</div>}
+      {gatewayActive && runtimeStatus && <div className="ipv6-runtime" role="status">
+        <div><small>当前运行</small><strong>{status.label}</strong>{runtimeStatus.ipv6_reason && <p>{ipv6ReasonLabel(runtimeStatus.ipv6_reason)}</p>}</div>
+        <dl><div><dt>AAAA</dt><dd>{runtimeStatus.dns_ipv6 ? '开启' : '关闭'}</dd></div><div><dt>接管请求</dt><dd>{ipv6ModeLabel(runtimeStatus.tun_ipv6_requested)}</dd></div><div><dt>数据面</dt><dd>{ipv6PacketLabel(runtimeStatus.ipv6_packet)}</dd></div><div><dt>上游原生 IPv6</dt><dd>{ipv6NativeLabel(runtimeStatus.native_ipv6_available, runtimeStatus.ipv6_reason)}</dd></div></dl>
+      </div>}
+    </>}
+  </article>
+}
+
+function BypassRouterClientGuide({ config, ipv6LinkLocalGateway }: { config: ControlConfig; ipv6LinkLocalGateway: string }) {
+  const ipv4Hint = ipv4ClientAddressHint(config.gateway.lan_ip)
+  const ipv6Gateway = ipv6LinkLocalGateway ? `${ipv6LinkLocalGateway}%${config.gateway.interface}` : `等待 ${config.gateway.interface} 获得 fe80:: 地址`
+  const ipv6Enabled = config.transparent.tun_ipv6 !== 'off'
+
+  return <aside className="bypass-client-guide" aria-label="旁路由设备填写速查">
+    <header><div><small>CLIENT SETUP</small><strong>旁路由设备填写速查</strong><p>只修改需要接入 OpenSurge 的设备。每台设备的 IPv4 与 IPv6 地址必须唯一；网关和 DNS 可直接照填。</p></div><span className="pill ok">手工接入</span></header>
+    <div className="bypass-client-guide-grid">
+      <section aria-label="IPv4 填写提示"><h4>IPv4</h4><dl>
+        <div><dt>设备地址</dt><dd>{ipv4Hint}</dd></div>
+        <div><dt>子网掩码</dt><dd><code>255.255.255.0</code></dd></div>
+        <div><dt>默认网关</dt><dd><code>{config.gateway.lan_ip}</code></dd></div>
+        <div><dt>DNS</dt><dd><code>{config.gateway.lan_ip}</code></dd></div>
+      </dl></section>
+      <section aria-label="IPv6 填写提示" className={ipv6Enabled ? '' : 'inactive'}><h4>IPv6 <span>{ipv6Enabled ? '已启用' : '需先开启上方接管'}</span></h4><dl>
+        <div><dt>设备地址</dt><dd><code>fdfe:dcba:9878::设备编号/64</code><small>例如 fdfe:dcba:9878::21/64</small></dd></div>
+        <div><dt>默认网关</dt><dd><code>{ipv6Gateway}</code><small>必须使用 Mac 的链路本地地址</small></dd></div>
+        <div><dt>DNS</dt><dd><code>{ipv6Gateway}</code><small>与 IPv6 默认网关使用同一 Mac 链路本地地址</small></dd></div>
+        <div><dt>主路由默认路由</dt><dd>在这台设备上移除，避免 IPv6 绕过 Mac</dd></div>
+      </dl></section>
+    </div>
+  </aside>
+}
+
+function ipv4ClientAddressHint(gateway: string) {
+  if (!ipv4Pattern.test(gateway)) return '保留设备当前的稳定局域网 IPv4'
+  const parts = gateway.split('.')
+  return `保留设备当前稳定地址（${parts.slice(0, 3).join('.')}.x/24，每台唯一）`
+}
+
+function IPv6ModeOption({ mode, current, title, badge, description, onSelect }: {
+  mode: ControlConfig['transparent']['tun_ipv6']
+  current: ControlConfig['transparent']['tun_ipv6']
+  title: string
+  badge?: string
+  description: string
+  onSelect: (mode: ControlConfig['transparent']['tun_ipv6']) => void
+}) {
+  const active = current === mode
+  return <button type="button" className={active ? 'active' : ''} aria-pressed={active} onClick={() => onSelect(mode)}><span><strong>{title}</strong>{badge && <em>{badge}</em>}</span><small>{description}</small></button>
+}
+
 function PolicyMigrationDialog({ migration, busy, onInspect, onCancel, onConfirm }: { migration: PolicyMigration; busy: boolean; onInspect: () => void; onCancel: () => void; onConfirm: () => void }) {
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) onCancel() }
@@ -441,11 +724,50 @@ function PolicyMigrationDialog({ migration, busy, onInspect, onCancel, onConfirm
 }
 
 function gatewayModeLabel(mode: ControlConfig['gateway']['mode']) {
-  return mode === 'same_lan' ? '旁路由模式' : '独立下游 LAN'
+  if (mode === 'same_lan') return '旁路由模式'
+  if (mode === 'same_wifi_dhcp') return '局域网 DHCP 接管'
+  return '独立下游 LAN'
+}
+
+function ipv6CardStatus(available: boolean, gatewayActive: boolean, runtimeStatus: Overview['status'] | null, desired: ControlConfig['transparent']['tun_ipv6']) {
+  if (!available) return { label: '安全关闭', tone: '' }
+  if (!gatewayActive || !runtimeStatus) return desired === 'off'
+    ? { label: '已关闭', tone: '' }
+    : { label: `${ipv6ModeLabel(desired)} · 待启动`, tone: 'ok' }
+  if (runtimeStatus.ipv6_packet === 'ready') return { label: '正在接管', tone: 'ok' }
+  if (runtimeStatus.ipv6_packet === 'failed') return { label: '运行异常', tone: 'bad' }
+  if (runtimeStatus.ipv6_reason === 'native_ipv6_unavailable') return { label: '等待上游 IPv6', tone: '' }
+  if (runtimeStatus.tun_ipv6_requested === 'off' || runtimeStatus.ipv6_packet === 'disabled') return { label: '已关闭', tone: '' }
+  return { label: '尚未建立', tone: '' }
+}
+
+function ipv6ModeLabel(mode: ControlConfig['transparent']['tun_ipv6']) {
+  return mode === 'auto' ? '自动' : mode === 'always' ? '总是启用' : '关闭'
+}
+
+function ipv6PacketLabel(status: Overview['status']['ipv6_packet']) {
+  return status === 'ready' ? '已接管' : status === 'failed' ? '异常' : status === 'stopped' ? '未运行' : '已关闭'
+}
+
+function ipv6NativeLabel(available: boolean, reason?: string) {
+  if (reason?.includes('native_detection_failed:')) return '检测失败'
+  return available ? '可用' : '不可用'
+}
+
+function ipv6ReasonLabel(reason: string) {
+  if (reason === 'native_ipv6_unavailable') return '自动模式未启用：上游没有可用原生 IPv6'
+  if (reason === 'native_ipv6_available') return '已检测到上游原生 IPv6'
+  if (reason === 'forced_userspace_packet_path') return '已按“总是启用”建立用户态数据面'
+  if (reason === 'disabled') return '已关闭'
+  if (reason === 'stopped') return '网关未运行'
+  if (reason.includes('native_detection_failed:')) return `上游 IPv6 探测失败：${reason.slice(reason.indexOf('native_detection_failed:') + 'native_detection_failed:'.length).trim()}`
+  return reason
 }
 
 function gatewayModeDescription(config: ControlConfig) {
-  if (config.gateway.mode === 'same_lan') return '启动 DNS、mihomo TUN、PF/NAT 与 IPv4 forwarding；路由器 DHCP 保持开启，部分设备需手工把网关和 DNS 指向 Mac。'
+  if (config.gateway.mode === 'same_lan') return config.transparent.tun_ipv6 === 'off'
+    ? '启动 DNS、mihomo TUN、PF/NAT 与 IPv4 forwarding；路由器 DHCP 保持开启，部分设备需手工把网关和 DNS 指向 Mac。'
+    : '启动选择性 IPv6 packet 数据面但不广播 RA；指定设备需手工设置 OpenSurge ULA、默认网关和 DNS，其他局域网设备不变。'
   const proxyMode = config.transparent.mode === 'tun' ? 'mihomo TUN 透明代理' : '不启用透明代理'
   return `启动 DHCP/DNS、PF/NAT 与 IPv4 forwarding；当前配置为${proxyMode}。`
 }
@@ -455,6 +777,11 @@ function gatewayConfirmation(mode: ControlConfig['gateway']['mode'], action: 'st
     return action === 'start'
       ? '将按已保存配置启动旁路由模式。路由器 DHCP 不会被关闭；部分设备需要自行把网关和 DNS 指向 Mac。继续吗？'
       : '停止后，仍把网关或 DNS 指向 Mac 的设备可能立即断网。确定停止旁路由模式吗？'
+  }
+  if (mode === 'same_wifi_dhcp') {
+    return action === 'start'
+      ? '将按已保存配置启动局域网 DHCP/DNS 接管。请确认主路由器的 DHCP 与 IPv6 RA 已关闭。继续吗？'
+      : '停止后，已使用 OpenSurge 作为 DHCP、DNS 或默认网关的局域网设备可能立即断网。确定停止吗？'
   }
   return action === 'start'
     ? '将按已保存配置启动独立下游 LAN 的 DHCP/DNS、PF/NAT 与 IPv4 forwarding。继续吗？'
