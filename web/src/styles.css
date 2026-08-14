@@ -11,7 +11,6 @@ button{cursor:pointer}
 .brand-mark{width:42px;height:42px;display:block;object-fit:contain;flex:0 0 auto}
 .brand strong,.brand small{display:block}
 .brand small{color:#71847d;margin-top:2px}
-.brand .brand-series{color:#79e6b3;font-size:9px;font-weight:750;letter-spacing:.055em}
 .sidebar nav{display:grid;gap:6px}
 .sidebar nav button{border:0;background:transparent;color:#869992;padding:11px 12px;border-radius:10px;text-align:left;display:flex;gap:13px;align-items:center}
 .sidebar nav button span{font-size:18px;width:20px;text-align:center}
@@ -21,6 +20,9 @@ button{cursor:pointer}
 .sidebar-status strong,.sidebar-status small{display:block}
 .sidebar-status strong{font-size:13px}
 .sidebar-status small{color:#71847d;font-size:11px;margin-top:3px}
+.sidebar-release{display:flex;align-items:center;gap:6px;padding:8px 10px 0;color:#71847d;font-size:10px;line-height:1.4}
+.sidebar-release span{font-weight:650}
+.sidebar-release small{font-size:inherit;color:inherit;font-variant-numeric:tabular-nums}
 .workspace{grid-column:2;padding:42px 54px 72px;max-width:1500px;width:100%;margin:auto}
 .page-header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:34px}
 .page-header small,.gateway-card small,.metric small,.source-card small,.device-card small,.this-mac small,.policy-list small{letter-spacing:.14em;color:#79e6b3;font-weight:700}
@@ -470,8 +472,7 @@ button{cursor:pointer}
 .router-fallback code{color:inherit;background:#3a311c;border-radius:5px;padding:2px 5px}
 html[data-theme="light"] body{background:radial-gradient(circle at 72% -12%,#ccecdf 0,transparent 34%),#f2f7f4;color:#183028}
 html[data-theme="light"] .sidebar{background:#f7fbf9e8;border-color:#cbded6}
-html[data-theme="light"] .brand small,html[data-theme="light"] .sidebar-status small,html[data-theme="light"] .page-header p,html[data-theme="light"] .gateway-card p,html[data-theme="light"] .metric span,html[data-theme="light"] .section-title p,html[data-theme="light"] .row small,html[data-theme="light"] .config-field small{color:#60776e}
-html[data-theme="light"] .brand .brand-series{color:#277454}
+html[data-theme="light"] .brand small,html[data-theme="light"] .sidebar-status small,html[data-theme="light"] .sidebar-release,html[data-theme="light"] .page-header p,html[data-theme="light"] .gateway-card p,html[data-theme="light"] .metric span,html[data-theme="light"] .section-title p,html[data-theme="light"] .row small,html[data-theme="light"] .config-field small{color:#60776e}
 html[data-theme="light"] .sidebar nav button{color:#536a61}
 html[data-theme="light"] .sidebar nav button:hover,html[data-theme="light"] .sidebar nav button.active{background:#dcece5;color:#17372c}
 html[data-theme="light"] .sidebar-status{border-color:#cbded6}
@@ -585,7 +586,7 @@ body{min-width:0}
 .sidebar{position:static;width:100%;padding:14px;display:grid;grid-template-columns:auto auto;gap:12px;align-items:center}
 .brand{padding:0}.brand-mark{width:34px;height:34px}.brand small{font-size:10px}
 .sidebar nav{grid-column:1/-1;display:flex;gap:5px;overflow-x:auto;padding-bottom:2px}.sidebar nav button{flex:0 0 auto;padding:9px 10px;white-space:nowrap}.sidebar nav button span{font-size:15px;width:17px}
-.theme-toggle{margin:0;justify-self:end;padding:8px 10px}.sidebar-status{display:none}
+.theme-toggle{margin:0;justify-self:end;padding:8px 10px}.sidebar-status,.sidebar-release{display:none}
 .workspace{grid-column:auto;padding:22px 14px 48px}
 .page-header{display:grid;gap:16px;margin-bottom:22px}.page-header h1{font-size:28px}
 .mode-grid,.config-form,.dhcp-config-grid,.mode-detail-copy{grid-template-columns:1fr}

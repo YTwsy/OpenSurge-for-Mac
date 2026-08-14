@@ -1,7 +1,7 @@
 <div align="center">
   <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App Icon">
   <h1>OpenSurge for Mac</h1>
-  <p><strong>v0.2.x · Wind Rose</strong></p>
+  <p><strong>v0.2 · Wind Rose</strong></p>
   <p><strong>Turn a Mac into a Surge-style whole-home transparent gateway with per-device routing—onboard selected devices in same-LAN bypass-router mode, take over DHCP/DNS automatically, and optionally enable experimental downstream IPv6 takeover.</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>

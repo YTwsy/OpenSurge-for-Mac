@@ -169,7 +169,7 @@ export function App() {
 
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small><small className="brand-series">v0.2.x · Wind Rose</small></div></div>
+      <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
       <nav aria-label="OpenSurge sections">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}
       </nav>
@@ -179,6 +179,7 @@ export function App() {
         <button type="button" className="theme-toggle" aria-pressed={theme === 'light'} aria-label={theme === 'dark' ? '切换为浅色模式' : '切换为深色模式'} onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}><span aria-hidden="true">{theme === 'dark' ? '☀' : '◐'}</span>{theme === 'dark' ? '浅色模式' : '深色模式'}</button>
       </div>
       <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway, overview?.status.runtime_state)}</strong><small>{overview?.status.lan_ip || 'Control API'}</small></div></div>
+      <div className="sidebar-release" aria-label="OpenSurge v0.2，代号 Wind Rose"><span>Wind Rose</span><small>· v0.2</small></div>
     </aside>
     <main className="workspace">
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>Web GUI 与 OpenSurge 的安全连接已过期</h1><p>请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。</p></div></section> : <>
