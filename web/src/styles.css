@@ -601,7 +601,7 @@ body{min-width:0}
 @media(max-width:1150px){
 .dashboard-live-grid{grid-template-columns:1fr 1fr}.gateway-health-card{grid-column:1/-1}.dashboard-monitor-grid{grid-template-columns:1fr}.source-import-grid,.source-grid{grid-template-columns:1fr}
 }
-@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell,.config-switch,.config-switch-toggle,.config-switch-toggle i{transition:none!important}.mode-detail,.operation-notification{animation:none}.button-spinner,.live-rate-card header em i,.trend-live-dot span{animation:none}}
+@media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell,.config-switch,.config-switch-toggle,.config-switch-toggle i,.policy-group-chevron{transition:none!important}.mode-detail,.operation-notification{animation:none}.button-spinner,.live-rate-card header em i,.trend-live-dot span{animation:none}}
 
 /* Node health, outlet summaries and applied-path connectivity */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
@@ -669,9 +669,13 @@ body{min-width:0}
 .policy-health-list{display:grid;gap:14px}
 .policy-health-group{overflow:hidden;border:1px solid #20372f;border-radius:15px;background:#0d1b17}
 .policy-group-head{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:17px 19px;border-bottom:1px solid #1f342c;background:linear-gradient(135deg,#10241d,#0d1b17)}
+.policy-health-group.collapsed .policy-group-head{border-bottom-color:transparent}
 .policy-group-head h2{margin:4px 0 3px;font-size:17px;letter-spacing:-.01em}.policy-group-head p{margin:0;color:#71877e;font-size:10px}.policy-group-head p strong{color:#a9e8ca}
 .group-kicker{display:flex;gap:6px}.group-kicker span{padding:3px 6px;border-radius:4px;background:#173126;color:#72cba4;font-size:8px;font-weight:850;letter-spacing:.08em;text-transform:uppercase}
 .group-health-summary{display:flex;align-items:center;gap:14px}.group-health-summary>span{color:#859a92;font-size:10px}.group-health-summary>span strong{color:#a9f5d1;font-size:15px}
+.policy-group-head .policy-group-toggle{width:32px;height:32px;display:grid;place-items:center;padding:0}
+.policy-group-chevron{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s ease}
+.policy-group-toggle[aria-expanded="true"] .policy-group-chevron{transform:rotate(180deg)}
 .proxy-node-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:14px}
 .proxy-node{position:relative;display:grid;grid-template-columns:18px minmax(0,1fr) auto;grid-template-areas:"mark copy health" "mark tags health";gap:5px 8px;align-items:center;min-height:68px;padding:10px;border:1px solid #22382f;border-radius:10px;background:#0a1713;color:inherit;text-align:left;transition:border-color .15s,background .15s}
 .proxy-node:not(:disabled):hover{border-color:#4c8a70;background:#10251e}.proxy-node.selected{border-color:#5db58f;background:#123025;box-shadow:inset 3px 0 #72d5a9}.proxy-node:disabled{cursor:default}

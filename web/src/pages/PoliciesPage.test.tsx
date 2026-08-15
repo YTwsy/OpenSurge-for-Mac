@@ -31,6 +31,7 @@ const overview = {
   status: { gateway: 'running', mihomo: 'running' },
   policies: [
     { name: 'Main', type: 'Selector', selected: 'Proxy-A', options: ['Proxy-A', 'Proxy-B', 'DIRECT'] },
+    { name: 'Fallback', type: 'Selector', selected: 'DIRECT', options: ['DIRECT'] },
     { name: 'device/alice/default', type: 'Selector', selected: 'Proxy-B', options: ['Proxy-A', 'Proxy-B'] },
   ],
 } as unknown as Overview
@@ -65,16 +66,33 @@ describe('PoliciesPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Main' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'device/alice/default' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Main 选择 Proxy-B' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Fallback 选择 DIRECT' })).toBeNull()
+
+    const expandMain = screen.getByRole('button', { name: '展开策略组 Main' })
+    expect(expandMain.getAttribute('aria-expanded')).toBe('false')
+    await userEvent.click(expandMain)
     expect(screen.getAllByText('86 ms').length).toBeGreaterThan(0)
     expect(screen.getByText('超时')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '展开策略组 Fallback' }).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'Fallback 选择 DIRECT' })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Main 选择 Proxy-B' }))
     await waitFor(() => expect(api.selectPolicy).toHaveBeenCalledWith('Main', 'Proxy-B'))
     expect(onChanged).toHaveBeenCalledOnce()
 
+    await userEvent.click(screen.getByRole('button', { name: '收起策略组 Main' }))
+    expect(screen.queryByRole('button', { name: 'Main 选择 Proxy-B' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '展开策略组 Fallback' }))
+    expect(screen.getByRole('button', { name: 'Fallback 选择 DIRECT' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Main 选择 Proxy-B' })).toBeNull()
+
     await userEvent.click(screen.getByRole('button', { name: '设备策略' }))
     expect(screen.getByRole('heading', { name: 'device/alice/default' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Main' })).toBeNull()
+    expect(screen.getByRole('button', { name: '展开策略组 device/alice/default' }).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'device/alice/default 选择 Proxy-A' })).toBeNull()
   })
 
   it('tests the probeable nodes in the current view', async () => {
