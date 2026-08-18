@@ -6,6 +6,7 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/gatewayrules"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 )
@@ -415,6 +416,12 @@ type DevicePolicyResponse struct {
 	SchemaVersion int              `json:"schema_version"`
 	Revision      string           `json:"revision"`
 	Policy        device.PolicySet `json:"policy"`
+}
+
+type GatewayRulesResponse struct {
+	SchemaVersion int                   `json:"schema_version"`
+	Revision      string                `json:"revision"`
+	Rules         gatewayrules.Document `json:"rules"`
 }
 
 type BootstrapResponse struct {

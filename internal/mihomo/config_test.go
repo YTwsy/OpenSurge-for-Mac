@@ -183,6 +183,113 @@ tun:
 	}
 }
 
+func TestRenderConfigMergesPersistentGatewayRulesAroundImportedRules(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	if err := os.WriteFile(profilePath, []byte(`proxies:
+  - name: Imported
+    type: socks5
+    server: 203.0.113.10
+    port: 1080
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies: [Imported]
+rules:
+  - DOMAIN-SUFFIX,remove.example,Proxy
+  - DOMAIN-SUFFIX,subscription.example,Proxy
+  - MATCH,DIRECT
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runtimeDir := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimeDir, "gateway-rules.json"), []byte(`{
+  "schema_version": 1,
+  "prepend": ["DOMAIN-SUFFIX,custom-before.example,Proxy"],
+  "append": ["DOMAIN-SUFFIX,custom-after.example,Proxy"],
+  "delete": ["DOMAIN-SUFFIX,remove.example,Proxy"]
+}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.Default()
+	cfg.Runtime.Dir = runtimeDir
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	prependIndex := strings.Index(rendered, "DOMAIN-SUFFIX,custom-before.example,Proxy")
+	subscriptionIndex := strings.Index(rendered, "DOMAIN-SUFFIX,subscription.example,Proxy")
+	appendIndex := strings.Index(rendered, "DOMAIN-SUFFIX,custom-after.example,Proxy")
+	terminalIndex := strings.LastIndex(rendered, "MATCH,DIRECT")
+	if prependIndex < 0 || subscriptionIndex < 0 || appendIndex < 0 || terminalIndex < 0 {
+		t.Fatalf("rendered config is missing merged rules:\n%s", rendered)
+	}
+	if !(prependIndex < subscriptionIndex && subscriptionIndex < appendIndex && appendIndex < terminalIndex) {
+		t.Fatalf("custom rules were not ordered around imported rules:\n%s", rendered)
+	}
+	if strings.Contains(rendered, "DOMAIN-SUFFIX,remove.example,Proxy") {
+		t.Fatalf("deleted subscription rule remained in rendered config:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigPreservesYAMLSensitiveManagedGatewayRuleText(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "gateway-rules.json"), []byte(`{
+  "schema_version": 1,
+  "prepend": ["DOMAIN-REGEX,^foo # bar$,DIRECT"],
+  "append": [],
+  "delete": []
+}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Runtime.Dir = dir
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	var parsed struct {
+		Rules []string `yaml:"rules"`
+	}
+	if err := yaml.Unmarshal([]byte(rendered), &parsed); err != nil {
+		t.Fatalf("parse rendered config: %v\n%s", err, rendered)
+	}
+	want := "DOMAIN-REGEX,^foo # bar$,DIRECT"
+	for _, rule := range parsed.Rules {
+		if rule == want {
+			return
+		}
+	}
+	t.Fatalf("rendered rules did not preserve %q: %v", want, parsed.Rules)
+}
+
+func TestComposeImportedRulesCanDeleteTerminalMatch(t *testing.T) {
+	rules := sequenceNode(
+		stringNode("DOMAIN-SUFFIX,subscription.example,Proxy"),
+		stringNode("MATCH,DIRECT"),
+	)
+	if err := composeImportedRules(rules, nil, []string{"MATCH,Proxy"}, []string{"MATCH,DIRECT"}); err != nil {
+		t.Fatalf("composeImportedRules() error = %v", err)
+	}
+	values := make([]string, 0, len(rules.Content))
+	for _, node := range rules.Content {
+		value, ok := scalarStringValue(node)
+		if !ok {
+			t.Fatalf("composed rule is not a string: %#v", node)
+		}
+		values = append(values, value)
+	}
+	if strings.Join(values, "|") != "DOMAIN-SUFFIX,subscription.example,Proxy|MATCH,Proxy" {
+		t.Fatalf("composed rules = %v", values)
+	}
+}
+
 func TestRenderConfigRejectsMalformedImportedDNS(t *testing.T) {
 	dir := t.TempDir()
 	profilePath := filepath.Join(dir, "profile.yaml")

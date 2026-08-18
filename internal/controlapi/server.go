@@ -23,6 +23,7 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/gatewayrules"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
@@ -262,6 +263,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/sources/{id}/export", s.auth(http.HandlerFunc(s.handleSourceExport)))
 	mux.Handle("GET /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
+	mux.Handle("GET /api/v1/gateway-rules", s.auth(http.HandlerFunc(s.handleGatewayRules)))
+	mux.Handle("PUT /api/v1/gateway-rules", s.auth(http.HandlerFunc(s.handleGatewayRules)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
 	mux.Handle("GET /api/v1/device-traffic", s.auth(http.HandlerFunc(s.handleDeviceTraffic)))
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
@@ -1588,6 +1591,13 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut {
+		if !s.lifecycleMu.TryLock() {
+			writeError(w, http.StatusConflict, "operation_in_progress", "another gateway lifecycle or configuration operation is already running")
+			return
+		}
+		defer s.lifecycleMu.Unlock()
+	}
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil || cfg.DevicePolicy.File == "" {
 		writeError(w, http.StatusConflict, "device_policy_unconfigured", "device_policy.file is not configured")
@@ -1629,12 +1639,75 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 		code := "device_policy_write_failed"
 		if strings.Contains(err.Error(), "revision conflict") {
 			status, code = http.StatusConflict, "revision_conflict"
+		} else if strings.Contains(err.Error(), "mihomo config validation failed") {
+			status, code = http.StatusUnprocessableEntity, "mihomo_validation_failed"
 		}
 		writeError(w, status, code, err.Error())
 		return
 	}
 	w.Header().Set("ETag", `"`+newRevision+`"`)
 	writeJSON(w, http.StatusOK, DevicePolicyResponse{SchemaVersion: SchemaVersion, Revision: newRevision, Policy: policy})
+}
+
+func (s *Server) handleGatewayRules(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut {
+		if !s.lifecycleMu.TryLock() {
+			writeError(w, http.StatusConflict, "operation_in_progress", "another gateway lifecycle or configuration operation is already running")
+			return
+		}
+		defer s.lifecycleMu.Unlock()
+	}
+	cfg, err := config.LoadRuntime(s.configPath)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
+		return
+	}
+	path := cfg.RuntimePath("gateway-rules.json")
+	current, revision, err := gatewayrules.Load(path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "gateway_rules_invalid", err.Error())
+		return
+	}
+	if r.Method == http.MethodGet {
+		w.Header().Set("ETag", `"`+revision+`"`)
+		writeJSON(w, http.StatusOK, GatewayRulesResponse{SchemaVersion: SchemaVersion, Revision: revision, Rules: current})
+		return
+	}
+
+	match := strings.Trim(r.Header.Get("If-Match"), `"`)
+	if match == "" || match != revision {
+		writeError(w, http.StatusConflict, "revision_conflict", "If-Match must contain the current gateway rules revision")
+		return
+	}
+	var document gatewayrules.Document
+	if err := decodeJSON(r, &document, maxSourceSize); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	document = gatewayrules.Normalize(document)
+	if err := gatewayrules.Validate(document); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "gateway_rules_validation_failed", err.Error())
+		return
+	}
+	data, err := gatewayrules.Canonical(document)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "gateway_rules_validation_failed", err.Error())
+		return
+	}
+	newRevision, err := s.configRunner.ApplyGatewayRules(r.Context(), s.configPath, match, data)
+	if err != nil {
+		status := http.StatusInternalServerError
+		code := "gateway_rules_write_failed"
+		if strings.Contains(err.Error(), "revision conflict") {
+			status, code = http.StatusConflict, "revision_conflict"
+		} else if strings.Contains(err.Error(), "mihomo config validation failed") {
+			status, code = http.StatusUnprocessableEntity, "mihomo_validation_failed"
+		}
+		writeError(w, status, code, err.Error())
+		return
+	}
+	w.Header().Set("ETag", `"`+newRevision+`"`)
+	writeJSON(w, http.StatusOK, GatewayRulesResponse{SchemaVersion: SchemaVersion, Revision: newRevision, Rules: document})
 }
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {

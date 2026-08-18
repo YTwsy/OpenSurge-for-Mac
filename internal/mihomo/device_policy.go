@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/gatewayrules"
 )
 
 type policySections struct {
@@ -25,6 +26,10 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 	if err != nil {
 		return "", err
 	}
+	customRules, _, err := gatewayrules.Load(cfg.RuntimePath("gateway-rules.json"))
+	if err != nil {
+		return "", err
+	}
 	localRouting := buildLocalRoutingPolicy(cfg, imported)
 	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
 		if imported == nil {
@@ -33,12 +38,12 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 		if err := validateImportedPolicySections(imported.inventory, sections); err != nil {
 			return "", err
 		}
-		return composeImportedPolicySections(imported, sections, localRouting)
+		return composeImportedPolicySections(imported, sections, localRouting, customRules)
 	}
 	if err := validateManagedPolicySections(cfg, sections); err != nil {
 		return "", err
 	}
-	return composeManagedPolicySections(cfg, sections, localRouting), nil
+	return composeManagedPolicySections(cfg, sections, localRouting, customRules), nil
 }
 
 func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesActive bool, ipv6 bool) (policySections, error) {
@@ -69,7 +74,7 @@ func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesA
 	return sections, nil
 }
 
-func composeManagedPolicySections(cfg config.Config, policy policySections, localRouting localRoutingGeneratedPolicy) string {
+func composeManagedPolicySections(cfg config.Config, policy policySections, localRouting localRoutingGeneratedPolicy, customRules gatewayrules.Document) string {
 	var out strings.Builder
 	if cfg.UpstreamProxy.Enabled {
 		out.WriteString("proxies:\n")
@@ -112,9 +117,11 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 	rules := routerBypassIPv6RejectRules(policy)
 	rules = append(rules, localRouting.Rules...)
 	rules = append(rules, orderedDevicePreRules(policy)...)
+	rules = append(rules, quoteRulesForManagedYAML(customRules.Prepend)...)
 	if cfg.UpstreamProxy.Enabled {
 		rules = append(rules, "DOMAIN,"+cfg.UpstreamProxy.MatchDomain+",open-surge-egress")
 	}
+	rules = append(rules, quoteRulesForManagedYAML(customRules.Append)...)
 	rules = append(rules, policy.defaults...)
 	rules = append(rules, "MATCH,DIRECT")
 	out.WriteString("rules:\n")
@@ -122,7 +129,7 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 	return out.String()
 }
 
-func composeImportedPolicySections(imported *importedProfile, policy policySections, localRouting localRoutingGeneratedPolicy) (string, error) {
+func composeImportedPolicySections(imported *importedProfile, policy policySections, localRouting localRoutingGeneratedPolicy, customRules gatewayrules.Document) (string, error) {
 	appendImportedLocalRoutingGroups(imported, localRouting.Groups)
 	if len(policy.groups) > 0 {
 		appendImportedSelectorGroups(imported, policy.groups)
@@ -133,7 +140,9 @@ func composeImportedPolicySections(imported *importedProfile, policy policySecti
 	preRules := routerBypassIPv6RejectRules(policy)
 	preRules = append(preRules, localRouting.Rules...)
 	preRules = append(preRules, orderedDevicePreRules(policy)...)
-	if err := composeImportedRules(imported.sections["rules"], preRules, policy.defaults); err != nil {
+	preRules = append(preRules, customRules.Prepend...)
+	postRules := append(append([]string{}, customRules.Append...), policy.defaults...)
+	if err := composeImportedRules(imported.sections["rules"], preRules, postRules, customRules.Delete); err != nil {
 		return "", err
 	}
 	return renderImportedProfileSections(imported)
@@ -229,34 +238,57 @@ func ensureImportedSection(imported *importedProfile, name string, kind yaml.Kin
 	return section
 }
 
-// composeImportedRules inserts system and device override rules before global
-// rules. Legacy device defaults remain immediately before a terminal MATCH.
-func composeImportedRules(rules *yaml.Node, preRules, defaultRules []string) error {
+// composeImportedRules inserts system and user prepend rules before the
+// subscription rules. User append rules and legacy device defaults remain
+// immediately before a terminal MATCH.
+func composeImportedRules(rules *yaml.Node, preRules, postRules, deleteRules []string) error {
 	if err := validateImportedRules(rules); err != nil {
 		return err
 	}
+	remaining := filterDeletedRules(rules.Content, deleteRules)
 	terminalIndex := -1
-	if len(rules.Content) > 0 {
-		if value, ok := scalarStringValue(rules.Content[len(rules.Content)-1]); ok && isTerminalMatchValue(value) {
-			terminalIndex = len(rules.Content) - 1
+	if len(remaining) > 0 {
+		if value, ok := scalarStringValue(remaining[len(remaining)-1]); ok && isTerminalMatchValue(value) {
+			terminalIndex = len(remaining) - 1
 		}
 	}
-	before := rules.Content
+	before := remaining
 	var terminal []*yaml.Node
 	if terminalIndex >= 0 {
-		before = rules.Content[:terminalIndex]
-		terminal = rules.Content[terminalIndex:]
+		before = remaining[:terminalIndex]
+		terminal = remaining[terminalIndex:]
 	}
-	content := make([]*yaml.Node, 0, len(preRules)+len(before)+len(defaultRules)+len(terminal))
+	content := make([]*yaml.Node, 0, len(preRules)+len(before)+len(postRules)+len(terminal))
 	content = append(content, ruleNodes(preRules)...)
 	content = append(content, before...)
-	content = append(content, ruleNodes(defaultRules)...)
+	content = append(content, ruleNodes(postRules)...)
 	content = append(content, terminal...)
 	rules.Content = content
-	if len(preRules) > 0 || len(defaultRules) > 0 {
+	if len(preRules) > 0 || len(postRules) > 0 || len(deleteRules) > 0 {
 		rules.Style &^= yaml.FlowStyle
 	}
 	return nil
+}
+
+func filterDeletedRules(nodes []*yaml.Node, deleteRules []string) []*yaml.Node {
+	if len(deleteRules) == 0 {
+		return nodes
+	}
+	deleted := make(map[string]struct{}, len(deleteRules))
+	for _, rule := range deleteRules {
+		deleted[strings.TrimSpace(rule)] = struct{}{}
+	}
+	filtered := make([]*yaml.Node, 0, len(nodes))
+	for _, node := range nodes {
+		value, ok := scalarStringValue(node)
+		if ok {
+			if _, remove := deleted[strings.TrimSpace(value)]; remove {
+				continue
+			}
+		}
+		filtered = append(filtered, node)
+	}
+	return filtered
 }
 
 func ruleNodes(rules []string) []*yaml.Node {
@@ -487,6 +519,18 @@ func writeRuleLines(out *strings.Builder, rules []string) {
 		out.WriteString(rule)
 		out.WriteString("\n")
 	}
+}
+
+func quoteRulesForManagedYAML(rules []string) []string {
+	quoted := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		// Rules can contain YAML-significant characters such as " #" in a
+		// regular-expression payload. Quote user-owned values so generated YAML
+		// preserves the exact mihomo rule text without changing stable output for
+		// OpenSurge's internally generated rules.
+		quoted = append(quoted, yamlQuote(rule))
+	}
+	return quoted
 }
 
 func yamlQuote(value string) string {

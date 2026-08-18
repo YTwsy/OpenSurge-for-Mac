@@ -1,4 +1,4 @@
-import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile } from './types'
+import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, GatewayRules, GatewayRulesDocument, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -63,6 +63,8 @@ export const api = {
   deviceTraffic: () => request<DeviceTraffic>('/api/v1/device-traffic'),
   devicePolicy: () => request<DevicePolicyDocument>('/api/v1/device-policy'),
   saveDevicePolicy: (policy: PolicySet, revision: string) => request<DevicePolicyDocument>('/api/v1/device-policy', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(policy) }),
+  gatewayRules: () => request<GatewayRulesDocument>('/api/v1/gateway-rules'),
+  saveGatewayRules: (rules: GatewayRules, revision: string) => request<GatewayRulesDocument>('/api/v1/gateway-rules', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(rules) }),
   policies: () => request<{ groups: ProxyGroup[] }>('/api/v1/policies'),
   selectPolicy: (group: string, policy: string) => request(`/api/v1/policies/${encodeURIComponent(group)}/selection`, { method: 'POST', body: JSON.stringify({ policy }) }),
   localRouting: () => request<LocalRouting>('/api/v1/local-routing'),

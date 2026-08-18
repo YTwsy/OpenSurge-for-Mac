@@ -7,13 +7,14 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ConnectivityPage } from './pages/ConnectivityPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { DiagnosticsPage } from './pages/DiagnosticsPage'
+import { GatewayRulesPage } from './pages/GatewayRulesPage'
 import { NetworkPage } from './pages/NetworkPage'
 import { PoliciesPage } from './pages/PoliciesPage'
 import { SourcesPage } from './pages/SourcesPage'
 import { needsNetworkRecoveryWarning, statusLabel } from './status'
 import type { Overview } from './types'
 
-type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connectivity' | 'diagnostics'
+type Page = 'dashboard' | 'network' | 'sources' | 'gateway-rules' | 'devices' | 'policies' | 'connectivity' | 'diagnostics'
 type Theme = 'dark' | 'light'
 type NetworkNavigationTarget = 'none' | 'control' | 'bottom'
 
@@ -21,6 +22,7 @@ const nav = [
   { id: 'dashboard', label: '总览', icon: '◈' },
   { id: 'network', label: '网络设置', icon: '⌁' },
   { id: 'sources', label: '代理与规则源', icon: '◎' },
+  { id: 'gateway-rules', label: '网关规则', icon: '≋' },
   { id: 'devices', label: '设备', icon: '▣' },
   { id: 'policies', label: '策略', icon: '⇄' },
   { id: 'connectivity', label: '连通性', icon: '◌' },
@@ -63,14 +65,17 @@ export function App() {
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [devicesDirty, setDevicesDirty] = useState(false)
+  const [gatewayRulesDirty, setGatewayRulesDirty] = useState(false)
   const [sleepPreventionChanging, setSleepPreventionChanging] = useState(false)
   const [notifications, setNotifications] = useState<OperationNotificationItem[]>([])
   const notificationID = useRef(0)
   const sleepPreventionGeneration = useRef(0)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
+  const gatewayRulesDirtyRef = useRef(gatewayRulesDirty)
   pageRef.current = page
   devicesDirtyRef.current = devicesDirty
+  gatewayRulesDirtyRef.current = gatewayRulesDirty
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -116,7 +121,12 @@ export function App() {
         history.pushState({}, '', '/devices')
         return
       }
+      if (pageRef.current === 'gateway-rules' && next !== 'gateway-rules' && gatewayRulesDirtyRef.current && !window.confirm('网关规则页还有尚未保存的修改，确定离开并放弃这些修改吗？')) {
+        history.pushState({}, '', '/gateway-rules')
+        return
+      }
       if (pageRef.current === 'devices' && next !== 'devices') setDevicesDirty(false)
+      if (pageRef.current === 'gateway-rules' && next !== 'gateway-rules') setGatewayRulesDirty(false)
       setPage(next)
     }
     window.addEventListener('popstate', onPop)
@@ -136,7 +146,9 @@ export function App() {
       return
     }
     if (page === 'devices' && next !== 'devices' && devicesDirty && !window.confirm('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？')) return
+    if (page === 'gateway-rules' && next !== 'gateway-rules' && gatewayRulesDirty && !window.confirm('网关规则页还有尚未保存的修改，确定离开并放弃这些修改吗？')) return
     if (page === 'devices' && next !== 'devices') setDevicesDirty(false)
+    if (page === 'gateway-rules' && next !== 'gateway-rules') setGatewayRulesDirty(false)
     history.pushState({}, '', `/${next}${networkNavigationHash(networkTarget)}`)
     setPage(next)
   }
@@ -188,6 +200,7 @@ export function App() {
           {page === 'dashboard' && <DashboardPage overview={overview} onOpenNetwork={action => go('network', action === 'cleanup' ? 'control' : action === 'stop' ? 'bottom' : 'none')} />}
           {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} />}
           {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} />}
+          {page === 'gateway-rules' && <GatewayRulesPage overview={overview} onChanged={refresh} onNotify={notify} onDirtyChange={setGatewayRulesDirty} />}
           {page === 'devices' && <DevicesPage overview={overview} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} />}
           {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} />}
           {page === 'connectivity' && <ConnectivityPage overview={overview} onChanged={refresh} />}

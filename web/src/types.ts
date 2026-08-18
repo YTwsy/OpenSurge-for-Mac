@@ -218,6 +218,8 @@ export type PolicyTemplate = { id: string; default_policies: string[]; on_unsupp
 export type PolicyRuleSet = { id: string; type?: 'inline' | 'http'; behavior: 'domain' | 'ipcidr' | 'classical'; format?: string; url?: string; interval?: number; payload?: string[] }
 export type PolicySet = { devices: PolicyDevice[]; profiles: PolicyProfile[]; templates: PolicyTemplate[]; rule_sets: PolicyRuleSet[] }
 export type DevicePolicyDocument = { schema_version: number; revision: string; policy: PolicySet }
+export type GatewayRules = { schema_version: number; prepend: string[]; append: string[]; delete: string[] }
+export type GatewayRulesDocument = { schema_version: number; revision: string; rules: GatewayRules }
 
 export type APIError = { error?: { code?: string; message?: string } }
 export type Diagnostics = { schema_version: number; revision: string; connections: { upload_total: number; download_total: number; connections: Array<{ id: string; upload: number; download: number; rule?: string; chains?: string[]; metadata?: Record<string, unknown> }> }; connection_error?: string; logs: Record<string, string[]>; operations: Array<{ id: string; kind: string; state: string; error?: string; created_at: string; updated_at: string }>; recovery: Recovery }

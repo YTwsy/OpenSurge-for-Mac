@@ -34,6 +34,7 @@ type NetworkRunner interface {
 type ConfigurationRunner interface {
 	ApplyProfile(context.Context, string, string, []byte) (ProfileApplyResult, error)
 	ApplyDevicePolicy(context.Context, string, string, []byte) (string, error)
+	ApplyGatewayRules(context.Context, string, string, []byte) (string, error)
 	ApplyControlConfig(context.Context, string, string, []byte) (string, error)
 }
 
@@ -146,6 +147,11 @@ func (c HelperClient) ApplyProfile(ctx context.Context, configPath, revision str
 
 func (c HelperClient) ApplyDevicePolicy(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
 	response, err := c.call(ctx, HelperRequest{Action: "config-apply-device-policy", ConfigPath: configPath, Revision: revision, Payload: payload})
+	return response.Revision, err
+}
+
+func (c HelperClient) ApplyGatewayRules(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-apply-gateway-rules", ConfigPath: configPath, Revision: revision, Payload: payload})
 	return response.Revision, err
 }
 
@@ -263,9 +269,6 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 	if err == nil {
 		err = requireTrustedRuntime(cfg, allowedRoot)
 	}
-	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile") {
-		err = requireTrustedStartInputs(cfg, allowedRoot)
-	}
 	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control") {
 		err = requireTrustedDirectory(filepath.Join(filepath.Dir(configPath), "data"), allowedRoot)
 	}
@@ -276,7 +279,7 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 			err = requireTrustedFile(cfg.DevicePolicy.File, allowedRoot, false)
 		}
 	}
-	if err == nil && request.Action == "config-apply-device-policy" {
+	if err == nil && helperActionRequiresTrustedStartInputs(request.Action) {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
 	if request.Action == "sleep-prevention-hold" {
@@ -346,6 +349,8 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 			response.Revision, response.Reloaded, err = result.Revision, result.Reloaded, applyErr
 		case "config-apply-device-policy":
 			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)
+		case "config-apply-gateway-rules":
+			response.Revision, err = runner.ApplyGatewayRules(ctx, configPath, request.Revision, request.Payload)
 		case "config-apply-control":
 			response.Revision, err = runner.ApplyControlConfig(ctx, configPath, request.Revision, request.Payload)
 		}
@@ -363,7 +368,7 @@ func retrySystemSleepRelease(ctx context.Context, manager *systemSleepLeaseManag
 }
 
 func loadHelperConfig(action, configPath string) (config.Config, error) {
-	if action == "stop" || action == "restart-mihomo" {
+	if action == "stop" || action == "restart-mihomo" || action == "config-apply-gateway-rules" {
 		return config.LoadRuntime(configPath)
 	}
 	return config.Load(configPath)
@@ -371,7 +376,16 @@ func loadHelperConfig(action, configPath string) (config.Config, error) {
 
 func helperActionAllowed(action string) bool {
 	switch action {
-	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "sleep-prevention-hold":
+	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-gateway-rules", "config-apply-control", "sleep-prevention-hold":
+		return true
+	default:
+		return false
+	}
+}
+
+func helperActionRequiresTrustedStartInputs(action string) bool {
+	switch action {
+	case "start", "reload", "restart-mihomo", "config-apply-profile", "config-apply-device-policy", "config-apply-gateway-rules":
 		return true
 	default:
 		return false
