@@ -390,6 +390,11 @@ button{cursor:pointer}
 .rule-slots>label{display:grid;grid-template-columns:minmax(80px,.7fr) minmax(0,1.3fr);gap:10px;align-items:center;margin-top:9px;color:#8da198;font-size:11px}
 .switch-status{display:block;margin-top:5px;color:#79e6b3;font-size:11px;font-weight:700;letter-spacing:0}
 .edit-device{margin-top:13px}.device-card.selected .edit-device{padding:6px 9px;border:1px solid #397259;border-radius:8px;background:#153126;color:#a3f1ca}
+.device-card-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 16px;margin-top:13px;padding-top:12px;border-top:1px solid #1b2d27}
+.device-card-actions .edit-device,.device-card-actions .text-link{margin-top:0}
+.device-card-manage{display:inline-flex;align-items:center;gap:16px}
+.device-card-manage .text-link,.device-card-manage .danger-link{font-size:12px}
+.device-card-manage .danger-link{color:#ffb1a4}
 .section-heading-row{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}
 .device-rules{border-color:#594b2c;background:linear-gradient(180deg,#1b1910,#0d1b17)}
 .device-defaults{display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,.45fr);gap:18px;align-items:end;margin-bottom:18px;padding:15px;border:1px solid #4d4229;border-radius:12px;background:#211d12}
@@ -556,6 +561,8 @@ html[data-theme="light"] .session-expired{color:#183028}html[data-theme="light"]
 html[data-theme="light"] .live-section{background:#fff;border-color:#87bda6}
 html[data-theme="light"] .device-card.selected{border-color:#54a983}
 html[data-theme="light"] .device-card.selected .edit-device{background:#e5f2ec;border-color:#69b895;color:#215e46}
+html[data-theme="light"] .device-card-actions{border-color:#dceae4}
+html[data-theme="light"] .device-card-manage .danger-link{color:#b4453a}
 html[data-theme="light"] .device-meta-item{background:#e6f2ed;color:#2d6752}
 html[data-theme="light"] .identity-rebind{background:#fff5dc;border-color:#dabd70}html[data-theme="light"] .identity-state.changed,html[data-theme="light"] .identity-state.changed small,html[data-theme="light"] .identity-rebind-note,html[data-theme="light"] .identity-routing-blocked{color:#80601d}
 html[data-theme="light"] .route-options label,html[data-theme="light"] .registration-routing>label{background:#f8fbfa;border-color:#cbded6;color:#36564a}

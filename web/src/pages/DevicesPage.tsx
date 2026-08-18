@@ -30,6 +30,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
   const [importedCandidates, setImportedCandidates] = useState<string[]>([])
   const [selectedDeviceID, setSelectedDeviceID] = useState('')
   const [registrationOpen, setRegistrationOpen] = useState(false)
+  const [registrationSeed, setRegistrationSeed] = useState<{ token: number; draft: RegistrationDraft } | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -202,6 +203,36 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
     } finally { setRebinding(false) }
   }
 
+  // Re-registering an existing device reuses the registration form so identity
+  // and routing stay a single editing surface. Device rules keep their own
+  // panel below the device stack.
+  const editDeviceIdentity = (deviceID: string) => {
+    const target = policy.devices.find(item => item.id === deviceID)
+    if (!target) return
+    setRegistrationSeed(current => ({
+      token: (current?.token ?? 0) + 1,
+      draft: { id: target.id, name: displayDeviceName(target), mac: target.mac, ipv4: target.ipv4, profile: target.profile, gateway_target: desiredGatewayTarget(target), egress_mode: target.egress_mode ?? '' },
+    }))
+    setRegistrationOpen(true)
+    setSelectedDeviceID(deviceID)
+    setMessage(''); setError('')
+  }
+
+  const removeDevice = (deviceID: string) => {
+    const target = policy.devices.find(item => item.id === deviceID)
+    if (!target) return
+    const name = displayDeviceName(target)
+    if (!window.confirm(`删除设备“${name}”吗？它的设备规则和出口选择会一并移除；保存并重载后生效。`)) return
+    const next = copyPolicy(policy)
+    next.devices = next.devices.filter(item => item.id !== deviceID)
+    next.profiles = next.profiles.filter(profile => !ownedProfile(profile.id, deviceID) || next.devices.some(item => item.profile === profile.id))
+    setPolicy(next)
+    if (selectedDeviceID === deviceID) setSelectedDeviceID(next.devices[0]?.id ?? '')
+    if (registrationSeed?.draft.id === deviceID) setRegistrationSeed(null)
+    setError('')
+    setMessage(`${name} 已从本地草稿移除；保存并重载后不再生效。`)
+  }
+
   const discardDraft = async () => {
     if (!window.confirm('放弃当前尚未保存的设备修改并加载最新版本吗？')) return
     dirtyRef.current = false
@@ -219,12 +250,12 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
     </section>
 
     {document ? <>
-      <RegistrationPanel open={registrationOpen} onToggle={() => setRegistrationOpen(value => !value)} onRefresh={refreshDeviceObservation} topology={overview?.topology} routerBypass={routerBypass} routerBypassReady={routerBypassReady} onNetworkSettings={() => onNavigate('network')} leases={overview?.leases?.length ? overview.leases : data?.leases ?? []} observed={data?.observed_devices ?? []} observationError={data?.observation_error} policy={policy} candidates={candidates} onPolicyChange={setPolicy} onRegistered={id => { setSelectedDeviceID(id); setRegistrationOpen(false); setMessage('设备已加入本地草稿；保存后才会写入 desired 配置。') }} />
+      <RegistrationPanel key={registrationSeed ? `edit-${registrationSeed.token}` : 'new'} initialDraft={registrationSeed?.draft} open={registrationOpen} onToggle={() => { setRegistrationOpen(value => !value); setRegistrationSeed(null) }} onRefresh={refreshDeviceObservation} topology={overview?.topology} routerBypass={routerBypass} routerBypassReady={routerBypassReady} onNetworkSettings={() => onNavigate('network')} leases={overview?.leases?.length ? overview.leases : data?.leases ?? []} observed={data?.observed_devices ?? []} observationError={data?.observation_error} policy={policy} candidates={candidates} onPolicyChange={setPolicy} onRegistered={id => { setSelectedDeviceID(id); setRegistrationOpen(false); setRegistrationSeed(null); setMessage('设备已加入本地草稿；保存后才会写入 desired 配置。') }} />
 
       <section className="section live-section device-outlet-section">
         <SectionTitle title="设备出口" subtitle="出口选择即时生效 · 路由方式保存后重载" />
         <div className="device-stack">
-            {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? []), overview?.topology).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} topology={overview?.topology} routerBypass={routerBypass} routerBypassReady={routerBypassReady} onNetworkSettings={() => onNavigate('network')} leases={data?.leases ?? []} observed={data?.observed_devices ?? []} desiredDevices={policy.devices} groups={groups} healthByName={proxyHealth.byName} healthTesting={proxyHealth.testing} onHealthTest={proxyHealth.test} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onUseObservedIPv4={(deviceID, name, fromIPv4, toIPv4) => setRebindRequest({ deviceID, name, fromIPv4, toIPv4 })} onRouteModeChange={mode => {
+            {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? []), overview?.topology).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} topology={overview?.topology} routerBypass={routerBypass} routerBypassReady={routerBypassReady} onNetworkSettings={() => onNavigate('network')} leases={data?.leases ?? []} observed={data?.observed_devices ?? []} desiredDevices={policy.devices} groups={groups} healthByName={proxyHealth.byName} healthTesting={proxyHealth.testing} onHealthTest={proxyHealth.test} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onEditIdentity={() => view.desired && editDeviceIdentity(view.desired.id)} onRemove={() => view.desired && removeDevice(view.desired.id)} onUseObservedIPv4={(deviceID, name, fromIPv4, toIPv4) => setRebindRequest({ deviceID, name, fromIPv4, toIPv4 })} onRouteModeChange={mode => {
               if (!view.desired) return
               const next = copyPolicy(policy)
               next.devices = next.devices.map(device => {
@@ -304,7 +335,7 @@ type DeviceRouteMode = AppliedDeviceEgressMode | 'upstream_router'
 type EditableDeviceRouteMode = DeviceEgressMode | 'upstream_router'
 type RouterBypassSettings = { gateway: string; dns: string[] }
 
-function DeviceCard({ view, topology, routerBypass, routerBypassReady, onNetworkSettings, leases, observed, desiredDevices, groups, healthByName, healthTesting, onHealthTest, selected, onSelect, onUseObservedIPv4, onRouteModeChange, onChanged }: { view: DeviceView; topology?: string; routerBypass: RouterBypassSettings; routerBypassReady: boolean; onNetworkSettings: () => void; leases: Lease[]; observed: ObservedDevice[]; desiredDevices: PolicyDevice[]; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; healthTesting: Set<string>; onHealthTest: (names: string[]) => Promise<void>; selected: boolean; onSelect: () => void; onUseObservedIPv4: (deviceID: string, name: string, fromIPv4: string, toIPv4: string) => void; onRouteModeChange: (mode: EditableDeviceRouteMode) => void; onChanged: () => Promise<void> }) {
+function DeviceCard({ view, topology, routerBypass, routerBypassReady, onNetworkSettings, leases, observed, desiredDevices, groups, healthByName, healthTesting, onHealthTest, selected, onSelect, onEditIdentity, onRemove, onUseObservedIPv4, onRouteModeChange, onChanged }: { view: DeviceView; topology?: string; routerBypass: RouterBypassSettings; routerBypassReady: boolean; onNetworkSettings: () => void; leases: Lease[]; observed: ObservedDevice[]; desiredDevices: PolicyDevice[]; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; healthTesting: Set<string>; onHealthTest: (names: string[]) => Promise<void>; selected: boolean; onSelect: () => void; onEditIdentity: () => void; onRemove: () => void; onUseObservedIPv4: (deviceID: string, name: string, fromIPv4: string, toIPv4: string) => void; onRouteModeChange: (mode: EditableDeviceRouteMode) => void; onChanged: () => Promise<void> }) {
   const [rulesOpen, setRulesOpen] = useState(false)
   const device = view.desired ?? view.applied!
   const applied = view.applied
@@ -344,7 +375,13 @@ function DeviceCard({ view, topology, routerBypass, routerBypassReady, onNetwork
     {!runningRouteMode && desiredRouteMode && view.state !== 'paused' && <div className="runtime-route"><span><strong>重载后应用</strong><small>{routeModeLabel(desiredRouteMode)}</small></span></div>}
     {runningRouteMode && desiredRouteMode && runningRouteMode !== desiredRouteMode && <small className="draft-mode-delta">草稿将改为“{routeModeLabel(desiredRouteMode)}”；保存并重载前仍按“{routeModeLabel(runningRouteMode)}”运行。</small>}
     {ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <div className="rule-outlet-summary" key={slot}><DeviceOutletControl identity={identity} device={applied!.id} slot={slot} groupName={groupName} groups={groups} title={slot} ariaLabel={`${device.id} ${slot} 出口当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /></div>)}</div>}
-    {view.desired && <button className="edit-device" type="button" onClick={onSelect}>{selected ? '正在编辑此设备规则' : '编辑此设备规则'}</button>}
+    {view.desired && <div className="device-card-actions">
+      <button className="edit-device" type="button" onClick={onSelect}>{selected ? '正在编辑此设备规则' : '编辑此设备规则'}</button>
+      <span className="device-card-manage">
+        <button className="text-link" type="button" onClick={onEditIdentity}>编辑身份与路由</button>
+        <button className="danger-link" type="button" onClick={onRemove}>删除设备</button>
+      </span>
+    </div>}
   </article>
 }
 
@@ -439,11 +476,19 @@ function registrationCandidates(topology: string | undefined, leases: Lease[], o
   return [...byIP.values()].sort((left, right) => right.activeConnections - left.activeConnections || Number(right.online) - Number(left.online) || left.ip.localeCompare(right.ip, undefined, { numeric: true }))
 }
 
-function RegistrationPanel({ open, onToggle, onRefresh, topology, routerBypass, routerBypassReady, onNetworkSettings, leases, observed, observationError, policy, candidates, onPolicyChange, onRegistered }: { open: boolean; onToggle: () => void; onRefresh: () => Promise<void>; topology?: string; routerBypass: RouterBypassSettings; routerBypassReady: boolean; onNetworkSettings: () => void; leases: Lease[]; observed: ObservedDevice[]; observationError?: string; policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void; onRegistered: (id: string) => void }) {
-  const [draft, setDraft] = useState<RegistrationDraft>({ id: '', name: '', mac: '', ipv4: '', profile: '', gateway_target: 'opensurge', egress_mode: 'inherit_global' })
+function RegistrationPanel({ open, initialDraft, onToggle, onRefresh, topology, routerBypass, routerBypassReady, onNetworkSettings, leases, observed, observationError, policy, candidates, onPolicyChange, onRegistered }: { open: boolean; initialDraft?: RegistrationDraft; onToggle: () => void; onRefresh: () => Promise<void>; topology?: string; routerBypass: RouterBypassSettings; routerBypassReady: boolean; onNetworkSettings: () => void; leases: Lease[]; observed: ObservedDevice[]; observationError?: string; policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void; onRegistered: (id: string) => void }) {
+  const sectionRef = useRef<HTMLElement>(null)
+  const [draft, setDraft] = useState<RegistrationDraft>(initialDraft ?? { id: '', name: '', mac: '', ipv4: '', profile: '', gateway_target: 'opensurge', egress_mode: 'inherit_global' })
   const [defaults, setDefaults] = useState(['DIRECT'])
-  const [useExisting, setUseExisting] = useState(false)
+  const [useExisting, setUseExisting] = useState(Boolean(initialDraft?.profile))
   const [error, setError] = useState('')
+  // The panel is remounted with a fresh key whenever a device card asks to edit
+  // an existing registration, so bringing it into view belongs to mount.
+  useEffect(() => {
+    if (!initialDraft) return
+    sectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [initialDraft])
+  const editing = Boolean(draft.id && policy.devices.some(item => item.id === draft.id))
   const chooseCandidate = (candidate: RegistrationCandidate) => {
     const registered = policy.devices.find(item => (candidate.mac && item.mac.toLowerCase() === candidate.mac.toLowerCase()) || item.ipv4 === candidate.ip)
     setDraft({ id: registered?.id ?? '', name: registered ? displayDeviceName(registered) : candidate.hostname, mac: candidate.mac || registered?.mac || '', ipv4: candidate.ip, profile: registered?.profile ?? policy.profiles[0]?.id ?? '', gateway_target: registered?.gateway_target ?? 'opensurge', egress_mode: registered ? registered.egress_mode ?? '' : 'inherit_global' })
@@ -473,8 +518,8 @@ function RegistrationPanel({ open, onToggle, onRefresh, topology, routerBypass, 
   }
   const visibleCandidates = registrationCandidates(topology, leases, observed)
   const previewID = draft.id || (draft.name.trim() ? availableDeviceID(draft.name.trim(), draft.mac || draft.ipv4, policy.devices) : '')
-  return <section className="section device-tools-section registration"><button className="section-toggle" type="button" aria-expanded={open} onClick={onToggle}><span><strong>登记新设备</strong><small>{topology === 'same_lan' ? '从当前经过 Mac 的 LAN 流量发现设备，再确认静态身份与路由方式' : '从当前 DHCP 租约开始，确认身份与设备路由方式'}</small></span><span>{open ? '收起' : '展开'}</span></button>{open && <div className="registration-body"><div className="lease-picker"><div className="registration-picker-heading"><SectionTitle title={topology === 'same_lan' ? '当前经过 Mac 的设备' : '当前已接管设备'} subtitle={topology === 'same_lan' ? '来源是 mihomo 活跃连接；邻居表可补充 MAC，但固定 IPv4 可以独立登记' : '点击租约会自动填写 MAC 与当前 IPv4'} />{topology === 'same_lan' && <button className="text-link" type="button" onClick={() => void onRefresh()}>刷新当前设备</button>}</div>{observationError && topology === 'same_lan' && <div className="notice warn">实时设备观察不完整：{observationError}</div>}{visibleCandidates.length ? visibleCandidates.map(candidate => { const registered = policy.devices.find(item => (candidate.mac && item.mac.toLowerCase() === candidate.mac.toLowerCase()) || item.ipv4 === candidate.ip); return <button className="lease-choice" type="button" aria-label={`配置设备 ${candidate.ip}`} key={`${candidate.source}-${candidate.mac || 'unknown'}-${candidate.ip}`} onClick={() => chooseCandidate(candidate)}><span className={candidate.online ? 'pill ok' : 'pill'}>{candidate.source === 'traffic' ? '经过 Mac' : candidate.source === 'neighbor' ? '邻居记录' : candidate.online ? '在线' : '历史租约'}</span><span><strong>{registered ? displayDeviceName(registered) : candidate.hostname || `未登记设备 ${candidate.ip}`}</strong><small>{candidate.mac || 'MAC 尚未从邻居表解析'}{candidate.activeConnections > 0 ? ` · ${candidate.activeConnections} 个活跃连接` : ''}</small></span><code>{candidate.ip}</code><span>配置此设备</span></button> }) : <Empty text={topology === 'same_lan' ? '当前尚未观察到经过 Mac 的 LAN 设备；可以直接按固定 IPv4 手工登记。' : '当前没有 DHCP 租约；也可以手工填写。'} />}</div><div className="registration-form"><div className="utility-card-heading"><span><small>NEW DEVICE</small><h3>设备身份与路由</h3></span><span className="effect-badge restart">保存后重载</span></div><p className="card-help">确认设备名称、固定身份和路由方式；登记后仍需保存并重载设备配置。</p><label>设备名称<input aria-label="设备名称" value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><small className="registration-id-hint">{previewID ? <>内部 ID：<code>{previewID}</code>{draft.id ? '（保持不变）' : '（保存时自动生成）'}</> : '设备名称可包含空格；内部 ID 会在保存时自动生成。'}</small><label>{topology === 'same_lan' ? 'MAC 地址（可选身份信息）' : 'MAC 地址'}<input aria-label="设备 MAC" value={draft.mac} onChange={event => setDraft({ ...draft, mac: event.target.value })} /></label>{topology === 'same_lan' && !draft.mac.trim() && draft.ipv4.trim() && <small className="registration-id-hint">将只按固定 IPv4 匹配；请确保主路由不会把该地址分配给其他设备。</small>}<label>固定 IPv4<input aria-label="固定 IPv4" value={draft.ipv4} onChange={event => setDraft({ ...draft, ipv4: event.target.value })} /></label><fieldset className="registration-routing"><legend>设备路由方式</legend><label className={draft.gateway_target === 'opensurge' && draft.egress_mode === 'inherit_global' ? 'active' : ''}><input type="radio" name="registration-route" checked={draft.gateway_target === 'opensurge' && draft.egress_mode === 'inherit_global'} onChange={() => setDraft({ ...draft, gateway_target: 'opensurge', egress_mode: 'inherit_global' })} /><span><strong>跟随网关规则</strong><small>默认推荐；继续使用订阅或托管的网关规则，不跟随 Mac 本机模式。</small></span></label><label className={draft.gateway_target === 'opensurge' && draft.egress_mode === 'dedicated' ? 'active' : ''}><input type="radio" name="registration-route" checked={draft.gateway_target === 'opensurge' && draft.egress_mode === 'dedicated'} onChange={() => setDraft({ ...draft, gateway_target: 'opensurge', egress_mode: 'dedicated' })} /><span><strong>独立设备出口</strong><small>公网流量优先使用专属 selector，局域网和私网仍直连。</small></span></label>{topology === 'same_wifi_dhcp' && <label className={`${draft.gateway_target === 'upstream_router' ? 'active' : ''} ${!routerBypassReady ? 'unavailable' : ''}`}><input type="radio" name="registration-route" disabled={!routerBypassReady} checked={draft.gateway_target === 'upstream_router'} onChange={() => setDraft({ ...draft, gateway_target: 'upstream_router', egress_mode: draft.egress_mode || 'inherit_global' })} /><span><strong>IPv4 直连主路由</strong><small>{routerBypassReady ? `固定 IPv4 仍由 OpenSurge 分配；网关 ${routerBypass.gateway} · DNS ${routerBypass.dns.join(', ')}。启用下游 IPv6 时，IPv6 出站会被阻止。` : '请先在网络设置中确认主路由网关与 DNS。'}</small></span></label>}{topology === 'same_wifi_dhcp' && !routerBypassReady && <button className="text-link router-bypass-settings-link" type="button" onClick={onNetworkSettings}>前往网络设置填写主路由信息</button>}{!draft.egress_mode && <small className="field-error" role="status">这是旧版设备，请选择新的路由方式后再保存。</small>}</fieldset>{!useExisting && draft.gateway_target === 'opensurge' && draft.egress_mode === 'dedicated' && <CandidatePicker label="独立出口候选" values={defaults} candidates={candidates} onChange={setDefaults} />}
-    <details className="inline-advanced"><summary>高级：使用已有 Profile</summary><label className="checkbox-field"><input type="checkbox" checked={useExisting} onChange={event => setUseExisting(event.target.checked)} /> 使用已有 Profile</label>{useExisting && <select aria-label="设备 Profile" value={draft.profile} onChange={event => setDraft({ ...draft, profile: event.target.value })}><option value="">选择 Profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select>}</details>{error && <small className="field-error" role="alert">{error}</small>}<button className="primary" type="button" onClick={register}>{topology === 'same_lan' && !draft.mac.trim() ? '按固定 IPv4 登记' : '登记或更新设备'}</button></div></div>}</section>
+  return <section className="section device-tools-section registration" ref={sectionRef}><button className="section-toggle" type="button" aria-expanded={open} onClick={onToggle}><span><strong>{editing ? '编辑设备身份与路由' : '登记新设备'}</strong><small>{editing ? '重新确认这台设备的名称、固定身份和路由方式；它的规则与出口选择会保留' : topology === 'same_lan' ? '从当前经过 Mac 的 LAN 流量发现设备，再确认静态身份与路由方式' : '从当前 DHCP 租约开始，确认身份与设备路由方式'}</small></span><span>{open ? '收起' : '展开'}</span></button>{open && <div className="registration-body"><div className="lease-picker"><div className="registration-picker-heading"><SectionTitle title={topology === 'same_lan' ? '当前经过 Mac 的设备' : '当前已接管设备'} subtitle={topology === 'same_lan' ? '来源是 mihomo 活跃连接；邻居表可补充 MAC，但固定 IPv4 可以独立登记' : '点击租约会自动填写 MAC 与当前 IPv4'} />{topology === 'same_lan' && <button className="text-link" type="button" onClick={() => void onRefresh()}>刷新当前设备</button>}</div>{observationError && topology === 'same_lan' && <div className="notice warn">实时设备观察不完整：{observationError}</div>}{visibleCandidates.length ? visibleCandidates.map(candidate => { const registered = policy.devices.find(item => (candidate.mac && item.mac.toLowerCase() === candidate.mac.toLowerCase()) || item.ipv4 === candidate.ip); return <button className="lease-choice" type="button" aria-label={`配置设备 ${candidate.ip}`} key={`${candidate.source}-${candidate.mac || 'unknown'}-${candidate.ip}`} onClick={() => chooseCandidate(candidate)}><span className={candidate.online ? 'pill ok' : 'pill'}>{candidate.source === 'traffic' ? '经过 Mac' : candidate.source === 'neighbor' ? '邻居记录' : candidate.online ? '在线' : '历史租约'}</span><span><strong>{registered ? displayDeviceName(registered) : candidate.hostname || `未登记设备 ${candidate.ip}`}</strong><small>{candidate.mac || 'MAC 尚未从邻居表解析'}{candidate.activeConnections > 0 ? ` · ${candidate.activeConnections} 个活跃连接` : ''}</small></span><code>{candidate.ip}</code><span>配置此设备</span></button> }) : <Empty text={topology === 'same_lan' ? '当前尚未观察到经过 Mac 的 LAN 设备；可以直接按固定 IPv4 手工登记。' : '当前没有 DHCP 租约；也可以手工填写。'} />}</div><div className="registration-form"><div className="utility-card-heading"><span><small>{editing ? 'EDIT DEVICE' : 'NEW DEVICE'}</small><h3>设备身份与路由</h3></span><span className="effect-badge restart">保存后重载</span></div><p className="card-help">确认设备名称、固定身份和路由方式；登记后仍需保存并重载设备配置。</p><label>设备名称<input aria-label="设备名称" value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label><small className="registration-id-hint">{previewID ? <>内部 ID：<code>{previewID}</code>{draft.id ? '（保持不变）' : '（保存时自动生成）'}</> : '设备名称可包含空格；内部 ID 会在保存时自动生成。'}</small><label>{topology === 'same_lan' ? 'MAC 地址（可选身份信息）' : 'MAC 地址'}<input aria-label="设备 MAC" value={draft.mac} onChange={event => setDraft({ ...draft, mac: event.target.value })} /></label>{topology === 'same_lan' && !draft.mac.trim() && draft.ipv4.trim() && <small className="registration-id-hint">将只按固定 IPv4 匹配；请确保主路由不会把该地址分配给其他设备。</small>}<label>固定 IPv4<input aria-label="固定 IPv4" value={draft.ipv4} onChange={event => setDraft({ ...draft, ipv4: event.target.value })} /></label><fieldset className="registration-routing"><legend>设备路由方式</legend><label className={draft.gateway_target === 'opensurge' && draft.egress_mode === 'inherit_global' ? 'active' : ''}><input type="radio" name="registration-route" checked={draft.gateway_target === 'opensurge' && draft.egress_mode === 'inherit_global'} onChange={() => setDraft({ ...draft, gateway_target: 'opensurge', egress_mode: 'inherit_global' })} /><span><strong>跟随网关规则</strong><small>默认推荐；继续使用订阅或托管的网关规则，不跟随 Mac 本机模式。</small></span></label><label className={draft.gateway_target === 'opensurge' && draft.egress_mode === 'dedicated' ? 'active' : ''}><input type="radio" name="registration-route" checked={draft.gateway_target === 'opensurge' && draft.egress_mode === 'dedicated'} onChange={() => setDraft({ ...draft, gateway_target: 'opensurge', egress_mode: 'dedicated' })} /><span><strong>独立设备出口</strong><small>公网流量优先使用专属 selector，局域网和私网仍直连。</small></span></label>{topology === 'same_wifi_dhcp' && <label className={`${draft.gateway_target === 'upstream_router' ? 'active' : ''} ${!routerBypassReady ? 'unavailable' : ''}`}><input type="radio" name="registration-route" disabled={!routerBypassReady} checked={draft.gateway_target === 'upstream_router'} onChange={() => setDraft({ ...draft, gateway_target: 'upstream_router', egress_mode: draft.egress_mode || 'inherit_global' })} /><span><strong>IPv4 直连主路由</strong><small>{routerBypassReady ? `固定 IPv4 仍由 OpenSurge 分配；网关 ${routerBypass.gateway} · DNS ${routerBypass.dns.join(', ')}。启用下游 IPv6 时，IPv6 出站会被阻止。` : '请先在网络设置中确认主路由网关与 DNS。'}</small></span></label>}{topology === 'same_wifi_dhcp' && !routerBypassReady && <button className="text-link router-bypass-settings-link" type="button" onClick={onNetworkSettings}>前往网络设置填写主路由信息</button>}{!draft.egress_mode && <small className="field-error" role="status">这是旧版设备，请选择新的路由方式后再保存。</small>}</fieldset>{!useExisting && draft.gateway_target === 'opensurge' && draft.egress_mode === 'dedicated' && <CandidatePicker label="独立出口候选" values={defaults} candidates={candidates} onChange={setDefaults} />}
+    <details className="inline-advanced"><summary>高级：使用已有 Profile</summary><label className="checkbox-field"><input type="checkbox" checked={useExisting} onChange={event => setUseExisting(event.target.checked)} /> 使用已有 Profile</label>{useExisting && <select aria-label="设备 Profile" value={draft.profile} onChange={event => setDraft({ ...draft, profile: event.target.value })}><option value="">选择 Profile</option>{policy.profiles.map(profile => <option key={profile.id}>{profile.id}</option>)}</select>}</details>{error && <small className="field-error" role="alert">{error}</small>}<button className="primary" type="button" onClick={register}>{editing ? '更新设备身份与路由' : topology === 'same_lan' && !draft.mac.trim() ? '按固定 IPv4 登记' : '登记或更新设备'}</button></div></div>}</section>
 }
 
 function DeviceRulesPanel({ deviceID, policy, candidates, onPolicyChange }: { deviceID: string; policy: PolicySet; candidates: string[]; onPolicyChange: (policy: PolicySet) => void }) {
@@ -600,6 +645,12 @@ function ensurePrivateProfile(policy: PolicySet, deviceID: string): { policy: Po
   next.profiles.push({ ...effective, id: profileID, template: undefined })
   next.devices = next.devices.map(item => item.id === deviceID ? { ...item, profile: profileID } : item)
   return { policy: next, profileID }
+}
+
+// Registration derives a private profile ID from the device ID, so removing the
+// device should take that profile with it unless something else adopted it.
+function ownedProfile(profileID: string, deviceID: string) {
+  return profileID === `${deviceID}-policy` || profileID.startsWith(`${deviceID}-policy-`)
 }
 
 function uniqueProfileID(base: string, profiles: PolicyProfile[]) {
