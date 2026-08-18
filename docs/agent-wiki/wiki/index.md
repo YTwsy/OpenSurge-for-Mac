@@ -16,6 +16,8 @@
   验收边界。
 - [mihomo profile overlay](concepts/mihomo-profile-overlay.md)：如何导入
   mihomo 代理/规则 section，同时保持 OpenSurge 接管网关字段。
+- [持久化网关规则覆盖](concepts/persistent-gateway-rules.md)：如何在不修改订阅快照的
+  前提下用 prepend/append/delete 补充 mihomo 规则。
 - [每设备策略覆盖](concepts/device-policy-overlays.md)：如何以 DHCP reservation 和
   `SRC-IP-CIDR` 在一个 mihomo 进程中实现独立的设备策略。
 - [Mac 本机流量模式](concepts/local-mac-routing-modes.md)：如何用 source-scoped

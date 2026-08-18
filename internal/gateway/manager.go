@@ -654,6 +654,18 @@ func (m Manager) validateReloadCandidate() error {
 	candidateConfig := m.cfg
 	candidateConfig.Runtime.Dir = temp
 	candidateConfig.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
+	// The user-owned rule overlay is outside the generated candidate runtime.
+	// Copy it into the isolated runtime so reload validation checks the exact
+	// rules that the subsequent start will render.
+	customRules, readErr := os.ReadFile(m.cfg.RuntimePath("gateway-rules.json"))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	if readErr == nil {
+		if err := os.WriteFile(filepath.Join(temp, "gateway-rules.json"), customRules, 0o640); err != nil {
+			return err
+		}
+	}
 	if err := config.PrepareDevicePolicy(&candidateConfig); err != nil {
 		return err
 	}

@@ -147,8 +147,9 @@ status 读取失败、runtime 非 active、以及不允许恢复的 DHCP 接管�
 既不触发恢复，也不能累计健康确认或清除本次 incident 的单次尝试保护。上次开机留下的
 interrupted runtime 同样不会触发。
 
-start、stop、reload、手动/自动 `restart-mihomo` 和运行中 source apply 共享 Control
-Service 生命周期互斥锁，避免两个 helper 动作同时修改 runtime。这个自动化只实现了窄的
+start、stop、reload、手动/自动 `restart-mihomo`、运行中 source apply 和持久化网关规则
+写入共享 Control Service 生命周期互斥锁，避免配置候选校验、runtime 写入与生命周期动作
+并发。这个自动化只实现了窄的
 Mihomo-only 重启边界；在真实 same-WiFi 断开/重连门槛完成前，不得把单元测试描述成物理
 链路恢复已经验收。
 

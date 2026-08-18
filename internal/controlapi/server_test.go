@@ -887,6 +887,19 @@ func TestHelperAllowlistIncludesNamedLifecycleActions(t *testing.T) {
 	}
 }
 
+func TestHelperMihomoValidationActionsRequireTrustedStartInputs(t *testing.T) {
+	for _, action := range []string{"start", "reload", "restart-mihomo", "config-apply-profile", "config-apply-device-policy", "config-apply-gateway-rules"} {
+		if !helperActionRequiresTrustedStartInputs(action) {
+			t.Fatalf("helper action %q could execute untrusted start inputs", action)
+		}
+	}
+	for _, action := range []string{"stop", "network-set-dhcp", "config-apply-control"} {
+		if helperActionRequiresTrustedStartInputs(action) {
+			t.Fatalf("helper action %q unexpectedly requires start inputs", action)
+		}
+	}
+}
+
 func TestHelperRestartMihomoDefersInvalidDesiredDevicePolicy(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
@@ -1203,6 +1216,98 @@ func TestDevicePolicyUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) 
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("PUT status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGatewayRulesUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) {
+	server := newTestServer(t)
+	get := performAuthorized(server, http.MethodGet, "/api/v1/gateway-rules", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET status=%d body=%s", get.Code, get.Body.String())
+	}
+	var document GatewayRulesResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.Revision == "" || len(document.Rules.Prepend) != 0 {
+		t.Fatalf("unexpected empty gateway rules document: %#v", document)
+	}
+	conflict := performAuthorized(server, http.MethodPut, "/api/v1/gateway-rules", []byte(`{"schema_version":1,"prepend":["DOMAIN-SUFFIX,example.com,Proxy"],"append":[],"delete":[]}`))
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("conflict status=%d body=%s", conflict.Code, conflict.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/gateway-rules", strings.NewReader(`{"schema_version":1,"prepend":["DOMAIN-SUFFIX,example.com,Proxy"],"append":[],"delete":[]}`))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+document.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("PUT status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGatewayRulesReportsMihomoValidationAsClientError(t *testing.T) {
+	server := newTestServer(t)
+	server.configRunner = fakeConfigurationRunner{gatewayRulesErr: errors.New("mihomo config validation failed: invalid rule target")}
+	get := performAuthorized(server, http.MethodGet, "/api/v1/gateway-rules", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET status=%d body=%s", get.Code, get.Body.String())
+	}
+	var document GatewayRulesResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/gateway-rules", strings.NewReader(`{"schema_version":1,"prepend":["DOMAIN-SUFFIX,example.com,Missing"],"append":[],"delete":[]}`))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+document.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "mihomo_validation_failed") {
+		t.Fatalf("validation status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestDevicePolicyReportsGatewayRuleTargetConflictAsClientError(t *testing.T) {
+	server := newTestServer(t)
+	server.configRunner = fakeConfigurationRunner{devicePolicyErr: errors.New("mihomo config validation failed: gateway rule target is missing")}
+	get := performAuthorized(server, http.MethodGet, "/api/v1/device-policy", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("GET status=%d body=%s", get.Code, get.Body.String())
+	}
+	var document DevicePolicyResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/device-policy", strings.NewReader(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+document.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "mihomo_validation_failed") {
+		t.Fatalf("validation status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestGatewayRulesRejectsConcurrentLifecycleOperation(t *testing.T) {
+	server := newTestServer(t)
+	server.lifecycleMu.Lock()
+	response := performAuthorized(server, http.MethodPut, "/api/v1/gateway-rules", []byte(`{"schema_version":1,"prepend":[],"append":[],"delete":[]}`))
+	server.lifecycleMu.Unlock()
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "operation_in_progress") {
+		t.Fatalf("concurrent gateway rules status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestDevicePolicyRejectsConcurrentGatewayRulesOperation(t *testing.T) {
+	server := newTestServer(t)
+	server.lifecycleMu.Lock()
+	response := performAuthorized(server, http.MethodPut, "/api/v1/device-policy", []byte(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`))
+	server.lifecycleMu.Unlock()
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "operation_in_progress") {
+		t.Fatalf("concurrent device policy status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -2006,6 +2111,8 @@ func waitForStoredOperation(t *testing.T, server *Server, id, state string) Oper
 type fakeConfigurationRunner struct {
 	profileErr      error
 	profileReloaded bool
+	devicePolicyErr error
+	gatewayRulesErr error
 }
 
 func (f fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte) (ProfileApplyResult, error) {
@@ -2015,13 +2122,23 @@ func (f fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision str
 	return ProfileApplyResult{Revision: revision + "-applied", Reloaded: f.profileReloaded}, nil
 }
 
-func (fakeConfigurationRunner) ApplyDevicePolicy(_ context.Context, _, _ string, payload []byte) (string, error) {
+func (f fakeConfigurationRunner) ApplyDevicePolicy(_ context.Context, _, _ string, payload []byte) (string, error) {
+	if f.devicePolicyErr != nil {
+		return "", f.devicePolicyErr
+	}
 	var policy device.PolicySet
 	if err := json.Unmarshal(payload, &policy); err != nil {
 		return "", err
 	}
 	bundle, err := device.CompilePolicyBundle(policy)
 	return bundle.Digest, err
+}
+
+func (f fakeConfigurationRunner) ApplyGatewayRules(_ context.Context, _, revision string, _ []byte) (string, error) {
+	if f.gatewayRulesErr != nil {
+		return "", f.gatewayRulesErr
+	}
+	return revision + "-applied", nil
 }
 
 func (fakeConfigurationRunner) ApplyControlConfig(_ context.Context, path, revision string, payload []byte) (string, error) {

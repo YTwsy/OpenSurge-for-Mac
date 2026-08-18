@@ -13,6 +13,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/gatewayrules"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
@@ -37,6 +38,9 @@ func defaultProfileApplyDeps() profileApplyDeps {
 			validation := cfg
 			validation.Runtime.Dir = temp
 			validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
+			if err := copyGatewayRulesForValidation(cfg, validation); err != nil {
+				return err
+			}
 			return mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig()
 		},
 		stateExists: func(cfg config.Config) (bool, error) {
@@ -192,6 +196,9 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	validation.DevicePolicy.Bundle = &bundle
 	validation.Runtime.Dir = temp
 	validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
+	if err := copyGatewayRulesForValidation(cfg, validation); err != nil {
+		return "", err
+	}
 	if err := mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig(); err != nil {
 		return "", err
 	}
@@ -199,6 +206,73 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 		return "", err
 	}
 	return bundle.Digest, nil
+}
+
+func (DirectRunner) ApplyGatewayRules(_ context.Context, configPath, revision string, payload []byte) (string, error) {
+	if os.Geteuid() != 0 {
+		return "", fmt.Errorf("privileged helper is required")
+	}
+	if len(payload) == 0 || len(payload) > maxSourceSize {
+		return "", fmt.Errorf("gateway rules payload must be between 1 byte and 10 MiB")
+	}
+	cfg, err := config.LoadRuntime(configPath)
+	if err != nil {
+		return "", err
+	}
+	path := cfg.RuntimePath("gateway-rules.json")
+	_, currentRevision, err := gatewayrules.Load(path)
+	if err != nil {
+		return "", err
+	}
+	if revision == "" || revision != currentRevision {
+		return "", fmt.Errorf("gateway rules revision conflict")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var document gatewayrules.Document
+	if err := decoder.Decode(&document); err != nil {
+		return "", err
+	}
+	document = gatewayrules.Normalize(document)
+	if err := gatewayrules.Validate(document); err != nil {
+		return "", err
+	}
+	formatted, err := gatewayrules.Canonical(document)
+	if err != nil {
+		return "", err
+	}
+
+	temp, err := os.MkdirTemp(cfg.Runtime.Dir, ".gateway-rules-validation-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(temp)
+	validation := cfg
+	validation.Runtime.Dir = temp
+	validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
+	validationPath := validation.RuntimePath("gateway-rules.json")
+	if err := os.WriteFile(validationPath, append(formatted, '\n'), 0o640); err != nil {
+		return "", err
+	}
+	if err := mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig(); err != nil {
+		return "", err
+	}
+	if err := writeAtomic(path, append(formatted, '\n'), 0o640); err != nil {
+		return "", err
+	}
+	return gatewayrules.Digest(document), nil
+}
+
+func copyGatewayRulesForValidation(cfg, validation config.Config) error {
+	document, _, err := gatewayrules.Load(cfg.RuntimePath("gateway-rules.json"))
+	if err != nil {
+		return err
+	}
+	data, err := gatewayrules.Canonical(document)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(validation.RuntimePath("gateway-rules.json"), append(data, '\n'), 0o640)
 }
 
 func (DirectRunner) ApplyControlConfig(_ context.Context, configPath, revision string, payload []byte) (string, error) {
