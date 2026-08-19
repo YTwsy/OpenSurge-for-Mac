@@ -17,8 +17,12 @@ device_policy:
 ```
 
 The device-policy file is resolved relative to the gateway configuration file.
-All registered IPv4 addresses must be unique, must remain in the gateway `/24`,
-and must not be the network, broadcast, or `gateway.lan_ip` address.
+All registered IPv4 addresses must be unique. An address on the current gateway
+LAN must not be the network, broadcast, or `gateway.lan_ip` address. The LAN
+itself comes from `gateway.lan_ip` and `gateway.lan_prefix_len`, which defaults
+to /24. A registration outside that LAN is skipped instead of rejected: the
+gateway still starts, dnsmasq does not reserve the address, and the Devices page
+marks the device so it can be re-registered or removed.
 
 For `same_wifi_dhcp`, declare every router, recovery client, LAN proxy, or
 other static address that must never become a reservation:
@@ -132,8 +136,8 @@ RDNSS, so the UI reports **IPv6 egress blocked** rather than claiming that IPv6
 is absent. The main router's RA/DHCPv6 must be disabled or removed by RA Guard,
 otherwise IPv6 can bypass OpenSurge entirely. The client must renew its lease
 or reconnect before the new IPv4 Router and DNS options take effect. This
-target requires a real MAC, and the upstream router must be in the gateway
-`/24` but outside the dynamic DHCP pool.
+target requires a real MAC, and the upstream router must be on the gateway LAN
+but outside the dynamic DHCP pool.
 
 An inherit-only device retains its profile's `default_policies` as future
 configuration, but those unused candidates are not rendered or checked against
@@ -256,7 +260,7 @@ copies its resolved effective content into a template-free private profile and
 changes only that device reference.
 
 `same_lan` manual-gateway mode does not run OpenSurge DHCP. In that mode the
-Devices page extracts source IPv4 addresses in the gateway `/24` from current
+Devices page extracts source IPv4 addresses on the gateway LAN from current
 mihomo connections and best-effort joins MAC addresses from the macOS ARP cache.
 Those clients appear under "currently passing through Mac" for registration.
 Dashboard device traffic combines DHCP leases, applied static devices, and

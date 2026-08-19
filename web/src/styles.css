@@ -255,6 +255,9 @@ button{cursor:pointer}
 .rule-form{display:grid;grid-template-columns:1fr 1fr 2fr 1fr 1fr 2fr 1fr auto;gap:8px}
 .network-config-guide{margin:0 0 20px;padding:14px 16px;border-left:3px solid #65cfa1;border-radius:10px;background:linear-gradient(160deg,#e2f1ec47,transparent)}
 .network-config-guide p{margin:5px 0 0;color:#a1b7ae;font-size:12px;line-height:1.6}
+.network-defaults-refill{display:grid;gap:4px;margin:0 0 18px}
+.network-defaults-refill .text-link{justify-self:start}
+.network-defaults-refill small{color:#768c83;font-size:11px;letter-spacing:0;line-height:1.5}
 .config-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .config-field{display:grid;gap:8px;align-content:start;padding:14px;border:1px solid #20382f;border-radius:12px;background:#0a1713}
 .config-field.wide{grid-column:span 2}
@@ -375,6 +378,8 @@ button{cursor:pointer}
 .route-options small,.registration-routing small{margin-top:3px;color:#768c83;font-size:10px;font-weight:500;line-height:1.45}
 .legacy-mode-warning{display:grid;gap:4px;margin-top:13px;padding:11px 12px;border:1px solid #705b2b;border-radius:10px;background:#2a2413;color:#e2cb8e}
 .legacy-mode-warning small{color:#bca96f;letter-spacing:0;line-height:1.45}
+.device-out-of-lan{display:grid;gap:4px;margin-top:13px;padding:11px 12px;border:1px solid #7a4038;border-radius:10px;background:#2b1714;color:#ffb1a4}
+.device-out-of-lan small{color:#d09b91;letter-spacing:0;line-height:1.45}
 .runtime-route{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:13px 15px;border:1px solid #31483f;border-radius:12px;background:#0b1915}
 .runtime-route strong,.runtime-route small{display:block}.runtime-route small{margin-top:3px;color:#83978f;letter-spacing:0}
 .runtime-route.following{border-color:#385345;background:#102019}
@@ -516,6 +521,7 @@ html[data-theme="light"] .timeline div:after{background:#c7d9d1}
 html[data-theme="light"] .timeline .done,html[data-theme="light"] .timeline .current{color:#214c3b}
 html[data-theme="light"] .network-config-guide{background:linear-gradient(160deg,#e2f1ec75,transparent)}
 html[data-theme="light"] .network-config-guide p{color:#45675a}
+html[data-theme="light"] .network-defaults-refill small{color:#5c7a6d}
 html[data-theme="light"] .network-save-bar{border-color:#d8e6e0}html[data-theme="light"] .network-save-bar>span i{background:#dff1e8;color:#287557}html[data-theme="light"] .network-save-bar>span.dirty i{background:#fff0ca;color:#8a6315}
 html[data-theme="light"] .config-field,html[data-theme="light"] .recovery-card-grid>div,html[data-theme="light"] .lease-picker{background:#f8fbfa;border-color:#cbded6}
 html[data-theme="light"] .downstream-ipv6-card{border-color:#acd1c0;background:radial-gradient(circle at 93% 0,#bde8d3aa,transparent 31%),linear-gradient(145deg,#f7fcf9,#edf7f2);box-shadow:0 12px 32px #2a594312}html[data-theme="light"] .downstream-ipv6-card.is-safe-closed{border-color:#ccd9d3;background:#f7faf8}html[data-theme="light"] .ipv6-card-header{border-color:#d2e4dc}html[data-theme="light"] .ipv6-card-identity>span{border-color:#54a983;background:linear-gradient(145deg,#65c99d,#3d9c73);color:#fff;box-shadow:0 8px 20px #3b8a6725}html[data-theme="light"] .ipv6-card-identity p,html[data-theme="light"] .ipv6-step-copy p,html[data-theme="light"] .ipv6-safe-state p{color:#60776e}html[data-theme="light"] .ipv6-safe-state,html[data-theme="light"] .ipv6-card-step,html[data-theme="light"] .ipv6-readiness{background:#fff;border-color:#cbded6}html[data-theme="light"] .ipv6-safe-state>span{background:#e2eee8;color:#477463}html[data-theme="light"] .ipv6-step-copy>span{background:#dff1e8;color:#287557}html[data-theme="light"] .ipv6-step-copy small{color:#3e8768}html[data-theme="light"] .ipv6-mode-options button{background:#f4f8f6;border-color:#c4d8cf;color:#45675a}html[data-theme="light"] .ipv6-mode-options button small{color:#71877e}html[data-theme="light"] .ipv6-mode-options button.active{border-color:#54a983;background:linear-gradient(145deg,#dff2e8,#f5fbf8);color:#1f5a43}html[data-theme="light"] .ipv6-dns-step .config-switch,html[data-theme="light"] .ipv6-readiness-ack{background:#f4f9f7;border-color:#c4d8cf}html[data-theme="light"] .ipv6-readiness-ack strong{color:#29483d}html[data-theme="light"] .ipv6-readiness-ack small{color:#6a8077}html[data-theme="light"] .ipv6-readiness-ack.is-acknowledged{border-color:#77b99b;background:#e7f4ed}html[data-theme="light"] .ipv6-readiness-ack.is-acknowledged small{color:#477b66}html[data-theme="light"] .ipv6-readiness-check{background:#fff;border-color:#afc3ba}html[data-theme="light"] .ipv6-result{background:#f5f8f6;border-color:#d0ddd7;color:#60776e}html[data-theme="light"] .ipv6-result.is-enabled{background:linear-gradient(145deg,#e5f5ed,#f6fbf8);border-color:#9bcbb5;color:#234b3b}html[data-theme="light"] .ipv6-result-heading>span{background:#e5ece8;color:#60776e}html[data-theme="light"] .ipv6-result.is-enabled .ipv6-result-heading>span{background:#d3ecdf;color:#287557}html[data-theme="light"] .ipv6-result dl>div,html[data-theme="light"] .ipv6-readiness li{background:#f7faf8;border-color:#d6e4de}html[data-theme="light"] .ipv6-result dd,html[data-theme="light"] .ipv6-readiness b{color:#29483d}html[data-theme="light"] .ipv6-result>p{color:#477b66}html[data-theme="light"] .ipv6-runtime{border-color:#9ccdb6;background:#e6f5ed}html[data-theme="light"] .ipv6-runtime dl>div{background:#f7fcf9}html[data-theme="light"] .ipv6-runtime dd{color:#29483d}html[data-theme="light"] .ipv6-runtime>div>p{color:#477b66}
@@ -569,6 +575,8 @@ html[data-theme="light"] .route-options label,html[data-theme="light"] .registra
 html[data-theme="light"] .route-options label.active,html[data-theme="light"] .registration-routing>label.active{background:#e5f2ec;border-color:#69b895;color:#183028}
 html[data-theme="light"] .legacy-mode-warning{background:#fff5dc;border-color:#dabd70;color:#644b15}
 html[data-theme="light"] .legacy-mode-warning small{color:#806b3a}
+html[data-theme="light"] .device-out-of-lan{background:#fdecea;border-color:#e3a89f;color:#8c342a}
+html[data-theme="light"] .device-out-of-lan small{color:#9c5a51}
 html[data-theme="light"] .runtime-route{background:#f8fbfa;border-color:#cbded6}
 html[data-theme="light"] .runtime-route.following{background:#eaf5f0;border-color:#9dc9b6}
 html[data-theme="light"] .runtime-route.router-bypass{background:#fff8e7;border-color:#d8bd76}

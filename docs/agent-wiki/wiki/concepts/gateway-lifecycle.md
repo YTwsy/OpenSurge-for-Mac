@@ -15,6 +15,22 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。当前 runtime pat
 - 启用下游 IPv6 接管时，BPF broker 和 IPv6 gateway alias 纳入同一个
   runtime/rollback 所有权；自动拓扑还拥有 dnsmasq RA/SLAAC，手工旁路由不发布 RA。
 
+## 下游 LAN 网段
+
+下游网段由 `gateway.lan_ip` 与 `gateway.lan_prefix_len` 共同决定，`internal/lan`
+的 `lan.Scope` 是唯一推导入口。`gateway.lan_prefix_len` 省略时按 /24，接受
+/8–/30。所有需要判断“同网段”的地方都必须走 `cfg.LANScope()`，不要重新比较前三段
+IPv4：
+
+- pf NAT 的源 CIDR 和 mihomo `route-exclude-address`；
+- dnsmasq `dhcp-range` 的 netmask 与 DHCP 地址池校验；
+- `dhcp.bypass_gateway` 的可达性校验；
+- 设备登记地址、`device_policy.protected_ipv4` 与 same-LAN 流量观察过滤。
+
+前缀填错的后果是静默的：过窄会把同网段设备当成外部流量，过宽会把外部地址当成
+本地并从 TUN 排除。GUI 的「根据当前网络重新填入」和 `GET /api/v1/network/defaults`
+从 macOS 网络快照的真实掩码回填这个字段。
+
 ## Start 顺序
 
 `internal/gateway/manager.go` 负责当前顺序。

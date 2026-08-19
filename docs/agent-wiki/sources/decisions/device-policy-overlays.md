@@ -48,8 +48,11 @@ The system-TUN identity boundary is MAC-backed IPv4 DHCP reservations plus
 source MAC into patched Mihomo as `IN-USER(device:<id>)`; this is routing
 identity, not anti-spoof authentication. An `upstream_router` device retains
 that mapping only for a highest-priority IPv6 `REJECT`, because its bypass is
-IPv4-only. Registered addresses must stay in the gateway `/24` and cannot be
-its network, broadcast, gateway, or declared protected address. same-Wi-Fi DHCP
+IPv4-only. A registered address that is on the gateway LAN cannot be its
+network, broadcast, gateway, or declared protected address. An address outside
+the LAN is dormant rather than invalid, because refusing it would leave an
+operator who moved the Mac unable to start the gateway or edit the policy that
+still lists the old devices. same-Wi-Fi DHCP
 start also rejects a reservation when ARP observes a different MAC at that
 IPv4; no ARP reply is only an inconclusive signal, not proof of vacancy.
 

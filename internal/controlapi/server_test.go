@@ -368,6 +368,35 @@ func TestGatewayPlanWarnsOnlyForCompetingIPv6DefaultRoute(t *testing.T) {
 	}
 }
 
+func TestGatewayPlanWarnsWhenConfiguredPrefixDiffersFromLiveMask(t *testing.T) {
+	server := newTestServer(t)
+	server.discoverNetwork = func(context.Context, string, string) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+			IPv4:           "192.168.1.20",
+			SubnetMask:     "255.255.252.0",
+			Router:         "192.168.1.1",
+			DNS:            []string{"192.168.1.1"},
+		}, nil
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	var plan GatewayPlan
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "gateway.lan_prefix_len") {
+		t.Fatalf("plan = %#v", plan)
+	}
+	if len(plan.Blockers) != 0 {
+		t.Fatalf("a stale prefix must stay a warning: %#v", plan.Blockers)
+	}
+}
+
 func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	server := newTestServer(t)
 	response := performAuthorized(server, http.MethodGet, "/api/v1/network/interfaces", nil)

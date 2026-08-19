@@ -340,6 +340,29 @@ describe('DevicesPage', () => {
     expect(saved.profiles.map(profile => profile.id)).toEqual(['bob-policy'])
   })
 
+  it('marks registrations from another LAN instead of hiding them', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [
+        { id: 'alice', name: 'Alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'shared', egress_mode: 'inherit_global' },
+        { id: 'bob', name: 'Bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.50.122', profile: 'shared', egress_mode: 'inherit_global' },
+      ],
+      profiles: [{ id: 'shared', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({ out_of_lan_devices: ['bob'], lan_prefix: '192.168.1.0/24' }))
+    renderPage()
+
+    const card = (await screen.findByText('Bob')).closest('.device-card') as HTMLElement
+    expect((card.querySelector('.pill') as HTMLElement).textContent).toBe('不在当前网段')
+    expect(within(card).getByText(/192\.168\.50\.122 不属于当前网关网段 192\.168\.1\.0\/24/)).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '编辑身份与路由' })).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '删除设备' })).toBeTruthy()
+
+    const healthy = (screen.getByText('Alice')).closest('.device-card') as HTMLElement
+    expect(healthy.querySelector('.device-out-of-lan')).toBeNull()
+  })
+
   it('reopens the registration form to re-register an existing device identity and routing', async () => {
     const policy: PolicySet = {
       ...basePolicy,

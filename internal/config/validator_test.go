@@ -210,6 +210,20 @@ func TestValidateSameWiFiDHCPGatewayMode(t *testing.T) {
 			},
 			want: "gateway.lan_ip must not be inside",
 		},
+		{
+			name: "accepts a range that a wider configured prefix makes local",
+			edit: func(cfg *Config) {
+				cfg.Gateway.LANPrefixLen = 22
+				cfg.DHCP.RangeStart = "192.168.2.120"
+				cfg.DHCP.RangeEnd = "192.168.2.199"
+			},
+			want: "",
+		},
+		{
+			name: "rejects a prefix length with no usable hosts",
+			edit: func(cfg *Config) { cfg.Gateway.LANPrefixLen = 31 },
+			want: "gateway.lan_prefix_len",
+		},
 	}
 
 	for _, tt := range tests {
@@ -285,6 +299,33 @@ func TestValidateDevicePolicyCandidateEnforcesRouterBypassTopology(t *testing.T)
 				t.Fatalf("ValidateDevicePolicyCandidate() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestValidateDevicePolicyCandidateKeepsRegistrationsFromAnotherLAN(t *testing.T) {
+	cfg := Default()
+	cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
+	cfg.Gateway.Interface = "en0"
+	cfg.Gateway.UpstreamInterface = "en0"
+	cfg.Gateway.LANIP = "192.168.1.20"
+	cfg.DHCP.Enabled = true
+	cfg.DHCP.RangeStart = "192.168.1.120"
+	cfg.DHCP.RangeEnd = "192.168.1.199"
+	cfg.DNS.Listen = cfg.Gateway.LANIP
+	cfg.Transparent.Mode = TransparentModeTUN
+	cfg.DevicePolicy.ProtectedIPv4 = []string{"192.168.50.253"}
+	policy := device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices: []device.ManagedDevice{
+			{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.1.101", Profile: "home"},
+			{ID: "laptop", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.50.101", Profile: "home"},
+		},
+	}
+
+	// Moving the Mac to a new LAN must not lock the operator out of the
+	// configuration that still lists devices from the previous one.
+	if err := ValidateDevicePolicyCandidate(cfg, policy); err != nil {
+		t.Fatalf("ValidateDevicePolicyCandidate() error = %v", err)
 	}
 }
 

@@ -70,7 +70,7 @@ export type RuleProvider = { name: string; type: string; vehicle_type: string; b
 export type NetworkSnapshot = { network_service: string; interface: string; hardware_address?: string; ipv4?: string; subnet_mask?: string; router?: string; dns: string[]; ipv6_default: boolean; ipv6_default_self_only?: boolean }
 export type NetworkInterfaceOption = { interface: string; network_service: string; ipv6_link_local?: string }
 export type NetworkInterfacesResponse = { schema_version: number; interfaces: NetworkInterfaceOption[] }
-export type NetworkDefaults = { schema_version: number; mode: 'same_lan' | 'same_wifi_dhcp'; snapshot: NetworkSnapshot; gateway_ipv4: string; dhcp_range_start?: string; dhcp_range_end?: string; bypass_gateway?: string; bypass_dns: string[]; warnings: string[]; blockers: string[] }
+export type NetworkDefaults = { schema_version: number; mode: 'same_lan' | 'same_wifi_dhcp'; snapshot: NetworkSnapshot; gateway_ipv4: string; lan_prefix_len?: number; dhcp_range_start?: string; dhcp_range_end?: string; bypass_gateway?: string; bypass_dns: string[]; warnings: string[]; blockers: string[] }
 export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string; network_snapshot?: NetworkSnapshot; client_validation_skipped?: boolean }
 export type GatewayPlan = { schema_version: number; revision: string; topology: string; snapshot: NetworkSnapshot; protected_ipv4: string[]; dhcp_servers: string[]; warnings: string[]; blockers: string[] }
 export type Operation = { id: string; kind: string; state: string; error?: string }
@@ -78,7 +78,7 @@ export type MihomoRecoveryStatus = { state: 'idle' | 'observing' | 'recovering' 
 export type SleepPreventionStatus = { enabled: boolean; active: boolean; error?: string }
 export type ControlConfig = {
   schema_version: number; revision: string
-  gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; upstream_interface: string }
+  gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; lan_prefix_len: number; upstream_interface: string }
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string; bypass_gateway: string; bypass_dns: string[] }
   dns: { listen: string; upstream: string; ipv6: boolean }
   transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
@@ -157,6 +157,8 @@ export type DevicesResponse = {
   desired_devices?: CompiledDevice[]
   applied_devices?: CompiledDevice[]
   changed_devices?: string[]
+  out_of_lan_devices?: string[]
+  lan_prefix?: string
   leases: Lease[]
   observed_devices: ObservedDevice[]
   observation_error?: string

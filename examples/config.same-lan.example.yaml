@@ -2,6 +2,9 @@ gateway:
   mode: "same_lan"
   interface: "en0"
   lan_ip: "192.168.1.20"
+  # Real prefix length of the downstream LAN. pf NAT, TUN route exclusion,
+  # DHCP range validation, and device address ownership are derived from it.
+  lan_prefix_len: 24
   upstream_interface: "en0"
 
 dhcp:

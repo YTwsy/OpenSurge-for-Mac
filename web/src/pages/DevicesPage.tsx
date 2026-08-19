@@ -255,7 +255,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
       <section className="section live-section device-outlet-section">
         <SectionTitle title="设备出口" subtitle="出口选择即时生效 · 路由方式保存后重载" />
         <div className="device-stack">
-            {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? []), overview?.topology).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} topology={overview?.topology} routerBypass={routerBypass} routerBypassReady={routerBypassReady} onNetworkSettings={() => onNavigate('network')} leases={data?.leases ?? []} observed={data?.observed_devices ?? []} desiredDevices={policy.devices} groups={groups} healthByName={proxyHealth.byName} healthTesting={proxyHealth.testing} onHealthTest={proxyHealth.test} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onEditIdentity={() => view.desired && editDeviceIdentity(view.desired.id)} onRemove={() => view.desired && removeDevice(view.desired.id)} onUseObservedIPv4={(deviceID, name, fromIPv4, toIPv4) => setRebindRequest({ deviceID, name, fromIPv4, toIPv4 })} onRouteModeChange={mode => {
+            {deviceViews(policy.devices, data?.applied_devices ?? (data?.applied ? data.devices : []), new Set(data?.changed_devices ?? []), new Set(data?.out_of_lan_devices ?? []), overview?.topology).map(view => <DeviceCard key={`${view.desired?.id ?? view.applied?.id}-${view.state}`} view={view} topology={overview?.topology} lanPrefix={data?.lan_prefix ?? ''} routerBypass={routerBypass} routerBypassReady={routerBypassReady} onNetworkSettings={() => onNavigate('network')} leases={data?.leases ?? []} observed={data?.observed_devices ?? []} desiredDevices={policy.devices} groups={groups} healthByName={proxyHealth.byName} healthTesting={proxyHealth.testing} onHealthTest={proxyHealth.test} selected={selectedDeviceID === (view.desired?.id ?? view.applied?.id)} onSelect={() => view.desired && setSelectedDeviceID(view.desired.id)} onEditIdentity={() => view.desired && editDeviceIdentity(view.desired.id)} onRemove={() => view.desired && removeDevice(view.desired.id)} onUseObservedIPv4={(deviceID, name, fromIPv4, toIPv4) => setRebindRequest({ deviceID, name, fromIPv4, toIPv4 })} onRouteModeChange={mode => {
               if (!view.desired) return
               const next = copyPolicy(policy)
               next.devices = next.devices.map(device => {
@@ -316,12 +316,15 @@ function RebindDialog({ request, busy, running, includesDraft, onCancel, onConfi
 }
 
 type DeviceIdentity = { state: 'ready' | 'observed' | 'conflict' | 'address_changed' | 'waiting'; tone: string; text: string; observedIPv4?: string }
-type DeviceView = { desired?: PolicyDevice; applied?: CompiledDevice; state: 'applied' | 'pending' | 'updated' | 'removing' | 'paused' }
-function deviceViews(desired: PolicyDevice[], applied: CompiledDevice[], changed: Set<string>, topology?: string): DeviceView[] {
+type DeviceView = { desired?: PolicyDevice; applied?: CompiledDevice; state: 'applied' | 'pending' | 'updated' | 'removing' | 'paused' | 'out_of_lan' }
+function deviceViews(desired: PolicyDevice[], applied: CompiledDevice[], changed: Set<string>, outOfLAN: Set<string>, topology?: string): DeviceView[] {
   const appliedByID = new Map(applied.map(device => [device.id, device]))
   const views: DeviceView[] = desired.map(device => {
     const running = appliedByID.get(device.id)
     appliedByID.delete(device.id)
+    // Nothing else about the device matters while its address is off-LAN: the
+    // gateway cannot lease it, route it, or match its traffic.
+    if (outOfLAN.has(device.id)) return { desired: device, applied: running, state: 'out_of_lan' }
     if (topology !== 'same_lan' && !device.mac.trim()) return { desired: device, state: 'paused' }
     if (!running) return { desired: device, state: 'pending' }
     const same = running.mac.toLowerCase() === device.mac.toLowerCase() && running.ipv4 === device.ipv4 && running.profile === device.profile && appliedEgressMode(running) === desiredEgressMode(device) && appliedGatewayTarget(running) === desiredGatewayTarget(device)
@@ -335,7 +338,7 @@ type DeviceRouteMode = AppliedDeviceEgressMode | 'upstream_router'
 type EditableDeviceRouteMode = DeviceEgressMode | 'upstream_router'
 type RouterBypassSettings = { gateway: string; dns: string[] }
 
-function DeviceCard({ view, topology, routerBypass, routerBypassReady, onNetworkSettings, leases, observed, desiredDevices, groups, healthByName, healthTesting, onHealthTest, selected, onSelect, onEditIdentity, onRemove, onUseObservedIPv4, onRouteModeChange, onChanged }: { view: DeviceView; topology?: string; routerBypass: RouterBypassSettings; routerBypassReady: boolean; onNetworkSettings: () => void; leases: Lease[]; observed: ObservedDevice[]; desiredDevices: PolicyDevice[]; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; healthTesting: Set<string>; onHealthTest: (names: string[]) => Promise<void>; selected: boolean; onSelect: () => void; onEditIdentity: () => void; onRemove: () => void; onUseObservedIPv4: (deviceID: string, name: string, fromIPv4: string, toIPv4: string) => void; onRouteModeChange: (mode: EditableDeviceRouteMode) => void; onChanged: () => Promise<void> }) {
+function DeviceCard({ view, topology, lanPrefix, routerBypass, routerBypassReady, onNetworkSettings, leases, observed, desiredDevices, groups, healthByName, healthTesting, onHealthTest, selected, onSelect, onEditIdentity, onRemove, onUseObservedIPv4, onRouteModeChange, onChanged }: { view: DeviceView; topology?: string; lanPrefix: string; routerBypass: RouterBypassSettings; routerBypassReady: boolean; onNetworkSettings: () => void; leases: Lease[]; observed: ObservedDevice[]; desiredDevices: PolicyDevice[]; groups: ProxyGroup[]; healthByName: Map<string, ProxyHealthEntry>; healthTesting: Set<string>; onHealthTest: (names: string[]) => Promise<void>; selected: boolean; onSelect: () => void; onEditIdentity: () => void; onRemove: () => void; onUseObservedIPv4: (deviceID: string, name: string, fromIPv4: string, toIPv4: string) => void; onRouteModeChange: (mode: EditableDeviceRouteMode) => void; onChanged: () => Promise<void> }) {
   const [rulesOpen, setRulesOpen] = useState(false)
   const device = view.desired ?? view.applied!
   const applied = view.applied
@@ -361,6 +364,10 @@ function DeviceCard({ view, topology, routerBypass, routerBypassReady, onNetwork
       {identity?.state === 'waiting' && <span className="device-meta-item"><small>状态</small><span className="device-meta-value">设备按登记 IP 接入后生效</span></span>}
       <span className="device-meta-item"><small>MAC</small><span className="device-meta-value">{device.mac.trim() || (view.state === 'paused' ? '未登记 · 策略已暂停，补充后恢复' : '未登记 · 当前按固定 IPv4 匹配')}</span></span>
     </div>
+    {view.state === 'out_of_lan' && <div className="device-out-of-lan" role="status">
+      <strong>不在当前网段</strong>
+      <small>{`登记地址 ${device.ipv4} 不属于当前网关网段${lanPrefix ? ` ${lanPrefix}` : ''}，OpenSurge 不会为它下发 DHCP 保留，也不会匹配它的流量。它保留在配置里不会阻止网关启动：用下面的“编辑身份与路由”换成当前网段的地址，或删除这台设备。`}</small>
+    </div>}
     {identity?.state === 'address_changed' ? <div className="identity-rebind"><span className="identity-state changed"><strong>设备已识别，但 IP 已变化</strong><small>原地址 {applied!.ipv4} → 当前地址 {identity.observedIPv4}</small></span>{view.desired && !rebindOwner && !rebindAlreadyDrafted && <button className="primary" type="button" onClick={() => onUseObservedIPv4(view.desired!.id, displayDeviceName(view.desired!), applied!.ipv4, identity.observedIPv4!)}>使用当前 IP 并应用</button>}{rebindAlreadyDrafted && <small className="identity-rebind-note">当前 IP 已写入草稿；保存并重载后生效。</small>}{rebindOwner && <small className="identity-rebind-note conflict">当前地址已登记给 {displayDeviceName(rebindOwner)}，请先解决身份冲突。</small>}</div> : identity && <span className={`identity-state ${identity.tone}`}>{identity.text}</span>}
     {view.desired && <fieldset className={`device-routing-mode ${identityBlocked ? 'identity-blocked' : ''}`} disabled={identityBlocked}>
       <legend>设备路由方式 <span className="effect-badge restart">保存后重载</span></legend>
@@ -372,7 +379,7 @@ function DeviceCard({ view, topology, routerBypass, routerBypassReady, onNetwork
     {runningTarget === 'upstream_router' && <div className="runtime-route router-bypass"><span><strong>IPv4 直连主路由{applied?.ipv6_blocked ? ' · IPv6 出站已阻止' : ''}</strong><small>已配置网关 {routerBypass.gateway || '—'} · DNS {routerBypass.dns.join(', ') || '—'}；IPv4 在设备续租后生效，OpenSurge 不统计其 IPv4 流量。</small></span><span className="effect-badge restart">续租后生效</span></div>}
     {runningTarget !== 'upstream_router' && runningMode === 'inherit_global' && (identityBlocked ? <div className="runtime-route identity-blocked"><span><strong>{identity?.state === 'address_changed' ? '当前 IP 尚未绑定' : '当前身份存在冲突'}</strong><small>已应用配置仍对应 {applied!.ipv4}</small></span><span className="effect-badge restart">待修复</span></div> : <div className="runtime-route following"><span><strong>当前运行</strong><small>{identity?.state === 'waiting' ? '跟随网关规则 · 等待设备接入' : '跟随网关规则'}</small></span><span className="effect-badge live">{identity?.state === 'waiting' ? '已预设' : '已应用'}</span></div>)}
     {runningTarget !== 'upstream_router' && (runningMode === 'dedicated' || runningMode === 'legacy_fallback') && <div className={`default-slot ${runningMode === 'legacy_fallback' ? 'legacy' : ''}`}>{defaultEntry ? <DeviceOutletControl identity={identity} device={applied!.id} slot={defaultEntry[0]} groupName={defaultEntry[1]} groups={groups} title={runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'} ariaLabel={`${device.id} ${runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'} 当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /> : <button className="outlet-summary unavailable" type="button" disabled><span className="outlet-summary-copy"><small>{runningMode === 'dedicated' ? '独立出口' : '兼容兜底出口'}</small><strong>重载后可用</strong></span></button>}</div>}
-    {!runningRouteMode && desiredRouteMode && view.state !== 'paused' && <div className="runtime-route"><span><strong>重载后应用</strong><small>{routeModeLabel(desiredRouteMode)}</small></span></div>}
+    {!runningRouteMode && desiredRouteMode && view.state !== 'paused' && view.state !== 'out_of_lan' && <div className="runtime-route"><span><strong>重载后应用</strong><small>{routeModeLabel(desiredRouteMode)}</small></span></div>}
     {runningRouteMode && desiredRouteMode && runningRouteMode !== desiredRouteMode && <small className="draft-mode-delta">草稿将改为“{routeModeLabel(desiredRouteMode)}”；保存并重载前仍按“{routeModeLabel(runningRouteMode)}”运行。</small>}
     {ruleEntries.length > 0 && <div className="rule-slots"><button className="rule-slots-toggle" type="button" aria-expanded={rulesOpen} onClick={() => setRulesOpen(value => !value)}>规则出口（{ruleEntries.length}）<span>{rulesOpen ? '收起' : '展开'}</span></button>{rulesOpen && ruleEntries.map(([slot, groupName]) => <div className="rule-outlet-summary" key={slot}><DeviceOutletControl identity={identity} device={applied!.id} slot={slot} groupName={groupName} groups={groups} title={slot} ariaLabel={`${device.id} ${slot} 出口当前摘要`} healthByName={healthByName} testing={healthTesting} onTest={onHealthTest} onChanged={onChanged} /></div>)}</div>}
     {view.desired && <div className="device-card-actions">
@@ -420,6 +427,7 @@ function routeModeLabel(mode: DeviceRouteMode) {
 }
 
 function deviceStateLabel(state: DeviceView['state']) {
+  if (state === 'out_of_lan') return '不在当前网段'
   if (state === 'paused') return '等待 MAC'
   if (state === 'pending') return '待应用'
   if (state === 'updated') return '待更新'

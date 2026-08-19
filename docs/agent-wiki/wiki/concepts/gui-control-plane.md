@@ -239,8 +239,10 @@ config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的�
 但仍保留可输入形式以支持没有列入网络服务顺序的 bridge、VLAN 或临时接口。
 安装器初始网络字段尚未保存为用户配置时，选择 `same_lan` 或 `same_wifi_dhcp` 会通过只读
 `GET /api/v1/network/defaults` 读取当前 IPv4 默认路由对应的网络服务，把同一接口、当前
-IPv4 与 `dns.listen` 写入前端草稿；`same_wifi_dhcp` 只在 `/24` 下生成避开 Mac、路由器和
-受保护地址的建议池。建议不自动保存、不执行 `networksetup`，已有配置也不得被覆盖。
+IPv4、子网前缀与 `dns.listen` 写入前端草稿；`same_wifi_dhcp` 还会在该网段内生成避开
+Mac、路由器和受保护地址的建议池。同一条路径还挂在网络页的「根据当前网络重新填入」
+按钮上，供 Mac 换网络后手工对齐。建议不自动保存、不执行 `networksetup`，
+已有配置也不得被静默覆盖。
 `isolated_lan` 不使用这条建议路径，继续由操作者手工配置独立下游接口和子网。
 `same_lan` 不运行 DHCP 服务，因此地址池与租期整组必须禁用并明确标记为运行时不使用；
 保留字段值只用于日后切换 topology，不能暗示当前模式会应用它们。
@@ -260,10 +262,15 @@ Desired 网络配置中默认关闭、仅 TUN 可用的独立兼容开关管理�
 `dedicated`（公网流量优先设备 default selector，本地/私网保持直连）；缺失字段显示
 旧版兼容状态并要求显式迁移。DHCP 模式的登记面板复用
 OpenSurge lease 自动填写 hostname、MAC 与 IPv4；`same_lan` 则列出 mihomo 当前观察到且
-与 gateway 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补 MAC。只有当前经过 Mac 的
+与 gateway 同网段的源 IPv4，并用 macOS ARP 邻居表尽力补 MAC。只有当前经过 Mac 的
 设备会出现，ARP/流量观察不得显示为 DHCP 验证。登记默认创建 `<device-id>-policy` 私有 Profile；首次
 编辑共享/Template Profile 时将解析后内容复制为无 Template 的设备私有 Profile。
 Profiles/Templates/Rule Sets 作为高级复用机制默认折叠。
+
+设备卡自身提供整设备管理：「编辑身份与路由」复用登记面板并预填现有身份，「删除设备」
+同时清理该设备的私有 Profile。两者都只改本地草稿，仍走同一次“保存设备配置”。设备
+policy 是整文档提交，因此这些入口是操作者修正身份的唯一途径；`out_of_lan_devices`
+标记的设备只能在这里改地址或删除，界面必须把这条出路说清楚。
 
 策略页承担完整节点健康中心：`GET /api/v1/proxy-health` 汇总 mihomo `/proxies`，
 `POST /api/v1/proxy-health/tests` 只允许探测当前 snapshot 中的 leaf proxy，并使用固定

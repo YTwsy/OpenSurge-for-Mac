@@ -141,6 +141,7 @@ type NetworkDefaultsResponse struct {
 	Mode           string                `json:"mode"`
 	Snapshot       macosnetwork.Snapshot `json:"snapshot"`
 	GatewayIPv4    string                `json:"gateway_ipv4"`
+	LANPrefixLen   int                   `json:"lan_prefix_len,omitempty"`
 	DHCPRangeStart string                `json:"dhcp_range_start,omitempty"`
 	DHCPRangeEnd   string                `json:"dhcp_range_end,omitempty"`
 	BypassGateway  string                `json:"bypass_gateway,omitempty"`
@@ -176,6 +177,7 @@ type GatewayConfigInput struct {
 	Mode              string `json:"mode"`
 	Interface         string `json:"interface"`
 	LANIP             string `json:"lan_ip"`
+	LANPrefixLen      int    `json:"lan_prefix_len"`
 	UpstreamInterface string `json:"upstream_interface"`
 }
 
@@ -335,18 +337,23 @@ type LocalRoutingResponse struct {
 }
 
 type DevicesResponse struct {
-	SchemaVersion    int                     `json:"schema_version"`
-	DesiredDigest    string                  `json:"desired_digest,omitempty"`
-	AppliedDigest    string                  `json:"applied_digest,omitempty"`
-	Drift            bool                    `json:"drift"`
-	Applied          bool                    `json:"applied"`
-	Devices          []device.CompiledDevice `json:"devices"` // legacy running view
-	DesiredDevices   []device.CompiledDevice `json:"desired_devices"`
-	AppliedDevices   []device.CompiledDevice `json:"applied_devices"`
-	ChangedDevices   []string                `json:"changed_devices"`
-	Leases           []device.Client         `json:"leases"`
-	ObservedDevices  []ObservedDevice        `json:"observed_devices"`
-	ObservationError string                  `json:"observation_error,omitempty"`
+	SchemaVersion  int                     `json:"schema_version"`
+	DesiredDigest  string                  `json:"desired_digest,omitempty"`
+	AppliedDigest  string                  `json:"applied_digest,omitempty"`
+	Drift          bool                    `json:"drift"`
+	Applied        bool                    `json:"applied"`
+	Devices        []device.CompiledDevice `json:"devices"` // legacy running view
+	DesiredDevices []device.CompiledDevice `json:"desired_devices"`
+	AppliedDevices []device.CompiledDevice `json:"applied_devices"`
+	ChangedDevices []string                `json:"changed_devices"`
+	// OutOfLANDevices are registrations whose IPv4 is not on the configured LAN.
+	// They stay in the policy document but cannot be served, so the UI offers
+	// re-registration or removal instead of the gateway refusing to start.
+	OutOfLANDevices  []string         `json:"out_of_lan_devices"`
+	LANPrefix        string           `json:"lan_prefix,omitempty"`
+	Leases           []device.Client  `json:"leases"`
+	ObservedDevices  []ObservedDevice `json:"observed_devices"`
+	ObservationError string           `json:"observation_error,omitempty"`
 }
 
 // ObservedDevice is a currently active same-LAN source seen by mihomo. A MAC

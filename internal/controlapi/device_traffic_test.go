@@ -63,7 +63,7 @@ func TestAggregateDeviceTrafficLabelsRouterBypassWithoutMihomoSessions(t *testin
 	leases := []device.Client{{
 		Hostname: "PlayStation-5", IP: "192.168.1.190", MAC: "aa:bb:cc:dd:ee:05", Online: true, ExpiresAt: time.Now().Add(time.Hour),
 	}}
-	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.1.20", false)
+	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.1.20", 24, false)
 	if len(result.Devices) != 1 || result.Devices[0].GatewayTarget != device.GatewayTargetUpstreamRouter || result.Devices[0].PrimaryEgress != "主路由直连" {
 		t.Fatalf("router bypass traffic row = %#v", result.Devices)
 	}
@@ -88,7 +88,7 @@ func TestAggregateSameLANDeviceTrafficUsesStaticAndObservedIdentities(t *testing
 		{Upload: 1, Download: 2, Chains: []string{"DIRECT"}, Metadata: map[string]any{"sourceIP": "192.168.5.123"}},
 	}}
 
-	result := aggregateDeviceTrafficWithPolicy(nil, policy, snapshot, "192.168.5.123", true)
+	result := aggregateDeviceTrafficWithPolicy(nil, policy, snapshot, "192.168.5.123", 24, true)
 	if len(result.Devices) != 2 || result.Totals.ActiveConnections != 2 || result.UnmatchedConnections != 2 {
 		t.Fatalf("same-LAN traffic = %#v", result)
 	}
@@ -126,7 +126,7 @@ func TestAggregateDeviceTrafficSeparatesGatewayLocalAndUnclassifiedConnections(t
 		{Upload: 1, Download: 2, Chains: []string{"DIRECT"}, Metadata: map[string]any{}},
 	}}
 
-	result := aggregateDeviceTrafficWithPolicy(leases, device.PolicySet{}, snapshot, "192.168.5.123", true)
+	result := aggregateDeviceTrafficWithPolicy(leases, device.PolicySet{}, snapshot, "192.168.5.123", 24, true)
 	if result.GatewayLocal.ActiveConnections != 3 || result.GatewayLocal.Upload != 130 || result.GatewayLocal.Download != 1020 {
 		t.Fatalf("gateway local counters = %#v", result.GatewayLocal)
 	}
@@ -149,7 +149,7 @@ func TestAggregateSameLANDeviceTrafficDoesNotRenameConflictingLease(t *testing.T
 		Hostname: "other-device", IP: "192.168.5.124", MAC: "aa:bb:cc:dd:ee:99", Online: true, ExpiresAt: time.Now().Add(time.Hour),
 	}}
 
-	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.5.123", true)
+	result := aggregateDeviceTrafficWithPolicy(leases, policy, mihomo.ConnectionsSnapshot{}, "192.168.5.123", 24, true)
 	if len(result.Devices) != 1 || result.Devices[0].Name != "" || result.Devices[0].Hostname != "other-device" || result.Devices[0].IdentitySource != identitySourceDHCPLease {
 		t.Fatalf("conflicting identity row = %#v", result.Devices)
 	}
@@ -165,7 +165,7 @@ func TestObservedLANDevicesJoinsActiveSourcesToNeighborMAC(t *testing.T) {
 	}}
 	neighbors := []macosnetwork.Neighbor{{IP: "192.168.5.124", MAC: "AA:BB:CC:DD:EE:24", Interface: "en0"}}
 
-	observed := observedLANDevices(snapshot, neighbors, "192.168.5.123")
+	observed := observedLANDevices(snapshot, neighbors, "192.168.5.123", 24)
 	if len(observed) != 2 || observed[0].IP != "192.168.5.124" || observed[0].MAC != "aa:bb:cc:dd:ee:24" || !observed[0].NeighborObserved || observed[0].ActiveConnections != 2 {
 		t.Fatalf("observed devices = %#v", observed)
 	}
@@ -184,7 +184,7 @@ func TestObservedLANDevicesIncludesNeighborOnlyEvidenceForRegisteredIPOnlyDevice
 		{ID: "identified", IPv4: "192.168.5.138", MAC: "aa:bb:cc:dd:ee:38"},
 	}
 
-	observed := observedLANDevices(mihomo.ConnectionsSnapshot{}, neighbors, "192.168.5.123", registered...)
+	observed := observedLANDevices(mihomo.ConnectionsSnapshot{}, neighbors, "192.168.5.123", 24, registered...)
 	if len(observed) != 1 || observed[0].IP != "192.168.5.137" || observed[0].MAC != "aa:bb:cc:dd:ee:37" || !observed[0].NeighborObserved || observed[0].ActiveConnections != 0 {
 		t.Fatalf("observed = %#v", observed)
 	}
@@ -197,7 +197,7 @@ func TestObservedLANDevicesDoesNotGuessWhenOneIPHasConflictingNeighborMACs(t *te
 	}
 	registered := []device.ManagedDevice{{ID: "ip-only", IPv4: "192.168.5.137"}}
 
-	observed := observedLANDevices(mihomo.ConnectionsSnapshot{}, neighbors, "192.168.5.123", registered...)
+	observed := observedLANDevices(mihomo.ConnectionsSnapshot{}, neighbors, "192.168.5.123", 24, registered...)
 	if len(observed) != 0 {
 		t.Fatalf("observed = %#v", observed)
 	}
