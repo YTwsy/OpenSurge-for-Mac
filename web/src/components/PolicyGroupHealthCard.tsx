@@ -11,9 +11,11 @@ type PolicyGroupHealthCardProps = {
   testing: Set<string>
   onTest: (names: string[]) => Promise<void>
   onSelect: (policy: string) => Promise<void>
+  articleRef?: (node: HTMLElement | null) => void
+  navigationActive?: boolean
 }
 
-export function PolicyGroupHealthCard({ group, search, healthByName, testing, onTest, onSelect }: PolicyGroupHealthCardProps) {
+export function PolicyGroupHealthCard({ group, search, healthByName, testing, onTest, onSelect, articleRef, navigationActive = false }: PolicyGroupHealthCardProps) {
   const [switching, setSwitching] = useState('')
   const [error, setError] = useState('')
   const options = useMemo(() => group.name.toLowerCase().includes(search.toLowerCase()) ? group.options : group.options.filter(option => option.toLowerCase().includes(search.toLowerCase())), [group.name, group.options, search])
@@ -29,7 +31,7 @@ export function PolicyGroupHealthCard({ group, search, healthByName, testing, on
     finally { setSwitching('') }
   }
 
-  return <article className="policy-health-group">
+  return <article className={`policy-health-group ${navigationActive ? 'is-nav-active' : ''}`} ref={articleRef}>
     <header className="policy-group-head"><div><span className="group-kicker"><span>{group.type}</span>{group.name.startsWith('device/') && <span>设备策略</span>}</span><h2>{group.name}</h2><p>当前出口 <strong>{group.selected || '未选择'}</strong>{!manual && ' · 自动策略组'}</p></div><div className="group-health-summary"><span><strong>{reachable}</strong> / {probeable.length} 可达</span><button type="button" disabled={!probeable.length || probeable.some(name => testing.has(name))} onClick={() => void onTest(probeable)}>检测本组</button></div></header>
     {error && <div className="notice warn" role="alert">{error}</div>}
     <div className="proxy-node-grid">{options.map(option => {
