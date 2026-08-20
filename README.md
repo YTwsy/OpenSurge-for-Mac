@@ -492,8 +492,11 @@ HTTP/MRS rule-provider 配置由单元测试覆盖；不需要为每条操作者
 `make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。自动 RA 门槛要求两台
 客户端获得 OpenSurge IPv6 地址、Medium 优先级默认路由与 link-local DNS；旁路由门槛
 要求手工 ULA、Mac link-local 默认网关与 link-local DNS 且不产生 RA。三者都通过本机受控
-fixture 验证 TCP、UDP request/response、QUIC-shaped UDP carrier、设备策略和 stop
-rollback。QUIC 项只证明 UDP carrier，不等于完整 HTTP/3 握手。
+fixture 验证 TCP、UDP request/response、QUIC-shaped UDP carrier，以及没有
+TCP/HTTP2 fallback 的真实 HTTP/3-only request/response。HTTP/3 会分别验证 `DIRECT`、
+支持 UDP 的受控 SOCKS5 出口和 HTTP-only 出口 fail-closed，同时检查设备策略、BPF
+双向证据与 stop rollback。该门槛只证明这些受控场景，不代表完整覆盖所有 QUIC/HTTP3
+实现、版本、连接迁移或公网代理组合。
 
 策略组控制面和机器可读 CLI 改动优先使用 `make policy-control-test`。它会启动真实
 mihomo 二进制，但不使用 sudo、dnsmasq、pf 或 TUN，并通过 live external-controller

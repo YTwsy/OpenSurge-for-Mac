@@ -40,6 +40,17 @@ make lab-install
 - 把功能固定的网络 helper 安装到 `/opt/open-mihomo-gateway`；
 - 默认不安装免密 sudo 规则。
 
+如果 Apple Silicon 上的 agent 终端运行在 Rosetta 下，`uname -m` 可能显示
+`x86_64`，导致 `make lab-install` 被架构检查拒绝。先确认
+`sysctl -n sysctl.proc_translated` 为 `1` 且 `sysctl -n hw.optional.arm64` 为 `1`，
+再以原生 arm64 运行同一个安装器：
+
+```sh
+/usr/bin/arch -arm64 /bin/bash ./tests/lab/install-host-deps.sh
+```
+
+Intel Mac 不应使用这条绕行命令。
+
 需要无人值守启动/停止隔离网络时，可以明确运行
 `./tests/lab/install-host-deps.sh --root-only --with-sudoers`。它只允许当前用户免密执行
 root-owned helper 的 `start`、`stop` 和 `status`，绝不会执行来自这个可写仓库的脚本
@@ -125,12 +136,16 @@ IPv6 接管按拓扑使用 `lab-test-ipv6-userspace`（独立下游 LAN）、
 `TUN + InUser REJECT`；其他
 拓扑仍让它命中设备域名 `REJECT`。第二台客户端的 IPv6 TCP、受控 UDP
 request/response 和 1200-byte QUIC Initial-shaped UDP carrier 命中自己的 `DIRECT`
-selector。TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案，
+selector。它还必须使用没有 TCP/HTTP/2 fallback 的 HTTP/3-only client，分别通过
+`DIRECT` 和受控 SOCKS5 UDP 出口完成 QUIC TLS 与 HTTP/3 request/response；选中
+HTTP-only 出口时必须 fail closed，记录 UDP `REJECT`，且 origin 与 CONNECT proxy
+都不能收到请求。TCP/HTTP3 origin 必须收到对应 request，UDP fixture 必须返回固定答案，
 不把公网上游当作唯一捕获证据。最后会停止网关并
 验证客户端 default route、Mac gateway alias、broker PID、Unix socket、ready file
 和 runtime state 被清理。客户端可能按 RFC 4862 暂时保留 deprecated/等待过期的
-SLAAC 地址；门禁不把“地址立即消失”当成路由撤销条件。QUIC 断言证明的是 UDP
-carrier 与策略命中，不是完整 HTTP/3 握手。
+SLAAC 地址；门禁不把“地址立即消失”当成路由撤销条件。QUIC-shaped 断言只证明 UDP
+carrier 与策略命中；HTTP/3-only fixture 只证明上述三个本机受控出口场景，不代表所有
+QUIC/HTTP3 版本、0-RTT、连接迁移、公网节点或代理组合。
 
 `lab-test-ipv6-imported-egress` 是上述确定性门禁的外部补充，不替代本机 fixture。
 它要求显式提供一个真实 mihomo 订阅：
@@ -190,6 +205,12 @@ sudo 缓存凭据和终端会话有关，也会过期。如果 agent 或自动�
 
 ### 常见基础设施故障
 
+- 自动 RA 模式下，`/etc/resolv.conf` 可能仍只有 IPv4 控制/网关 DNS。IPv6 探针必须
+  回退到 `omg0` IPv6 默认路由的 link-local next hop，并附加 `%omg0` scope。如果
+  HTTP/3 client evidence 为空且 DNS fixture 没收到查询，先排查这个前置条件，不要
+  直接判断 QUIC 数据面失败。
+- quic-go 在最小 guest 中可能提示无法把 UDP receive buffer 增大到建议值。若随后有
+  `CLIENT_IPV6_HTTP3_OK`，这是吞吐告警而不是握手失败；本功能门槛不宣称 QUIC 性能覆盖。
 - guest 启动和清理会恢复 Lima 控制面 DNS，并在 `/etc/hosts` 保证本机 hostname
   可解析。出现 `sudo: unable to resolve host` 或对已停止 `192.168.50.1` 的
   DNS 请求时，先运行 `sudo /usr/local/bin/omg-lab-client restore-control`。

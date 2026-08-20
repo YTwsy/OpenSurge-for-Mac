@@ -24,15 +24,24 @@ EGRESS_PROBE_BINARY="$STATE_DIR/egress-probe"
 EGRESS_PROVIDER="$STATE_DIR/tun-egress-provider.yaml"
 IPV6_PACKET_BINARY="$STATE_DIR/opensurge-network"
 PATCHED_MIHOMO_BINARY="$STATE_DIR/mihomo-opensurge"
+HTTP3_PROBE_BINARY="$STATE_DIR/opensurge-http3-probe"
+HTTP3_CLIENT_BINARY="$STATE_DIR/opensurge-http3-probe-linux-arm64"
+HTTP3_CLIENT_GUEST=/usr/local/bin/opensurge-http3-probe
 EGRESS_ORIGIN_PORT="${OMG_LAB_TUN_EGRESS_ORIGIN_PORT:-19093}"
 EGRESS_PROXY_PORT="${OMG_LAB_TUN_EGRESS_PROXY_PORT:-19094}"
 EGRESS_PROVIDER_URL="http://127.0.0.1:$EGRESS_ORIGIN_PORT/tun-egress-provider.yaml"
 IPV6_DNS_FIXTURE_PORT="${OMG_LAB_IPV6_DNS_FIXTURE_PORT:-19095}"
+IPV6_HTTP3_FIXTURE_PORT="${OMG_LAB_IPV6_HTTP3_FIXTURE_PORT:-19096}"
+IPV6_UDP_PROXY_PORT="${OMG_LAB_IPV6_UDP_PROXY_PORT:-19097}"
+IPV6_UDP_PROXY_DNS_PORT="${OMG_LAB_IPV6_UDP_PROXY_DNS_PORT:-19098}"
 IPV6_TCP_TEST_HOST="ipv6-tcp.opensurge.test"
 IPV6_TCP_TEST_URL="http://$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT/ipv6-tcp"
 IPV6_UDP_TEST_HOST="ipv6-udp.opensurge.test"
 IPV6_UDP_ANSWER_HOST="udp-answer.opensurge.test"
 IPV6_QUIC_TEST_HOST="ipv6-quic.opensurge.test"
+IPV6_HTTP3_DIRECT_HOST="ipv6-http3-direct.opensurge.test"
+IPV6_HTTP3_PROXY_HOST="ipv6-http3-proxy.opensurge.test"
+IPV6_HTTP3_BLOCKED_HOST="ipv6-http3-blocked.opensurge.test"
 IPV6_REAL_PROFILE_SOURCE="${OMG_LAB_IPV6_REAL_PROFILE:-}"
 IPV6_REAL_PROFILE="$STATE_DIR/mihomo-profile.ipv6-real.yaml"
 IPV6_REAL_TCP_HOST="${OMG_LAB_IPV6_REAL_TCP_HOST:-api64.ipify.org}"
@@ -53,6 +62,8 @@ TUN_EGRESS_PROFILE=0
 LOCAL_ROUTING_TEST="${OMG_LAB_LOCAL_ROUTING_TEST:-false}"
 EGRESS_PROBE_PID=""
 IPV6_DNS_FIXTURE_PID=""
+HTTP3_PROBE_PID=""
+IPV6_UDP_PROXY_PID=""
 LAST_LAB_ARTIFACT_DIR=""
 REAL_PROXY_TYPE=""
 REAL_PROXY_INDEX=""
@@ -689,6 +700,116 @@ stop_egress_probe() {
   EGRESS_PROBE_PID=""
 }
 
+build_http3_lab_binaries() {
+  local go_cache go_path
+  go_cache="${GOCACHE:-/private/tmp/opensurge-http3-gocache}"
+  go_path="${OMG_LAB_HTTP3_GOPATH:-/private/tmp/opensurge-http3-gopath}"
+  GOPATH="$go_path" GOMODCACHE="$go_path/pkg/mod" GOCACHE="$go_cache" \
+    go build -o "$HTTP3_PROBE_BINARY" ./tests/integration/http3probe
+  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+    GOPATH="$go_path" GOMODCACHE="$go_path/pkg/mod" GOCACHE="$go_cache" \
+    go build -o "$HTTP3_CLIENT_BINARY" ./tests/integration/http3probe
+}
+
+install_http3_lab_client() {
+  local client guest_tmp
+  guest_tmp=/tmp/opensurge-http3-probe
+  for client in $CLIENTS; do
+    limactl copy --backend=scp "$HTTP3_CLIENT_BINARY" "$client:$guest_tmp"
+    limactl shell "$client" -- sudo install -m 0755 "$guest_tmp" "$HTTP3_CLIENT_GUEST"
+    limactl shell "$client" -- rm -f "$guest_tmp"
+  done
+}
+
+start_http3_probe() {
+  local log_file request_log i
+  log_file="$STATE_DIR/logs/http3-probe.log"
+  request_log="$STATE_DIR/egress/http3-origin.log"
+  rm -f "$log_file" "$request_log"
+  "$HTTP3_PROBE_BINARY" server \
+    --listen "127.0.0.1:$IPV6_HTTP3_FIXTURE_PORT" \
+    --log "$request_log" >"$log_file" 2>&1 &
+  HTTP3_PROBE_PID=$!
+  for i in {1..50}; do
+    if grep -Fq 'READY protocol=h3' "$log_file" 2>/dev/null; then
+      echo "HTTP/3-only Lab origin ready: udp://127.0.0.1:$IPV6_HTTP3_FIXTURE_PORT"
+      return 0
+    fi
+    if ! kill -0 "$HTTP3_PROBE_PID" 2>/dev/null; then
+      echo "HTTP/3-only Lab origin exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "HTTP/3-only Lab origin did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_http3_probe() {
+  if [[ -n "$HTTP3_PROBE_PID" ]] && kill -0 "$HTTP3_PROBE_PID" 2>/dev/null; then
+    kill "$HTTP3_PROBE_PID" 2>/dev/null || true
+    wait "$HTTP3_PROBE_PID" 2>/dev/null || true
+  fi
+  HTTP3_PROBE_PID=""
+}
+
+write_ipv6_udp_proxy_config() {
+  local config_dir
+  config_dir="$STATE_DIR/ipv6-udp-proxy"
+  mkdir -p "$config_dir"
+  cat >"$config_dir/config.yaml" <<EOF
+mixed-port: $IPV6_UDP_PROXY_PORT
+allow-lan: false
+bind-address: 127.0.0.1
+mode: rule
+log-level: info
+ipv6: false
+external-controller: ""
+dns:
+  enable: true
+  listen: 127.0.0.1:$IPV6_UDP_PROXY_DNS_PORT
+  nameserver:
+    - 127.0.0.1:$IPV6_DNS_FIXTURE_PORT
+rules:
+  - MATCH,DIRECT
+EOF
+}
+
+start_ipv6_udp_proxy() {
+  local config_dir log_file i
+  config_dir="$STATE_DIR/ipv6-udp-proxy"
+  log_file="$STATE_DIR/logs/ipv6-udp-proxy.log"
+  write_ipv6_udp_proxy_config
+  rm -f "$log_file"
+  mihomo -d "$config_dir" -f "$config_dir/config.yaml" >"$log_file" 2>&1 &
+  IPV6_UDP_PROXY_PID=$!
+  for i in {1..80}; do
+    if /usr/bin/nc -z 127.0.0.1 "$IPV6_UDP_PROXY_PORT" >/dev/null 2>&1; then
+      echo "controlled SOCKS5 UDP proxy ready: 127.0.0.1:$IPV6_UDP_PROXY_PORT"
+      return 0
+    fi
+    if ! kill -0 "$IPV6_UDP_PROXY_PID" 2>/dev/null; then
+      echo "controlled SOCKS5 UDP proxy exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "controlled SOCKS5 UDP proxy did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_ipv6_udp_proxy() {
+  if [[ -n "$IPV6_UDP_PROXY_PID" ]] && kill -0 "$IPV6_UDP_PROXY_PID" 2>/dev/null; then
+    kill "$IPV6_UDP_PROXY_PID" 2>/dev/null || true
+    wait "$IPV6_UDP_PROXY_PID" 2>/dev/null || true
+  fi
+  IPV6_UDP_PROXY_PID=""
+}
+
 start_ipv6_dns_fixture() {
   local log_file i
   log_file="$STATE_DIR/logs/ipv6-dns-fixture.log"
@@ -701,6 +822,9 @@ start_ipv6_dns_fixture() {
     --address="/$IPV6_TCP_TEST_HOST/127.0.0.1" \
     --address="/$IPV6_UDP_TEST_HOST/127.0.0.1" \
     --address="/$IPV6_QUIC_TEST_HOST/127.0.0.1" \
+    --address="/$IPV6_HTTP3_DIRECT_HOST/127.0.0.1" \
+    --address="/$IPV6_HTTP3_PROXY_HOST/127.0.0.1" \
+    --address="/$IPV6_HTTP3_BLOCKED_HOST/127.0.0.1" \
     --address="/$IPV6_UDP_ANSWER_HOST/192.0.2.123" \
     --log-queries \
     --log-facility=- >"$log_file" 2>&1 &
@@ -781,6 +905,89 @@ wait_for_ipv6_policy_log() {
   exit 1
 }
 
+run_ipv6_http3_client() {
+  local client source host request_path evidence_file
+  client="$1"
+  source="$2"
+  host="$3"
+  request_path="$4"
+  evidence_file="$5"
+  limactl shell "$client" -- bash -c '
+    set -euo pipefail
+    source_ip="$1"
+    host="$2"
+    port="$3"
+    request_path="$4"
+    probe="$5"
+    iface=omg0
+    dns="$(awk '\''$1 == "nameserver" && $2 ~ /:/ { print $2; exit }'\'' /etc/resolv.conf 2>/dev/null || true)"
+    if [[ -z "$dns" ]]; then
+      dns="$(ip -6 route show default dev "$iface" | awk '\''$1 == "default" && $2 == "via" { print $3; exit }'\'')"
+    fi
+    [[ -n "$dns" ]] || { echo "no IPv6 DNS endpoint on $iface" >&2; exit 1; }
+    if [[ "$dns" == fe80:* ]]; then
+      dns="$dns%$iface"
+    fi
+    fake="$(dig +time=5 +tries=1 +short "@$dns" "$host" AAAA | awk '\''/^fdfe:dcba:9876:/ { print; exit }'\'')"
+    [[ -n "$fake" ]]
+    ip -6 route get "$fake" | grep -q "dev $iface"
+    "$probe" client \
+      --url "https://$host:$port$request_path" \
+      --address "$fake" \
+      --source "$source_ip"
+  ' _ "$source" "$host" "$IPV6_HTTP3_FIXTURE_PORT" "$request_path" "$HTTP3_CLIENT_GUEST" \
+    >"$STATE_DIR/egress/$evidence_file" 2>&1
+}
+
+wait_for_http3_origin() {
+  local host request_path i log_file
+  host="$1"
+  request_path="$2"
+  log_file="$STATE_DIR/egress/http3-origin.log"
+  for i in {1..30}; do
+    if [[ -f "$log_file" ]] &&
+      grep -Fq "HTTP3 GET $request_path proto=HTTP/3.0 host=$host:$IPV6_HTTP3_FIXTURE_PORT" "$log_file"; then
+      echo "HTTP/3 origin evidence observed for $host$request_path"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "HTTP/3 origin did not record $host$request_path" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+wait_for_controlled_udp_proxy() {
+  local i log_file
+  log_file="$STATE_DIR/logs/ipv6-udp-proxy.log"
+  for i in {1..30}; do
+    if [[ -f "$log_file" ]] && grep -Fq '[UDP]' "$log_file"; then
+      echo "controlled SOCKS5 UDP relay evidence observed"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "controlled SOCKS5 proxy did not record UDP relay traffic" >&2
+  tail -160 "$log_file" >&2 || true
+  exit 1
+}
+
+assert_ipv6_bpf_bidirectional() {
+  local log_file
+  log_file="$STATE_DIR/logs/ipv6-packet.log"
+  grep -Fq 'OpenSurge IPv6 packet ingress accepted=' "$log_file" || {
+    echo "IPv6 BPF broker did not record accepted ingress" >&2
+    tail -160 "$log_file" >&2 || true
+    exit 1
+  }
+  grep -Fq 'OpenSurge IPv6 packet egress written=' "$log_file" || {
+    echo "IPv6 BPF broker did not record written egress" >&2
+    tail -160 "$log_file" >&2 || true
+    exit 1
+  }
+  echo "IPv6 BPF broker ingress and egress evidence observed"
+}
+
 build_ipv6_lab_binaries() {
   local build_log go_no_proxy mod_cache
   require_command go
@@ -835,7 +1042,7 @@ write_ipv6_device_policy_fixture() {
 {
   "profiles": [
     {"id":"blocked","default_policies":["DIRECT"],"rules":[{"id":"block-ipv6-lab","match":{"domains":["$IPV6_TCP_TEST_HOST"]},"action":"REJECT"}]},
-    {"id":"direct","default_policies":["DIRECT"]}
+    {"id":"direct","default_policies":["DIRECT","lab-udp-proxy","lab-http-only"]}
   ],
   "devices": [
     {"id":"$client_one","mac":"$mac_one","ipv4":"192.168.50.101","profile":"blocked","egress_mode":"dedicated"$gateway_target},
@@ -845,6 +1052,16 @@ write_ipv6_device_policy_fixture() {
 EOF
   LAB_MIHOMO_PROFILE="$STATE_DIR/mihomo-profile.ipv6.yaml"
   cat >"$LAB_MIHOMO_PROFILE" <<EOF
+proxies:
+  - name: lab-udp-proxy
+    type: socks5
+    server: 127.0.0.1
+    port: $IPV6_UDP_PROXY_PORT
+    udp: true
+  - name: lab-http-only
+    type: http
+    server: 127.0.0.1
+    port: $EGRESS_PROXY_PORT
 dns:
   nameserver:
     - 127.0.0.1:$IPV6_DNS_FIXTURE_PORT
@@ -1492,7 +1709,7 @@ run_device_policy_test() {
 
 run_ipv6_userspace_test() {
   local client_one client_two source_one source_two gateway_started broker_pid iface rdnss client_gateway
-  local egress_probe_started dns_fixture_started topology config_mode
+  local egress_probe_started dns_fixture_started http3_probe_started udp_proxy_started topology config_mode
   topology="${1:-isolated_lan}"
   case "$topology" in
     isolated_lan) config_mode=ipv6 ;;
@@ -1519,6 +1736,8 @@ run_ipv6_userspace_test() {
   write_ipv6_device_policy_fixture "$topology"
   build_ipv6_lab_binaries
   build_egress_probe
+  build_http3_lab_binaries
+  install_http3_lab_client
   write_tun_egress_provider
   write_config "$config_mode"
   mkdir -p "$ROOT/bin"
@@ -1528,6 +1747,8 @@ run_ipv6_userspace_test() {
   gateway_started=0
   egress_probe_started=0
   dns_fixture_started=0
+  http3_probe_started=0
+  udp_proxy_started=0
   cleanup_test() {
     status=$?
     collect_artifacts || true
@@ -1539,6 +1760,12 @@ run_ipv6_userspace_test() {
     fi
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
+    fi
+    if [[ "$udp_proxy_started" == 1 ]]; then
+      stop_ipv6_udp_proxy || true
+    fi
+    if [[ "$http3_probe_started" == 1 ]]; then
+      stop_http3_probe || true
     fi
     if [[ "$dns_fixture_started" == 1 ]]; then
       stop_ipv6_dns_fixture || true
@@ -1552,8 +1779,12 @@ run_ipv6_userspace_test() {
 
   start_egress_probe
   egress_probe_started=1
+  start_http3_probe
+  http3_probe_started=1
   start_ipv6_dns_fixture
   dns_fixture_started=1
+  start_ipv6_udp_proxy
+  udp_proxy_started=1
   sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
   rdnss="$(/sbin/ifconfig "$iface" | awk '/inet6 fe80:/ { split($2, value, "%"); print value[1]; exit }')"
@@ -1642,6 +1873,39 @@ run_ipv6_userspace_test() {
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client ipv6-quic "$LAN_IP" "$IPV6_QUIC_TEST_HOST" "$IPV6_DNS_FIXTURE_PORT"
   wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_QUIC_TEST_HOST:$IPV6_DNS_FIXTURE_PORT" "device/$client_two/default[DIRECT]"
 
+  run_ipv6_http3_client "$client_two" "$source_two" "$IPV6_HTTP3_DIRECT_HOST" "/ipv6-http3-direct" "http3-client-direct.txt"
+  grep -Fq 'CLIENT_IPV6_HTTP3_OK protocol=HTTP/3.0' "$STATE_DIR/egress/http3-client-direct.txt"
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_HTTP3_DIRECT_HOST:$IPV6_HTTP3_FIXTURE_PORT" "device/$client_two/default[DIRECT]"
+  wait_for_http3_origin "$IPV6_HTTP3_DIRECT_HOST" "/ipv6-http3-direct"
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-udp-proxy --format json \
+    >"$STATE_DIR/egress/http3-select-udp-proxy.json"
+  run_ipv6_http3_client "$client_two" "$source_two" "$IPV6_HTTP3_PROXY_HOST" "/ipv6-http3-proxy" "http3-client-udp-proxy.txt"
+  grep -Fq 'CLIENT_IPV6_HTTP3_OK protocol=HTTP/3.0' "$STATE_DIR/egress/http3-client-udp-proxy.txt"
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_HTTP3_PROXY_HOST:$IPV6_HTTP3_FIXTURE_PORT" "device/$client_two/default[lab-udp-proxy]"
+  wait_for_http3_origin "$IPV6_HTTP3_PROXY_HOST" "/ipv6-http3-proxy"
+  wait_for_controlled_udp_proxy
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-http-only --format json \
+    >"$STATE_DIR/egress/http3-select-http-only.json"
+  if run_ipv6_http3_client "$client_two" "$source_two" "$IPV6_HTTP3_BLOCKED_HOST" "/ipv6-http3-blocked" "http3-client-http-only.txt"; then
+    echo "HTTP/3 unexpectedly crossed the HTTP-only outbound" >&2
+    exit 1
+  fi
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_HTTP3_BLOCKED_HOST:$IPV6_HTTP3_FIXTURE_PORT" REJECT
+  if grep -Fq '/ipv6-http3-blocked' "$STATE_DIR/egress/http3-origin.log"; then
+    echo "HTTP-only fail-closed probe unexpectedly reached the HTTP/3 origin" >&2
+    exit 1
+  fi
+  if [[ -s "$STATE_DIR/egress/proxy.log" ]]; then
+    echo "HTTP-only fail-closed probe unexpectedly reached the controlled CONNECT proxy" >&2
+    cat "$STATE_DIR/egress/proxy.log" >&2
+    exit 1
+  fi
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy DIRECT --format json \
+    >"$STATE_DIR/egress/http3-select-direct-restored.json"
+  assert_ipv6_bpf_bidirectional
+
   cp "$STATE_DIR/state.json" "$STATE_DIR/ipv6-state.evidence.json"
   broker_pid="$(sed -n 's/.*"pid_ipv6_packet": \([0-9][0-9]*\).*/\1/p' "$STATE_DIR/state.json" | head -1)"
   [[ -n "$broker_pid" ]] || { echo "IPv6 packet broker PID missing from runtime state" >&2; exit 1; }
@@ -1650,6 +1914,10 @@ run_ipv6_userspace_test() {
   restore_client_control_dns
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
+  stop_ipv6_udp_proxy
+  udp_proxy_started=0
+  stop_http3_probe
+  http3_probe_started=0
   stop_ipv6_dns_fixture
   dns_fixture_started=0
   stop_egress_probe
@@ -1677,7 +1945,7 @@ run_ipv6_userspace_test() {
   fi
   trap - EXIT INT TERM
   collect_artifacts
-  echo "virtual LAN $topology userspace IPv6 TCP, UDP/QUIC carrier, device identity, upstream-router IPv6 block, and rollback test passed"
+  echo "virtual LAN $topology userspace IPv6 TCP, UDP, QUIC carrier, HTTP/3-only DIRECT and SOCKS5 UDP, HTTP-only fail-closed, device identity, upstream-router IPv6 block, and rollback test passed"
 }
 
 run_ipv6_imported_egress_test() {

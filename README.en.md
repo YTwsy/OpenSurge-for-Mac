@@ -566,9 +566,13 @@ listener, IPv6 device identity, or withdrawal on stop, run the topology gates:
 obtain OpenSurge IPv6 addresses, Medium-preference default routes, and
 link-local DNS. The bypass-router gate requires manual ULAs, the Mac
 link-local default gateway and DNS, and no RA. All three use controlled local
-fixtures to verify TCP, a UDP request/response, a QUIC-shaped UDP carrier,
-per-device policy, and rollback. The QUIC check proves the UDP carrier, not a
-complete HTTP/3 handshake.
+fixtures to verify TCP, a UDP request/response, a QUIC-shaped UDP carrier, and
+a real HTTP/3-only request/response with no TCP or HTTP/2 fallback. HTTP/3 is
+checked through `DIRECT`, a controlled UDP-capable SOCKS5 outbound, and an
+HTTP-only fail-closed outbound, together with per-device policy, bidirectional
+BPF evidence, and rollback. This bounded gate does not cover every QUIC/HTTP3
+implementation, version, connection-migration case, or public proxy
+combination.
 
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and
