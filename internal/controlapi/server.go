@@ -1655,7 +1655,12 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, DevicesResponse{SchemaVersion: SchemaVersion, Devices: []device.CompiledDevice{}, OutOfLANDevices: []string{}, Leases: []device.Client{}, ObservedDevices: []ObservedDevice{}})
 		return
 	}
-	desired, err := device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+	scope, scopeErr := cfg.LANScope()
+	if scopeErr != nil {
+		writeError(w, http.StatusBadRequest, "gateway_lan_invalid", scopeErr.Error())
+		return
+	}
+	desired, err := device.LoadPolicyBundleForLAN(cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "device_policy_invalid", err.Error())
 		return
@@ -1681,11 +1686,9 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if response.Devices == nil {
 		response.Devices = []device.CompiledDevice{}
 	}
-	if scope, scopeErr := cfg.LANScope(); scopeErr == nil {
-		response.LANPrefix = scope.String()
-		if outOfLAN := device.OutOfLANDevices(desired.Policy, scope); len(outOfLAN) > 0 {
-			response.OutOfLANDevices = outOfLAN
-		}
+	response.LANPrefix = scope.String()
+	if outOfLAN := device.OutOfLANDevices(desired.Policy, scope); len(outOfLAN) > 0 {
+		response.OutOfLANDevices = outOfLAN
 	}
 	if state, exists, _ := runtime.LoadState(paths.StateFile); exists && state.DevicePolicyDigest != "" {
 		response.Applied = true

@@ -382,6 +382,25 @@ func OutOfLANDevices(set PolicySet, scope lan.Scope) []string {
 	return out
 }
 
+// ActivePolicySetForLAN returns the declarative subset that belongs to the
+// current gateway LAN. The original PolicySet remains the desired source of
+// truth, while this subset is the only input allowed to reach DHCP, mihomo, or
+// runtime device identity.
+func ActivePolicySetForLAN(set PolicySet, scope lan.Scope) PolicySet {
+	return activePolicySetForNetwork(set, scope.Network)
+}
+
+func activePolicySetForNetwork(set PolicySet, network *net.IPNet) PolicySet {
+	active := set
+	active.Devices = make([]ManagedDevice, 0, len(set.Devices))
+	for _, managed := range set.Devices {
+		if network.Contains(net.ParseIP(managed.IPv4)) {
+			active.Devices = append(active.Devices, managed)
+		}
+	}
+	return active
+}
+
 func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
 	return CompilePolicySetForIPOnlyMode(set, true)
 }

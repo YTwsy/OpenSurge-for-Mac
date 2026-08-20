@@ -15,9 +15,10 @@ device_policy:
 空的 [starter 文件](../examples/device-policy.example.json) 合法，但不会启用任何设备策略。
 路径相对于 gateway 配置文件解析。设备 IPv4 必须唯一；位于当前网关网段内的地址
 不能是网段地址、广播地址或 `gateway.lan_ip`。网段由 `gateway.lan_ip` 与
-`gateway.lan_prefix_len` 决定（省略时按 /24）。不在当前网段的登记会被跳过而不是
-报错：网关照常启动，dnsmasq 不为它下发保留，设备页把它标记为“不在当前网段”，
-由操作者改地址或删除。
+`gateway.lan_prefix_len` 决定（省略时按 /24）。不在当前网段的登记会休眠而不是
+报错：网关照常启动并保留完整 desired 记录，但 applied 运行态设备列表、dnsmasq
+保留、Mihomo IPv4 selector/规则和下游 IPv6 MAC 身份都不包含它。设备页把它标记为
+“不在当前网段”，由操作者改地址或删除。
 
 在 `same_wifi_dhcp` 中，还必须声明路由器、恢复设备、LAN proxy 等绝不能被 reservation
 占用的静态地址：

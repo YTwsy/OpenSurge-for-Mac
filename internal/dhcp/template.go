@@ -80,7 +80,7 @@ func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 	var reservations []device.Reservation
 	bundle := cfg.DevicePolicy.Bundle
 	if bundle == nil && cfg.DevicePolicy.File != "" {
-		loaded, err := device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+		loaded, err := device.LoadPolicyBundleForLAN(cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 		if err != nil {
 			return "", err
 		}

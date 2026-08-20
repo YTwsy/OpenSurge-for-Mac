@@ -10,7 +10,7 @@ LAUNCH_LABEL=io.opensurge.lab.socket-vmnet
 LAUNCH_PLIST=/Library/LaunchDaemons/io.opensurge.lab.socket-vmnet.plist
 NETWORK_ID=D034049A-52AC-4927-96DB-CF072835A574
 LAN_IP=192.168.50.1
-NETMASK=255.255.255.0
+NETMASK=255.255.252.0
 
 vmnet_bridges() {
   for iface in $(/sbin/ifconfig -l); do
@@ -50,6 +50,12 @@ pid_is_running() {
 
 start_network() {
   if pid_is_running && [ -S "$SOCKET" ]; then
+    iface=$(interface_with_lab_ip || true)
+    if [ -n "$iface" ]; then
+      /sbin/ifconfig "$iface" inet "$LAN_IP" netmask "$NETMASK" up
+      printf '%s\n' "$iface" >"$INTERFACE_FILE"
+      /bin/chmod 0644 "$INTERFACE_FILE"
+    fi
     status_network
     return 0
   fi
@@ -94,9 +100,9 @@ start_network() {
     exit 1
   fi
 
-  if ! /sbin/ifconfig "$iface" | /usr/bin/grep -q "inet $LAN_IP "; then
-    /sbin/ifconfig "$iface" inet "$LAN_IP" netmask "$NETMASK" up
-  fi
+  # Reapply the address even when an existing bridge already has LAN_IP. This
+  # keeps upgrades from silently retaining the historical /24 mask.
+  /sbin/ifconfig "$iface" inet "$LAN_IP" netmask "$NETMASK" up
   printf '%s\n' "$iface" >"$INTERFACE_FILE"
   /bin/chmod 0644 "$INTERFACE_FILE"
   status_network

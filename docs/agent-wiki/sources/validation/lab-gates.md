@@ -34,8 +34,8 @@ proxy 时下游仍走 `TunEgress[DIRECT]`，以及本机 Direct 时下游仍可�
 `TunEgress[egress-proxy]`。HTTP-only 全局出口必须报告 UDP `reject`，普通
 `policies` 不能暴露内部 `open-surge/mac-*` 组。
 
-`make lab-test-tun-device-policy` 是每设备策略的数据面门槛。它让两个 Lima 客户端
-分别获得 `.101` 和 `.102` 的 MAC 绑定租约，先对比 `dedicated` selector 与
+`make lab-test-tun-device-policy` 是每设备策略的数据面门槛。它在 `/22` 上让两个 Lima
+客户端跨第三段分别获得 `192.168.50.101` 和 `192.168.51.102` 的 MAC 绑定租约，先对比 `dedicated` selector 与
 `inherit_global` 的全局 `MATCH` 路径，并要求跟随设备不存在 default slot；再经真实
 reload 将其改成独立模式，要求两台设备的 `device/<id>/default` selector 独立改变
 TUN 出口，最后要求设备级 IP `REJECT` 生效。它还要求 applied
@@ -43,6 +43,8 @@ snapshot/state digest、一致的 lease identity、desired 文件修改后的 dr
 selector 上 UDP/443 记录为 `REJECT` 而非 fall through 到 `DIRECT`。它覆盖设备身份、
 路由模式、设备默认出口和设备覆盖；模板、domain/protocol 组合与 HTTP/MRS rule-provider 的编译由
 `make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
+fixture 还保留一条当前 LAN 之外的带 MAC 设备，要求 desired 继续存在，但 compiled/applied
+设备、dnsmasq、Mihomo IPv4 selector/规则和 IPv6 MAC 身份均不可包含它。
 
 IPv6 数据面按拓扑使用 `make lab-test-ipv6-userspace`、
 `make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。前两条要求两台客户端
@@ -101,9 +103,10 @@ make lab-down`。`require_cached_sudo` 会在 `sudo -n true` 失败时内部执�
 `sudo -A -v`，使认证发生在 lab.sh 同一上下文；`SUDO_ASKPASS` 也让 lab-up/lab-down
 里无重定向的 `sudo -n` 自动回退到 helper。helper 含密码，用完立即删除。
 
-虚拟 LAN lab 和真实设备 smoke 默认都使用 `192.168.50.1/24`。运行 lab 前，
-这个地址只能存在于 lab 的 vmnet bridge 上。如果 `en7` 等 real-device 下游接口
-仍保留 `192.168.50.1`，macOS 可能把 `192.168.50.0/24` 的回程路由选到错误接口，
+虚拟 LAN lab 使用 `192.168.50.1/22`（`192.168.48.0/22`），真实设备 smoke 默认仍用
+`192.168.50.1/24`。运行 lab 前，这个地址只能存在于 lab 的 vmnet bridge 上。如果
+`en7` 等 real-device 下游接口仍保留 `192.168.50.1`，macOS 可能把重叠范围的回程路由
+选到错误接口，
 表现为 `dig @192.168.50.1 example.com A` timeout，而 dnsmasq 日志仍显示收到了
 查询。先运行 `make real-device-stop`，或手动删除重复地址。
 

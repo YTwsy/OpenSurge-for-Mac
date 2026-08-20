@@ -56,6 +56,11 @@ still lists the old devices. same-Wi-Fi DHCP
 start also rejects a reservation when ARP observes a different MAC at that
 IPv4; no ARP reply is only an inconclusive signal, not proof of vacancy.
 
+Dormancy is a compiled/applied boundary, not only a DHCP exception. The full
+desired record and digest remain stable, while runtime devices, reservations,
+Mihomo IPv4 selectors/rules, and downstream IPv6 MAC-to-InUser identity all
+exclude devices outside the configured LAN.
+
 The configured policy is desired state. One start compiles it exactly once into
 an immutable bundle, validates the final mihomo configuration before forwarding
 is enabled, and saves the bundle plus digest as runtime applied state. Running

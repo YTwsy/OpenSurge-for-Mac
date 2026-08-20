@@ -690,7 +690,7 @@ rules:
 func TestRenderConfigAddsDownstreamIPv6PacketListenerAndDeviceIdentity(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "devices.json")
-	policy := `{"profiles":[{"id":"home","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"dedicated"}]}`
+	policy := `{"profiles":[{"id":"home","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"dedicated"},{"id":"dormant","mac":"aa:bb:cc:dd:ee:02","ipv4":"192.168.60.101","profile":"home","egress_mode":"dedicated"}]}`
 	if err := os.WriteFile(policyPath, []byte(policy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -728,6 +728,11 @@ func TestRenderConfigAddsDownstreamIPv6PacketListenerAndDeviceIdentity(t *testin
 	}
 	if strings.Contains(rendered, "IP-CIDR6,fc00::/7") {
 		t.Fatalf("fake IPv6 ULA would be forced DIRECT:\n%s", rendered)
+	}
+	for _, dormant := range []string{"aa:bb:cc:dd:ee:02", "device:dormant", "192.168.60.101"} {
+		if strings.Contains(rendered, dormant) {
+			t.Fatalf("dormant device leaked into IPv4 or IPv6 mihomo policy as %q:\n%s", dormant, rendered)
+		}
 	}
 	var document map[string]any
 	if err := yaml.Unmarshal([]byte(rendered), &document); err != nil {

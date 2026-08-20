@@ -519,6 +519,9 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     expect((await screen.findByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.20')
+    const prefixSelect = screen.getByLabelText('下游 LAN 子网前缀') as HTMLSelectElement
+    expect(Array.from(prefixSelect.options, option => Number(option.value))).toEqual(Array.from({ length: 23 }, (_, index) => index + 8))
+    expect(screen.getByRole('option', { name: '/19（255.255.224.0）' })).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '根据当前网络重新填入' }))
 
     await waitFor(() => expect(api.networkDefaults).toHaveBeenCalledWith('same_wifi_dhcp'))

@@ -99,6 +99,39 @@ func TestPrepareDevicePolicyPausesIPOnlyDevicesOutsideSameLAN(t *testing.T) {
 	}
 }
 
+func TestPrepareDevicePolicyRecompilesRuntimeForConfiguredLAN(t *testing.T) {
+	policy := device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices: []device.ManagedDevice{
+			{ID: "active", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home", EgressMode: device.EgressModeDedicated},
+			{ID: "wider-lan", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.51.102", Profile: "home", EgressMode: device.EgressModeDedicated},
+			{ID: "dormant", MAC: "aa:bb:cc:dd:ee:03", IPv4: "192.168.60.103", Profile: "home", EgressMode: device.EgressModeDedicated},
+		},
+	}
+	bundle, err := device.CompilePolicyBundle(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Default()
+	cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
+	cfg.DevicePolicy.File = "already-loaded.json"
+	cfg.DevicePolicy.Bundle = &bundle
+	if err := PrepareDevicePolicy(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DevicePolicy.Bundle.ActiveLAN != "192.168.50.0/24" || len(cfg.DevicePolicy.Bundle.Policy.Devices) != 3 || len(cfg.DevicePolicy.Bundle.Compiled.Devices) != 1 || cfg.DevicePolicy.Bundle.Compiled.Devices[0].ID != "active" {
+		t.Fatalf("/24 bundle = %#v", cfg.DevicePolicy.Bundle)
+	}
+
+	cfg.Gateway.LANPrefixLen = 22
+	if err := PrepareDevicePolicy(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DevicePolicy.Bundle.ActiveLAN != "192.168.48.0/22" || len(cfg.DevicePolicy.Bundle.Policy.Devices) != 3 || len(cfg.DevicePolicy.Bundle.Compiled.Devices) != 2 || cfg.DevicePolicy.Bundle.Compiled.Devices[1].ID != "wider-lan" {
+		t.Fatalf("/22 bundle = %#v", cfg.DevicePolicy.Bundle)
+	}
+}
+
 func TestValidateDNSUpstream(t *testing.T) {
 	for _, value := range []string{"", MihomoDNSUpstream, "1.1.1.1", "8.8.8.8#5353"} {
 		cfg := Default()
@@ -318,12 +351,13 @@ func TestValidateDevicePolicyCandidateKeepsRegistrationsFromAnotherLAN(t *testin
 		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
 		Devices: []device.ManagedDevice{
 			{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.1.101", Profile: "home"},
-			{ID: "laptop", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.50.101", Profile: "home"},
+			{ID: "laptop", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.50.101", Profile: "home", GatewayTarget: device.GatewayTargetUpstreamRouter},
 		},
 	}
 
 	// Moving the Mac to a new LAN must not lock the operator out of the
-	// configuration that still lists devices from the previous one.
+	// configuration that still lists devices from the previous one. A dormant
+	// router-bypass device must not impose bypass requirements on the new LAN.
 	if err := ValidateDevicePolicyCandidate(cfg, policy); err != nil {
 		t.Fatalf("ValidateDevicePolicyCandidate() error = %v", err)
 	}

@@ -11,7 +11,7 @@ type NetworkMode = ControlConfig['gateway']['mode']
 
 // The gateway rejects prefixes outside /8-/30: wider has no private use here and
 // narrower leaves no host addresses beside the Mac itself.
-const supportedPrefixLengths = [8, 12, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+const supportedPrefixLengths = Array.from({ length: 23 }, (_, index) => index + 8)
 
 function netmaskForPrefixLength(prefixLength: number): string {
   const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0

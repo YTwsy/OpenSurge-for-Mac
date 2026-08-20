@@ -182,16 +182,17 @@ func validateDevicePolicy(cfg Config, scope lan.Scope) error {
 	bundle := cfg.DevicePolicy.Bundle
 	if bundle == nil {
 		var err error
-		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File, cfg.Gateway.Mode == GatewayModeSameLAN)
+		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == GatewayModeSameLAN)
 		if err != nil {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 	}
-	if err := validateRouterBypass(cfg, scope, bundle.Policy); err != nil {
+	activePolicy := device.ActivePolicySetForLAN(bundle.Policy, scope)
+	if err := validateRouterBypass(cfg, scope, activePolicy); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	protected := append([]string(nil), cfg.DevicePolicy.ProtectedIPv4...)
-	if device.UsesUpstreamRouter(bundle.Policy) {
+	if device.UsesUpstreamRouter(activePolicy) {
 		protected = append(protected, cfg.DHCP.BypassGateway)
 	}
 	if err := device.ValidatePolicySetForLAN(bundle.Policy, scope, protected, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
@@ -203,7 +204,11 @@ func validateDevicePolicy(cfg Config, scope lan.Scope) error {
 // ValidateDevicePolicyCandidate applies the complete topology and DHCP
 // contract to a candidate policy before the root helper writes it.
 func ValidateDevicePolicyCandidate(cfg Config, policy device.PolicySet) error {
-	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == GatewayModeSameLAN)
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return err
+	}
+	bundle, err := device.CompilePolicyBundleForLAN(policy, scope, cfg.Gateway.Mode == GatewayModeSameLAN)
 	if err != nil {
 		return err
 	}
@@ -276,19 +281,23 @@ func PrepareDevicePolicy(cfg *Config) error {
 	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
 		return nil
 	}
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return err
+	}
 	ipOnlyDevicesActive := cfg.Gateway.Mode == GatewayModeSameLAN
-	if cfg.DevicePolicy.Bundle != nil && cfg.DevicePolicy.Bundle.IPOnlyDevicesActive == ipOnlyDevicesActive {
+	if cfg.DevicePolicy.Bundle != nil && cfg.DevicePolicy.Bundle.IPOnlyDevicesActive == ipOnlyDevicesActive && cfg.DevicePolicy.Bundle.ActiveLAN == scope.String() {
 		return nil
 	}
 	if cfg.DevicePolicy.Bundle != nil {
-		bundle, err := device.CompilePolicyBundleForIPOnlyMode(cfg.DevicePolicy.Bundle.Policy, ipOnlyDevicesActive)
+		bundle, err := device.CompilePolicyBundleForLAN(cfg.DevicePolicy.Bundle.Policy, scope, ipOnlyDevicesActive)
 		if err != nil {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 		cfg.DevicePolicy.Bundle = &bundle
 		return nil
 	}
-	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File, ipOnlyDevicesActive)
+	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File, scope, ipOnlyDevicesActive)
 	if err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
@@ -296,7 +305,7 @@ func PrepareDevicePolicy(cfg *Config) error {
 	return nil
 }
 
-func loadDevicePolicyBundle(path string, ipOnlyDevicesActive bool) (*device.PolicyBundle, error) {
+func loadDevicePolicyBundle(path string, scope lan.Scope, ipOnlyDevicesActive bool) (*device.PolicyBundle, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -304,7 +313,7 @@ func loadDevicePolicyBundle(path string, ipOnlyDevicesActive bool) (*device.Poli
 	if info.IsDir() {
 		return nil, fmt.Errorf("must not be a directory")
 	}
-	bundle, err := device.LoadPolicyBundleForIPOnlyMode(path, ipOnlyDevicesActive)
+	bundle, err := device.LoadPolicyBundleForLAN(path, scope, ipOnlyDevicesActive)
 	if err != nil {
 		return nil, err
 	}

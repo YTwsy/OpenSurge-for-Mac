@@ -20,9 +20,11 @@ The device-policy file is resolved relative to the gateway configuration file.
 All registered IPv4 addresses must be unique. An address on the current gateway
 LAN must not be the network, broadcast, or `gateway.lan_ip` address. The LAN
 itself comes from `gateway.lan_ip` and `gateway.lan_prefix_len`, which defaults
-to /24. A registration outside that LAN is skipped instead of rejected: the
-gateway still starts, dnsmasq does not reserve the address, and the Devices page
-marks the device so it can be re-registered or removed.
+to /24. A registration outside that LAN is dormant instead of rejected: the
+gateway still starts and keeps the complete desired record, but excludes that
+device from the applied runtime device list, dnsmasq reservations, Mihomo IPv4
+selectors/rules, and downstream IPv6 MAC identity. The Devices page marks it so
+it can be re-registered or removed.
 
 For `same_wifi_dhcp`, declare every router, recovery client, LAN proxy, or
 other static address that must never become a reservation:

@@ -171,7 +171,11 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	if err := config.ValidateDevicePolicyCandidate(cfg, policy); err != nil {
 		return "", err
 	}
-	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return "", err
+	}
+	bundle, err := device.CompilePolicyBundleForLAN(policy, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 	if err != nil {
 		return "", err
 	}
