@@ -262,8 +262,10 @@ Desired 网络配置中默认关闭、仅 TUN 可用的独立兼容开关管理�
 OpenSurge lease 自动填写 hostname、MAC 与 IPv4；`same_lan` 则列出 mihomo 当前观察到且
 与 gateway 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补 MAC。只有当前经过 Mac 的
 设备会出现，ARP/流量观察不得显示为 DHCP 验证。登记默认创建 `<device-id>-policy` 私有 Profile；首次
-编辑共享/Template Profile 时将解析后内容复制为无 Template 的设备私有 Profile。
-Profiles/Templates/Rule Sets 作为高级复用机制默认折叠。
+编辑共享/旧式 Template Profile 时将解析后内容复制为设备私有 Profile。
+主界面不把 Profile 作为复用对象：默认展开的“规则库”只显示规则集、无出口分流模版和
+设备分流。设备卡的“编辑设备分流”直接打开对应设备；旧的独立设备规则卡片和
+“高级 / 复用”卡片不再渲染。
 
 策略页承担完整节点健康中心：`GET /api/v1/proxy-health` 汇总 mihomo `/proxies`，
 `POST /api/v1/proxy-health/tests` 只允许探测当前 snapshot 中的 leaf proxy，并使用固定
@@ -291,6 +293,12 @@ Desired 网络配置默认把 `dns.upstream` 显示为 `127.0.0.1#1053`，形成
 `dnsmasq -> mihomo fake-IP DNS`。旧配置中的空 upstream 在 dnsmasq 渲染时也迁移到这条
 路径。`1.1.1.1` 只作为显式调试预设；TUN 的 `dns-hijack any:53` 仍可能捕获该查询，
 因此 UI 不把它描述为可靠的直连或 TUN bypass。
+
+上游 DNS、`transparent.mode` 与 `mihomo.store_fake_ip` 位于默认折叠的“高级 Mihomo /
+DNS 设置”。`store_fake_ip` 对新配置和缺少该字段的旧配置默认开启，并生成
+`profile.store-fake-ip: true`；旧 schema-v1 客户端省略该字段时，Control API 必须保留
+现值，不能静默关闭。关闭开关只影响后续运行配置，不会清除已经保存的映射。缓存清理应
+作为独立显式动作，不能与 `fake-ip-filter` 或持久化开关混为一谈。
 
 Desired 网络配置同时提供 `local_system_proxy.enabled`。文案必须说明 SafeDNS、DNS
 Proxy/内容过滤等已知用途、只覆盖遵循系统代理的 Mac 应用、不替代 TUN、不影响下游设备，

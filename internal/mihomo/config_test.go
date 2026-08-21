@@ -22,6 +22,7 @@ func TestRenderConfig(t *testing.T) {
 		"external-controller: 127.0.0.1:9090",
 		"profile:",
 		"  store-selected: true",
+		"  store-fake-ip: true",
 		"geox-url:",
 		"https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb",
 		"enhanced-mode: fake-ip",
@@ -46,6 +47,18 @@ func TestRenderConfig(t *testing.T) {
 	}
 	if strings.Contains(rendered, "tun:") {
 		t.Fatalf("rendered config enables tun by default:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigCanDisableFakeIPPersistence(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.StoreFakeIP = false
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	if !strings.Contains(rendered, "  store-fake-ip: false") {
+		t.Fatalf("rendered config did not disable fake-IP persistence:\n%s", rendered)
 	}
 }
 

@@ -37,6 +37,9 @@ mihomo:
   # OpenSurge-owned gateway fields such as LAN binding, DNS, TUN, and API.
   profile_mode: "managed"
   profile: ""
+  # Preserve fake-IP mappings across apply/restart. Recommended for long-lived
+  # local services such as cloudflared that may cache a 198.18.x.x answer.
+  store_fake_ip: true
   mixed_port: 7890
   # macOS transparent proxying uses transparent.mode: "tun"; redir must stay 0.
   redir_port: 0

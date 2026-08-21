@@ -228,6 +228,11 @@ func FetchConnections(ctx context.Context, cfg config.Config) (ConnectionsSnapsh
 	return fetchConnectionsWithClient(ctx, cfg, client)
 }
 
+func CloseConnections(ctx context.Context, cfg config.Config, connectionIDs []string) (int, error) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	return closeConnectionsWithClient(ctx, cfg, client, connectionIDs)
+}
+
 func FetchProviders(ctx context.Context, cfg config.Config) (ProvidersSnapshot, error) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	return fetchProvidersWithClient(ctx, cfg, client)
@@ -484,6 +489,49 @@ func fetchConnectionsWithClient(ctx context.Context, cfg config.Config, client *
 		DownloadTotal: body.DownloadTotal,
 		Connections:   connections,
 	}, nil
+}
+
+func closeConnectionsWithClient(ctx context.Context, cfg config.Config, client *http.Client, connectionIDs []string) (int, error) {
+	closed := 0
+	seen := make(map[string]struct{}, len(connectionIDs))
+	var closeErrors []error
+	for _, connectionID := range connectionIDs {
+		connectionID = strings.TrimSpace(connectionID)
+		if connectionID == "" {
+			continue
+		}
+		if _, exists := seen[connectionID]; exists {
+			continue
+		}
+		seen[connectionID] = struct{}{}
+
+		req, err := newAPIRequest(ctx, cfg, http.MethodDelete, "/connections/"+url.PathEscape(connectionID), nil)
+		if err != nil {
+			closeErrors = append(closeErrors, fmt.Errorf("close connection %q: %w", connectionID, err))
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			closeErrors = append(closeErrors, fmt.Errorf("close connection %q: %w", connectionID, err))
+			continue
+		}
+		_, readErr := io.Copy(io.Discard, resp.Body)
+		closeErr := resp.Body.Close()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			closeErrors = append(closeErrors, fmt.Errorf("close connection %q: mihomo API returned %s", connectionID, resp.Status))
+			continue
+		}
+		if readErr != nil {
+			closeErrors = append(closeErrors, fmt.Errorf("close connection %q response: %w", connectionID, readErr))
+			continue
+		}
+		if closeErr != nil {
+			closeErrors = append(closeErrors, fmt.Errorf("close connection %q response: %w", connectionID, closeErr))
+			continue
+		}
+		closed++
+	}
+	return closed, errors.Join(closeErrors...)
 }
 
 func fetchProvidersWithClient(ctx context.Context, cfg config.Config, client *http.Client) (ProvidersSnapshot, error) {

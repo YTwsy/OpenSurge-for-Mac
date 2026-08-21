@@ -49,6 +49,11 @@ Web GUI 将这两个设置组合在“下游 IPv6”卡片中，但不改变配�
 - `same_lan` 不发布 RA，只接入手工 ULA、Mac link-local 默认网关与 DNS 且没有
   竞争 IPv6 默认路由的选定客户端。
 - 数据面覆盖 TCP 和 UDP；QUIC 作为 UDP/443 覆盖。不要宣称任意 IPv6 协议均可代理。
+- patched listener 当前保持 `DisableICMPForwarding: true`。RA、RDNSS 和 Neighbor
+  Discovery 留在本地链路并由 dnsmasq/macOS/客户端协议栈处理；不把代理路径上的
+  ping/traceroute 作为已支持能力。只有先定义各类 outbound 的 ICMP 映射和 fail-closed
+  语义，才应启用并增加专门 Lab。Packet Too Big / PMTUD 需要独立 MTU/大包门槛；现有
+  HTTP/3-only fixture 不覆盖全部 PMTUD 场景。
 - 下游 IPv6 ingress 不走系统 utun；现有 IPv4 下游透明代理和 Mac 本机透明代理仍
   使用受支持的 Mihomo TUN 主线。
 - `always` 在无原生 IPv6 上游时仍依赖能承载目标流量的代理。真实 IPv6 `DIRECT`

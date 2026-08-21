@@ -62,6 +62,7 @@ type Server struct {
 	credentials       SourceCredentialStore
 	revealInFinder    func(context.Context, string) error
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
+	closeConnections  func(context.Context, config.Config, []string) (int, error)
 	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
 	fetchLocalRouting func(context.Context, config.Config) (mihomo.LocalRoutingSnapshot, error)
 	setLocalRouting   func(context.Context, config.Config, string, string) (mihomo.LocalRoutingSnapshot, error)
@@ -188,6 +189,7 @@ func New(options Options) (*Server, error) {
 		credentials:       options.Credentials,
 		revealInFinder:    options.RevealInFinder,
 		fetchConnections:  mihomo.FetchConnections,
+		closeConnections:  mihomo.CloseConnections,
 		fetchProxyHealth:  mihomo.FetchProxyHealth,
 		fetchLocalRouting: mihomo.FetchLocalRouting,
 		setLocalRouting:   mihomo.SetLocalRouting,
@@ -264,11 +266,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
 	mux.Handle("GET /api/v1/device-traffic", s.auth(http.HandlerFunc(s.handleDeviceTraffic)))
+	mux.Handle("POST /api/v1/devices/{device}/connections/refresh", s.auth(http.HandlerFunc(s.handleDeviceConnectionRefresh)))
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
 	mux.Handle("GET /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
 	mux.Handle("POST /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
+	mux.Handle("POST /api/v1/local-routing/connections/refresh", s.auth(http.HandlerFunc(s.handleLocalConnectionRefresh)))
 	mux.Handle("GET /api/v1/proxy-health", s.auth(http.HandlerFunc(s.handleProxyHealth)))
 	mux.Handle("POST /api/v1/proxy-health/tests", s.auth(http.HandlerFunc(s.handleProxyHealthTests)))
 	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
@@ -354,11 +358,13 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 	if dnsUpstream == "" {
 		dnsUpstream = config.MihomoDNSUpstream
 	}
+	storeFakeIP := cfg.Mihomo.StoreFakeIP
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
 		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
 		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain, BypassGateway: cfg.DHCP.BypassGateway, BypassDNS: append([]string{}, cfg.DHCP.BypassDNS...)},
 		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream, IPv6: cfg.DNS.IPv6},
+		Mihomo:           MihomoConfigInput{StoreFakeIP: &storeFakeIP},
 		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
 		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
 		DevicePolicy:     DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},

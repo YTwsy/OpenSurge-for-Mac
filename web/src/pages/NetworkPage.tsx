@@ -440,20 +440,39 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
               setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: snapshot.router || '', bypass_dns: snapshot.dns.length ? snapshot.dns : snapshot.router ? [snapshot.router] : [] } })
             }}>使用当前网络快照中的路由器与 DNS</button>
           </fieldset>}
-          <ConfigField label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
-            <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
-              <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>
-              <button type="button" aria-pressed={config.dns.upstream === '1.1.1.1'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '1.1.1.1' } })}>公共 DNS（调试）</button>
+          <details className="mihomo-dns-advanced">
+            <summary aria-label="高级 Mihomo / DNS 设置">
+              <span><strong>高级 Mihomo / DNS 设置</strong><small>fake-IP 映射、dnsmasq 上游与透明代理入口</small></span>
+              <span className="mihomo-dns-advanced-status">{config.mihomo.store_fake_ip ? '映射已持久化' : '映射不持久化'} · {config.transparent.mode === 'tun' ? 'TUN' : '透明代理关闭'}</span>
+            </summary>
+            <div className="mihomo-dns-advanced-grid">
+              <ConfigField className="wide" label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
+                <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
+                  <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>
+                  <button type="button" aria-pressed={config.dns.upstream === '1.1.1.1'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '1.1.1.1' } })}>公共 DNS（调试）</button>
+                </div>
+                <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
+                <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
+              </ConfigField>
+              <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
+                <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
+                  const mode = event.target.value as 'off' | 'tun'
+                  setConfig({ ...config, dns: { ...config.dns, ipv6: mode === 'tun' && config.dns.ipv6 }, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
+                }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+              </ConfigField>
+              <ConfigField label="Fake-IP 映射持久化" setting="mihomo.store_fake_ip" hint="生成 profile.store-fake-ip。开启后 mihomo 会在重启时恢复域名与 fake-IP 的映射，避免 cloudflared 等长驻进程继续使用已经失效的 198.18.x.x；不会保留既有 TCP/QUIC 连接。修改 fake-ip-filter 后，旧映射仍可能需要单独清理缓存。">
+                <ConfigSwitch
+                  label="重启后保留 fake-IP 映射"
+                  checked={config.mihomo.store_fake_ip}
+                  onChange={store_fake_ip => setConfig({ ...config, mihomo: { ...config.mihomo, store_fake_ip } })}
+                />
+              </ConfigField>
+              <div className="notice mihomo-dns-import-boundary" role="note" aria-label="导入 mihomo profile 设置边界">
+                <p><strong>OpenSurge 会保留并合并：</strong>导入 profile 中的 DNS 解析器与过滤设置，例如 <code>nameserver</code>、<code>nameserver-policy</code>、<code>proxy-server-nameserver</code>、<code>direct-nameserver</code>、<code>respect-rules</code>、<code>fake-ip-filter</code> 和 <code>fallback</code>。</p>
+                <p><strong>OpenSurge 自主管理，不保留导入值：</strong>DNS 监听、IPv6、fake-IP 模式与网段，以及 <code>profile.store-fake-ip</code>。</p>
+              </div>
             </div>
-            <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
-            <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
-          </ConfigField>
-          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
-            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
-              const mode = event.target.value as 'off' | 'tun'
-              setConfig({ ...config, dns: { ...config.dns, ipv6: mode === 'tun' && config.dns.ipv6 }, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
-            }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
-          </ConfigField>
+          </details>
           <DownstreamIPv6Card
             config={config}
             editable={configurationEditable}

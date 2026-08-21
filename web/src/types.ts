@@ -81,6 +81,7 @@ export type ControlConfig = {
   gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; upstream_interface: string }
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string; bypass_gateway: string; bypass_dns: string[] }
   dns: { listen: string; upstream: string; ipv6: boolean }
+  mihomo: { store_fake_ip: boolean }
   transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }
   device_policy: { enabled: boolean; protected_ipv4: string[] }
@@ -207,20 +208,28 @@ export type TrafficHistoryPoint = {
 
 export type PolicyRule = {
   id: string
-  match: { domains?: string[]; ip_cidrs?: string[]; protocols?: string[]; ports?: string[]; rule_sets?: string[] }
+  match: { domains?: string[]; ip_cidrs?: string[]; protocols?: string[]; ports?: string[]; rule_sets?: string[]; template?: string }
   action?: string
   policies?: string[]
   on_unsupported?: string
 }
 export type PolicyProfile = { id: string; template?: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
 export type PolicyDevice = { id: string; name?: string; mac: string; ipv4: string; profile: string; gateway_target?: DeviceGatewayTarget; egress_mode?: DeviceEgressMode }
-export type PolicyTemplate = { id: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
+export type PolicyTemplate = { id: string; rule_sets?: string[]; default_policies?: string[]; on_unsupported?: string; rules?: PolicyRule[] }
 export type PolicyRuleSet = { id: string; type?: 'inline' | 'http'; behavior: 'domain' | 'ipcidr' | 'classical'; format?: string; url?: string; interval?: number; payload?: string[] }
 export type PolicySet = { devices: PolicyDevice[]; profiles: PolicyProfile[]; templates: PolicyTemplate[]; rule_sets: PolicyRuleSet[] }
 export type DevicePolicyDocument = { schema_version: number; revision: string; policy: PolicySet }
 
 export type APIError = { error?: { code?: string; message?: string } }
 export type Diagnostics = { schema_version: number; revision: string; connections: { upload_total: number; download_total: number; connections: Array<{ id: string; upload: number; download: number; rule?: string; chains?: string[]; metadata?: Record<string, unknown> }> }; connection_error?: string; logs: Record<string, string[]>; operations: Array<{ id: string; kind: string; state: string; error?: string; created_at: string; updated_at: string }>; recovery: Recovery }
+
+export type ConnectionRefreshResult = {
+  schema_version: number
+  scope: 'gateway_local' | 'device'
+  device_id?: string
+  matched_connections: number
+  closed_connections: number
+}
 
 export type ConnectivityTarget = {
   id: string

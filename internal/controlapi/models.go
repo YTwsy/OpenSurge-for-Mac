@@ -167,6 +167,7 @@ type ControlConfig struct {
 	Gateway          GatewayConfigInput          `json:"gateway"`
 	DHCP             DHCPConfigInput             `json:"dhcp"`
 	DNS              DNSConfigInput              `json:"dns"`
+	Mihomo           MihomoConfigInput           `json:"mihomo"`
 	Transparent      TransparentConfigInput      `json:"transparent"`
 	LocalSystemProxy LocalSystemProxyConfigInput `json:"local_system_proxy"`
 	DevicePolicy     DevicePolicyConfigInput     `json:"device_policy"`
@@ -193,6 +194,12 @@ type DNSConfigInput struct {
 	Listen   string `json:"listen"`
 	Upstream string `json:"upstream"`
 	IPv6     bool   `json:"ipv6"`
+}
+
+type MihomoConfigInput struct {
+	// Pointer preserves the current value when an older schema-v1 client omits
+	// the field. GET responses always include an explicit boolean.
+	StoreFakeIP *bool `json:"store_fake_ip,omitempty"`
 }
 
 type TransparentConfigInput struct {
@@ -332,6 +339,14 @@ type LocalRoutingRequest struct {
 type LocalRoutingResponse struct {
 	SchemaVersion int `json:"schema_version"`
 	mihomo.LocalRoutingSnapshot
+}
+
+type ConnectionRefreshResponse struct {
+	SchemaVersion      int    `json:"schema_version"`
+	Scope              string `json:"scope"`
+	DeviceID           string `json:"device_id,omitempty"`
+	MatchedConnections int    `json:"matched_connections"`
+	ClosedConnections  int    `json:"closed_connections"`
 }
 
 type DevicesResponse struct {

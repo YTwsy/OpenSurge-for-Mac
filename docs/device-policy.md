@@ -38,14 +38,14 @@ evidence remain required.
 
 ## Model
 
-There are no built-in household, parental-control, streaming, or vendor rule
-lists. Operators own the policy content. The JSON model has four independent
-collections:
+The Web GUI rule library includes an inspectable community Claude Code example,
+but does not write it to the configuration or apply it to a device by default.
+Operators own all other policy content. The JSON model has four collections:
 
 - `devices`: stable identity (`id`, MAC, reserved IPv4, profile id), an optional
   human-readable `name`, plus `gateway_target` and an explicit `egress_mode`;
 - `profiles`: default selector candidates plus device rule overlays;
-- `templates`: optional reusable profile defaults and rule fragments;
+- `templates`: outlet-free bundles of reusable `rule_sets`;
 - `rule_sets`: inline or HTTP mihomo rule-provider definitions.
 
 The following is a syntax example only. `Proxy` must already exist in the
@@ -55,8 +55,8 @@ managed or imported global mihomo profile.
 {
   "templates": [
     {
-      "id": "baseline",
-      "default_policies": ["DIRECT", "Proxy"]
+      "id": "media-bundle",
+      "rule_sets": ["media"]
     }
   ],
   "rule_sets": [
@@ -69,7 +69,7 @@ managed or imported global mihomo profile.
   "profiles": [
     {
       "id": "phone",
-      "template": "baseline",
+      "default_policies": ["DIRECT", "Proxy"],
       "rules": [
         {
           "id": "block-udp",
@@ -78,7 +78,7 @@ managed or imported global mihomo profile.
         },
         {
           "id": "media",
-          "match": {"rule_sets": ["media"]},
+          "match": {"template": "media-bundle"},
           "policies": ["Proxy", "DIRECT"]
         }
       ]
@@ -167,6 +167,11 @@ protocol compile to:
 AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,media.example),(NETWORK,tcp)),device/alice-phone/media
 ```
 
+A rule may instead use `match.template` by itself. The template expands its
+`rule_sets` in declaration order and cannot be combined with another match
+field. The post-match `action` or `policies` always remains on the per-device
+routing rule, never on the rule set or routing template.
+
 Generated ordering is deliberate. Source-scoped local-Mac mode rules come
 first, but downstream source addresses cannot match them. All device modes put
 device-specific overrides before gateway rules. `inherit_global` then
@@ -188,8 +193,8 @@ selector/default rule is immediately followed by the same condition with
 `REJECT`. This prevents QUIC or other UDP traffic from silently reaching a
 later global rule or `MATCH,DIRECT`.
 
-Set `on_unsupported: "fallthrough"` on a profile, template, or individual
-rule only when a later rule is intentionally responsible for that fallback.
+Set `on_unsupported: "fallthrough"` on a profile or individual rule only when
+a later rule is intentionally responsible for that fallback.
 The default is `"reject"`. A proxy/group name being present does not prove UDP
 capability; provider-backed candidates require live traffic evidence.
 
@@ -198,8 +203,14 @@ capability; provider-backed candidates require live traffic evidence.
 `rule_sets` support `inline` and `http` providers with `domain`, `ipcidr`, or
 `classical` behavior. HTTP providers may use `yaml`, `text`, or `mrs`; mihomo
 MRS is accepted only for `domain` and `ipcidr` behavior. Use an HTTP MRS set for
-large shared domain/IP lists, and use profile templates to reuse policy choices
-without cloning a full mihomo profile.
+large shared domain/IP lists. A routing template only reuses a group of rule
+sets; it contains no outlet and does not clone a full mihomo profile.
+
+The built-in Claude Code example in the Web GUI is based on the
+[Net.Coffee community rule page](https://ip.net.coffee/claude/site.html) and is
+explicitly labeled as non-official. Users can inspect it first. Its four rule
+sets and template are added to the configuration only after the user chooses
+"Use for device" and adds that route to the draft.
 
 ## Operations
 
@@ -307,8 +318,9 @@ device rules, except that `upstream_router` devices receive only the
 highest-priority IPv6 egress `REJECT`. DHCP mode provides exact MAC-backed lease
 evidence; `same_lan` provides separate static-registration, active-traffic, and
 optional neighbor observations and does not present them as DHCP verification.
-The packet-path MAC is routing identity, not anti-spoof authentication, and the
-project does not ship curated third-party rule content.
+The packet-path MAC is routing identity, not anti-spoof authentication. The
+inactive Claude Code community example is not a claim that OpenSurge has
+validated the completeness or availability of that third-party rule content.
 
 The required data-plane gate is:
 
