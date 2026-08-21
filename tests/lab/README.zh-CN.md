@@ -12,7 +12,7 @@ macOS upstream interface
    |
 real omg + pf + dnsmasq + mihomo
    |
-vmnet host network (192.168.50.0/24, no platform DHCP)
+vmnet host network (192.168.48.0/22, no platform DHCP)
    +-- omg-lab-client-1
    +-- omg-lab-client-2
 ```
@@ -112,8 +112,9 @@ interface，避免代理自身流量重新进入 TUN 或使用 fake IP。
 TUN source、HTTP-only 全局出口的 UDP `REJECT`，以及内部组不会出现在普通
 `policies` 输出。
 
-`lab-test-tun-device-policy` 会把两个客户端作为独立识别的 LAN 设备，给它们分配
-固定 `.101`/`.102` DHCP 租约，先证明 `dedicated` 设备在全局 `MATCH` 前使用 selector，
+`lab-test-tun-device-policy` 会把两个客户端作为独立识别的 LAN 设备，让 bridge 与
+DHCP 客户端实际使用 `/22`，并跨第三段分配固定 `192.168.50.101` 与
+`192.168.51.102` 租约；它先证明 `dedicated` 设备在全局 `MATCH` 前使用 selector，
 再证明 `inherit_global` 设备没有 default selector 且走全局 `MATCH`。脚本制造 desired
 drift 后调用真实 `omg reload` 把后者改成独立模式，验证 applied digest 同步、两台设备的
 selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJECT`。它是设备身份、
@@ -122,7 +123,9 @@ selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJ
 文件后的 desired/applied drift，以及选中 HTTP-only 出口时 UDP/443 必须记录为 `REJECT`
 而不能 fall through 到 `DIRECT`。门禁还保留一条没有 MAC 的原始设备记录，验证 DHCP
 模式会把它保存在 applied snapshot 中供以后补充身份，但不会生成租约、mihomo 规则或
-活动 selector。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
+活动 selector。fixture 还保留一条带 MAC 的旧网段登记，证明它继续存在于 desired，
+但不会进入 compiled/applied 运行态设备、dnsmasq、Mihomo IPv4 规则/selector 或 IPv6
+MAC 身份。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
 初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
 编译仍由单元测试覆盖。
 
@@ -242,7 +245,7 @@ DNS、镜像下载、apt provisioning 等等待。CPU 大部分时间 idle、仍
 且没有 OOM 时，提高 CPU/内存不会解决启动慢；只有出现持续高 load、明显内存回收或 OOM
 证据时才调整默认规格。
 
-lab 只应该在 vmnet bridge 上拥有 `192.168.50.1/24`。不要把同一个地址留在其他
+lab 只应该在 vmnet bridge 上拥有 `192.168.50.1/22`。不要把同一个地址留在其他
 接口上。真实设备 smoke 也会在 `en7` 等接口上使用 `192.168.50.1`；运行
 `make lab-up` 前请先执行 `make real-device-stop`，或者用
 `sudo ifconfig <iface> inet 192.168.50.1 delete` 移除重复地址。重复 LAN IP 会让

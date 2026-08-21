@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"open-mihomo-gateway/internal/lan"
 )
 
 // Render serializes the complete supported gateway configuration. It is used
@@ -14,6 +16,7 @@ func Render(cfg Config) string {
   mode: %s
   interface: %s
   lan_ip: %s
+  lan_prefix_len: %d
   upstream_interface: %s
 
 dhcp:
@@ -79,7 +82,7 @@ upstream_proxy:
 runtime:
   dir: %s
 `,
-		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), q(cfg.Gateway.UpstreamInterface),
+		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen), q(cfg.Gateway.UpstreamInterface),
 		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain), q(cfg.DHCP.BypassGateway), q(strings.Join(cfg.DHCP.BypassDNS, ",")),
 		q(cfg.DevicePolicy.File), q(strings.Join(cfg.DevicePolicy.ProtectedIPv4, ",")),
 		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream), cfg.DNS.IPv6,

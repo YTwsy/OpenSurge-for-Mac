@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/runtime"
 )
 
@@ -21,7 +22,7 @@ func TestRenderConfig(t *testing.T) {
 
 	for _, want := range []string{
 		"interface=en0",
-		"dhcp-range=192.168.50.100,192.168.50.200,12h",
+		"dhcp-range=192.168.50.100,192.168.50.200,255.255.255.0,12h",
 		"dhcp-option=option:router,192.168.50.1",
 		"port=53",
 		"no-resolv",
@@ -164,6 +165,35 @@ func TestRenderConfigSameLANDNSOnly(t *testing.T) {
 	}
 }
 
+func TestRenderConfigSkipsReservationsOutsideTheServedLAN(t *testing.T) {
+	cfg := config.Default()
+	cfg.Gateway.LANIP = "192.168.50.1"
+	cfg.DHCP.Enabled = true
+	bundle, err := device.CompilePolicyBundle(device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices: []device.ManagedDevice{
+			{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home"},
+			{ID: "laptop", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.1.101", Profile: "home"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DevicePolicy.Bundle = &bundle
+
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "dhcp-host=aa:bb:cc:dd:ee:01,192.168.50.101") {
+		t.Fatalf("rendered config missing the on-LAN reservation:\n%s", rendered)
+	}
+	// dnsmasq refuses to start on a reservation outside the served subnet.
+	if strings.Contains(rendered, "192.168.1.101") {
+		t.Fatalf("rendered config kept a reservation from another LAN:\n%s", rendered)
+	}
+}
+
 func TestRenderConfigSameWiFiDHCP(t *testing.T) {
 	cfg := config.Default()
 	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
@@ -182,7 +212,7 @@ func TestRenderConfigSameWiFiDHCP(t *testing.T) {
 
 	for _, want := range []string{
 		"interface=en0",
-		"dhcp-range=192.168.1.120,192.168.1.199,12h",
+		"dhcp-range=192.168.1.120,192.168.1.199,255.255.255.0,12h",
 		"dhcp-option=option:router,192.168.1.20",
 		"dhcp-option=option:dns-server,192.168.1.20",
 		"log-dhcp",

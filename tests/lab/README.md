@@ -13,7 +13,7 @@ macOS upstream interface
    |
 real omg + pf + dnsmasq + mihomo
    |
-vmnet host network (192.168.50.0/24, no platform DHCP)
+vmnet host network (192.168.48.0/22, no platform DHCP)
    +-- omg-lab-client-1
    +-- omg-lab-client-2
 ```
@@ -129,7 +129,8 @@ UDP `REJECT` for an HTTP-only global egress, and that generic `policies` hides
 the internal groups.
 
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
-devices. It assigns them fixed `.101` and `.102` DHCP leases, proves one
+devices. It runs the bridge and DHCP clients on `/22`, assigns fixed
+`192.168.50.101` and `192.168.51.102` leases across the third octet, proves one
 `dedicated` device takes its selector before global `MATCH`, and proves one
 `inherit_global` device follows global `MATCH` without exposing a default
 selector. It creates desired drift, applies a change to dedicated mode with a
@@ -143,6 +144,9 @@ an HTTP-only selected outbound that must log `REJECT` instead of falling through
 to `DIRECT`. The fixture also preserves one raw device without a MAC and proves
 DHCP mode keeps it in the applied snapshot for later identity completion while
 emitting no reservation, mihomo rule, or active selector for it.
+The fixture also keeps one MAC-backed registration from another LAN and proves
+it remains in desired state while disappearing from compiled/applied runtime
+devices, dnsmasq, Mihomo IPv4 rules/selectors, and IPv6 MAC identity.
 The passing artifact retains that applied snapshot, runtime state, generated
 dnsmasq/mihomo configuration, and the initial and post-reload device views so
 the boundary remains auditable.
@@ -296,7 +300,7 @@ that is mostly idle, still has available memory, and has no OOM evidence;
 change the default only after sustained load, reclaim pressure, or OOM proves
 that resources are the bottleneck.
 
-The lab owns `192.168.50.1/24` only on its vmnet bridge. Do not leave the same
+The lab owns `192.168.50.1/22` only on its vmnet bridge. Do not leave the same
 address on another interface. The real-device smoke also uses `192.168.50.1` on
 interfaces such as `en7`; run `make real-device-stop` before `make lab-up`, or
 remove the duplicate address with `sudo ifconfig <iface> inet 192.168.50.1

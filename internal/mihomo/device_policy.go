@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/lan"
 )
 
 type policySections struct {
@@ -21,7 +22,11 @@ type policySections struct {
 }
 
 func renderPolicySections(cfg config.Config, imported *importedProfile) (string, error) {
-	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN, cfg.Transparent.TUNIPv6 != config.TUNIPv6Off)
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return "", err
+	}
+	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN, cfg.Transparent.TUNIPv6 != config.TUNIPv6Off)
 	if err != nil {
 		return "", err
 	}
@@ -41,12 +46,12 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 	return composeManagedPolicySections(cfg, sections, localRouting), nil
 }
 
-func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesActive bool, ipv6 bool) (policySections, error) {
+func loadPolicySections(bundle *device.PolicyBundle, path string, scope lan.Scope, ipOnlyDevicesActive bool, ipv6 bool) (policySections, error) {
 	if bundle == nil && strings.TrimSpace(path) == "" {
 		return policySections{}, nil
 	}
 	if bundle == nil {
-		loaded, err := device.LoadPolicyBundleForIPOnlyMode(path, ipOnlyDevicesActive)
+		loaded, err := device.LoadPolicyBundleForLAN(path, scope, ipOnlyDevicesActive)
 		if err != nil {
 			return policySections{}, err
 		}

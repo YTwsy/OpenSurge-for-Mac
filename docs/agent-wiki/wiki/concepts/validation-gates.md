@@ -196,7 +196,7 @@ proxy egress runner 可以在物理下游 LAN 启动，真实 Pixel 手机可以
 一次 smoke；Mac 侧能对应看到租约、DNS 查询、fake-ip 查询、`mihomo.log` 中的
 客户端目标连接，以及受控代理日志中的 `CONNECT example.com:443`。`stop` 清理
 范围包括释放下游接口上的 `192.168.50.1` 测试 LAN IP，避免后续 virtual LAN lab
-把 `192.168.50.0/24` 回程路由选到真实设备接口。
+把 `192.168.48.0/22` 的重叠回程路由选到真实设备接口。
 
 explicit 模式的关键验收信号是：
 
@@ -337,8 +337,9 @@ make lab-test-tun
 
 - `sudo -v` 和 lab target 在同一个终端/TTY 里连续执行。sudo ticket 不是跨
   agent exec 会话可靠共享的状态。
-- `192.168.50.1` 只配置在当前 lab bridge 上。真实设备 smoke 也会使用这个地址；
-  如果 `en7` 等接口残留 `192.168.50.1/24`，macOS 可能把 lab client 回程路由到
+- `192.168.50.1` 只配置在当前 lab bridge 上；virtual LAN 使用 `/22`，真实设备
+  smoke 默认仍使用 `/24`。如果 `en7` 等接口残留 `192.168.50.1/24`，macOS 可能把
+  重叠范围内的 lab client 回程路由到
   错误接口，表现为 TUN DNS timeout。先运行 `make real-device-stop` 或删除重复
   地址。
 
@@ -417,8 +418,9 @@ make lab-test-tun-device-policy
 ```
 
 当改动 MAC 绑定 DHCP reservation、设备路由模式、每设备 selector 或设备规则覆盖的
-数据路径时，使用此门槛。它使用两个 Lima VM，验证两个设备获得 `.101`/`.102` 固定
-IPv4，先证明 `dedicated` 设备的 default selector 位于全局 `MATCH` 之前，再证明
+数据路径时，使用此门槛。它让 bridge 与 DHCP 客户端实际使用 `/22`，并验证两个 Lima
+VM 跨第三段获得 `192.168.50.101`/`192.168.51.102` 固定 IPv4；先证明 `dedicated`
+设备的 default selector 位于全局 `MATCH` 之前，再证明
 `inherit_global` 设备没有 default selector 且走全局 `MATCH`；随后通过 reload 把后者改成
 独立模式，验证两台设备可独立选择不同 TUN egress，并验证设备专属 IP `REJECT`。它还断言 applied policy snapshot/state digest、`omg devices` 的
 `policy_identity_ready`/`lease_match` 对真实租约成立、desired 文件修改后的 drift，
@@ -426,6 +428,8 @@ IPv4，先证明 `dedicated` 设备的 default selector 位于全局 `MATCH` 之
 selector 隔离；同时要求设备默认 selector 指向 HTTP-only outbound 时 UDP/443 命中
 `REJECT` fallback 而非 fall through 到全局 `MATCH,DIRECT`。它证明设备身份、跟随与
 独立模式、默认出口、安全 reload、UDP fail-closed 和覆盖规则的真实 LAN/TUN 数据路径。
+同一 fixture 还保留一条旧 LAN 带 MAC 登记，要求完整 desired 仍在，而 compiled/applied
+设备列表、dnsmasq、Mihomo IPv4 规则/selector 和 IPv6 MAC 身份均排除它。
 
 大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
 `make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。系统 TUN 的设备

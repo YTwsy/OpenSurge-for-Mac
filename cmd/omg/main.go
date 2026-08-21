@@ -550,7 +550,11 @@ func loadConfiguredPolicyBundle(cfg config.Config) (device.PolicyBundle, error) 
 	if cfg.DevicePolicy.Bundle != nil {
 		return *cfg.DevicePolicy.Bundle, nil
 	}
-	return device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return device.PolicyBundle{}, err
+	}
+	return device.LoadPolicyBundleForLAN(cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 }
 
 func loadAppliedPolicyBundle(cfg config.Config) (device.PolicyBundle, error) {

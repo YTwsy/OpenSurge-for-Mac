@@ -52,7 +52,7 @@ NTP 通用规则分为四份 classical rule set，再由无出口模版组合。
 客户端不提供 hostname 时也不会继续显示为未知设备。
 
 `same_lan` 不产生 OpenSurge DHCP lease。Control API 会从 mihomo 当前连接收集与 gateway
-同 `/24` 的源 IPv4，并在设备登记页用 macOS ARP cache 尽力补 MAC；总览流量 inventory
+同网段的源 IPv4，并在设备登记页用 macOS ARP cache 尽力补 MAC；总览流量 inventory
 则合并 lease、applied 静态设备与当前观察源。证据必须分层显示为 DHCP 已验证、静态登记、
 流量已观察或邻居已观察。ARP/流量只证明近期观察，不是 MAC 身份认证；未经过 Mac、已经
 离线或经 IPv6 绕过的同 LAN 设备不会因此被自动发现。
@@ -80,8 +80,16 @@ desired 设备占用时必须 fail closed，不提供猜测式更新。
 设备引用时不生成 selector，也不把这些未使用候选加入 imported target 校验。
 
 一个示例配置见 `docs/device-policy.zh-CN.md` 和
-`examples/device-policy.example.json`。设备 IPv4 必须唯一、在 gateway `/24` 内，
-且不能是网段、广播或网关地址。
+`examples/device-policy.example.json`。设备 IPv4 必须唯一；在当前网关网段内的地址
+不能是网段、广播或网关地址。网段由 `gateway.lan_ip` 与 `gateway.lan_prefix_len`
+决定。不在当前网段的登记是 dormant 而不是非法：完整 desired policy 与 digest 保留，
+但 compiled/applied bundle 会将它从运行态设备、dnsmasq reservation、Mihomo IPv4
+selector/规则和 IPv6 MAC→InUser 身份映射中同时排除。`GET /api/v1/devices` 通过
+`out_of_lan_devices` 告诉 GUI 标记它。
+
+同一条“dormant 而不是非法”的规则也适用于 `device_policy.protected_ipv4`：不在当前
+网段的受保护地址被忽略而不是报错。这是刻意的死锁避免：设备只能通过设备页删除或改
+地址，而改配置本身又要通过同一套校验，所以异网段设备不能成为启动或保存的硬阻断。
 
 same-Wi‑Fi DHCP 场景还必须将 router、recovery device、LAN proxy 等地址写入
 `device_policy.protected_ipv4`；reservation 不得占用。启动前会对 reservation 做 ARP

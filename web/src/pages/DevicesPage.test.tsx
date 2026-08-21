@@ -351,6 +351,92 @@ describe('DevicesPage', () => {
     expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0]).toEqual(expect.objectContaining({ id: 'pixel-living-room', name: 'Pixel Living Room', egress_mode: 'dedicated' }))
   })
 
+  it('removes a device with its private profile and keeps the other devices intact', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [
+        { id: 'alice', name: 'Alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' },
+        { id: 'bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.1.122', profile: 'bob-policy', egress_mode: 'inherit_global' },
+      ],
+      profiles: [
+        { id: 'alice-policy', default_policies: ['DIRECT'], rules: [{ id: 'rule-1', match: { domains: ['alice.example'] }, action: 'DIRECT' }] },
+        { id: 'bob-policy', default_policies: ['DIRECT'], rules: [] },
+      ],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+
+    const card = (await screen.findByText('Alice')).closest('.device-card') as HTMLElement
+    await userEvent.click(within(card).getByRole('button', { name: '删除设备' }))
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('删除设备“Alice”吗？'))
+    expect(screen.queryByText('Alice')).toBeNull()
+    expect(screen.getByText(/Alice 已从本地草稿移除/)).toBeTruthy()
+    expect(document.querySelectorAll('.device-card')).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
+    expect(saved.devices.map(device => device.id)).toEqual(['bob'])
+    expect(saved.profiles.map(profile => profile.id)).toEqual(['bob-policy'])
+  })
+
+  it('marks registrations from another LAN instead of hiding them', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [
+        { id: 'alice', name: 'Alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'shared', egress_mode: 'inherit_global' },
+        { id: 'bob', name: 'Bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.50.122', profile: 'shared', egress_mode: 'inherit_global' },
+      ],
+      profiles: [{ id: 'shared', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({ out_of_lan_devices: ['bob'], lan_prefix: '192.168.1.0/24' }))
+    renderPage()
+
+    const card = (await screen.findByText('Bob')).closest('.device-card') as HTMLElement
+    expect((card.querySelector('.pill') as HTMLElement).textContent).toBe('不在当前网段')
+    expect(within(card).getByText(/192\.168\.50\.122 不属于当前网关网段 192\.168\.1\.0\/24/)).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '编辑身份与路由' })).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '删除设备' })).toBeTruthy()
+
+    const healthy = (screen.getByText('Alice')).closest('.device-card') as HTMLElement
+    expect(healthy.querySelector('.device-out-of-lan')).toBeNull()
+  })
+
+  it('reopens the registration form to re-register an existing device identity and routing', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.137', profile: 'pixel-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'pixel-policy', default_policies: ['DIRECT'], rules: [{ id: 'rule-1', match: { domains: ['video.example'] }, action: 'DIRECT' }] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    renderPage()
+
+    const card = (await screen.findByText('Pixel')).closest('.device-card') as HTMLElement
+    expect(screen.queryByLabelText('设备名称')).toBeNull()
+    await userEvent.click(within(card).getByRole('button', { name: '编辑身份与路由' }))
+
+    expect(screen.getByRole('button', { name: /编辑设备身份与路由/ }).getAttribute('aria-expanded')).toBe('true')
+    const panel = document.querySelector('.registration') as HTMLElement
+    expect((within(panel).getByLabelText('设备名称') as HTMLInputElement).value).toBe('Pixel')
+    expect((within(panel).getByLabelText('设备 MAC') as HTMLInputElement).value).toBe('aa:bb:cc:dd:ee:37')
+    expect((within(panel).getByLabelText('固定 IPv4') as HTMLInputElement).value).toBe('192.168.1.137')
+    expect((panel.querySelector('.registration-id-hint') as HTMLElement).textContent).toContain('pixel')
+    expect((panel.querySelector('.registration-id-hint') as HTMLElement).textContent).toContain('保持不变')
+
+    await userEvent.clear(within(panel).getByLabelText('固定 IPv4'))
+    await userEvent.type(within(panel).getByLabelText('固定 IPv4'), '192.168.1.150')
+    await userEvent.click(within(panel).getByRole('radio', { name: /独立设备出口/ }))
+    await userEvent.click(within(panel).getByRole('button', { name: '更新设备身份与路由' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
+    expect(saved.devices).toEqual([{ id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.150', profile: 'pixel-policy', egress_mode: 'dedicated' }])
+    expect(saved.profiles).toEqual(policy.profiles)
+  })
+
   it('lists a same-LAN source currently passing through Mac and prefills its observed identity', async () => {
     vi.mocked(api.devices).mockResolvedValue(devicesResponse({
       observed_devices: [

@@ -133,7 +133,7 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err := config.PrepareDevicePolicy(&cfg); err != nil {
 		return templateData{}, err
 	}
-	lanPrefix, err := cfg.LANPrefix24()
+	lanPrefix, err := cfg.LANPrefix()
 	if err != nil {
 		return templateData{}, err
 	}

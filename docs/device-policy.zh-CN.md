@@ -13,8 +13,12 @@ device_policy:
 ```
 
 空的 [starter 文件](../examples/device-policy.example.json) 合法，但不会启用任何设备策略。
-路径相对于 gateway 配置文件解析。设备 IPv4 必须唯一、位于 gateway 的 `/24`，且不能
-是网段地址、广播地址或 `gateway.lan_ip`。
+路径相对于 gateway 配置文件解析。设备 IPv4 必须唯一；位于当前网关网段内的地址
+不能是网段地址、广播地址或 `gateway.lan_ip`。网段由 `gateway.lan_ip` 与
+`gateway.lan_prefix_len` 决定（省略时按 /24）。不在当前网段的登记会休眠而不是
+报错：网关照常启动并保留完整 desired 记录，但 applied 运行态设备列表、dnsmasq
+保留、Mihomo IPv4 selector/规则和下游 IPv6 MAC 身份都不包含它。设备页把它标记为
+“不在当前网段”，由操作者改地址或删除。
 
 在 `same_wifi_dhcp` 中，还必须声明路由器、恢复设备、LAN proxy 等绝不能被 reservation
 占用的静态地址：
@@ -94,7 +98,7 @@ IPv4，但通过 tag 向它单独下发 `dhcp.bypass_gateway` 和
 仍可能保留 SLAAC 地址或 RDNSS，因此 UI 只显示“IPv6 出站已阻止”，不声称设备
 没有 IPv6。必须关闭主路由 RA/DHCPv6 或由 RA Guard 消除，否则 IPv6 仍可能完全
 绕过 OpenSurge。切换后必须让设备续租或重新连接网络，新的 IPv4 Router/DNS 才会
-生效。该选项必须有真实 MAC，且主路由网关必须与 Mac 网关处于同一 `/24`、不得
+生效。该选项必须有真实 MAC，且主路由网关必须与 Mac 网关处于同一网段、不得
 位于 DHCP 动态地址池内。
 
 只有跟随设备使用的 Profile 仍会保留 `default_policies` 作为以后切换独立模式的配置，
@@ -204,7 +208,7 @@ Web GUI 将两类操作持续分开：绿色表示 applied selector 的“即时
 的引用。
 
 `same_lan` 旁路由模式不运行 OpenSurge DHCP。该模式下，设备页从 mihomo 当前连接中提取与
-`gateway.lan_ip` 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补充 MAC，列入“当前经过
+`gateway.lan_ip` 同网段的源 IPv4，并用 macOS ARP 邻居表尽力补充 MAC，列入“当前经过
 Mac 的设备”供登记。总览设备流量会合并 DHCP lease、applied 静态设备和当前观察到的
 same-LAN 源 IPv4：已登记静态 IPv4 可以获得名称、连接、速率、累计流量与出口归属，未登记
 但正在经过 Mac 的 IPv4 也以临时设备显示。ARP 与流量观察不是 DHCP 身份验证；MAC 未解析

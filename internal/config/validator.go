@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/lan"
 )
 
 func Validate(cfg Config) error {
@@ -36,6 +37,16 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	if net.ParseIP(cfg.Gateway.LANIP).To4() == nil {
 		return fmt.Errorf("gateway.lan_ip must be a valid IPv4 address")
 	}
+	if cfg.Gateway.LANPrefixLen != 0 && !lan.ValidPrefixLen(cfg.Gateway.LANPrefixLen) {
+		return fmt.Errorf("gateway.lan_prefix_len must be between %d and %d", lan.MinPrefixLen, lan.MaxPrefixLen)
+	}
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return err
+	}
+	if !scope.UsableHost(scope.Gateway) {
+		return fmt.Errorf("gateway.lan_ip must not be the %s network or broadcast address", scope)
+	}
 	if cfg.DHCP.Enabled {
 		if strings.TrimSpace(cfg.DHCP.Binary) == "" {
 			return fmt.Errorf("dhcp.binary is required")
@@ -49,12 +60,15 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 		if strings.TrimSpace(cfg.DHCP.LeaseTime) == "" {
 			return fmt.Errorf("dhcp.lease_time is required")
 		}
+		if err := validateDHCPRangeInLAN(cfg, scope); err != nil {
+			return err
+		}
 	}
 	if err := validateOptionalBypassAddresses(cfg.DHCP); err != nil {
 		return err
 	}
 	if checkDevicePolicy {
-		if err := validateDevicePolicy(cfg); err != nil {
+		if err := validateDevicePolicy(cfg, scope); err != nil {
 			return err
 		}
 	}
@@ -123,9 +137,6 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 		if !cfg.DHCP.Enabled {
 			return fmt.Errorf("gateway.mode same_wifi_dhcp requires dhcp.enabled: true")
 		}
-		if err := validateDHCPRangeInLAN(cfg); err != nil {
-			return err
-		}
 	}
 	if err := validateUpstreamProxy(cfg.UpstreamProxy); err != nil {
 		return err
@@ -161,7 +172,7 @@ func validateDNSUpstream(value string) error {
 	return nil
 }
 
-func validateDevicePolicy(cfg Config) error {
+func validateDevicePolicy(cfg Config, scope lan.Scope) error {
 	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
 		if len(cfg.DevicePolicy.ProtectedIPv4) > 0 {
 			return fmt.Errorf("device_policy.protected_ipv4 requires device_policy.file")
@@ -171,19 +182,20 @@ func validateDevicePolicy(cfg Config) error {
 	bundle := cfg.DevicePolicy.Bundle
 	if bundle == nil {
 		var err error
-		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File, cfg.Gateway.Mode == GatewayModeSameLAN)
+		bundle, err = loadDevicePolicyBundle(cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == GatewayModeSameLAN)
 		if err != nil {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 	}
-	if err := validateRouterBypass(cfg, bundle.Policy); err != nil {
+	activePolicy := device.ActivePolicySetForLAN(bundle.Policy, scope)
+	if err := validateRouterBypass(cfg, scope, activePolicy); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	protected := append([]string(nil), cfg.DevicePolicy.ProtectedIPv4...)
-	if device.UsesUpstreamRouter(bundle.Policy) {
+	if device.UsesUpstreamRouter(activePolicy) {
 		protected = append(protected, cfg.DHCP.BypassGateway)
 	}
-	if err := device.ValidatePolicySetForLANWithProtectedForIPOnlyMode(bundle.Policy, cfg.Gateway.LANIP, protected, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
+	if err := device.ValidatePolicySetForLAN(bundle.Policy, scope, protected, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	return nil
@@ -192,7 +204,11 @@ func validateDevicePolicy(cfg Config) error {
 // ValidateDevicePolicyCandidate applies the complete topology and DHCP
 // contract to a candidate policy before the root helper writes it.
 func ValidateDevicePolicyCandidate(cfg Config, policy device.PolicySet) error {
-	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == GatewayModeSameLAN)
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return err
+	}
+	bundle, err := device.CompilePolicyBundleForLAN(policy, scope, cfg.Gateway.Mode == GatewayModeSameLAN)
 	if err != nil {
 		return err
 	}
@@ -216,7 +232,7 @@ func validateOptionalBypassAddresses(cfg DHCPConfig) error {
 	return nil
 }
 
-func validateRouterBypass(cfg Config, policy device.PolicySet) error {
+func validateRouterBypass(cfg Config, scope lan.Scope, policy device.PolicySet) error {
 	if !device.UsesUpstreamRouter(policy) {
 		return nil
 	}
@@ -224,17 +240,18 @@ func validateRouterBypass(cfg Config, policy device.PolicySet) error {
 		return fmt.Errorf("gateway_target %q is only available in gateway.mode same_wifi_dhcp", device.GatewayTargetUpstreamRouter)
 	}
 	gateway := net.ParseIP(strings.TrimSpace(cfg.DHCP.BypassGateway)).To4()
-	lan := cfg.LANIP().To4()
 	if gateway == nil {
 		return fmt.Errorf("gateway_target %q requires dhcp.bypass_gateway", device.GatewayTargetUpstreamRouter)
 	}
 	if len(cfg.DHCP.BypassDNS) == 0 {
 		return fmt.Errorf("gateway_target %q requires at least one dhcp.bypass_dns address", device.GatewayTargetUpstreamRouter)
 	}
-	if gateway[0] != lan[0] || gateway[1] != lan[1] || gateway[2] != lan[2] {
-		return fmt.Errorf("dhcp.bypass_gateway %s must remain in gateway LAN %d.%d.%d.0/24", gateway.String(), lan[0], lan[1], lan[2])
+	// Bypassed clients keep their OpenSurge lease, so the router they are sent
+	// to has to be reachable on-link from the same LAN.
+	if !scope.Contains(gateway) {
+		return fmt.Errorf("dhcp.bypass_gateway %s must remain in gateway LAN %s", gateway, scope)
 	}
-	if gateway[3] == 0 || gateway[3] == 255 || gateway.Equal(lan) {
+	if !scope.UsableHost(gateway) || gateway.Equal(scope.Gateway) {
 		return fmt.Errorf("dhcp.bypass_gateway must be a usable host address different from gateway.lan_ip")
 	}
 	start := net.ParseIP(cfg.DHCP.RangeStart).To4()
@@ -264,19 +281,23 @@ func PrepareDevicePolicy(cfg *Config) error {
 	if strings.TrimSpace(cfg.DevicePolicy.File) == "" {
 		return nil
 	}
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return err
+	}
 	ipOnlyDevicesActive := cfg.Gateway.Mode == GatewayModeSameLAN
-	if cfg.DevicePolicy.Bundle != nil && cfg.DevicePolicy.Bundle.IPOnlyDevicesActive == ipOnlyDevicesActive {
+	if cfg.DevicePolicy.Bundle != nil && cfg.DevicePolicy.Bundle.IPOnlyDevicesActive == ipOnlyDevicesActive && cfg.DevicePolicy.Bundle.ActiveLAN == scope.String() {
 		return nil
 	}
 	if cfg.DevicePolicy.Bundle != nil {
-		bundle, err := device.CompilePolicyBundleForIPOnlyMode(cfg.DevicePolicy.Bundle.Policy, ipOnlyDevicesActive)
+		bundle, err := device.CompilePolicyBundleForLAN(cfg.DevicePolicy.Bundle.Policy, scope, ipOnlyDevicesActive)
 		if err != nil {
 			return fmt.Errorf("device_policy.file: %w", err)
 		}
 		cfg.DevicePolicy.Bundle = &bundle
 		return nil
 	}
-	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File, ipOnlyDevicesActive)
+	bundle, err := loadDevicePolicyBundle(cfg.DevicePolicy.File, scope, ipOnlyDevicesActive)
 	if err != nil {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
@@ -284,7 +305,7 @@ func PrepareDevicePolicy(cfg *Config) error {
 	return nil
 }
 
-func loadDevicePolicyBundle(path string, ipOnlyDevicesActive bool) (*device.PolicyBundle, error) {
+func loadDevicePolicyBundle(path string, scope lan.Scope, ipOnlyDevicesActive bool) (*device.PolicyBundle, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -292,31 +313,32 @@ func loadDevicePolicyBundle(path string, ipOnlyDevicesActive bool) (*device.Poli
 	if info.IsDir() {
 		return nil, fmt.Errorf("must not be a directory")
 	}
-	bundle, err := device.LoadPolicyBundleForIPOnlyMode(path, ipOnlyDevicesActive)
+	bundle, err := device.LoadPolicyBundleForLAN(path, scope, ipOnlyDevicesActive)
 	if err != nil {
 		return nil, err
 	}
 	return &bundle, nil
 }
 
-func validateDHCPRangeInLAN(cfg Config) error {
-	lanIP := cfg.LANIP().To4()
+// validateDHCPRangeInLAN keeps the pool inside the LAN dnsmasq actually serves.
+// dnsmasq refuses a range that is not on one of its interface subnets, so this
+// applies to every DHCP-owning topology rather than only same_wifi_dhcp.
+func validateDHCPRangeInLAN(cfg Config, scope lan.Scope) error {
 	start := net.ParseIP(cfg.DHCP.RangeStart).To4()
 	end := net.ParseIP(cfg.DHCP.RangeEnd).To4()
-	if lanIP == nil || start == nil || end == nil {
-		return fmt.Errorf("same_wifi_dhcp requires IPv4 LAN and DHCP range addresses")
+	if start == nil || end == nil {
+		return fmt.Errorf("dhcp.enabled requires IPv4 dhcp.range_start and dhcp.range_end")
 	}
-	if lanIP[0] != start[0] || lanIP[1] != start[1] || lanIP[2] != start[2] ||
-		lanIP[0] != end[0] || lanIP[1] != end[1] || lanIP[2] != end[2] {
-		return fmt.Errorf("gateway.mode same_wifi_dhcp requires the DHCP range to remain in %d.%d.%d.0/24", lanIP[0], lanIP[1], lanIP[2])
+	if !scope.Contains(start) || !scope.Contains(end) {
+		return fmt.Errorf("dhcp.enabled requires the DHCP range to remain in gateway LAN %s", scope)
 	}
-	if start[3] > end[3] {
+	if bytesCompareIPv4(start, end) > 0 {
 		return fmt.Errorf("dhcp.range_start must not be after dhcp.range_end")
 	}
-	if start[3] == 0 || end[3] == 255 {
-		return fmt.Errorf("same_wifi_dhcp DHCP range must not include the network or broadcast address")
+	if !scope.UsableHost(start) || !scope.UsableHost(end) {
+		return fmt.Errorf("the DHCP range must not include the %s network or broadcast address", scope)
 	}
-	if lanIP[3] >= start[3] && lanIP[3] <= end[3] {
+	if bytesCompareIPv4(scope.Gateway, start) >= 0 && bytesCompareIPv4(scope.Gateway, end) <= 0 {
 		return fmt.Errorf("gateway.lan_ip must not be inside the DHCP range")
 	}
 	return nil

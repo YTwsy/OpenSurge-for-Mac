@@ -989,32 +989,37 @@ assert_ipv6_bpf_bidirectional() {
 }
 
 build_ipv6_lab_binaries() {
-  local build_log go_no_proxy mod_cache
+  local build_cache build_log go_no_proxy mod_cache
   require_command go
   # The optional Lab proxy file may outlive the LAN proxy that created it.
   # The pinned Go module mirror is directly reachable in the supported setup,
   # so do not let a stale general-purpose proxy turn a build prerequisite into
   # a misleading IPv6 data-plane failure.
   go_no_proxy="${NO_PROXY:+$NO_PROXY,}goproxy.cn,proxy.golang.org,github.com,codeload.github.com,objects.githubusercontent.com"
+  build_cache="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}"
   mod_cache="${GOMODCACHE:-/private/tmp/opensurge-ipv6-modcache}"
   build_log="$STATE_DIR/logs/mihomo-build.log"
   GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
   NO_PROXY="$go_no_proxy" \
   no_proxy="$go_no_proxy" \
     go build -o "$IPV6_PACKET_BINARY" ./cmd/opensurge-network
-  if ! GOCACHE="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}" \
+  if ! GOCACHE="$build_cache" \
     GOMODCACHE="$mod_cache" \
     GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
     NO_PROXY="$go_no_proxy" \
     no_proxy="$go_no_proxy" \
     OPENSURGE_MIHOMO_OUTPUT="$PATCHED_MIHOMO_BINARY" \
       "$ROOT/scripts/build-opensurge-mihomo.sh" 2>&1 | tee "$build_log"; then
-    if ! grep -F "$mod_cache" "$build_log" | grep -Eq 'no such file or directory|no matching files found'; then
+    if grep -F "$mod_cache" "$build_log" | grep -Eq 'no such file or directory|no matching files found'; then
+      echo "OpenSurge Mihomo module cache is incomplete; rebuilding the disposable Lab cache"
+      GOMODCACHE="$mod_cache" go clean -modcache
+    elif grep -Fq 'no required module provides package' "$build_log"; then
+      echo "OpenSurge Mihomo build cache is inconsistent; rebuilding the disposable Lab cache"
+      GOCACHE="$build_cache" go clean -cache
+    else
       return 1
     fi
-    echo "OpenSurge Mihomo module cache is incomplete; rebuilding the disposable Lab cache"
-    GOMODCACHE="$mod_cache" go clean -modcache
-    GOCACHE="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}" \
+    GOCACHE="$build_cache" \
     GOMODCACHE="$mod_cache" \
     GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
     NO_PROXY="$go_no_proxy" \
@@ -1046,7 +1051,8 @@ write_ipv6_device_policy_fixture() {
   ],
   "devices": [
     {"id":"$client_one","mac":"$mac_one","ipv4":"192.168.50.101","profile":"blocked","egress_mode":"dedicated"$gateway_target},
-    {"id":"$client_two","mac":"$mac_two","ipv4":"192.168.50.102","profile":"direct","egress_mode":"dedicated"}
+    {"id":"$client_two","mac":"$mac_two","ipv4":"192.168.50.102","profile":"direct","egress_mode":"dedicated"},
+    {"id":"dormant-old-lan","mac":"02:00:00:60:01:50","ipv4":"192.168.60.150","profile":"blocked","egress_mode":"dedicated"}
   ]
 }
 EOF
@@ -1384,6 +1390,26 @@ assert_client_ipv4() {
   fi
 }
 
+assert_client_ipv4_prefix() {
+  local client=$1 expected=$2 actual
+  actual="$(limactl shell "$client" -- bash -lc "ip -4 -o addr show dev omg0 scope global | awk 'NR == 1 { print \$4 }'" | tr -d '\r\n')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "$client IPv4 prefix $actual, want $expected" >&2
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status >&2 || true
+    exit 1
+  fi
+}
+
+assert_lab_ipv4_prefix() {
+  local iface
+  iface="$(lab_interface)"
+  /sbin/ifconfig "$iface" | grep -F "inet $LAN_IP netmask 0xfffffc00" >/dev/null || {
+    echo "lab interface $iface is not configured as $LAN_IP/22" >&2
+    /sbin/ifconfig "$iface" >&2
+    exit 1
+  }
+}
+
 assert_device_policy_identity_ready() {
   local output=$1 digest
   [[ -f "$STATE_DIR/device-policy.applied.json" ]] || {
@@ -1426,6 +1452,28 @@ assert_ip_only_device_paused() {
   fi
   if grep -Fq '192.168.50.150/32' "$STATE_DIR/mihomo.yaml"; then
     echo "DHCP mode unexpectedly emitted a routing rule for the IP-only device" >&2
+    exit 1
+  fi
+}
+
+assert_out_of_lan_device_dormant() {
+  local output=${1:-}
+  /usr/bin/ruby -rjson -e '
+    snapshot = JSON.parse(File.read(ARGV.fetch(0)))
+    abort "applied snapshot has wrong active LAN" unless snapshot["active_lan"] == "192.168.48.0/22"
+    desired = snapshot.fetch("policy").fetch("devices")
+    abort "dormant desired record was not preserved" unless desired.any? { |item| item["id"] == "dormant-old-lan" && item["ipv4"] == "192.168.60.150" }
+    compiled = JSON.generate(snapshot.fetch("compiled"))
+    abort "dormant device leaked into compiled runtime" if compiled.include?("dormant-old-lan") || compiled.include?("192.168.60.150") || compiled.include?("02:00:00:60:01:50")
+  ' "$STATE_DIR/device-policy.applied.json"
+  for path in "$STATE_DIR/dnsmasq.conf" "$STATE_DIR/mihomo.yaml"; do
+    if grep -Eq 'dormant-old-lan|192\.168\.60\.150|02:00:00:60:01:50' "$path"; then
+      echo "out-of-LAN device leaked into generated runtime config $path" >&2
+      exit 1
+    fi
+  done
+  if [[ -n "$output" ]] && grep -Fq 'dormant-old-lan' "$output"; then
+    echo "out-of-LAN device leaked into active runtime device list" >&2
     exit 1
   fi
 }
@@ -1503,13 +1551,20 @@ EOF
     {
       "id": "$client_two",
       "mac": "$mac_two",
-      "ipv4": "192.168.50.102",
+      "ipv4": "192.168.51.102",
       "profile": "direct-blocked",
       "egress_mode": "inherit_global"
     },
     {
       "id": "paused-ip-only",
       "ipv4": "192.168.50.150",
+      "profile": "controlled",
+      "egress_mode": "dedicated"
+    },
+    {
+      "id": "dormant-old-lan",
+      "mac": "02:00:00:60:01:50",
+      "ipv4": "192.168.60.150",
       "profile": "controlled",
       "egress_mode": "dedicated"
     }
@@ -1552,13 +1607,20 @@ write_device_block_rule() {
     {
       "id": "$client_two",
       "mac": "$mac_two",
-      "ipv4": "192.168.50.102",
+      "ipv4": "192.168.51.102",
       "profile": "direct-blocked",
       "egress_mode": "dedicated"
     },
     {
       "id": "paused-ip-only",
       "ipv4": "192.168.50.150",
+      "profile": "controlled",
+      "egress_mode": "dedicated"
+    },
+    {
+      "id": "dormant-old-lan",
+      "mac": "02:00:00:60:01:50",
+      "ipv4": "192.168.60.150",
       "profile": "controlled",
       "egress_mode": "dedicated"
     }
@@ -1572,6 +1634,8 @@ run_device_policy_test() {
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
+  start_sudo_keepalive
+  trap stop_sudo_keepalive EXIT
   ensure_lab_state_writable
   set -- $CLIENTS
   [[ "$#" -eq 2 ]] || { echo "device-policy lab requires exactly two clients" >&2; exit 1; }
@@ -1601,6 +1665,7 @@ run_device_policy_test() {
     if [[ "$egress_probe_started" == 1 ]]; then
       stop_egress_probe || true
     fi
+    stop_sudo_keepalive
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
@@ -1611,15 +1676,24 @@ run_device_policy_test() {
   gateway_started=1
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+  assert_lab_ipv4_prefix
   assert_client_ipv4 "$client_one" "192.168.50.101"
-  assert_client_ipv4 "$client_two" "192.168.50.102"
+  assert_client_ipv4 "$client_two" "192.168.51.102"
+  assert_client_ipv4_prefix "$client_one" "192.168.50.101/22"
+  assert_client_ipv4_prefix "$client_two" "192.168.51.102/22"
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies.json"
   grep -Fq '"ipv4": "192.168.50.101"' "$STATE_DIR/device-policies.json"
-  grep -Fq '"ipv4": "192.168.50.102"' "$STATE_DIR/device-policies.json"
+  grep -Fq '"ipv4": "192.168.51.102"' "$STATE_DIR/device-policies.json"
   grep -Fq '"egress_mode": "dedicated"' "$STATE_DIR/device-policies.json"
   grep -Fq '"egress_mode": "inherit_global"' "$STATE_DIR/device-policies.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies.json"
   assert_ip_only_device_paused "$STATE_DIR/device-policies.json"
+  assert_out_of_lan_device_dormant "$STATE_DIR/device-policies.json"
+  if "$BINARY" device-policy-select --config "$CONFIG" --device dormant-old-lan --slot default --policy DIRECT --format json >"$STATE_DIR/dormant-device-select.json" 2>&1; then
+    echo "out-of-LAN device unexpectedly accepted a runtime selector change" >&2
+    exit 1
+  fi
+  grep -Fq 'unknown device' "$STATE_DIR/dormant-device-select.json"
 
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
   wait_for_tun_udp_reject "192.168.50.101" "1.1.1.1" 443
@@ -1631,7 +1705,7 @@ run_device_policy_test() {
 
   : >"$STATE_DIR/egress/proxy.log"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
-  wait_for_tun_action_log "$host" "DIRECT" "192.168.50.102"
+  wait_for_tun_action_log "$host" "DIRECT" "192.168.51.102"
   assert_tun_egress_proxy_unused
   "$BINARY" policies --config "$CONFIG" --format json >"$STATE_DIR/device-policies-initial-live.json"
   if grep -Fq "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-initial-live.json"; then
@@ -1673,6 +1747,7 @@ run_device_policy_test() {
   assert_applied_policy_synced "$STATE_DIR/device-policies-after-reload.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies-after-reload.json"
   assert_ip_only_device_paused "$STATE_DIR/device-policies-after-reload.json"
+  assert_out_of_lan_device_dormant "$STATE_DIR/device-policies-after-reload.json"
 
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct-after-reload.json"
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-controlled-after-reload.json"
@@ -1692,7 +1767,7 @@ run_device_policy_test() {
 
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy DIRECT --format json >"$STATE_DIR/device-two-direct-after-reload.json"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
-  wait_for_tun_udp_reject "192.168.50.102" "1.1.1.1" 443
+  wait_for_tun_udp_reject "192.168.51.102" "1.1.1.1" 443
 
   cp "$STATE_DIR/device-policy.applied.json" "$STATE_DIR/device-policy.applied.evidence.json"
   cp "$STATE_DIR/state.json" "$STATE_DIR/state.evidence.json"
@@ -1702,6 +1777,7 @@ run_device_policy_test() {
   stop_egress_probe
   egress_probe_started=0
   [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
+  stop_sudo_keepalive
   trap - EXIT INT TERM
   collect_artifacts
   echo "virtual LAN device-policy TUN test passed"
@@ -1720,6 +1796,8 @@ run_ipv6_userspace_test() {
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
+  start_sudo_keepalive
+  trap stop_sudo_keepalive EXIT
   ensure_lab_state_writable
   set -- $CLIENTS
   [[ "$#" -eq 2 ]] || { echo "IPv6 lab requires exactly two clients" >&2; exit 1; }
@@ -1773,6 +1851,7 @@ run_ipv6_userspace_test() {
     if [[ "$egress_probe_started" == 1 ]]; then
       stop_egress_probe || true
     fi
+    stop_sudo_keepalive
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
@@ -1845,6 +1924,7 @@ run_ipv6_userspace_test() {
   grep -Fq 'type: opensurge-packet' "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_one")\": \"device:$client_one\"" "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_two")\": \"device:$client_two\"" "$STATE_DIR/mihomo.yaml"
+  assert_out_of_lan_device_dormant
   if [[ "$topology" == "same_wifi_dhcp" ]]; then
     grep -Fq -- "- AND,((IN-TYPE,TUN),(IN-USER,device:$client_one)),REJECT" "$STATE_DIR/mihomo.yaml"
     "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/ipv6-devices.json"
@@ -1943,6 +2023,7 @@ run_ipv6_userspace_test() {
       assert_client_ipv6_withdrawn "$client"
     done
   fi
+  stop_sudo_keepalive
   trap - EXIT INT TERM
   collect_artifacts
   echo "virtual LAN $topology userspace IPv6 TCP, UDP, QUIC carrier, HTTP/3-only DIRECT and SOCKS5 UDP, HTTP-only fail-closed, device identity, upstream-router IPv6 block, and rollback test passed"

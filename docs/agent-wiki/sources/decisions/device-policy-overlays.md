@@ -51,10 +51,18 @@ The system-TUN identity boundary is MAC-backed IPv4 DHCP reservations plus
 source MAC into patched Mihomo as `IN-USER(device:<id>)`; this is routing
 identity, not anti-spoof authentication. An `upstream_router` device retains
 that mapping only for a highest-priority IPv6 `REJECT`, because its bypass is
-IPv4-only. Registered addresses must stay in the gateway `/24` and cannot be
-its network, broadcast, gateway, or declared protected address. same-Wi-Fi DHCP
+IPv4-only. A registered address that is on the gateway LAN cannot be its
+network, broadcast, gateway, or declared protected address. An address outside
+the LAN is dormant rather than invalid, because refusing it would leave an
+operator who moved the Mac unable to start the gateway or edit the policy that
+still lists the old devices. same-Wi-Fi DHCP
 start also rejects a reservation when ARP observes a different MAC at that
 IPv4; no ARP reply is only an inconclusive signal, not proof of vacancy.
+
+Dormancy is a compiled/applied boundary, not only a DHCP exception. The full
+desired record and digest remain stable, while runtime devices, reservations,
+Mihomo IPv4 selectors/rules, and downstream IPv6 MAC-to-InUser identity all
+exclude devices outside the configured LAN.
 
 The configured policy is desired state. One start compiles it exactly once into
 an immutable bundle, validates the final mihomo configuration before forwarding

@@ -368,6 +368,35 @@ func TestGatewayPlanWarnsOnlyForCompetingIPv6DefaultRoute(t *testing.T) {
 	}
 }
 
+func TestGatewayPlanWarnsWhenConfiguredPrefixDiffersFromLiveMask(t *testing.T) {
+	server := newTestServer(t)
+	server.discoverNetwork = func(context.Context, string, string) (macosnetwork.Snapshot, error) {
+		return macosnetwork.Snapshot{
+			NetworkService: "Wi-Fi",
+			Interface:      "en0",
+			IPv4:           "192.168.1.20",
+			SubnetMask:     "255.255.252.0",
+			Router:         "192.168.1.1",
+			DNS:            []string{"192.168.1.1"},
+		}, nil
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/gateway/plan", []byte(`{}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("plan status=%d body=%s", response.Code, response.Body.String())
+	}
+	var plan GatewayPlan
+	if err := json.Unmarshal(response.Body.Bytes(), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 1 || !strings.Contains(plan.Warnings[0], "gateway.lan_prefix_len") {
+		t.Fatalf("plan = %#v", plan)
+	}
+	if len(plan.Blockers) != 0 {
+		t.Fatalf("a stale prefix must stay a warning: %#v", plan.Blockers)
+	}
+}
+
 func TestNetworkInterfacesReturnsSelectableMacInterfaces(t *testing.T) {
 	server := newTestServer(t)
 	response := performAuthorized(server, http.MethodGet, "/api/v1/network/interfaces", nil)
@@ -1936,6 +1965,58 @@ func TestSameLANDevicesEndpointListsSourcesCurrentlyPassingThroughMac(t *testing
 	}
 	if len(traffic.Devices) != 1 || traffic.Devices[0].Name != "Living Room" || traffic.Devices[0].MAC != "aa:bb:cc:dd:ee:37" || traffic.Devices[0].IdentitySource != identitySourceRegisteredStatic || traffic.Devices[0].ActiveConnections != 2 || traffic.Devices[0].Upload != 100 || traffic.Devices[0].PrimaryEgress != "Proxy → edge" {
 		t.Fatalf("same-LAN device traffic = %#v", traffic)
+	}
+}
+
+func TestDevicesEndpointKeepsOutOfLANRegistrationDormant(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := device.PolicySet{
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}}},
+		Devices: []device.ManagedDevice{
+			{ID: "active", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.1.101", Profile: "home", EgressMode: device.EgressModeDedicated},
+			{ID: "dormant", MAC: "aa:bb:cc:dd:ee:02", IPv4: "192.168.60.101", Profile: "home", EgressMode: device.EgressModeDedicated},
+		},
+	}
+	data, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.DevicePolicy.File, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := cfg.LANScope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := device.CompilePolicyBundleForLAN(policy, scope, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := device.WritePolicyBundleSnapshot(paths.DevicePolicyApplied, bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{DevicePolicyDigest: bundle.Digest}); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/devices", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("devices status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload DevicesResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.LANPrefix != "192.168.1.0/24" || len(payload.OutOfLANDevices) != 1 || payload.OutOfLANDevices[0] != "dormant" {
+		t.Fatalf("LAN state = %#v", payload)
+	}
+	if len(payload.DesiredDevices) != 1 || payload.DesiredDevices[0].ID != "active" || len(payload.AppliedDevices) != 1 || payload.AppliedDevices[0].ID != "active" || len(payload.Devices) != 1 || payload.Devices[0].ID != "active" {
+		t.Fatalf("runtime devices = %#v", payload)
 	}
 }
 

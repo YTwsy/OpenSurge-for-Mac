@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"open-mihomo-gateway/internal/lan"
 )
 
 // PolicySet is the declarative, gateway-owned source of per-device routing.
@@ -336,25 +338,15 @@ func validateDeviceName(name string) error {
 	return nil
 }
 
-func ValidatePolicySetForLAN(set PolicySet, gatewayIP string) error {
-	return ValidatePolicySetForLANWithProtected(set, gatewayIP, nil)
-}
-
-// ValidatePolicySetForLANWithProtected validates reservations against the LAN
-// gateway and declared static addresses that must never be reused. It is
-// intentionally separate from live ARP probing, which belongs to start-time
-// validation on a real L2 network.
-func ValidatePolicySetForLANWithProtected(set PolicySet, gatewayIP string, protected []string) error {
-	return ValidatePolicySetForLANWithProtectedForIPOnlyMode(set, gatewayIP, protected, true)
-}
-
-func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP string, protected []string, ipOnlyDevicesActive bool) error {
+// ValidatePolicySetForLAN checks the addresses the current gateway LAN would
+// actually serve. A registration outside that LAN is dormant rather than
+// invalid: an operator who moves the Mac to a different network must still be
+// able to start the gateway and edit the configuration, so the previous
+// hard failure is reported through OutOfLANDevices instead. Live ARP probing
+// stays separate and belongs to start-time validation on a real L2 network.
+func ValidatePolicySetForLAN(set PolicySet, scope lan.Scope, protected []string, ipOnlyDevicesActive bool) error {
 	if err := ValidatePolicySet(set); err != nil {
 		return err
-	}
-	lan := net.ParseIP(gatewayIP).To4()
-	if lan == nil {
-		return fmt.Errorf("gateway LAN IP must be IPv4 when validating device policies")
 	}
 	protectedIPs := make(map[string]bool, len(protected))
 	for _, value := range protected {
@@ -362,8 +354,10 @@ func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP 
 		if ip == nil {
 			return fmt.Errorf("protected IPv4 %q must be a valid IPv4 address", value)
 		}
-		if ip[0] != lan[0] || ip[1] != lan[1] || ip[2] != lan[2] {
-			return fmt.Errorf("protected IPv4 %s must remain in gateway LAN %d.%d.%d.0/24", ip.String(), lan[0], lan[1], lan[2])
+		// Addresses outside the LAN cannot collide with anything the gateway
+		// hands out, so they are ignored rather than rejected.
+		if !scope.Contains(ip) {
+			continue
 		}
 		protectedIPs[ip.String()] = true
 	}
@@ -372,13 +366,13 @@ func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP 
 			continue
 		}
 		ip := net.ParseIP(managed.IPv4).To4()
-		if ip[0] != lan[0] || ip[1] != lan[1] || ip[2] != lan[2] {
-			return fmt.Errorf("device %q ipv4 %s must remain in gateway LAN %d.%d.%d.0/24", managed.ID, ip.String(), lan[0], lan[1], lan[2])
+		if !scope.Contains(ip) {
+			continue
 		}
-		if ip[3] == 0 || ip[3] == 255 {
-			return fmt.Errorf("device %q ipv4 %s must not be the gateway LAN network or broadcast address", managed.ID, ip.String())
+		if !scope.UsableHost(ip) {
+			return fmt.Errorf("device %q ipv4 %s must not be the %s network or broadcast address", managed.ID, ip, scope)
 		}
-		if ip.Equal(lan) {
+		if ip.Equal(scope.Gateway) {
 			return fmt.Errorf("device %q ipv4 must differ from gateway.lan_ip", managed.ID)
 		}
 		if protectedIPs[ip.String()] {
@@ -386,6 +380,38 @@ func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP 
 		}
 	}
 	return nil
+}
+
+// OutOfLANDevices lists registrations whose IPv4 does not belong to the current
+// gateway LAN. DHCP must not reserve them and the control plane surfaces them so
+// the operator can re-register or remove the device.
+func OutOfLANDevices(set PolicySet, scope lan.Scope) []string {
+	var out []string
+	for _, managed := range set.Devices {
+		if !scope.Contains(net.ParseIP(managed.IPv4)) {
+			out = append(out, managed.ID)
+		}
+	}
+	return out
+}
+
+// ActivePolicySetForLAN returns the declarative subset that belongs to the
+// current gateway LAN. The original PolicySet remains the desired source of
+// truth, while this subset is the only input allowed to reach DHCP, mihomo, or
+// runtime device identity.
+func ActivePolicySetForLAN(set PolicySet, scope lan.Scope) PolicySet {
+	return activePolicySetForNetwork(set, scope.Network)
+}
+
+func activePolicySetForNetwork(set PolicySet, network *net.IPNet) PolicySet {
+	active := set
+	active.Devices = make([]ManagedDevice, 0, len(set.Devices))
+	for _, managed := range set.Devices {
+		if network.Contains(net.ParseIP(managed.IPv4)) {
+			active.Devices = append(active.Devices, managed)
+		}
+	}
+	return active
 }
 
 func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
