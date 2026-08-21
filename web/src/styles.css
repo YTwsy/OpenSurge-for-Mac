@@ -275,6 +275,7 @@ button{cursor:pointer}
 .mihomo-dns-advanced>summary::after{content:"›";color:#6fcfa6;font-size:22px;line-height:1;transform:rotate(90deg);transition:transform .18s}
 .mihomo-dns-advanced[open]>summary{border-bottom:1px solid #29473c}.mihomo-dns-advanced[open]>summary::after{transform:rotate(270deg)}
 .mihomo-dns-advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px}.mihomo-dns-advanced-grid .wide{grid-column:1/-1}
+.mihomo-dns-import-boundary{grid-column:1/-1;display:grid;gap:6px;margin:0}.mihomo-dns-import-boundary p{margin:0}
 .dns-presets{display:flex;gap:7px}
 .dns-presets button{flex:1;border:1px solid #2b433b;background:#172b25;color:#aebfb8;border-radius:8px;padding:8px}
 .dns-presets button[aria-pressed="true"]{border-color:#6fcfa6;background:#17372c;color:#a8f1d0}

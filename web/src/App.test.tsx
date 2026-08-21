@@ -814,6 +814,8 @@ describe('OpenSurge app shell', () => {
     expect(advanced.open).toBe(true)
     expect(within(advanced).getByLabelText('上游 DNS')).toBeTruthy()
     expect(within(advanced).getByLabelText('透明代理模式')).toBeTruthy()
+    expect(within(advanced).getByText('OpenSurge 会保留并合并：')).toBeTruthy()
+    expect(within(advanced).getByText('OpenSurge 自主管理，不保留导入值：')).toBeTruthy()
     const persistence = within(advanced).getByRole('checkbox', { name: '重启后保留 fake-IP 映射' })
     expect((persistence as HTMLInputElement).checked).toBe(true)
     await userEvent.click(persistence)

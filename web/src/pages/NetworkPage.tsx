@@ -467,6 +467,10 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
                   onChange={store_fake_ip => setConfig({ ...config, mihomo: { ...config.mihomo, store_fake_ip } })}
                 />
               </ConfigField>
+              <div className="notice mihomo-dns-import-boundary" role="note" aria-label="导入 mihomo profile 设置边界">
+                <p><strong>OpenSurge 会保留并合并：</strong>导入 profile 中的 DNS 解析器与过滤设置，例如 <code>nameserver</code>、<code>nameserver-policy</code>、<code>proxy-server-nameserver</code>、<code>direct-nameserver</code>、<code>respect-rules</code>、<code>fake-ip-filter</code> 和 <code>fallback</code>。</p>
+                <p><strong>OpenSurge 自主管理，不保留导入值：</strong>DNS 监听、IPv6、fake-IP 模式与网段，以及 <code>profile.store-fake-ip</code>。</p>
+              </div>
             </div>
           </details>
           <DownstreamIPv6Card
