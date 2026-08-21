@@ -341,6 +341,14 @@ type LocalRoutingResponse struct {
 	mihomo.LocalRoutingSnapshot
 }
 
+type ConnectionRefreshResponse struct {
+	SchemaVersion      int    `json:"schema_version"`
+	Scope              string `json:"scope"`
+	DeviceID           string `json:"device_id,omitempty"`
+	MatchedConnections int    `json:"matched_connections"`
+	ClosedConnections  int    `json:"closed_connections"`
+}
+
 type DevicesResponse struct {
 	SchemaVersion    int                     `json:"schema_version"`
 	DesiredDigest    string                  `json:"desired_digest,omitempty"`

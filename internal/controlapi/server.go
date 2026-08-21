@@ -62,6 +62,7 @@ type Server struct {
 	credentials       SourceCredentialStore
 	revealInFinder    func(context.Context, string) error
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
+	closeConnections  func(context.Context, config.Config, []string) (int, error)
 	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
 	fetchLocalRouting func(context.Context, config.Config) (mihomo.LocalRoutingSnapshot, error)
 	setLocalRouting   func(context.Context, config.Config, string, string) (mihomo.LocalRoutingSnapshot, error)
@@ -188,6 +189,7 @@ func New(options Options) (*Server, error) {
 		credentials:       options.Credentials,
 		revealInFinder:    options.RevealInFinder,
 		fetchConnections:  mihomo.FetchConnections,
+		closeConnections:  mihomo.CloseConnections,
 		fetchProxyHealth:  mihomo.FetchProxyHealth,
 		fetchLocalRouting: mihomo.FetchLocalRouting,
 		setLocalRouting:   mihomo.SetLocalRouting,
@@ -264,11 +266,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
 	mux.Handle("GET /api/v1/device-traffic", s.auth(http.HandlerFunc(s.handleDeviceTraffic)))
+	mux.Handle("POST /api/v1/devices/{device}/connections/refresh", s.auth(http.HandlerFunc(s.handleDeviceConnectionRefresh)))
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
 	mux.Handle("GET /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
 	mux.Handle("POST /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
+	mux.Handle("POST /api/v1/local-routing/connections/refresh", s.auth(http.HandlerFunc(s.handleLocalConnectionRefresh)))
 	mux.Handle("GET /api/v1/proxy-health", s.auth(http.HandlerFunc(s.handleProxyHealth)))
 	mux.Handle("POST /api/v1/proxy-health/tests", s.auth(http.HandlerFunc(s.handleProxyHealthTests)))
 	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))

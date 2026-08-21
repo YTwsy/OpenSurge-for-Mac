@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -293,6 +294,41 @@ func TestFetchConnections(t *testing.T) {
 	}
 	if connection.Metadata["host"] != "example.com" {
 		t.Fatalf("metadata = %#v", connection.Metadata)
+	}
+}
+
+func TestCloseConnectionsDeletesEachUniqueConnection(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.APIAddr = "127.0.0.1:9090"
+	cfg.Mihomo.Secret = "test-secret"
+
+	requested := []string{}
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodDelete {
+			t.Fatalf("method = %q", req.Method)
+		}
+		if got := req.Header.Get("Authorization"); got != "Bearer test-secret" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		requested = append(requested, req.URL.EscapedPath())
+		statusCode, status := http.StatusNoContent, "204 No Content"
+		if req.URL.EscapedPath() == "/connections/failing" {
+			statusCode, status = http.StatusBadGateway, "502 Bad Gateway"
+		}
+		return &http.Response{
+			StatusCode: statusCode,
+			Status:     status,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	closed, err := closeConnectionsWithClient(context.Background(), cfg, client, []string{"abc/123", "abc/123", "", "failing"})
+	if closed != 1 || err == nil || !strings.Contains(err.Error(), "failing") {
+		t.Fatalf("closeConnectionsWithClient() = %d, %v", closed, err)
+	}
+	if !reflect.DeepEqual(requested, []string{"/connections/abc%2F123", "/connections/failing"}) {
+		t.Fatalf("requested paths = %#v", requested)
 	}
 }
 

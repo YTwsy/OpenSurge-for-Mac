@@ -223,6 +223,14 @@ export type DevicePolicyDocument = { schema_version: number; revision: string; p
 export type APIError = { error?: { code?: string; message?: string } }
 export type Diagnostics = { schema_version: number; revision: string; connections: { upload_total: number; download_total: number; connections: Array<{ id: string; upload: number; download: number; rule?: string; chains?: string[]; metadata?: Record<string, unknown> }> }; connection_error?: string; logs: Record<string, string[]>; operations: Array<{ id: string; kind: string; state: string; error?: string; created_at: string; updated_at: string }>; recovery: Recovery }
 
+export type ConnectionRefreshResult = {
+  schema_version: number
+  scope: 'gateway_local' | 'device'
+  device_id?: string
+  matched_connections: number
+  closed_connections: number
+}
+
 export type ConnectivityTarget = {
   id: string
   name: string

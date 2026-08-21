@@ -186,7 +186,7 @@ func renderIPv6DeviceUsers(cfg config.Config) string {
 	if cfg.DevicePolicy.Bundle != nil {
 		for _, managed := range cfg.DevicePolicy.Bundle.Compiled.Devices {
 			if managed.MAC != "" {
-				users[managed.MAC] = deviceInboundUser(managed.ID)
+				users[managed.MAC] = DeviceInboundUser(managed.ID)
 			}
 		}
 	}

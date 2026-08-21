@@ -15,6 +15,7 @@ vi.mock('../api', () => {
       devices: vi.fn(), config: vi.fn(), sources: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
       selectPolicy: vi.fn(), selectDevicePolicy: vi.fn(), gateway: vi.fn(),
       localRouting: vi.fn(), setLocalRouting: vi.fn(),
+      refreshLocalConnections: vi.fn(), refreshDeviceConnections: vi.fn(),
       proxyHealth: vi.fn(), testProxyHealth: vi.fn(),
     },
   }
@@ -80,6 +81,8 @@ describe('DevicesPage', () => {
     vi.mocked(api.selectDevicePolicy).mockResolvedValue({} as never)
     vi.mocked(api.localRouting).mockResolvedValue(localRouting())
     vi.mocked(api.setLocalRouting).mockImplementation(async (mode, policy) => localRouting(mode, policy ?? 'Proxy-A'))
+    vi.mocked(api.refreshLocalConnections).mockResolvedValue({ schema_version: 1, scope: 'gateway_local', matched_connections: 2, closed_connections: 2 })
+    vi.mocked(api.refreshDeviceConnections).mockImplementation(async device => ({ schema_version: 1, scope: 'device', device_id: device, matched_connections: 1, closed_connections: 1 }))
     vi.mocked(api.gateway).mockResolvedValue({ id: 'reload-1', kind: 'reload', state: 'running' })
     vi.mocked(api.proxyHealth).mockResolvedValue({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', proxies: [
       { name: 'DIRECT', type: 'Direct', selected: '', provider: '', udp: true, status: 'not_applicable', probeable: false },
@@ -90,6 +93,40 @@ describe('DevicesPage', () => {
   })
 
   afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+  it('refreshes only Mac-local connections from the Mac card', async () => {
+    const { onChanged } = renderPage()
+
+    const button = await screen.findByRole('button', { name: '刷新 Mac 本机连接' })
+    await userEvent.click(button)
+
+    expect(api.refreshLocalConnections).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('已关闭 2 个连接，等待客户端建立新连接。')).toBeTruthy()
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
+
+  it('refreshes an applied device by its runtime device ID', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', name: 'Alice iPhone', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', gateway_target: 'opensurge', egress_mode: 'inherit_global', groups: {} }],
+      applied_devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', gateway_target: 'opensurge', egress_mode: 'inherit_global', groups: {} }],
+      leases: [{ hostname: 'Alice-iPhone', mac: 'aa:bb:cc:dd:ee:01', ip: '192.168.1.121', online: true, expires_at: '2099-01-01T00:00:00Z' }],
+    }))
+    const { onChanged } = renderPage()
+
+    const button = await screen.findByRole('button', { name: '刷新 Alice iPhone 连接' })
+    await userEvent.click(button)
+
+    expect(api.refreshDeviceConnections).toHaveBeenCalledWith('alice')
+    expect(await screen.findByText('已关闭 1 个连接，等待客户端建立新连接。')).toBeTruthy()
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
+  })
 
   it('keeps device cards in their own column and floats save controls while dirty', async () => {
     const policy: PolicySet = {

@@ -221,6 +221,7 @@ button{cursor:pointer}
 .local-routing-note{display:flex;flex-wrap:wrap;gap:7px 15px;margin-top:12px;color:#7d938a;font-size:10px;line-height:1.45}
 .local-routing-note .attention{color:#ffc16b}
 .local-routing-warning{margin:12px 0 0;padding:10px 12px}
+.connection-refresh-control{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 14px;margin-top:14px;padding:12px 13px;border:1px solid #29463b;border-radius:11px;background:#0a1713}.connection-refresh-copy{display:grid;gap:3px;min-width:0}.connection-refresh-copy strong{font-size:11px;color:#cfe1da}.connection-refresh-copy small{color:#71867e;font-size:9px;line-height:1.45;letter-spacing:0}.connection-refresh-button{min-height:34px;padding:7px 11px;border:1px solid #396451;border-radius:8px;background:#142b22;color:#9be9c4;font-size:9px;font-weight:800}.connection-refresh-button:disabled{opacity:.45;cursor:not-allowed}.connection-refresh-button:not(:disabled):hover{border-color:#64b590;color:#c8f7df}.connection-refresh-feedback{grid-column:1/-1;color:#81a996!important;font-size:9px!important;letter-spacing:0!important}.connection-refresh-feedback.error{color:#efbd91!important}.device-card>.connection-refresh-control{margin-top:13px}
 .device-metadata{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px;margin-top:10px}
 .device-meta-item{display:inline-flex;align-items:baseline;gap:6px;min-width:0;max-width:100%;padding:5px 8px;border-radius:7px;background:#122720;color:#9af0c7;font-size:10px;line-height:1.4}
 .device-meta-item small{margin:0;color:inherit!important;font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;font-size:10px!important;font-weight:600!important;letter-spacing:0!important;opacity:.78}
@@ -561,6 +562,7 @@ html[data-theme="light"] .local-routing-state{background:#f5faf8;border-color:#b
 html[data-theme="light"] .local-routing-state strong{color:#183028}
 html[data-theme="light"] .local-routing-state span{color:#557066}html[data-theme="light"] .local-routing-state span b{color:#23684d}
 html[data-theme="light"] .local-routing-state small{color:#6a8077}
+html[data-theme="light"] .connection-refresh-control{background:#f5faf8;border-color:#c6dbd2}html[data-theme="light"] .connection-refresh-copy strong{color:#24483b}html[data-theme="light"] .connection-refresh-copy small{color:#667d74}html[data-theme="light"] .connection-refresh-button{background:#edf6f2;border-color:#9ec9b6;color:#28694f}
 html[data-theme="light"] .device-tools-section{background:#fff;border-color:#87bda6}
 html[data-theme="light"] .device-tools-section>.section-toggle[aria-expanded="true"],html[data-theme="light"] .lease-choice{border-color:#d8e6e0}
 html[data-theme="light"] .section-toggle:hover,html[data-theme="light"] .device-tools-section>.section-toggle[aria-expanded="true"]{background:#f2f8f5}
@@ -630,6 +632,7 @@ body{min-width:0}
 .dashboard-live-grid{grid-template-columns:1fr 1fr}.gateway-health-card{grid-column:1/-1}.dashboard-monitor-grid{grid-template-columns:1fr}.source-import-grid,.source-grid{grid-template-columns:1fr}
 }
 @media(prefers-reduced-motion:reduce){.device-traffic-layout,.device-trend-shell,.device-traffic-row,.source-actions button,.source-action-button,.mode-chevron,.mode-detail-shell,.config-switch,.config-switch-toggle,.config-switch-toggle i,.mihomo-dns-advanced>summary::after{transition:none!important}.mode-detail,.operation-notification{animation:none}.button-spinner,.live-rate-card header em i,.trend-live-dot span{animation:none}}
+@media(max-width:560px){.connection-refresh-control{grid-template-columns:1fr}.connection-refresh-button{width:100%}.connection-refresh-feedback{grid-column:1}}
 
 /* Node health, outlet summaries and applied-path connectivity */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
