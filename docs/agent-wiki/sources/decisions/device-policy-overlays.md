@@ -33,10 +33,13 @@ unless a dedicated or legacy device actually creates the default selector.
 
 Rules may combine domain, IP CIDR, TCP/UDP protocol, port, and rule-provider
 conditions. Populated condition types are ANDed, while values inside one type
-are ORed into separate mihomo rules. Small lists use inline rule-providers;
-large shared lists may use HTTP providers. HTTP MRS is valid only for domain
-and ipcidr behavior. OpenSurge ships no household templates or third-party
-rule content; templates and rule-set URLs are operator-owned data.
+are ORed into separate mihomo rules. A mutually exclusive `match.template`
+expands an ordered list of rule sets. User-facing routing templates contain no
+outlet; the per-device rule owns its fixed action or selectable candidates.
+Small lists use inline rule-providers; large shared lists may use HTTP
+providers. HTTP MRS is valid only for domain and ipcidr behavior. The Web GUI
+ships one inspectable, inactive-by-default Claude Code community snapshot as a
+learning example; all other templates and rule-set URLs are operator-owned.
 
 Order is part of the contract: device overrides precede global rules in every
 mode; a dedicated device default also precedes global rules, while an inherited
@@ -67,9 +70,13 @@ untouched. Reload is interrupting and is not a zero-downtime hot swap.
 The Web GUI defaults ordinary device registration to `inherit_global`, exposes
 routing mode as a save-and-reload choice, and displays a live default selector
 only for an applied dedicated/legacy device. It creates a private
-`<device-id>-policy` profile. On the first main-path edit of a shared or
-template-derived profile, it copies the resolved effective content to a
-template-free private profile and changes only that device reference.
+`<device-id>-policy` profile, but treats profiles as internal persistence and
+compilation containers. Its always-expanded rule library exposes only rule
+sets, outlet-free routing templates, and per-device routes. The device-card
+edit action focuses the corresponding device route. The old standalone device
+rules and advanced-reuse cards are not rendered. On the first edit of a shared
+or legacy template-derived profile, it copies the resolved effective content
+to a private profile and changes only that device reference.
 
 In `same_lan`, a unique active observation at a different IPv4 may be offered
 as an explicit rebind only when its normalized neighbor MAC matches the applied

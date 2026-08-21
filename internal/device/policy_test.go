@@ -77,6 +77,44 @@ func TestCompilePolicySetCreatesIndependentDeviceGroupsAndRules(t *testing.T) {
 	}
 }
 
+func TestCompilePolicySetExpandsOutletFreeTemplateForDeviceRule(t *testing.T) {
+	set := PolicySet{
+		RuleSets: []RuleSet{
+			{ID: "claude-domains", Behavior: "classical", Payload: []string{"DOMAIN-SUFFIX,anthropic.com"}},
+			{ID: "claude-ip", Behavior: "classical", Payload: []string{"IP-CIDR,160.79.104.0/21,no-resolve"}},
+		},
+		Templates: []Template{{ID: "claude-code", RuleSets: []string{"claude-domains", "claude-ip"}}},
+		Profiles: []Profile{{
+			ID:              "work-mac-policy",
+			DefaultPolicies: []string{"DIRECT"},
+			Rules: []Rule{{
+				ID:       "claude-code",
+				Match:    RuleMatch{Template: "claude-code"},
+				Policies: []string{"Claude-US", "DIRECT"},
+			}},
+		}},
+		Devices: []ManagedDevice{{
+			ID: "work-mac", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "work-mac-policy", EgressMode: EgressModeInheritGlobal,
+		}},
+	}
+
+	compiled, err := CompilePolicySet(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(RULE-SET,open-surge-ruleset-claude-domains)),device/work-mac/claude-code",
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(RULE-SET,open-surge-ruleset-claude-ip)),device/work-mac/claude-code",
+	} {
+		if !contains(compiled.OverrideRules, want) {
+			t.Fatalf("override rules missing %q: %#v", want, compiled.OverrideRules)
+		}
+	}
+	if len(compiled.RuleProviders) != 2 || !hasSelectorGroup(compiled.SelectorGroups, "device/work-mac/claude-code") {
+		t.Fatalf("compiled template = %#v", compiled)
+	}
+}
+
 func TestCompilePolicySetSeparatesExplicitEgressModesAndLegacyFallback(t *testing.T) {
 	set := PolicySet{
 		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT", "Proxy"}}},
@@ -291,6 +329,29 @@ func TestPolicySetValidationRejectsUnsafeOrAmbiguousPolicies(t *testing.T) {
 				set.RuleSets = []RuleSet{{ID: "bad", Type: "http", Behavior: "classical", Format: "mrs", URL: "https://example.com/rules.mrs"}}
 			},
 			want: "mrs format supports domain or ipcidr",
+		},
+		{
+			name: "template references unknown rule set",
+			edit: func(set *PolicySet) {
+				set.Templates = []Template{{ID: "bundle", RuleSets: []string{"missing"}}}
+			},
+			want: "references unknown rule set",
+		},
+		{
+			name: "rule references unknown routing template",
+			edit: func(set *PolicySet) {
+				set.Profiles[0].Rules = []Rule{{ID: "bad", Match: RuleMatch{Template: "missing"}, Action: "DIRECT"}}
+			},
+			want: "references unknown template",
+		},
+		{
+			name: "routing template mixed with direct match",
+			edit: func(set *PolicySet) {
+				set.RuleSets = []RuleSet{{ID: "domains", Behavior: "domain", Payload: []string{"example.com"}}}
+				set.Templates = []Template{{ID: "bundle", RuleSets: []string{"domains"}}}
+				set.Profiles[0].Rules = []Rule{{ID: "bad", Match: RuleMatch{Template: "bundle", Domains: []string{"example.com"}}, Action: "DIRECT"}}
+			},
+			want: "template cannot be combined",
 		},
 	}
 	for _, test := range tests {

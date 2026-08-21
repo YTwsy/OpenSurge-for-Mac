@@ -130,7 +130,8 @@ macOS BPF packet broker 和本项目补丁构建的 mihomo 用户态数据面共
 保持直连。Mac 本机的规则 / 全局 / 直连开关不改变这些下游规则；详见
 [Mac 本机流量模式](docs/local-mac-routing.zh-CN.md)。
 
-OpenSurge 有意不内置家庭模板或第三方规则列表；策略内容由操作者提供，空 starter
+Web GUI 的规则库把规则集、不带出口的分流模版和每台设备的命中出口分开管理。
+其中提供一份可查看的 Claude Code 社区规则示例，但不会默认应用到任何设备；其他策略内容由操作者提供，空 starter
 文件也是合法配置。JSON 模型、优先级、CLI 命令和验证边界见
 [每设备策略覆盖](docs/device-policy.zh-CN.md)。
 

@@ -262,8 +262,10 @@ Desired 网络配置中默认关闭、仅 TUN 可用的独立兼容开关管理�
 OpenSurge lease 自动填写 hostname、MAC 与 IPv4；`same_lan` 则列出 mihomo 当前观察到且
 与 gateway 同 `/24` 的源 IPv4，并用 macOS ARP 邻居表尽力补 MAC。只有当前经过 Mac 的
 设备会出现，ARP/流量观察不得显示为 DHCP 验证。登记默认创建 `<device-id>-policy` 私有 Profile；首次
-编辑共享/Template Profile 时将解析后内容复制为无 Template 的设备私有 Profile。
-Profiles/Templates/Rule Sets 作为高级复用机制默认折叠。
+编辑共享/旧式 Template Profile 时将解析后内容复制为设备私有 Profile。
+主界面不把 Profile 作为复用对象：默认展开的“规则库”只显示规则集、无出口分流模版和
+设备分流。设备卡的“编辑设备分流”直接打开对应设备；旧的独立设备规则卡片和
+“高级 / 复用”卡片不再渲染。
 
 策略页承担完整节点健康中心：`GET /api/v1/proxy-health` 汇总 mihomo `/proxies`，
 `POST /api/v1/proxy-health/tests` 只允许探测当前 snapshot 中的 leaf proxy，并使用固定

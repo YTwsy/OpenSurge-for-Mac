@@ -208,14 +208,14 @@ export type TrafficHistoryPoint = {
 
 export type PolicyRule = {
   id: string
-  match: { domains?: string[]; ip_cidrs?: string[]; protocols?: string[]; ports?: string[]; rule_sets?: string[] }
+  match: { domains?: string[]; ip_cidrs?: string[]; protocols?: string[]; ports?: string[]; rule_sets?: string[]; template?: string }
   action?: string
   policies?: string[]
   on_unsupported?: string
 }
 export type PolicyProfile = { id: string; template?: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
 export type PolicyDevice = { id: string; name?: string; mac: string; ipv4: string; profile: string; gateway_target?: DeviceGatewayTarget; egress_mode?: DeviceEgressMode }
-export type PolicyTemplate = { id: string; default_policies: string[]; on_unsupported?: string; rules?: PolicyRule[] }
+export type PolicyTemplate = { id: string; rule_sets?: string[]; default_policies?: string[]; on_unsupported?: string; rules?: PolicyRule[] }
 export type PolicyRuleSet = { id: string; type?: 'inline' | 'http'; behavior: 'domain' | 'ipcidr' | 'classical'; format?: string; url?: string; interval?: number; payload?: string[] }
 export type PolicySet = { devices: PolicyDevice[]; profiles: PolicyProfile[]; templates: PolicyTemplate[]; rule_sets: PolicyRuleSet[] }
 export type DevicePolicyDocument = { schema_version: number; revision: string; policy: PolicySet }

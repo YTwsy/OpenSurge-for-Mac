@@ -145,10 +145,12 @@ overlays. Local/private destinations remain direct in dedicated mode. The
 local-Mac Rule / Global / Direct switch does not change those downstream rules;
 see [local Mac routing modes](docs/local-mac-routing.md).
 
-OpenSurge intentionally ships no household templates or third-party rule
-lists. Operators supply their own policy content; the empty starter file is
-valid. See [per-device policy overlays](docs/device-policy.md) for the JSON
-model, precedence, CLI commands, and validation boundary.
+The Web GUI rule library manages rule sets, outlet-free routing templates, and
+the per-device outlet selected after a match as separate concepts. It includes
+an inspectable community Claude Code example, but does not apply that example
+to any device by default. Operators supply all other policy content; the empty
+starter file remains valid. See [per-device policy overlays](docs/device-policy.md)
+for the JSON model, precedence, CLI commands, and validation boundary.
 
 ## Web GUI and menu bar app
 
