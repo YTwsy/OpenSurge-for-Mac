@@ -18,6 +18,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	cfg.DHCP.BypassDNS = []string{"192.168.1.1", "1.1.1.1"}
 	cfg.Transparent.Mode = TransparentModeTUN
 	cfg.LocalSystemProxy.Enabled = true
+	cfg.Mihomo.StoreFakeIP = false
 	cfg.DevicePolicy.ProtectedIPv4 = []string{"192.168.1.1", "192.168.1.21"}
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "devices.json")
@@ -33,7 +34,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(Render()) error = %v", err)
 	}
-	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled {
+	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 }

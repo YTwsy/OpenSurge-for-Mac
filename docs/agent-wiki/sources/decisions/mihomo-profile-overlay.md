@@ -43,6 +43,8 @@ OpenSurge continues to render and own gateway-critical fields, including:
 - `bind-address`
 - `external-controller`
 - `profile.store-selected: true`
+- configurable `profile.store-fake-ip`, defaulting to `true` through
+  `mihomo.store_fake_ip`
 - DNS enablement, listener, IPv4-only mode, and fake-ip mode/range
 - TUN settings and LAN/private route exclusions
 - runtime config path

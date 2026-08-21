@@ -48,6 +48,8 @@ renders and owns:
   have the expected API target;
 - `profile.store-selected: true`, so mihomo can persist selected policy-group
   members across restarts;
+- configurable `profile.store-fake-ip`, defaulting to `true` through
+  `mihomo.store_fake_ip`, so existing fake-IP mappings survive apply/restart;
 - DNS enablement, listener, IPv4-only mode, fake-ip mode/range, and TUN DNS
   hijack; imported resolver/filter policy is merged around these owned fields;
 - TUN device, stack, routing flags, and LAN/private route exclusions.

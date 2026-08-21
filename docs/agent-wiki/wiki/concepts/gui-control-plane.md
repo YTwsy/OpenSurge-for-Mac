@@ -292,6 +292,12 @@ Desired 网络配置默认把 `dns.upstream` 显示为 `127.0.0.1#1053`，形成
 路径。`1.1.1.1` 只作为显式调试预设；TUN 的 `dns-hijack any:53` 仍可能捕获该查询，
 因此 UI 不把它描述为可靠的直连或 TUN bypass。
 
+上游 DNS、`transparent.mode` 与 `mihomo.store_fake_ip` 位于默认折叠的“高级 Mihomo /
+DNS 设置”。`store_fake_ip` 对新配置和缺少该字段的旧配置默认开启，并生成
+`profile.store-fake-ip: true`；旧 schema-v1 客户端省略该字段时，Control API 必须保留
+现值，不能静默关闭。关闭开关只影响后续运行配置，不会清除已经保存的映射。缓存清理应
+作为独立显式动作，不能与 `fake-ip-filter` 或持久化开关混为一谈。
+
 Desired 网络配置同时提供 `local_system_proxy.enabled`。文案必须说明 SafeDNS、DNS
 Proxy/内容过滤等已知用途、只覆盖遵循系统代理的 Mac 应用、不替代 TUN、不影响下游设备，
 以及已有 HTTP/HTTPS proxy、PAC 或自动发现时启动会 fail closed。关闭 TUN 时前端应同时

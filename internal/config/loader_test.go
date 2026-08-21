@@ -31,6 +31,9 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.Mihomo.Profile != "" {
 		t.Fatalf("Mihomo.Profile = %q", cfg.Mihomo.Profile)
 	}
+	if !cfg.Mihomo.StoreFakeIP {
+		t.Fatal("Mihomo.StoreFakeIP = false")
+	}
 	if cfg.DHCP.Binary != "dnsmasq" {
 		t.Fatalf("DHCP.Binary = %q", cfg.DHCP.Binary)
 	}

@@ -311,13 +311,18 @@ gateway DNS listener or TUN DNS contract.
 mihomo:
   profile_mode: "imported"
   profile: "./profiles/home.yaml"
+  store_fake_ip: true
 ```
 
 Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
 directory. Relative `path:` entries inside imported `proxy-providers` and
 `rule-providers` are resolved from the imported mihomo profile's directory.
 OpenSurge renders `profile.store-selected: true` so mihomo can persist policy
-group choices across restarts.
+group choices across restarts. The default `mihomo.store_fake_ip: true` renders
+`profile.store-fake-ip: true` and restores existing fake-IP mappings after an
+apply/restart. You can disable it while the gateway is stopped under **Advanced
+Mihomo / DNS settings**, but cached fake IPs held by long-running processes may
+then become stale after mihomo restarts.
 
 Preview the final generated mihomo config before starting gateway services:
 

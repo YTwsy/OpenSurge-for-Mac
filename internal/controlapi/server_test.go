@@ -1511,6 +1511,64 @@ func TestControlConfigShowsMihomoDNSForLegacyEmptyUpstream(t *testing.T) {
 	}
 }
 
+func TestControlConfigRoundTripsFakeIPPersistence(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	if input.Mihomo.StoreFakeIP == nil || !*input.Mihomo.StoreFakeIP {
+		t.Fatalf("control config store_fake_ip = %v", input.Mihomo.StoreFakeIP)
+	}
+	disabled := false
+	input.Mihomo.StoreFakeIP = &disabled
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Mihomo.StoreFakeIP {
+		t.Fatal("fake-IP persistence remained enabled after control config update")
+	}
+}
+
+func TestControlConfigLegacyPayloadPreservesFakeIPPersistence(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := controlConfigFrom(cfg, fileDigest(path))
+	input.Mihomo.StoreFakeIP = nil
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Mihomo.StoreFakeIP {
+		t.Fatal("legacy control config payload disabled fake-IP persistence")
+	}
+}
+
 func TestControlConfigRoundTripsLocalSystemProxyCompatibilityMode(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.Default()

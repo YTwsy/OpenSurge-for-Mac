@@ -28,6 +28,7 @@ secret: {{ .Secret }}
 
 profile:
   store-selected: true
+  store-fake-ip: {{ .StoreFakeIP }}
 
 # Use MetaCubeX's documented CDN endpoints instead of the GitHub release URLs
 # baked into mihomo. Imported profiles can contain GEOIP/GEOSITE/GEOASN rules,

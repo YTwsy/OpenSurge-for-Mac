@@ -28,6 +28,7 @@ mihomo:
   config: "./runtime/mihomo.yaml"
   profile_mode: "imported"
   profile: "./mihomo-profile.example.yaml"
+  store_fake_ip: true
   mixed_port: 7890
   redir_port: 0
   api_addr: "127.0.0.1:9090"

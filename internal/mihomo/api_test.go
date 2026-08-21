@@ -456,6 +456,7 @@ func TestImportedProfilePolicySwitchFixture(t *testing.T) {
 	for _, want := range []string{
 		"profile:",
 		"  store-selected: true",
+		"  store-fake-ip: true",
 		"- name: \"Proxy\"",
 		"- \"demo-proxy\"",
 		"- DIRECT",

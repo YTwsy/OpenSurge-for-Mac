@@ -263,12 +263,16 @@ TUN DNS 契约。
 mihomo:
   profile_mode: "imported"
   profile: "./profiles/home.yaml"
+  store_fake_ip: true
 ```
 
 相对形式的 `mihomo.profile` 会基于 OpenSurge 配置文件所在目录解析。导入的
 `proxy-providers` 和 `rule-providers` 内部如果有相对 `path:`，会基于被导入的
 mihomo profile 所在目录解析。OpenSurge 会渲染 `profile.store-selected: true`，
-让 mihomo 可以跨重启保存策略组选择。
+让 mihomo 可以跨重启保存策略组选择；默认的 `mihomo.store_fake_ip: true` 会生成
+`profile.store-fake-ip: true`，在 apply/restart 后恢复已有 fake-IP 映射。网关停止时可在
+Web GUI 的“高级 Mihomo / DNS 设置”中关闭该行为，但长驻进程缓存的旧 fake-IP 可能因此
+在 mihomo 重启后失效。
 
 启动网关服务前，可以先预览最终生成的 mihomo 配置：
 
