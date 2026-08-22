@@ -4,6 +4,7 @@
   <p><strong>Turn a Mac into a Surge-style whole-home transparent gateway with per-device routing—onboard selected devices in same-LAN bypass-router mode, take over DHCP/DNS automatically, and optionally enable experimental downstream IPv6 takeover.</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
+    <a href="https://opensurge.pages.dev/"><img alt="OpenSurge website" src="https://img.shields.io/badge/website-opensurge.pages.dev-2a7b62?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
     <img alt="Apple Silicon and Intel packages" src="https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-packages-6f42c1?style=flat-square&amp;logo=apple">
     <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-2ea44f?style=flat-square"></a>
@@ -12,6 +13,7 @@
     <a href="README.md">简体中文</a> · <strong>English</strong>
   </p>
   <p>
+    <a href="https://opensurge.pages.dev/">Website</a> ·
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases">Download</a> ·
     <a href="docs/app-user-guide.md">App guide</a> ·
     <a href="#capabilities">Capabilities</a> ·

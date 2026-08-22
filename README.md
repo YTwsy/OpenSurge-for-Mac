@@ -4,6 +4,7 @@
   <p><strong>把 Mac 变成可按设备分流的 Surge 风格全屋透明代理网关——既可让指定设备通过旁路由手动接入，也支持 DHCP/DNS 自动接管与实验性下游 IPv6 接管</strong></p>
   <p>
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/YTwsy/OpenSurge-for-Mac?style=flat-square"></a>
+    <a href="https://opensurge.pages.dev/zh-cn/"><img alt="OpenSurge 官网" src="https://img.shields.io/badge/website-opensurge.pages.dev-2a7b62?style=flat-square"></a>
     <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-000000?style=flat-square&amp;logo=apple">
     <img alt="提供 Apple Silicon 与 Intel 安装包" src="https://img.shields.io/badge/Apple%20Silicon%20%7C%20Intel-packages-6f42c1?style=flat-square&amp;logo=apple">
     <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-2ea44f?style=flat-square"></a>
@@ -12,6 +13,7 @@
     <strong>简体中文</strong> · <a href="README.en.md">English</a>
   </p>
   <p>
+    <a href="https://opensurge.pages.dev/zh-cn/">官网</a> ·
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases">下载</a> ·
     <a href="docs/app-user-guide.zh-CN.md">App 指南</a> ·
     <a href="#能力">能力</a> ·
