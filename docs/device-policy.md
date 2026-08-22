@@ -17,8 +17,14 @@ device_policy:
 ```
 
 The device-policy file is resolved relative to the gateway configuration file.
-All registered IPv4 addresses must be unique, must remain in the gateway `/24`,
-and must not be the network, broadcast, or `gateway.lan_ip` address.
+All registered IPv4 addresses must be unique. An address on the current gateway
+LAN must not be the network, broadcast, or `gateway.lan_ip` address. The LAN
+itself comes from `gateway.lan_ip` and `gateway.lan_prefix_len`, which defaults
+to /24. A registration outside that LAN is dormant instead of rejected: the
+gateway still starts and keeps the complete desired record, but excludes that
+device from the applied runtime device list, dnsmasq reservations, Mihomo IPv4
+selectors/rules, and downstream IPv6 MAC identity. The Devices page marks it so
+it can be re-registered or removed.
 
 For `same_wifi_dhcp`, declare every router, recovery client, LAN proxy, or
 other static address that must never become a reservation:
@@ -38,14 +44,14 @@ evidence remain required.
 
 ## Model
 
-There are no built-in household, parental-control, streaming, or vendor rule
-lists. Operators own the policy content. The JSON model has four independent
-collections:
+The Web GUI rule library includes an inspectable community Claude Code example,
+but does not write it to the configuration or apply it to a device by default.
+Operators own all other policy content. The JSON model has four collections:
 
 - `devices`: stable identity (`id`, MAC, reserved IPv4, profile id), an optional
   human-readable `name`, plus `gateway_target` and an explicit `egress_mode`;
 - `profiles`: default selector candidates plus device rule overlays;
-- `templates`: optional reusable profile defaults and rule fragments;
+- `templates`: outlet-free bundles of reusable `rule_sets`;
 - `rule_sets`: inline or HTTP mihomo rule-provider definitions.
 
 The following is a syntax example only. `Proxy` must already exist in the
@@ -55,8 +61,8 @@ managed or imported global mihomo profile.
 {
   "templates": [
     {
-      "id": "baseline",
-      "default_policies": ["DIRECT", "Proxy"]
+      "id": "media-bundle",
+      "rule_sets": ["media"]
     }
   ],
   "rule_sets": [
@@ -69,7 +75,7 @@ managed or imported global mihomo profile.
   "profiles": [
     {
       "id": "phone",
-      "template": "baseline",
+      "default_policies": ["DIRECT", "Proxy"],
       "rules": [
         {
           "id": "block-udp",
@@ -78,7 +84,7 @@ managed or imported global mihomo profile.
         },
         {
           "id": "media",
-          "match": {"rule_sets": ["media"]},
+          "match": {"template": "media-bundle"},
           "policies": ["Proxy", "DIRECT"]
         }
       ]
@@ -132,8 +138,8 @@ RDNSS, so the UI reports **IPv6 egress blocked** rather than claiming that IPv6
 is absent. The main router's RA/DHCPv6 must be disabled or removed by RA Guard,
 otherwise IPv6 can bypass OpenSurge entirely. The client must renew its lease
 or reconnect before the new IPv4 Router and DNS options take effect. This
-target requires a real MAC, and the upstream router must be in the gateway
-`/24` but outside the dynamic DHCP pool.
+target requires a real MAC, and the upstream router must be on the gateway LAN
+but outside the dynamic DHCP pool.
 
 An inherit-only device retains its profile's `default_policies` as future
 configuration, but those unused candidates are not rendered or checked against
@@ -167,6 +173,11 @@ protocol compile to:
 AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,media.example),(NETWORK,tcp)),device/alice-phone/media
 ```
 
+A rule may instead use `match.template` by itself. The template expands its
+`rule_sets` in declaration order and cannot be combined with another match
+field. The post-match `action` or `policies` always remains on the per-device
+routing rule, never on the rule set or routing template.
+
 Generated ordering is deliberate. Source-scoped local-Mac mode rules come
 first, but downstream source addresses cannot match them. All device modes put
 device-specific overrides before gateway rules. `inherit_global` then
@@ -188,8 +199,8 @@ selector/default rule is immediately followed by the same condition with
 `REJECT`. This prevents QUIC or other UDP traffic from silently reaching a
 later global rule or `MATCH,DIRECT`.
 
-Set `on_unsupported: "fallthrough"` on a profile, template, or individual
-rule only when a later rule is intentionally responsible for that fallback.
+Set `on_unsupported: "fallthrough"` on a profile or individual rule only when
+a later rule is intentionally responsible for that fallback.
 The default is `"reject"`. A proxy/group name being present does not prove UDP
 capability; provider-backed candidates require live traffic evidence.
 
@@ -198,8 +209,14 @@ capability; provider-backed candidates require live traffic evidence.
 `rule_sets` support `inline` and `http` providers with `domain`, `ipcidr`, or
 `classical` behavior. HTTP providers may use `yaml`, `text`, or `mrs`; mihomo
 MRS is accepted only for `domain` and `ipcidr` behavior. Use an HTTP MRS set for
-large shared domain/IP lists, and use profile templates to reuse policy choices
-without cloning a full mihomo profile.
+large shared domain/IP lists. A routing template only reuses a group of rule
+sets; it contains no outlet and does not clone a full mihomo profile.
+
+The built-in Claude Code example in the Web GUI is based on the
+[Net.Coffee community rule page](https://ip.net.coffee/claude/site.html) and is
+explicitly labeled as non-official. Users can inspect it first. Its four rule
+sets and template are added to the configuration only after the user chooses
+"Use for device" and adds that route to the draft.
 
 ## Operations
 
@@ -256,7 +273,7 @@ copies its resolved effective content into a template-free private profile and
 changes only that device reference.
 
 `same_lan` manual-gateway mode does not run OpenSurge DHCP. In that mode the
-Devices page extracts source IPv4 addresses in the gateway `/24` from current
+Devices page extracts source IPv4 addresses on the gateway LAN from current
 mihomo connections and best-effort joins MAC addresses from the macOS ARP cache.
 Those clients appear under "currently passing through Mac" for registration.
 Dashboard device traffic combines DHCP leases, applied static devices, and
@@ -307,8 +324,9 @@ device rules, except that `upstream_router` devices receive only the
 highest-priority IPv6 egress `REJECT`. DHCP mode provides exact MAC-backed lease
 evidence; `same_lan` provides separate static-registration, active-traffic, and
 optional neighbor observations and does not present them as DHCP verification.
-The packet-path MAC is routing identity, not anti-spoof authentication, and the
-project does not ship curated third-party rule content.
+The packet-path MAC is routing identity, not anti-spoof authentication. The
+inactive Claude Code community example is not a claim that OpenSurge has
+validated the completeness or availability of that third-party rule content.
 
 The required data-plane gate is:
 

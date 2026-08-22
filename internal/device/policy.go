@@ -13,6 +13,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"open-mihomo-gateway/internal/lan"
 )
 
 // PolicySet is the declarative, gateway-owned source of per-device routing.
@@ -59,13 +61,18 @@ type Profile struct {
 	Rules         []Rule `json:"rules,omitempty"`
 }
 
-// Template is an optional profile starting point. It carries no built-in rule
-// content; users may provide their own templates without modifying the binary.
+// Template supports the legacy profile starting point and the user-facing,
+// outlet-free RuleSets bundle. Built-in examples are materialized by the GUI
+// only after a user assigns one to a device.
 type Template struct {
 	ID              string   `json:"id"`
 	DefaultPolicies []string `json:"default_policies"`
 	OnUnsupported   string   `json:"on_unsupported,omitempty"`
 	Rules           []Rule   `json:"rules,omitempty"`
+	// RuleSets is the user-facing template form: a reusable match bundle with
+	// no egress of its own. A device rule supplies the action or selector when
+	// it references this template through RuleMatch.Template.
+	RuleSets []string `json:"rule_sets,omitempty"`
 }
 
 type Rule struct {
@@ -85,6 +92,7 @@ type RuleMatch struct {
 	Protocols []string `json:"protocols,omitempty"`
 	Ports     []string `json:"ports,omitempty"`
 	RuleSets  []string `json:"rule_sets,omitempty"`
+	Template  string   `json:"template,omitempty"`
 }
 
 // RuleSet maps to a mihomo rule-provider. Inline sets are suitable for small
@@ -194,8 +202,10 @@ func ValidatePolicySet(set PolicySet) error {
 		if _, exists := templates[template.ID]; exists {
 			return fmt.Errorf("duplicate template id %q", template.ID)
 		}
-		if err := validatePolicyList(template.DefaultPolicies, "template "+template.ID+" default_policies"); err != nil {
-			return err
+		if len(template.DefaultPolicies) > 0 {
+			if err := validatePolicyList(template.DefaultPolicies, "template "+template.ID+" default_policies"); err != nil {
+				return err
+			}
 		}
 		if err := validateUnsupported(template.OnUnsupported, "template "+template.ID+" on_unsupported"); err != nil {
 			return err
@@ -216,7 +226,12 @@ func ValidatePolicySet(set PolicySet) error {
 		sets[ruleSet.ID] = ruleSet
 	}
 	for _, template := range set.Templates {
-		if err := validateRules("template "+template.ID, template.Rules, sets); err != nil {
+		for _, ruleSetID := range template.RuleSets {
+			if _, exists := sets[ruleSetID]; !exists {
+				return fmt.Errorf("template %q references unknown rule set %q", template.ID, ruleSetID)
+			}
+		}
+		if err := validateRules("template "+template.ID, template.Rules, sets, templates); err != nil {
 			return err
 		}
 	}
@@ -242,7 +257,7 @@ func ValidatePolicySet(set PolicySet) error {
 		if len(resolved.DefaultPolicies) == 0 {
 			return fmt.Errorf("profile %q requires default_policies or a template with default_policies", profile.ID)
 		}
-		if err := validateRules(profile.ID, resolved.Rules, sets); err != nil {
+		if err := validateRules(profile.ID, resolved.Rules, sets, templates); err != nil {
 			return err
 		}
 	}
@@ -323,25 +338,15 @@ func validateDeviceName(name string) error {
 	return nil
 }
 
-func ValidatePolicySetForLAN(set PolicySet, gatewayIP string) error {
-	return ValidatePolicySetForLANWithProtected(set, gatewayIP, nil)
-}
-
-// ValidatePolicySetForLANWithProtected validates reservations against the LAN
-// gateway and declared static addresses that must never be reused. It is
-// intentionally separate from live ARP probing, which belongs to start-time
-// validation on a real L2 network.
-func ValidatePolicySetForLANWithProtected(set PolicySet, gatewayIP string, protected []string) error {
-	return ValidatePolicySetForLANWithProtectedForIPOnlyMode(set, gatewayIP, protected, true)
-}
-
-func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP string, protected []string, ipOnlyDevicesActive bool) error {
+// ValidatePolicySetForLAN checks the addresses the current gateway LAN would
+// actually serve. A registration outside that LAN is dormant rather than
+// invalid: an operator who moves the Mac to a different network must still be
+// able to start the gateway and edit the configuration, so the previous
+// hard failure is reported through OutOfLANDevices instead. Live ARP probing
+// stays separate and belongs to start-time validation on a real L2 network.
+func ValidatePolicySetForLAN(set PolicySet, scope lan.Scope, protected []string, ipOnlyDevicesActive bool) error {
 	if err := ValidatePolicySet(set); err != nil {
 		return err
-	}
-	lan := net.ParseIP(gatewayIP).To4()
-	if lan == nil {
-		return fmt.Errorf("gateway LAN IP must be IPv4 when validating device policies")
 	}
 	protectedIPs := make(map[string]bool, len(protected))
 	for _, value := range protected {
@@ -349,8 +354,10 @@ func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP 
 		if ip == nil {
 			return fmt.Errorf("protected IPv4 %q must be a valid IPv4 address", value)
 		}
-		if ip[0] != lan[0] || ip[1] != lan[1] || ip[2] != lan[2] {
-			return fmt.Errorf("protected IPv4 %s must remain in gateway LAN %d.%d.%d.0/24", ip.String(), lan[0], lan[1], lan[2])
+		// Addresses outside the LAN cannot collide with anything the gateway
+		// hands out, so they are ignored rather than rejected.
+		if !scope.Contains(ip) {
+			continue
 		}
 		protectedIPs[ip.String()] = true
 	}
@@ -359,13 +366,13 @@ func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP 
 			continue
 		}
 		ip := net.ParseIP(managed.IPv4).To4()
-		if ip[0] != lan[0] || ip[1] != lan[1] || ip[2] != lan[2] {
-			return fmt.Errorf("device %q ipv4 %s must remain in gateway LAN %d.%d.%d.0/24", managed.ID, ip.String(), lan[0], lan[1], lan[2])
+		if !scope.Contains(ip) {
+			continue
 		}
-		if ip[3] == 0 || ip[3] == 255 {
-			return fmt.Errorf("device %q ipv4 %s must not be the gateway LAN network or broadcast address", managed.ID, ip.String())
+		if !scope.UsableHost(ip) {
+			return fmt.Errorf("device %q ipv4 %s must not be the %s network or broadcast address", managed.ID, ip, scope)
 		}
-		if ip.Equal(lan) {
+		if ip.Equal(scope.Gateway) {
 			return fmt.Errorf("device %q ipv4 must differ from gateway.lan_ip", managed.ID)
 		}
 		if protectedIPs[ip.String()] {
@@ -373,6 +380,38 @@ func ValidatePolicySetForLANWithProtectedForIPOnlyMode(set PolicySet, gatewayIP 
 		}
 	}
 	return nil
+}
+
+// OutOfLANDevices lists registrations whose IPv4 does not belong to the current
+// gateway LAN. DHCP must not reserve them and the control plane surfaces them so
+// the operator can re-register or remove the device.
+func OutOfLANDevices(set PolicySet, scope lan.Scope) []string {
+	var out []string
+	for _, managed := range set.Devices {
+		if !scope.Contains(net.ParseIP(managed.IPv4)) {
+			out = append(out, managed.ID)
+		}
+	}
+	return out
+}
+
+// ActivePolicySetForLAN returns the declarative subset that belongs to the
+// current gateway LAN. The original PolicySet remains the desired source of
+// truth, while this subset is the only input allowed to reach DHCP, mihomo, or
+// runtime device identity.
+func ActivePolicySetForLAN(set PolicySet, scope lan.Scope) PolicySet {
+	return activePolicySetForNetwork(set, scope.Network)
+}
+
+func activePolicySetForNetwork(set PolicySet, network *net.IPNet) PolicySet {
+	active := set
+	active.Devices = make([]ManagedDevice, 0, len(set.Devices))
+	for _, managed := range set.Devices {
+		if network.Contains(net.ParseIP(managed.IPv4)) {
+			active.Devices = append(active.Devices, managed)
+		}
+	}
+	return active
 }
 
 func CompilePolicySet(set PolicySet) (CompiledPolicy, error) {
@@ -453,7 +492,7 @@ func CompilePolicySetForIPOnlyMode(set PolicySet, ipOnlyDevicesActive bool) (Com
 			} else {
 				compiled.ActionTargets = append(compiled.ActionTargets, action)
 			}
-			variants, referenced, err := ruleVariants(rule.Match, ruleSets)
+			variants, referenced, err := ruleVariants(rule.Match, ruleSets, templates)
 			if err != nil {
 				return CompiledPolicy{}, fmt.Errorf("device %q rule %q: %w", device.ID, rule.ID, err)
 			}
@@ -579,7 +618,7 @@ func resolveProfile(profile Profile, templates map[string]Template) (Profile, er
 	return Profile{ID: profile.ID, DefaultPolicies: defaultPolicies, OnUnsupported: onUnsupported, Rules: rules}, nil
 }
 
-func validateRules(profileID string, rules []Rule, ruleSets map[string]RuleSet) error {
+func validateRules(profileID string, rules []Rule, ruleSets map[string]RuleSet, templates map[string]Template) error {
 	seen := map[string]bool{}
 	for _, rule := range rules {
 		if !validID(rule.ID) || rule.ID == "default" {
@@ -589,7 +628,7 @@ func validateRules(profileID string, rules []Rule, ruleSets map[string]RuleSet) 
 			return fmt.Errorf("profile %q has duplicate rule id %q", profileID, rule.ID)
 		}
 		seen[rule.ID] = true
-		if err := validateMatch(rule.Match, ruleSets); err != nil {
+		if err := validateMatch(rule.Match, ruleSets, templates); err != nil {
 			return fmt.Errorf("profile %q rule %q: %w", profileID, rule.ID, err)
 		}
 		if err := validateUnsupported(rule.OnUnsupported, "profile "+profileID+" rule "+rule.ID+" on_unsupported"); err != nil {
@@ -611,9 +650,21 @@ func validateRules(profileID string, rules []Rule, ruleSets map[string]RuleSet) 
 	return nil
 }
 
-func validateMatch(match RuleMatch, ruleSets map[string]RuleSet) error {
-	if len(match.Domains)+len(match.IPCIDRs)+len(match.Protocols)+len(match.Ports)+len(match.RuleSets) == 0 {
-		return fmt.Errorf("match must include domains, ip_cidrs, protocols, ports, or rule_sets")
+func validateMatch(match RuleMatch, ruleSets map[string]RuleSet, templates map[string]Template) error {
+	directDimensions := len(match.Domains) + len(match.IPCIDRs) + len(match.Protocols) + len(match.Ports) + len(match.RuleSets)
+	if match.Template != "" {
+		if directDimensions != 0 {
+			return fmt.Errorf("template cannot be combined with domains, ip_cidrs, protocols, ports, or rule_sets")
+		}
+		template, exists := templates[match.Template]
+		if !exists {
+			return fmt.Errorf("template references unknown template %q", match.Template)
+		}
+		if len(template.RuleSets) == 0 {
+			return fmt.Errorf("template %q does not contain rule sets", match.Template)
+		}
+	} else if directDimensions == 0 {
+		return fmt.Errorf("match must include domains, ip_cidrs, protocols, ports, rule_sets, or template")
 	}
 	for _, domain := range match.Domains {
 		if !validDomain(domain) {
@@ -642,7 +693,7 @@ func validateMatch(match RuleMatch, ruleSets map[string]RuleSet) error {
 			return fmt.Errorf("rule_sets references unknown rule set %q", id)
 		}
 	}
-	if combinationCount(match) > 256 {
+	if combinationCount(match, templates) > 256 {
 		return fmt.Errorf("match expands to more than 256 mihomo rules; split the rule or use a rule set")
 	}
 	return nil
@@ -703,7 +754,15 @@ func normalizedRuleSet(ruleSet RuleSet) RuleSet {
 	return ruleSet
 }
 
-func ruleVariants(match RuleMatch, ruleSets map[string]RuleSet) ([][]string, []string, error) {
+func ruleVariants(match RuleMatch, ruleSets map[string]RuleSet, templates map[string]Template) ([][]string, []string, error) {
+	if match.Template != "" {
+		template, exists := templates[match.Template]
+		if !exists {
+			return nil, nil, fmt.Errorf("unknown template %q", match.Template)
+		}
+		match.RuleSets = append([]string(nil), template.RuleSets...)
+		match.Template = ""
+	}
 	variants := [][]string{{}}
 	variants = appendConditionDimension(variants, domainConditions(match.Domains))
 	variants = appendConditionDimension(variants, ipCIDRConditions(match.IPCIDRs))
@@ -780,7 +839,10 @@ func composeRule(payloads []string, action string) string {
 	return "AND,(" + strings.Join(wrapped, ",") + ")," + action
 }
 
-func combinationCount(match RuleMatch) int {
+func combinationCount(match RuleMatch, templates map[string]Template) int {
+	if match.Template != "" {
+		return len(templates[match.Template].RuleSets)
+	}
 	count := 1
 	for _, dimension := range [][]string{match.Domains, match.IPCIDRs, match.Protocols, match.Ports, match.RuleSets} {
 		if len(dimension) > 0 {

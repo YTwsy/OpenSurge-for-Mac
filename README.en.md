@@ -145,10 +145,12 @@ overlays. Local/private destinations remain direct in dedicated mode. The
 local-Mac Rule / Global / Direct switch does not change those downstream rules;
 see [local Mac routing modes](docs/local-mac-routing.md).
 
-OpenSurge intentionally ships no household templates or third-party rule
-lists. Operators supply their own policy content; the empty starter file is
-valid. See [per-device policy overlays](docs/device-policy.md) for the JSON
-model, precedence, CLI commands, and validation boundary.
+The Web GUI rule library manages rule sets, outlet-free routing templates, and
+the per-device outlet selected after a match as separate concepts. It includes
+an inspectable community Claude Code example, but does not apply that example
+to any device by default. Operators supply all other policy content; the empty
+starter file remains valid. See [per-device policy overlays](docs/device-policy.md)
+for the JSON model, precedence, CLI commands, and validation boundary.
 
 ## Web GUI and menu bar app
 
@@ -311,13 +313,18 @@ gateway DNS listener or TUN DNS contract.
 mihomo:
   profile_mode: "imported"
   profile: "./profiles/home.yaml"
+  store_fake_ip: true
 ```
 
 Relative `mihomo.profile` paths are resolved from the OpenSurge config file's
 directory. Relative `path:` entries inside imported `proxy-providers` and
 `rule-providers` are resolved from the imported mihomo profile's directory.
 OpenSurge renders `profile.store-selected: true` so mihomo can persist policy
-group choices across restarts.
+group choices across restarts. The default `mihomo.store_fake_ip: true` renders
+`profile.store-fake-ip: true` and restores existing fake-IP mappings after an
+apply/restart. You can disable it while the gateway is stopped under **Advanced
+Mihomo / DNS settings**, but cached fake IPs held by long-running processes may
+then become stale after mihomo restarts.
 
 Preview the final generated mihomo config before starting gateway services:
 
@@ -566,9 +573,13 @@ listener, IPv6 device identity, or withdrawal on stop, run the topology gates:
 obtain OpenSurge IPv6 addresses, Medium-preference default routes, and
 link-local DNS. The bypass-router gate requires manual ULAs, the Mac
 link-local default gateway and DNS, and no RA. All three use controlled local
-fixtures to verify TCP, a UDP request/response, a QUIC-shaped UDP carrier,
-per-device policy, and rollback. The QUIC check proves the UDP carrier, not a
-complete HTTP/3 handshake.
+fixtures to verify TCP, a UDP request/response, a QUIC-shaped UDP carrier, and
+a real HTTP/3-only request/response with no TCP or HTTP/2 fallback. HTTP/3 is
+checked through `DIRECT`, a controlled UDP-capable SOCKS5 outbound, and an
+HTTP-only fail-closed outbound, together with per-device policy, bidirectional
+BPF evidence, and rollback. This bounded gate does not cover every QUIC/HTTP3
+implementation, version, connection-migration case, or public proxy
+combination.
 
 Use `make policy-control-test` for policy-control and machine-readable CLI
 changes. It starts the real mihomo binary without sudo, dnsmasq, pf, or TUN and

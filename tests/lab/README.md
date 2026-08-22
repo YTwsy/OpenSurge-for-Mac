@@ -13,7 +13,7 @@ macOS upstream interface
    |
 real omg + pf + dnsmasq + mihomo
    |
-vmnet host network (192.168.50.0/24, no platform DHCP)
+vmnet host network (192.168.48.0/22, no platform DHCP)
    +-- omg-lab-client-1
    +-- omg-lab-client-2
 ```
@@ -42,6 +42,17 @@ The installer downloads pinned, checksummed upstream releases into
 - verifies and installs socket_vmnet 1.2.2 under `/opt/socket_vmnet`;
 - installs a fixed-function network helper under `/opt/open-mihomo-gateway`;
 - does not install a passwordless sudo rule by default.
+
+If an Apple Silicon agent terminal is running under Rosetta, `uname -m` may
+report `x86_64` and the architecture guard will reject `make lab-install`.
+Confirm `sysctl -n sysctl.proc_translated` is `1` and
+`sysctl -n hw.optional.arm64` is `1`, then run the same installer natively:
+
+```sh
+/usr/bin/arch -arm64 /bin/bash ./tests/lab/install-host-deps.sh
+```
+
+Do not use that workaround on an Intel Mac.
 
 For unattended setup/teardown of the isolated network, explicitly run
 `./tests/lab/install-host-deps.sh --root-only --with-sudoers`. The optional rule
@@ -118,7 +129,8 @@ UDP `REJECT` for an HTTP-only global egress, and that generic `policies` hides
 the internal groups.
 
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
-devices. It assigns them fixed `.101` and `.102` DHCP leases, proves one
+devices. It runs the bridge and DHCP clients on `/22`, assigns fixed
+`192.168.50.101` and `192.168.51.102` leases across the third octet, proves one
 `dedicated` device takes its selector before global `MATCH`, and proves one
 `inherit_global` device follows global `MATCH` without exposing a default
 selector. It creates desired drift, applies a change to dedicated mode with a
@@ -132,6 +144,13 @@ an HTTP-only selected outbound that must log `REJECT` instead of falling through
 to `DIRECT`. The fixture also preserves one raw device without a MAC and proves
 DHCP mode keeps it in the applied snapshot for later identity completion while
 emitting no reservation, mihomo rule, or active selector for it.
+The fixture also keeps one MAC-backed registration from another LAN and proves
+it remains in desired state while disappearing from compiled/applied runtime
+devices, dnsmasq, Mihomo IPv4 rules/selectors, and IPv6 MAC identity.
+It also opens one held connection from each device, changes the first device
+selector, and calls the real Control API connection-refresh action. The first
+device's old connection must disappear, the second device connection must
+remain, and a new first-device connection must use the newly selected egress.
 The passing artifact retains that applied snapshot, runtime state, generated
 dnsmasq/mihomo configuration, and the initial and post-reload device views so
 the boundary remains auditable.
@@ -150,14 +169,20 @@ IPv6 TCP in the isolated-LAN and selective-bypass fixtures. In the
 report `ipv6_blocked`, emit no selector, and hit the leading packet-listener
 `TUN + InUser REJECT`. Client two must hit its own `DIRECT` selector over IPv6 TCP, a
 controlled UDP request/response, and a 1200-byte QUIC Initial-shaped UDP
-carrier. The TCP origin must receive the HTTP request and the UDP fixture must
+carrier. It must also use an HTTP/3-only client, with no TCP or HTTP/2 fallback,
+to complete QUIC TLS and an HTTP/3 request/response through both `DIRECT` and a
+controlled SOCKS5 UDP outbound. Selecting the HTTP-only outbound must fail
+closed with a UDP `REJECT`, no origin request, and no CONNECT-proxy request.
+The TCP and HTTP/3 origins must receive their requests and the UDP fixture must
 return its fixed answer; public upstream services are not the sole capture
 evidence. Shutdown must withdraw
 the OpenSurge default route and remove the Mac gateway alias, broker PID,
 Unix sockets, readiness marker, and runtime state. RFC 4862 may temporarily
 retain a deprecated/expiring SLAAC address, so immediate address deletion is
-not the routing-withdrawal condition. The QUIC assertion proves the UDP carrier
-and policy match, not a complete HTTP/3 handshake.
+not the routing-withdrawal condition. The QUIC-shaped assertion proves only the
+UDP carrier and policy match. The HTTP/3-only fixture proves the three bounded
+local outbound scenarios above, not every QUIC/HTTP3 version, 0-RTT, connection
+migration, public node, or proxy combination.
 
 `lab-test-ipv6-imported-egress` complements that deterministic gate; it does
 not replace the local fixtures. Supply an actual mihomo profile explicitly:
@@ -228,6 +253,15 @@ stop makes the gate fail closed and retain its mode-`0600` recovery material.
 
 ### Common infrastructure failures
 
+- In automatic-RA runs, `/etc/resolv.conf` may retain only an IPv4
+  control/gateway resolver. IPv6 probes must fall back to the link-local next
+  hop of the `omg0` IPv6 default route and add the `%omg0` scope. If an HTTP/3
+  client evidence file is empty and the DNS fixture saw no query, inspect this
+  prerequisite before diagnosing the QUIC data plane.
+- quic-go may warn that the minimal guest could not raise its UDP receive
+  buffer to the recommended size. When `CLIENT_IPV6_HTTP3_OK` follows, this is
+  a throughput warning rather than a handshake failure; this functional gate
+  does not claim QUIC performance coverage.
 - Guest startup and cleanup restore the Lima control-plane DNS and make the
   local hostname resolvable through `/etc/hosts`. If provisioning reports
   `sudo: unable to resolve host` or still queries a stopped `192.168.50.1`, run
@@ -270,7 +304,7 @@ that is mostly idle, still has available memory, and has no OOM evidence;
 change the default only after sustained load, reclaim pressure, or OOM proves
 that resources are the bottleneck.
 
-The lab owns `192.168.50.1/24` only on its vmnet bridge. Do not leave the same
+The lab owns `192.168.50.1/22` only on its vmnet bridge. Do not leave the same
 address on another interface. The real-device smoke also uses `192.168.50.1` on
 interfaces such as `en7`; run `make real-device-stop` before `make lab-up`, or
 remove the duplicate address with `sudo ifconfig <iface> inet 192.168.50.1

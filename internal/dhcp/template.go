@@ -2,6 +2,7 @@ package dhcp
 
 import (
 	"bytes"
+	"net"
 	"strings"
 	"text/template"
 
@@ -14,7 +15,7 @@ const dnsmasqTemplate = `interface={{ .Interface }}
 bind-interfaces
 
 {{ if .DHCPEnabled }}
-dhcp-range={{ .RangeStart }},{{ .RangeEnd }},{{ .LeaseTime }}
+dhcp-range={{ .RangeStart }},{{ .RangeEnd }},{{ .Netmask }},{{ .LeaseTime }}
 dhcp-option=option:router,{{ .GatewayIP }}
 dhcp-option=option:dns-server,{{ .GatewayIP }}
 {{ if .RouterBypassEnabled }}dhcp-option=tag:opensurge-router-bypass,option:router,{{ .BypassGateway }}
@@ -52,6 +53,7 @@ type templateData struct {
 	Interface           string
 	RangeStart          string
 	RangeEnd            string
+	Netmask             string
 	LeaseTime           string
 	GatewayIP           string
 	BypassGateway       string
@@ -71,17 +73,28 @@ type templateData struct {
 }
 
 func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return "", err
+	}
 	var reservations []device.Reservation
 	bundle := cfg.DevicePolicy.Bundle
 	if bundle == nil && cfg.DevicePolicy.File != "" {
-		loaded, err := device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+		loaded, err := device.LoadPolicyBundleForLAN(cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 		if err != nil {
 			return "", err
 		}
 		bundle = &loaded
 	}
 	if bundle != nil {
-		reservations = bundle.Compiled.Reservations
+		// dnsmasq refuses to start on a dhcp-host outside the served subnet, so
+		// registrations left over from another LAN are skipped instead of
+		// taking the whole gateway down with them.
+		for _, reservation := range bundle.Compiled.Reservations {
+			if scope.Contains(net.ParseIP(reservation.IPv4)) {
+				reservations = append(reservations, reservation)
+			}
+		}
 	}
 	routerBypassEnabled := false
 	for _, reservation := range reservations {
@@ -99,6 +112,7 @@ func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 		Interface:           cfg.Gateway.Interface,
 		RangeStart:          cfg.DHCP.RangeStart,
 		RangeEnd:            cfg.DHCP.RangeEnd,
+		Netmask:             net.IP(scope.Network.Mask).String(),
 		LeaseTime:           cfg.DHCP.LeaseTime,
 		GatewayIP:           cfg.Gateway.LANIP,
 		BypassGateway:       cfg.DHCP.BypassGateway,

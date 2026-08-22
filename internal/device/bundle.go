@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+
+	"open-mihomo-gateway/internal/lan"
 )
 
 // PolicyBundle is the immutable policy artifact consumed by one gateway run.
@@ -21,6 +24,7 @@ type PolicyBundle struct {
 	Policy              PolicySet       `json:"policy"`
 	Compiled            CompiledPolicy  `json:"compiled"`
 	IPOnlyDevicesActive bool            `json:"ip_only_devices_active,omitempty"`
+	ActiveLAN           string          `json:"active_lan,omitempty"`
 }
 
 func LoadPolicyBundle(path string) (PolicyBundle, error) {
@@ -35,11 +39,31 @@ func LoadPolicyBundleForIPOnlyMode(path string, ipOnlyDevicesActive bool) (Polic
 	return CompilePolicyBundleForIPOnlyMode(set, ipOnlyDevicesActive)
 }
 
+// LoadPolicyBundleForLAN keeps the complete policy as desired state but only
+// compiles devices whose IPv4 belongs to scope into the runtime bundle.
+func LoadPolicyBundleForLAN(path string, scope lan.Scope, ipOnlyDevicesActive bool) (PolicyBundle, error) {
+	set, err := LoadPolicySet(path)
+	if err != nil {
+		return PolicyBundle{}, err
+	}
+	return CompilePolicyBundleForLAN(set, scope, ipOnlyDevicesActive)
+}
+
 func CompilePolicyBundle(set PolicySet) (PolicyBundle, error) {
 	return CompilePolicyBundleForIPOnlyMode(set, true)
 }
 
 func CompilePolicyBundleForIPOnlyMode(set PolicySet, ipOnlyDevicesActive bool) (PolicyBundle, error) {
+	return compilePolicyBundle(set, set, ipOnlyDevicesActive, "")
+}
+
+// CompilePolicyBundleForLAN records the full declarative policy and its digest
+// while compiling only devices active on the configured LAN.
+func CompilePolicyBundleForLAN(set PolicySet, scope lan.Scope, ipOnlyDevicesActive bool) (PolicyBundle, error) {
+	return compilePolicyBundle(set, ActivePolicySetForLAN(set, scope), ipOnlyDevicesActive, scope.String())
+}
+
+func compilePolicyBundle(set, active PolicySet, ipOnlyDevicesActive bool, activeLAN string) (PolicyBundle, error) {
 	if err := ValidatePolicySet(set); err != nil {
 		return PolicyBundle{}, err
 	}
@@ -47,7 +71,7 @@ func CompilePolicyBundleForIPOnlyMode(set PolicySet, ipOnlyDevicesActive bool) (
 	if err != nil {
 		return PolicyBundle{}, fmt.Errorf("canonicalize device policy: %w", err)
 	}
-	compiled, err := CompilePolicySetForIPOnlyMode(set, ipOnlyDevicesActive)
+	compiled, err := CompilePolicySetForIPOnlyMode(active, ipOnlyDevicesActive)
 	if err != nil {
 		return PolicyBundle{}, err
 	}
@@ -59,6 +83,7 @@ func CompilePolicyBundleForIPOnlyMode(set PolicySet, ipOnlyDevicesActive bool) (
 		Policy:              set,
 		Compiled:            compiled,
 		IPOnlyDevicesActive: ipOnlyDevicesActive,
+		ActiveLAN:           activeLAN,
 	}, nil
 }
 
@@ -92,7 +117,19 @@ func LoadPolicyBundleSnapshot(path string) (PolicyBundle, error) {
 	if bundle.Digest != hex.EncodeToString(digest[:]) {
 		return PolicyBundle{}, fmt.Errorf("applied device policy bundle digest mismatch")
 	}
-	compiled, err := CompilePolicySetForIPOnlyMode(bundle.Policy, bundle.IPOnlyDevicesActive)
+	active := bundle.Policy
+	if bundle.ActiveLAN != "" {
+		_, network, parseErr := net.ParseCIDR(bundle.ActiveLAN)
+		prefixLen, bits := 0, 0
+		if parseErr == nil {
+			prefixLen, bits = network.Mask.Size()
+		}
+		if parseErr != nil || network.IP.To4() == nil || bits != 32 || !lan.ValidPrefixLen(prefixLen) || network.String() != bundle.ActiveLAN {
+			return PolicyBundle{}, fmt.Errorf("invalid applied device policy active LAN %q", bundle.ActiveLAN)
+		}
+		active = activePolicySetForNetwork(bundle.Policy, network)
+	}
+	compiled, err := CompilePolicySetForIPOnlyMode(active, bundle.IPOnlyDevicesActive)
 	if err != nil {
 		return PolicyBundle{}, fmt.Errorf("compile applied device policy bundle: %w", err)
 	}

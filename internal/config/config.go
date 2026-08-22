@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+
+	"open-mihomo-gateway/internal/lan"
 )
 
 type Config struct {
@@ -30,9 +32,13 @@ type DevicePolicyConfig struct {
 }
 
 type GatewayConfig struct {
-	Mode              string
-	Interface         string
-	LANIP             string
+	Mode      string
+	Interface string
+	LANIP     string
+	// LANPrefixLen is the real subnet prefix of the downstream LAN. Zero means
+	// the historical /24 assumption, so configs written before this field
+	// existed keep behaving the same way.
+	LANPrefixLen      int
 	UpstreamInterface string
 }
 
@@ -59,6 +65,7 @@ type MihomoConfig struct {
 	Config      string
 	ProfileMode string
 	Profile     string
+	StoreFakeIP bool
 	MixedPort   int
 	RedirPort   int
 	APIAddr     string
@@ -163,6 +170,7 @@ func Default() Config {
 			Mode:              GatewayModeIsolatedLAN,
 			Interface:         "en0",
 			LANIP:             "192.168.50.1",
+			LANPrefixLen:      lan.DefaultPrefixLen,
 			UpstreamInterface: "en0",
 		},
 		DHCP: DHCPConfig{
@@ -186,6 +194,7 @@ func Default() Config {
 			Config:      "./runtime/mihomo.yaml",
 			ProfileMode: MihomoProfileModeManaged,
 			Profile:     "",
+			StoreFakeIP: true,
 			MixedPort:   7890,
 			RedirPort:   0,
 			APIAddr:     "127.0.0.1:9090",
@@ -230,10 +239,21 @@ func (c Config) RuntimePath(name string) string {
 	return filepath.Join(c.Runtime.Dir, name)
 }
 
-func (c Config) LANPrefix24() (string, error) {
-	ip := c.LANIP().To4()
-	if ip == nil {
-		return "", fmt.Errorf("gateway.lan_ip must be an IPv4 address")
+// LANScope resolves the downstream LAN from gateway.lan_ip and
+// gateway.lan_prefix_len. Every subnet decision goes through it so pf NAT,
+// mihomo route exclusion, DHCP ranges, and device addresses cannot disagree.
+func (c Config) LANScope() (lan.Scope, error) {
+	scope, err := lan.NewScope(c.Gateway.LANIP, c.Gateway.LANPrefixLen)
+	if err != nil {
+		return lan.Scope{}, fmt.Errorf("gateway.lan_ip / gateway.lan_prefix_len: %w", err)
 	}
-	return fmt.Sprintf("%d.%d.%d.0/24", ip[0], ip[1], ip[2]), nil
+	return scope, nil
+}
+
+func (c Config) LANPrefix() (string, error) {
+	scope, err := c.LANScope()
+	if err != nil {
+		return "", err
+	}
+	return scope.String(), nil
 }

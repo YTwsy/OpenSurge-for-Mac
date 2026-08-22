@@ -141,11 +141,11 @@ gateway runtime snapshot 负责恢复。
 `device/<id>/<slot>` selector；黄色“保存后重载”才编辑设备身份、路由方式、selector
 成员和规则。`inherit_global` 在界面称为“跟随网关规则”，不得称为跟随 Mac 本机模式。
 
-普通登记默认创建 `<device-id>-policy` 私有 Profile。设备首次从主路径修改共享 Profile
-或继承 Template 的 Profile 时，前端把解析后的有效候选与规则复制到无 Template 的私有
-Profile，并只更新该设备引用；不修改 `PolicySet` schema。高级区仍保留 Profiles、
-Templates 和 Rule Sets，被引用对象禁止删除并显示引用来源。主规则表单使用 chips 和
-候选选择，不要求逗号分隔字符串；revision 冲突保留本地草稿。
+普通登记默认创建 `<device-id>-policy` 私有 Profile。设备首次修改共享或旧式继承 Profile 时，
+前端把解析后的有效候选与规则复制到私有 Profile，并只更新该设备引用。这些 Profile
+是内部持久化/编译容器；默认展开的“规则库”只向用户暴露规则集、无出口分流模版和
+设备分流。旧的独立设备规则卡片与高级复用卡片不再渲染。规则库表单使用每行一条的规则集、
+多选模版和出口候选选择；revision 冲突保留本地草稿。
 
 selector API 根据设备 ID 和 slot 重建 `device/<id>/<slot>`，不会接受调用方直接伪造任意
 group 名。保存由 helper 使用当前 imported inventory 与真实 mihomo 校验候选，不只做

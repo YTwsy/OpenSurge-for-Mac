@@ -22,6 +22,7 @@ func TestRenderConfig(t *testing.T) {
 		"external-controller: 127.0.0.1:9090",
 		"profile:",
 		"  store-selected: true",
+		"  store-fake-ip: true",
 		"geox-url:",
 		"https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb",
 		"enhanced-mode: fake-ip",
@@ -46,6 +47,18 @@ func TestRenderConfig(t *testing.T) {
 	}
 	if strings.Contains(rendered, "tun:") {
 		t.Fatalf("rendered config enables tun by default:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigCanDisableFakeIPPersistence(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.StoreFakeIP = false
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+	if !strings.Contains(rendered, "  store-fake-ip: false") {
+		t.Fatalf("rendered config did not disable fake-IP persistence:\n%s", rendered)
 	}
 }
 
@@ -690,7 +703,7 @@ rules:
 func TestRenderConfigAddsDownstreamIPv6PacketListenerAndDeviceIdentity(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "devices.json")
-	policy := `{"profiles":[{"id":"home","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"dedicated"}]}`
+	policy := `{"profiles":[{"id":"home","default_policies":["DIRECT"]}],"devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"dedicated"},{"id":"dormant","mac":"aa:bb:cc:dd:ee:02","ipv4":"192.168.60.101","profile":"home","egress_mode":"dedicated"}]}`
 	if err := os.WriteFile(policyPath, []byte(policy), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -728,6 +741,11 @@ func TestRenderConfigAddsDownstreamIPv6PacketListenerAndDeviceIdentity(t *testin
 	}
 	if strings.Contains(rendered, "IP-CIDR6,fc00::/7") {
 		t.Fatalf("fake IPv6 ULA would be forced DIRECT:\n%s", rendered)
+	}
+	for _, dormant := range []string{"aa:bb:cc:dd:ee:02", "device:dormant", "192.168.60.101"} {
+		if strings.Contains(rendered, dormant) {
+			t.Fatalf("dormant device leaked into IPv4 or IPv6 mihomo policy as %q:\n%s", dormant, rendered)
+		}
 	}
 	var document map[string]any
 	if err := yaml.Unmarshal([]byte(rendered), &document); err != nil {

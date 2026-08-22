@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/lan"
 )
 
 type policySections struct {
@@ -21,7 +22,11 @@ type policySections struct {
 }
 
 func renderPolicySections(cfg config.Config, imported *importedProfile) (string, error) {
-	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN, cfg.Transparent.TUNIPv6 != config.TUNIPv6Off)
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return "", err
+	}
+	sections, err := loadPolicySections(cfg.DevicePolicy.Bundle, cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN, cfg.Transparent.TUNIPv6 != config.TUNIPv6Off)
 	if err != nil {
 		return "", err
 	}
@@ -41,12 +46,12 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 	return composeManagedPolicySections(cfg, sections, localRouting), nil
 }
 
-func loadPolicySections(bundle *device.PolicyBundle, path string, ipOnlyDevicesActive bool, ipv6 bool) (policySections, error) {
+func loadPolicySections(bundle *device.PolicyBundle, path string, scope lan.Scope, ipOnlyDevicesActive bool, ipv6 bool) (policySections, error) {
 	if bundle == nil && strings.TrimSpace(path) == "" {
 		return policySections{}, nil
 	}
 	if bundle == nil {
-		loaded, err := device.LoadPolicyBundleForIPOnlyMode(path, ipOnlyDevicesActive)
+		loaded, err := device.LoadPolicyBundleForLAN(path, scope, ipOnlyDevicesActive)
 		if err != nil {
 			return policySections{}, err
 		}
@@ -277,11 +282,11 @@ var dedicatedLocalCIDRs = []string{
 	"224.0.0.0/4",
 }
 
-// Mihomo's IN-USER rule treats '/' as a separator between multiple accepted
-// users. Device policy group names intentionally use device/<id>/..., but the
-// packet listener identity must therefore use a delimiter-free namespace so a
-// complete device identity remains one rule value.
-func deviceInboundUser(deviceID string) string { return "device:" + deviceID }
+// DeviceInboundUser returns the delimiter-free identity shared by the packet
+// listener, device rules, and connection attribution. Mihomo's IN-USER rule
+// treats '/' as a separator between multiple accepted users, so it cannot use
+// the device/<id>/... selector namespace directly.
+func DeviceInboundUser(deviceID string) string { return "device:" + deviceID }
 
 // Router bypass is IPv4-only. Keep the packet-listener identity solely to
 // reject IPv6 before local-Mac, imported, global, or ordinary device rules can
@@ -295,7 +300,7 @@ func routerBypassIPv6RejectRules(policy policySections) []string {
 		if managed.GatewayTarget != device.GatewayTargetUpstreamRouter || managed.MAC == "" {
 			continue
 		}
-		rules = append(rules, fmt.Sprintf("AND,((IN-TYPE,TUN),(IN-USER,%s)),REJECT", deviceInboundUser(managed.ID)))
+		rules = append(rules, fmt.Sprintf("AND,((IN-TYPE,TUN),(IN-USER,%s)),REJECT", DeviceInboundUser(managed.ID)))
 	}
 	return rules
 }
@@ -315,7 +320,7 @@ func orderedDevicePreRules(policy policySections) []string {
 				rules = append(rules, fmt.Sprintf("AND,((SRC-IP-CIDR,%s/32),(IP-CIDR,%s)),DIRECT", managed.IPv4, cidr))
 			}
 			if policy.ipv6 && managed.MAC != "" {
-				user := deviceInboundUser(managed.ID)
+				user := DeviceInboundUser(managed.ID)
 				// Do not direct the whole ULA space: Mihomo's fake IPv6 pool is
 				// itself ULA. The downstream /64 is the only product-owned ULA
 				// segment that is always local.
@@ -343,7 +348,7 @@ func addIPv6IdentityRules(rules []string, devices []device.CompiledDevice) []str
 			}
 			needle := "SRC-IP-CIDR," + managed.IPv4 + "/32"
 			if strings.Contains(rule, needle) {
-				out = append(out, strings.ReplaceAll(rule, needle, "IN-USER,"+deviceInboundUser(managed.ID)))
+				out = append(out, strings.ReplaceAll(rule, needle, "IN-USER,"+DeviceInboundUser(managed.ID)))
 				break
 			}
 		}

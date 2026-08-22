@@ -13,6 +13,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/lan"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
@@ -170,7 +171,11 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	if err := config.ValidateDevicePolicyCandidate(cfg, policy); err != nil {
 		return "", err
 	}
-	bundle, err := device.CompilePolicyBundleForIPOnlyMode(policy, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+	scope, err := cfg.LANScope()
+	if err != nil {
+		return "", err
+	}
+	bundle, err := device.CompilePolicyBundleForLAN(policy, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 	if err != nil {
 		return "", err
 	}
@@ -231,6 +236,9 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.Gateway.Mode = input.Gateway.Mode
 	cfg.Gateway.Interface = input.Gateway.Interface
 	cfg.Gateway.LANIP = input.Gateway.LANIP
+	// Clients predating gateway.lan_prefix_len omit the field; the zero value
+	// keeps their historical /24 behavior instead of failing the save.
+	cfg.Gateway.LANPrefixLen = lan.PrefixLenOrDefault(input.Gateway.LANPrefixLen)
 	cfg.Gateway.UpstreamInterface = input.Gateway.UpstreamInterface
 	cfg.DHCP.Enabled = input.DHCP.Enabled
 	cfg.DHCP.RangeStart = input.DHCP.RangeStart
@@ -242,6 +250,9 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	cfg.DNS.Listen = input.DNS.Listen
 	cfg.DNS.Upstream = input.DNS.Upstream
 	cfg.DNS.IPv6 = input.DNS.IPv6
+	if input.Mihomo.StoreFakeIP != nil {
+		cfg.Mihomo.StoreFakeIP = *input.Mihomo.StoreFakeIP
+	}
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
 	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6

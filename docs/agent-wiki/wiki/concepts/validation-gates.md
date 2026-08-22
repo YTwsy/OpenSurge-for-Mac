@@ -43,6 +43,12 @@ network helper 的三个固定子命令，不能代替网关测试所需的 sudo
 结束后的 `lab-down` 同理。VM 停止但 helper stop 报 `sudo: a password is required` 时，
 应把它视为不完整清理并重新执行带 `sudo -v` 的 `lab-down`。
 
+Apple Silicon 上的 Codex/agent 终端可能经 Rosetta 运行，使 `uname -m` 显示
+`x86_64` 并触发安装器架构拒绝。确认 `sysctl.proc_translated=1` 和
+`hw.optional.arm64=1` 后，用
+`/usr/bin/arch -arm64 /bin/bash ./tests/lab/install-host-deps.sh` 运行安装器；Intel Mac
+不能使用这条绕行命令。
+
 第一次 `lab-up` 包含固定镜像下载和 guest 依赖安装，不能和持久化 VM 的后续启动耗时
 直接比较。正常清理使用 `lab-down` 保留磁盘，只有损坏或有意重建时使用 `lab-destroy`。
 guest 的数据面 DNS 在一次测试后会指向 `192.168.50.1`；而下一次 `lab-up` 时被测网关
@@ -65,6 +71,11 @@ Lab 环境问题必须与数据面失败分开记录：
   `networkctl status omg0` 应显示该文件；重复 IPv4/IPv6 默认路由通常意味着
   netplan 和手工 DHCP/RA 同时在管理接口。IPv6 READY 信号还必须排除
   `tentative` / `dadfailed` 地址，并要求正的 `preferred_lft`。
+- 自动 RA 模式不保证 `/etc/resolv.conf` 直接出现 IPv6 nameserver。IPv6 client
+  probe 应在没有显式 IPv6 nameserver 时使用 `omg0` IPv6 默认路由的 link-local
+  next hop，并附加接口 scope；空的 HTTP/3 client evidence 通常先检查这一点。
+- quic-go 在最小 guest 中可能报告无法把 UDP receive buffer 增大到建议值。若随后有
+  `CLIENT_IPV6_HTTP3_OK`，这是吞吐告警而不是握手失败；这个功能门槛不证明 QUIC 性能。
 - `runtime/lab/proxy.env` 中不可达的旧代理和专用 `/private/tmp` Go module
   cache 残缺都是 patched Mihomo 的构建前故障。脚本会对 Go mirror 绕过旧代理，
   并在日志确认是该专用 cache 的缺文件后清理并重试一次。先查
@@ -116,15 +127,19 @@ make lab-test-ipv6-same-lan
 客户端仍须继续完成 IPv6 TCP、UDP 与 QUIC carrier 的 `DIRECT` 路径。
 第三条覆盖选择性旁路由：客户端手工使用不同 ULA，并把 Mac link-local 地址同时作为默认网关和 DNS，
 dnsmasq 配置中不得出现 RA。随后三条门槛都要求无显式代理的 IPv6 TCP、受控 UDP
-request/response 和 1200-byte QUIC Initial-shaped UDP carrier 通过本机 fixture 出现在
-patched Mihomo 的 `opensurge-packet` 路径，并按两台客户端各自的 MAC/InUser 命中
-不同设备策略。TCP origin 必须收到实际 HTTP request，UDP fixture 必须返回
-固定答案，不依赖公网上游作为唯一捕获证据。最后必须停止网关，验证
+request/response、1200-byte QUIC Initial-shaped UDP carrier 和真实 HTTP/3-only
+request/response 通过本机 fixture 出现在 patched Mihomo 的 `opensurge-packet` 路径，
+并按两台客户端各自的 MAC/InUser 命中不同设备策略。HTTP/3 client 没有
+TCP/HTTP/2 fallback；它分别要求 `DIRECT` 和受控 SOCKS5 UDP 出口完成 QUIC TLS 与
+HTTP/3 GET，并要求 HTTP-only 出口记录 UDP `REJECT`、origin 与 CONNECT proxy 均无
+请求。TCP origin 必须收到实际 HTTP request，UDP fixture 必须返回固定答案，HTTP/3
+origin 必须记录 `HTTP/3.0`，不依赖公网上游作为唯一捕获证据。最后必须停止网关，验证
 自动模式的 RA/default route 或旁路由手工配置，以及 gateway alias、broker、
 socket/ready file 和 runtime state 被撤销。RFC 4862 允许客户端暂时保留
 deprecated/等待过期的 SLAAC 地址，因此门槛不要求地址瞬间消失。
 
-QUIC 项只证明 UDP carrier 和策略命中，不等于完整 HTTP/3 握手。单元测试或直接
+QUIC-shaped 项只证明 UDP carrier 和策略命中；HTTP/3-only fixture 证明的是三个本机
+受控出口场景，不等于所有 QUIC/HTTP3 版本、0-RTT、连接迁移、公网节点或代理组合。单元测试或直接
 Unix packet injection 可以证明 gVisor 与设备身份，但不能替代 macOS BPF、真实 RA 和
 停止撤销的 host-network 证据。
 
@@ -181,7 +196,7 @@ proxy egress runner 可以在物理下游 LAN 启动，真实 Pixel 手机可以
 一次 smoke；Mac 侧能对应看到租约、DNS 查询、fake-ip 查询、`mihomo.log` 中的
 客户端目标连接，以及受控代理日志中的 `CONNECT example.com:443`。`stop` 清理
 范围包括释放下游接口上的 `192.168.50.1` 测试 LAN IP，避免后续 virtual LAN lab
-把 `192.168.50.0/24` 回程路由选到真实设备接口。
+把 `192.168.48.0/22` 的重叠回程路由选到真实设备接口。
 
 explicit 模式的关键验收信号是：
 
@@ -322,8 +337,9 @@ make lab-test-tun
 
 - `sudo -v` 和 lab target 在同一个终端/TTY 里连续执行。sudo ticket 不是跨
   agent exec 会话可靠共享的状态。
-- `192.168.50.1` 只配置在当前 lab bridge 上。真实设备 smoke 也会使用这个地址；
-  如果 `en7` 等接口残留 `192.168.50.1/24`，macOS 可能把 lab client 回程路由到
+- `192.168.50.1` 只配置在当前 lab bridge 上；virtual LAN 使用 `/22`，真实设备
+  smoke 默认仍使用 `/24`。如果 `en7` 等接口残留 `192.168.50.1/24`，macOS 可能把
+  重叠范围内的 lab client 回程路由到
   错误接口，表现为 TUN DNS timeout。先运行 `make real-device-stop` 或删除重复
   地址。
 
@@ -402,8 +418,9 @@ make lab-test-tun-device-policy
 ```
 
 当改动 MAC 绑定 DHCP reservation、设备路由模式、每设备 selector 或设备规则覆盖的
-数据路径时，使用此门槛。它使用两个 Lima VM，验证两个设备获得 `.101`/`.102` 固定
-IPv4，先证明 `dedicated` 设备的 default selector 位于全局 `MATCH` 之前，再证明
+数据路径时，使用此门槛。它让 bridge 与 DHCP 客户端实际使用 `/22`，并验证两个 Lima
+VM 跨第三段获得 `192.168.50.101`/`192.168.51.102` 固定 IPv4；先证明 `dedicated`
+设备的 default selector 位于全局 `MATCH` 之前，再证明
 `inherit_global` 设备没有 default selector 且走全局 `MATCH`；随后通过 reload 把后者改成
 独立模式，验证两台设备可独立选择不同 TUN egress，并验证设备专属 IP `REJECT`。它还断言 applied policy snapshot/state digest、`omg devices` 的
 `policy_identity_ready`/`lease_match` 对真实租约成立、desired 文件修改后的 drift，
@@ -411,6 +428,11 @@ IPv4，先证明 `dedicated` 设备的 default selector 位于全局 `MATCH` 之
 selector 隔离；同时要求设备默认 selector 指向 HTTP-only outbound 时 UDP/443 命中
 `REJECT` fallback 而非 fall through 到全局 `MATCH,DIRECT`。它证明设备身份、跟随与
 独立模式、默认出口、安全 reload、UDP fail-closed 和覆盖规则的真实 LAN/TUN 数据路径。
+同一 fixture 还保留一条旧 LAN 带 MAC 登记，要求完整 desired 仍在，而 compiled/applied
+设备列表、dnsmasq、Mihomo IPv4 规则/selector 和 IPv6 MAC 身份均排除它。
+门槛还会让两台客户端各建立一条持久连接；切换第一台设备 selector 后，通过真实 Control
+API 刷新该设备连接。第一台设备的旧连接必须消失，第二台设备连接必须保留，第一台设备
+随后建立的新连接必须使用当前 selector。
 
 大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
 `make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。系统 TUN 的设备

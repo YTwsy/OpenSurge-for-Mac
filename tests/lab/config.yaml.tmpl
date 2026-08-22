@@ -2,13 +2,14 @@ gateway:
   mode: "__GATEWAY_MODE__"
   interface: "__LAB_INTERFACE__"
   lan_ip: "192.168.50.1"
+  lan_prefix_len: 22
   upstream_interface: "__UPSTREAM_INTERFACE__"
 
 dhcp:
   binary: "__DNSMASQ_BINARY__"
   enabled: __DHCP_ENABLED__
   range_start: "192.168.50.100"
-  range_end: "192.168.50.200"
+  range_end: "192.168.51.200"
   lease_time: "30m"
   domain: "lab"
   bypass_gateway: "__DHCP_BYPASS_GATEWAY__"

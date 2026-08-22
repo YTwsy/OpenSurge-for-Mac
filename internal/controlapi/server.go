@@ -23,6 +23,7 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/lan"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
@@ -62,6 +63,7 @@ type Server struct {
 	credentials       SourceCredentialStore
 	revealInFinder    func(context.Context, string) error
 	fetchConnections  func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
+	closeConnections  func(context.Context, config.Config, []string) (int, error)
 	fetchProxyHealth  func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
 	fetchLocalRouting func(context.Context, config.Config) (mihomo.LocalRoutingSnapshot, error)
 	setLocalRouting   func(context.Context, config.Config, string, string) (mihomo.LocalRoutingSnapshot, error)
@@ -188,6 +190,7 @@ func New(options Options) (*Server, error) {
 		credentials:       options.Credentials,
 		revealInFinder:    options.RevealInFinder,
 		fetchConnections:  mihomo.FetchConnections,
+		closeConnections:  mihomo.CloseConnections,
 		fetchProxyHealth:  mihomo.FetchProxyHealth,
 		fetchLocalRouting: mihomo.FetchLocalRouting,
 		setLocalRouting:   mihomo.SetLocalRouting,
@@ -264,11 +267,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
 	mux.Handle("GET /api/v1/device-traffic", s.auth(http.HandlerFunc(s.handleDeviceTraffic)))
+	mux.Handle("POST /api/v1/devices/{device}/connections/refresh", s.auth(http.HandlerFunc(s.handleDeviceConnectionRefresh)))
 	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
 	mux.Handle("GET /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
 	mux.Handle("POST /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
+	mux.Handle("POST /api/v1/local-routing/connections/refresh", s.auth(http.HandlerFunc(s.handleLocalConnectionRefresh)))
 	mux.Handle("GET /api/v1/proxy-health", s.auth(http.HandlerFunc(s.handleProxyHealth)))
 	mux.Handle("POST /api/v1/proxy-health/tests", s.auth(http.HandlerFunc(s.handleProxyHealthTests)))
 	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
@@ -354,11 +359,13 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 	if dnsUpstream == "" {
 		dnsUpstream = config.MihomoDNSUpstream
 	}
+	storeFakeIP := cfg.Mihomo.StoreFakeIP
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
-		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, UpstreamInterface: cfg.Gateway.UpstreamInterface},
+		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, LANPrefixLen: lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen), UpstreamInterface: cfg.Gateway.UpstreamInterface},
 		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain, BypassGateway: cfg.DHCP.BypassGateway, BypassDNS: append([]string{}, cfg.DHCP.BypassDNS...)},
 		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream, IPv6: cfg.DNS.IPv6},
+		Mihomo:           MihomoConfigInput{StoreFakeIP: &storeFakeIP},
 		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
 		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
 		DevicePolicy:     DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
@@ -665,6 +672,12 @@ func (s *Server) handleGatewayPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	plan := GatewayPlan{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Topology: cfg.Gateway.Mode, Snapshot: snapshot, DHCPServers: []string{}, Warnings: []string{}, Blockers: []string{}}
 	plan.ProtectedIPv4 = uniqueStrings(append([]string{cfg.Gateway.LANIP, snapshot.Router}, cfg.DevicePolicy.ProtectedIPv4...))
+	// pf NAT and TUN route exclusion come from the configured prefix, so a stale
+	// value silently mis-scopes downstream traffic even though every address
+	// still looks valid on its own.
+	if livePrefixLen, prefixErr := snapshotPrefixLen(snapshot); prefixErr == nil && livePrefixLen != lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen) {
+		plan.Warnings = append(plan.Warnings, fmt.Sprintf("当前网络掩码为 %s（/%d），配置的 gateway.lan_prefix_len 是 /%d；请在网络设置中用“根据当前网络重新填入”对齐", snapshot.SubnetMask, livePrefixLen, lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen)))
+	}
 	if cfg.Gateway.Mode == config.GatewayModeSameWiFiDHCP {
 		if cfg.Gateway.Interface != cfg.Gateway.UpstreamInterface {
 			plan.Blockers = append(plan.Blockers, "same-LAN DHCP takeover requires one shared interface")
@@ -1155,6 +1168,11 @@ func (s *Server) handleNetworkDefaults(w http.ResponseWriter, r *http.Request) {
 		Warnings:      []string{},
 		Blockers:      []string{},
 	}
+	if prefixLen, prefixErr := snapshotPrefixLen(snapshot); prefixErr != nil {
+		result.Blockers = append(result.Blockers, prefixErr.Error())
+	} else {
+		result.LANPrefixLen = prefixLen
+	}
 	if mode == config.GatewayModeSameLAN && snapshot.IPv4Mode == macosnetwork.IPv4ModeDHCP {
 		result.Warnings = append(result.Warnings, "当前 Mac IPv4 由主路由 DHCP 分配；旁路由长期使用时建议在主路由中保留该地址")
 	}
@@ -1164,7 +1182,7 @@ func (s *Server) handleNetworkDefaults(w http.ResponseWriter, r *http.Request) {
 		if len(result.BypassDNS) == 0 && snapshot.Router != "" {
 			result.BypassDNS = []string{snapshot.Router}
 		}
-		start, end, rangeErr := suggestDHCPRange24(snapshot, cfg.DevicePolicy.ProtectedIPv4)
+		start, end, rangeErr := suggestDHCPRange(snapshot, cfg.DevicePolicy.ProtectedIPv4)
 		if rangeErr != nil {
 			result.Blockers = append(result.Blockers, rangeErr.Error())
 		} else {
@@ -1640,10 +1658,15 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil || cfg.DevicePolicy.File == "" {
-		writeJSON(w, http.StatusOK, DevicesResponse{SchemaVersion: SchemaVersion, Devices: []device.CompiledDevice{}, Leases: []device.Client{}, ObservedDevices: []ObservedDevice{}})
+		writeJSON(w, http.StatusOK, DevicesResponse{SchemaVersion: SchemaVersion, Devices: []device.CompiledDevice{}, OutOfLANDevices: []string{}, Leases: []device.Client{}, ObservedDevices: []ObservedDevice{}})
 		return
 	}
-	desired, err := device.LoadPolicyBundleForIPOnlyMode(cfg.DevicePolicy.File, cfg.Gateway.Mode == config.GatewayModeSameLAN)
+	scope, scopeErr := cfg.LANScope()
+	if scopeErr != nil {
+		writeError(w, http.StatusBadRequest, "gateway_lan_invalid", scopeErr.Error())
+		return
+	}
+	desired, err := device.LoadPolicyBundleForLAN(cfg.DevicePolicy.File, scope, cfg.Gateway.Mode == config.GatewayModeSameLAN)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "device_policy_invalid", err.Error())
 		return
@@ -1662,11 +1685,16 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 			desired.Compiled.Devices...),
 		AppliedDevices:  []device.CompiledDevice{},
 		ChangedDevices:  []string{},
+		OutOfLANDevices: []string{},
 		Leases:          leases,
 		ObservedDevices: []ObservedDevice{},
 	}
 	if response.Devices == nil {
 		response.Devices = []device.CompiledDevice{}
+	}
+	response.LANPrefix = scope.String()
+	if outOfLAN := device.OutOfLANDevices(desired.Policy, scope); len(outOfLAN) > 0 {
+		response.OutOfLANDevices = outOfLAN
 	}
 	if state, exists, _ := runtime.LoadState(paths.StateFile); exists && state.DevicePolicyDigest != "" {
 		response.Applied = true
@@ -1684,7 +1712,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if cfg.Gateway.Mode == config.GatewayModeSameLAN {
 		connections, connectionErr := s.fetchConnections(r.Context(), cfg)
 		neighbors, neighborErr := s.discoverNeighbors(r.Context(), cfg.Gateway.Interface)
-		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP, desired.Policy.Devices...)
+		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP, cfg.Gateway.LANPrefixLen, desired.Policy.Devices...)
 		observationErrors := []string{}
 		if connectionErr != nil {
 			observationErrors = append(observationErrors, "mihomo connections: "+connectionErr.Error())

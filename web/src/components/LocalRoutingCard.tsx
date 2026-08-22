@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import type { LocalRouting, LocalRoutingMode, ProxyHealthEntry } from '../types'
+import { ConnectionRefreshControl } from './ConnectionRefreshControl'
 import { OutletSummary } from './OutletSummary'
 
 const modeDetails: Record<LocalRoutingMode, { label: string; description: string }> = {
@@ -97,6 +98,7 @@ export function LocalRoutingCard({
     </div>}
     {udpRejected && <div className="notice warn local-routing-warning" role="alert">当前固定出口不支持 UDP，部分应用可能无法联网。</div>}
     {(runtimeWarning || error) && <div className="notice warn local-routing-warning" role="alert">{error || runtimeWarning}</div>}
+    <ConnectionRefreshControl ariaLabel="刷新 Mac 本机连接" disabled={!running || !routing} disabledReason="启动网关并读取本机设置后可以刷新连接。" refresh={api.refreshLocalConnections} onRefreshed={onChanged} />
     <button className="text-link" type="button" onClick={onPolicies}>前往策略与节点健康 →</button>
   </article>
 }

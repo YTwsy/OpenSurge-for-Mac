@@ -21,18 +21,30 @@ CONFIG="$STATE_DIR/config.yaml"
 CLIENT_CONFIG="$STATE_DIR/client.yaml"
 BINARY="$ROOT/bin/omg-lab"
 EGRESS_PROBE_BINARY="$STATE_DIR/egress-probe"
+CONTROL_API_BINARY="$STATE_DIR/opensurge-control"
 EGRESS_PROVIDER="$STATE_DIR/tun-egress-provider.yaml"
 IPV6_PACKET_BINARY="$STATE_DIR/opensurge-network"
 PATCHED_MIHOMO_BINARY="$STATE_DIR/mihomo-opensurge"
+HTTP3_PROBE_BINARY="$STATE_DIR/opensurge-http3-probe"
+HTTP3_CLIENT_BINARY="$STATE_DIR/opensurge-http3-probe-linux-arm64"
+HTTP3_CLIENT_GUEST=/usr/local/bin/opensurge-http3-probe
 EGRESS_ORIGIN_PORT="${OMG_LAB_TUN_EGRESS_ORIGIN_PORT:-19093}"
 EGRESS_PROXY_PORT="${OMG_LAB_TUN_EGRESS_PROXY_PORT:-19094}"
 EGRESS_PROVIDER_URL="http://127.0.0.1:$EGRESS_ORIGIN_PORT/tun-egress-provider.yaml"
 IPV6_DNS_FIXTURE_PORT="${OMG_LAB_IPV6_DNS_FIXTURE_PORT:-19095}"
+IPV6_HTTP3_FIXTURE_PORT="${OMG_LAB_IPV6_HTTP3_FIXTURE_PORT:-19096}"
+IPV6_UDP_PROXY_PORT="${OMG_LAB_IPV6_UDP_PROXY_PORT:-19097}"
+IPV6_UDP_PROXY_DNS_PORT="${OMG_LAB_IPV6_UDP_PROXY_DNS_PORT:-19098}"
+CONTROL_API_PORT="${OMG_LAB_CONTROL_API_PORT:-19099}"
+CONNECTION_REFRESH_TEST_HOST="connection-refresh.opensurge.test"
 IPV6_TCP_TEST_HOST="ipv6-tcp.opensurge.test"
 IPV6_TCP_TEST_URL="http://$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT/ipv6-tcp"
 IPV6_UDP_TEST_HOST="ipv6-udp.opensurge.test"
 IPV6_UDP_ANSWER_HOST="udp-answer.opensurge.test"
 IPV6_QUIC_TEST_HOST="ipv6-quic.opensurge.test"
+IPV6_HTTP3_DIRECT_HOST="ipv6-http3-direct.opensurge.test"
+IPV6_HTTP3_PROXY_HOST="ipv6-http3-proxy.opensurge.test"
+IPV6_HTTP3_BLOCKED_HOST="ipv6-http3-blocked.opensurge.test"
 IPV6_REAL_PROFILE_SOURCE="${OMG_LAB_IPV6_REAL_PROFILE:-}"
 IPV6_REAL_PROFILE="$STATE_DIR/mihomo-profile.ipv6-real.yaml"
 IPV6_REAL_TCP_HOST="${OMG_LAB_IPV6_REAL_TCP_HOST:-api64.ipify.org}"
@@ -52,7 +64,12 @@ LAB_DEVICE_POLICY_FILE=""
 TUN_EGRESS_PROFILE=0
 LOCAL_ROUTING_TEST="${OMG_LAB_LOCAL_ROUTING_TEST:-false}"
 EGRESS_PROBE_PID=""
+CONTROL_API_PID=""
+CONTROL_API_TOKEN=""
+LAST_CLIENT_HOLD_PID=""
 IPV6_DNS_FIXTURE_PID=""
+HTTP3_PROBE_PID=""
+IPV6_UDP_PROXY_PID=""
 LAST_LAB_ARTIFACT_DIR=""
 REAL_PROXY_TYPE=""
 REAL_PROXY_INDEX=""
@@ -431,6 +448,9 @@ collect_artifacts() {
     state.evidence.json \
     device-policies.json \
     device-policies-after-reload.json \
+    connection-refresh-before.json \
+    connection-refresh-after.json \
+    connection-refresh-response.json \
     ipv6-status.json \
     ipv6-devices.json \
     ipv6-state.evidence.json; do
@@ -650,6 +670,11 @@ build_egress_probe() {
     go build -o "$EGRESS_PROBE_BINARY" ./tests/integration/egressprobe
 }
 
+build_control_api() {
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+    go build -o "$CONTROL_API_BINARY" ./cmd/opensurge-control
+}
+
 start_egress_probe() {
   local log_file i
   mkdir -p "$STATE_DIR/logs"
@@ -660,6 +685,8 @@ start_egress_probe() {
     --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
     --upstream-interface "$(upstream_interface)" \
     --upstream-resolver "1.1.1.1:53" \
+    --mapped-target "$CONNECTION_REFRESH_TEST_HOST:443" \
+    --mapped-upstream "127.0.0.1:$EGRESS_ORIGIN_PORT" \
     --provider-file "$EGRESS_PROVIDER" \
     --provider-path "/tun-egress-provider.yaml" \
     --log-dir "$STATE_DIR/egress" >"$log_file" 2>&1 &
@@ -681,12 +708,163 @@ start_egress_probe() {
   exit 1
 }
 
+start_control_api() {
+  local api log_file store_dir token_file i
+  api="http://127.0.0.1:$CONTROL_API_PORT"
+  store_dir="$STATE_DIR/control-api"
+  token_file="$store_dir/control-token"
+  log_file="$STATE_DIR/logs/control-api.log"
+  rm -rf "$store_dir"
+  rm -f "$log_file"
+  "$CONTROL_API_BINARY" --config "$CONFIG" --addr "127.0.0.1:$CONTROL_API_PORT" --store "$store_dir" >"$log_file" 2>&1 &
+  CONTROL_API_PID=$!
+  for i in {1..50}; do
+    if [[ -s "$token_file" ]]; then
+      CONTROL_API_TOKEN="$(cat "$token_file")"
+      if /usr/bin/curl --fail --silent --show-error \
+        --header "Authorization: Bearer $CONTROL_API_TOKEN" \
+        "$api/api/v1/overview" >/dev/null 2>&1; then
+        echo "Control API ready for connection refresh Lab: $api"
+        return 0
+      fi
+    fi
+    if ! kill -0 "$CONTROL_API_PID" 2>/dev/null; then
+      echo "Control API exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "Control API did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_control_api() {
+  if [[ -n "$CONTROL_API_PID" ]] && kill -0 "$CONTROL_API_PID" 2>/dev/null; then
+    kill "$CONTROL_API_PID" 2>/dev/null || true
+    wait "$CONTROL_API_PID" 2>/dev/null || true
+  fi
+  CONTROL_API_PID=""
+  CONTROL_API_TOKEN=""
+}
+
 stop_egress_probe() {
   if [[ -n "$EGRESS_PROBE_PID" ]] && kill -0 "$EGRESS_PROBE_PID" 2>/dev/null; then
     kill "$EGRESS_PROBE_PID" 2>/dev/null || true
     wait "$EGRESS_PROBE_PID" 2>/dev/null || true
   fi
   EGRESS_PROBE_PID=""
+}
+
+build_http3_lab_binaries() {
+  local go_cache go_path
+  go_cache="${GOCACHE:-/private/tmp/opensurge-http3-gocache}"
+  go_path="${OMG_LAB_HTTP3_GOPATH:-/private/tmp/opensurge-http3-gopath}"
+  GOPATH="$go_path" GOMODCACHE="$go_path/pkg/mod" GOCACHE="$go_cache" \
+    go build -o "$HTTP3_PROBE_BINARY" ./tests/integration/http3probe
+  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+    GOPATH="$go_path" GOMODCACHE="$go_path/pkg/mod" GOCACHE="$go_cache" \
+    go build -o "$HTTP3_CLIENT_BINARY" ./tests/integration/http3probe
+}
+
+install_http3_lab_client() {
+  local client guest_tmp
+  guest_tmp=/tmp/opensurge-http3-probe
+  for client in $CLIENTS; do
+    limactl copy --backend=scp "$HTTP3_CLIENT_BINARY" "$client:$guest_tmp"
+    limactl shell "$client" -- sudo install -m 0755 "$guest_tmp" "$HTTP3_CLIENT_GUEST"
+    limactl shell "$client" -- rm -f "$guest_tmp"
+  done
+}
+
+start_http3_probe() {
+  local log_file request_log i
+  log_file="$STATE_DIR/logs/http3-probe.log"
+  request_log="$STATE_DIR/egress/http3-origin.log"
+  rm -f "$log_file" "$request_log"
+  "$HTTP3_PROBE_BINARY" server \
+    --listen "127.0.0.1:$IPV6_HTTP3_FIXTURE_PORT" \
+    --log "$request_log" >"$log_file" 2>&1 &
+  HTTP3_PROBE_PID=$!
+  for i in {1..50}; do
+    if grep -Fq 'READY protocol=h3' "$log_file" 2>/dev/null; then
+      echo "HTTP/3-only Lab origin ready: udp://127.0.0.1:$IPV6_HTTP3_FIXTURE_PORT"
+      return 0
+    fi
+    if ! kill -0 "$HTTP3_PROBE_PID" 2>/dev/null; then
+      echo "HTTP/3-only Lab origin exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "HTTP/3-only Lab origin did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_http3_probe() {
+  if [[ -n "$HTTP3_PROBE_PID" ]] && kill -0 "$HTTP3_PROBE_PID" 2>/dev/null; then
+    kill "$HTTP3_PROBE_PID" 2>/dev/null || true
+    wait "$HTTP3_PROBE_PID" 2>/dev/null || true
+  fi
+  HTTP3_PROBE_PID=""
+}
+
+write_ipv6_udp_proxy_config() {
+  local config_dir
+  config_dir="$STATE_DIR/ipv6-udp-proxy"
+  mkdir -p "$config_dir"
+  cat >"$config_dir/config.yaml" <<EOF
+mixed-port: $IPV6_UDP_PROXY_PORT
+allow-lan: false
+bind-address: 127.0.0.1
+mode: rule
+log-level: info
+ipv6: false
+external-controller: ""
+dns:
+  enable: true
+  listen: 127.0.0.1:$IPV6_UDP_PROXY_DNS_PORT
+  nameserver:
+    - 127.0.0.1:$IPV6_DNS_FIXTURE_PORT
+rules:
+  - MATCH,DIRECT
+EOF
+}
+
+start_ipv6_udp_proxy() {
+  local config_dir log_file i
+  config_dir="$STATE_DIR/ipv6-udp-proxy"
+  log_file="$STATE_DIR/logs/ipv6-udp-proxy.log"
+  write_ipv6_udp_proxy_config
+  rm -f "$log_file"
+  mihomo -d "$config_dir" -f "$config_dir/config.yaml" >"$log_file" 2>&1 &
+  IPV6_UDP_PROXY_PID=$!
+  for i in {1..80}; do
+    if /usr/bin/nc -z 127.0.0.1 "$IPV6_UDP_PROXY_PORT" >/dev/null 2>&1; then
+      echo "controlled SOCKS5 UDP proxy ready: 127.0.0.1:$IPV6_UDP_PROXY_PORT"
+      return 0
+    fi
+    if ! kill -0 "$IPV6_UDP_PROXY_PID" 2>/dev/null; then
+      echo "controlled SOCKS5 UDP proxy exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "controlled SOCKS5 UDP proxy did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_ipv6_udp_proxy() {
+  if [[ -n "$IPV6_UDP_PROXY_PID" ]] && kill -0 "$IPV6_UDP_PROXY_PID" 2>/dev/null; then
+    kill "$IPV6_UDP_PROXY_PID" 2>/dev/null || true
+    wait "$IPV6_UDP_PROXY_PID" 2>/dev/null || true
+  fi
+  IPV6_UDP_PROXY_PID=""
 }
 
 start_ipv6_dns_fixture() {
@@ -701,6 +879,9 @@ start_ipv6_dns_fixture() {
     --address="/$IPV6_TCP_TEST_HOST/127.0.0.1" \
     --address="/$IPV6_UDP_TEST_HOST/127.0.0.1" \
     --address="/$IPV6_QUIC_TEST_HOST/127.0.0.1" \
+    --address="/$IPV6_HTTP3_DIRECT_HOST/127.0.0.1" \
+    --address="/$IPV6_HTTP3_PROXY_HOST/127.0.0.1" \
+    --address="/$IPV6_HTTP3_BLOCKED_HOST/127.0.0.1" \
     --address="/$IPV6_UDP_ANSWER_HOST/192.0.2.123" \
     --log-queries \
     --log-facility=- >"$log_file" 2>&1 &
@@ -765,6 +946,107 @@ client_ipv6() {
   limactl shell "$client" -- bash -lc "ip -6 -o addr show dev omg0 scope global | awk '/fdfe:dcba:9878:/ { split(\$4, value, \"/\"); print value[1]; exit }'" | tr -d '\r\n'
 }
 
+start_client_hold_connection() {
+  local client=$1 log_file=$2
+  rm -f "$log_file"
+  limactl shell "$client" -- python3 -c \
+    'import socket,sys,time; connection=socket.create_connection((sys.argv[1],443),10); print("READY",flush=True); time.sleep(180)' \
+    "$CONNECTION_REFRESH_TEST_HOST" >"$log_file" 2>&1 &
+  LAST_CLIENT_HOLD_PID=$!
+}
+
+stop_client_hold_connection() {
+  local pid=$1
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+wait_for_client_hold_connection() {
+  local client=$1 log_file=$2 pid=$3 i output
+  for i in {1..40}; do
+    output="$(cat "$log_file" 2>/dev/null || true)"
+    if grep -Fq READY <<<"$output"; then
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    sleep 0.25
+  done
+  echo "client $client did not establish the held connection" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+fetch_mihomo_connections() {
+  local output=$1
+  /usr/bin/curl --fail --silent --show-error "http://127.0.0.1:19090/connections" >"$output"
+}
+
+connection_ids_for_source_host() {
+  local snapshot=$1 source_ip=$2 host=$3 output=$4
+  /usr/bin/ruby -rjson -e '
+    body = JSON.parse(File.read(ARGV.fetch(0)))
+    source, host = ARGV.fetch(1), ARGV.fetch(2)
+    body.fetch("connections", []).each do |connection|
+      metadata = connection.fetch("metadata", {})
+      puts connection["id"] if metadata["sourceIP"].to_s == source && metadata["host"].to_s == host
+    end
+  ' "$snapshot" "$source_ip" "$host" >"$output"
+}
+
+wait_for_connection_ids() {
+  local source_ip=$1 host=$2 snapshot=$3 output=$4 i
+  for i in {1..40}; do
+    fetch_mihomo_connections "$snapshot"
+    connection_ids_for_source_host "$snapshot" "$source_ip" "$host" "$output"
+    if [[ -s "$output" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "mihomo did not expose the held connection for $source_ip -> $host" >&2
+  cat "$snapshot" >&2 || true
+  exit 1
+}
+
+snapshot_contains_any_ids() {
+  local snapshot=$1 ids=$2
+  /usr/bin/ruby -rjson -rset -e '
+    current = JSON.parse(File.read(ARGV.fetch(0))).fetch("connections", []).map { |connection| connection["id"].to_s }.to_set
+    expected = File.readlines(ARGV.fetch(1), chomp: true).reject(&:empty?).to_set
+    exit((current & expected).empty? ? 1 : 0)
+  ' "$snapshot" "$ids"
+}
+
+wait_for_scoped_connection_refresh() {
+  local target_ids=$1 other_ids=$2 snapshot=$3 i
+  for i in {1..40}; do
+    fetch_mihomo_connections "$snapshot"
+    if ! snapshot_contains_any_ids "$snapshot" "$target_ids" && snapshot_contains_any_ids "$snapshot" "$other_ids"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "connection refresh did not remove only the target device connections" >&2
+  cat "$snapshot" >&2 || true
+  exit 1
+}
+
+assert_connection_refresh_response() {
+  local response=$1 device_id=$2
+  /usr/bin/ruby -rjson -e '
+    payload = JSON.parse(File.read(ARGV.fetch(0)))
+    device = ARGV.fetch(1)
+    abort "unexpected refresh scope" unless payload["scope"] == "device" && payload["device_id"] == device
+    matched = Integer(payload.fetch("matched_connections"))
+    closed = Integer(payload.fetch("closed_connections"))
+    abort "refresh did not close every matched connection" unless matched.positive? && closed == matched
+  ' "$response" "$device_id"
+}
+
 wait_for_ipv6_policy_log() {
   local network=$1 source_ip=$2 target=$3 action=$4 i log_file
   log_file="$STATE_DIR/logs/mihomo.log"
@@ -781,33 +1063,121 @@ wait_for_ipv6_policy_log() {
   exit 1
 }
 
+run_ipv6_http3_client() {
+  local client source host request_path evidence_file
+  client="$1"
+  source="$2"
+  host="$3"
+  request_path="$4"
+  evidence_file="$5"
+  limactl shell "$client" -- bash -c '
+    set -euo pipefail
+    source_ip="$1"
+    host="$2"
+    port="$3"
+    request_path="$4"
+    probe="$5"
+    iface=omg0
+    dns="$(awk '\''$1 == "nameserver" && $2 ~ /:/ { print $2; exit }'\'' /etc/resolv.conf 2>/dev/null || true)"
+    if [[ -z "$dns" ]]; then
+      dns="$(ip -6 route show default dev "$iface" | awk '\''$1 == "default" && $2 == "via" { print $3; exit }'\'')"
+    fi
+    [[ -n "$dns" ]] || { echo "no IPv6 DNS endpoint on $iface" >&2; exit 1; }
+    if [[ "$dns" == fe80:* ]]; then
+      dns="$dns%$iface"
+    fi
+    fake="$(dig +time=5 +tries=1 +short "@$dns" "$host" AAAA | awk '\''/^fdfe:dcba:9876:/ { print; exit }'\'')"
+    [[ -n "$fake" ]]
+    ip -6 route get "$fake" | grep -q "dev $iface"
+    "$probe" client \
+      --url "https://$host:$port$request_path" \
+      --address "$fake" \
+      --source "$source_ip"
+  ' _ "$source" "$host" "$IPV6_HTTP3_FIXTURE_PORT" "$request_path" "$HTTP3_CLIENT_GUEST" \
+    >"$STATE_DIR/egress/$evidence_file" 2>&1
+}
+
+wait_for_http3_origin() {
+  local host request_path i log_file
+  host="$1"
+  request_path="$2"
+  log_file="$STATE_DIR/egress/http3-origin.log"
+  for i in {1..30}; do
+    if [[ -f "$log_file" ]] &&
+      grep -Fq "HTTP3 GET $request_path proto=HTTP/3.0 host=$host:$IPV6_HTTP3_FIXTURE_PORT" "$log_file"; then
+      echo "HTTP/3 origin evidence observed for $host$request_path"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "HTTP/3 origin did not record $host$request_path" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+wait_for_controlled_udp_proxy() {
+  local i log_file
+  log_file="$STATE_DIR/logs/ipv6-udp-proxy.log"
+  for i in {1..30}; do
+    if [[ -f "$log_file" ]] && grep -Fq '[UDP]' "$log_file"; then
+      echo "controlled SOCKS5 UDP relay evidence observed"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "controlled SOCKS5 proxy did not record UDP relay traffic" >&2
+  tail -160 "$log_file" >&2 || true
+  exit 1
+}
+
+assert_ipv6_bpf_bidirectional() {
+  local log_file
+  log_file="$STATE_DIR/logs/ipv6-packet.log"
+  grep -Fq 'OpenSurge IPv6 packet ingress accepted=' "$log_file" || {
+    echo "IPv6 BPF broker did not record accepted ingress" >&2
+    tail -160 "$log_file" >&2 || true
+    exit 1
+  }
+  grep -Fq 'OpenSurge IPv6 packet egress written=' "$log_file" || {
+    echo "IPv6 BPF broker did not record written egress" >&2
+    tail -160 "$log_file" >&2 || true
+    exit 1
+  }
+  echo "IPv6 BPF broker ingress and egress evidence observed"
+}
+
 build_ipv6_lab_binaries() {
-  local build_log go_no_proxy mod_cache
+  local build_cache build_log go_no_proxy mod_cache
   require_command go
   # The optional Lab proxy file may outlive the LAN proxy that created it.
   # The pinned Go module mirror is directly reachable in the supported setup,
   # so do not let a stale general-purpose proxy turn a build prerequisite into
   # a misleading IPv6 data-plane failure.
   go_no_proxy="${NO_PROXY:+$NO_PROXY,}goproxy.cn,proxy.golang.org,github.com,codeload.github.com,objects.githubusercontent.com"
+  build_cache="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}"
   mod_cache="${GOMODCACHE:-/private/tmp/opensurge-ipv6-modcache}"
   build_log="$STATE_DIR/logs/mihomo-build.log"
   GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
   NO_PROXY="$go_no_proxy" \
   no_proxy="$go_no_proxy" \
     go build -o "$IPV6_PACKET_BINARY" ./cmd/opensurge-network
-  if ! GOCACHE="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}" \
+  if ! GOCACHE="$build_cache" \
     GOMODCACHE="$mod_cache" \
     GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
     NO_PROXY="$go_no_proxy" \
     no_proxy="$go_no_proxy" \
     OPENSURGE_MIHOMO_OUTPUT="$PATCHED_MIHOMO_BINARY" \
       "$ROOT/scripts/build-opensurge-mihomo.sh" 2>&1 | tee "$build_log"; then
-    if ! grep -F "$mod_cache" "$build_log" | grep -Eq 'no such file or directory|no matching files found'; then
+    if grep -F "$mod_cache" "$build_log" | grep -Eq 'no such file or directory|no matching files found'; then
+      echo "OpenSurge Mihomo module cache is incomplete; rebuilding the disposable Lab cache"
+      GOMODCACHE="$mod_cache" go clean -modcache
+    elif grep -Fq 'no required module provides package' "$build_log"; then
+      echo "OpenSurge Mihomo build cache is inconsistent; rebuilding the disposable Lab cache"
+      GOCACHE="$build_cache" go clean -cache
+    else
       return 1
     fi
-    echo "OpenSurge Mihomo module cache is incomplete; rebuilding the disposable Lab cache"
-    GOMODCACHE="$mod_cache" go clean -modcache
-    GOCACHE="${GOCACHE:-/private/tmp/opensurge-v020-mihomo-cache}" \
+    GOCACHE="$build_cache" \
     GOMODCACHE="$mod_cache" \
     GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
     NO_PROXY="$go_no_proxy" \
@@ -835,16 +1205,27 @@ write_ipv6_device_policy_fixture() {
 {
   "profiles": [
     {"id":"blocked","default_policies":["DIRECT"],"rules":[{"id":"block-ipv6-lab","match":{"domains":["$IPV6_TCP_TEST_HOST"]},"action":"REJECT"}]},
-    {"id":"direct","default_policies":["DIRECT"]}
+    {"id":"direct","default_policies":["DIRECT","lab-udp-proxy","lab-http-only"]}
   ],
   "devices": [
     {"id":"$client_one","mac":"$mac_one","ipv4":"192.168.50.101","profile":"blocked","egress_mode":"dedicated"$gateway_target},
-    {"id":"$client_two","mac":"$mac_two","ipv4":"192.168.50.102","profile":"direct","egress_mode":"dedicated"}
+    {"id":"$client_two","mac":"$mac_two","ipv4":"192.168.50.102","profile":"direct","egress_mode":"dedicated"},
+    {"id":"dormant-old-lan","mac":"02:00:00:60:01:50","ipv4":"192.168.60.150","profile":"blocked","egress_mode":"dedicated"}
   ]
 }
 EOF
   LAB_MIHOMO_PROFILE="$STATE_DIR/mihomo-profile.ipv6.yaml"
   cat >"$LAB_MIHOMO_PROFILE" <<EOF
+proxies:
+  - name: lab-udp-proxy
+    type: socks5
+    server: 127.0.0.1
+    port: $IPV6_UDP_PROXY_PORT
+    udp: true
+  - name: lab-http-only
+    type: http
+    server: 127.0.0.1
+    port: $EGRESS_PROXY_PORT
 dns:
   nameserver:
     - 127.0.0.1:$IPV6_DNS_FIXTURE_PORT
@@ -1167,6 +1548,26 @@ assert_client_ipv4() {
   fi
 }
 
+assert_client_ipv4_prefix() {
+  local client=$1 expected=$2 actual
+  actual="$(limactl shell "$client" -- bash -lc "ip -4 -o addr show dev omg0 scope global | awk 'NR == 1 { print \$4 }'" | tr -d '\r\n')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "$client IPv4 prefix $actual, want $expected" >&2
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status >&2 || true
+    exit 1
+  fi
+}
+
+assert_lab_ipv4_prefix() {
+  local iface
+  iface="$(lab_interface)"
+  /sbin/ifconfig "$iface" | grep -F "inet $LAN_IP netmask 0xfffffc00" >/dev/null || {
+    echo "lab interface $iface is not configured as $LAN_IP/22" >&2
+    /sbin/ifconfig "$iface" >&2
+    exit 1
+  }
+}
+
 assert_device_policy_identity_ready() {
   local output=$1 digest
   [[ -f "$STATE_DIR/device-policy.applied.json" ]] || {
@@ -1209,6 +1610,28 @@ assert_ip_only_device_paused() {
   fi
   if grep -Fq '192.168.50.150/32' "$STATE_DIR/mihomo.yaml"; then
     echo "DHCP mode unexpectedly emitted a routing rule for the IP-only device" >&2
+    exit 1
+  fi
+}
+
+assert_out_of_lan_device_dormant() {
+  local output=${1:-}
+  /usr/bin/ruby -rjson -e '
+    snapshot = JSON.parse(File.read(ARGV.fetch(0)))
+    abort "applied snapshot has wrong active LAN" unless snapshot["active_lan"] == "192.168.48.0/22"
+    desired = snapshot.fetch("policy").fetch("devices")
+    abort "dormant desired record was not preserved" unless desired.any? { |item| item["id"] == "dormant-old-lan" && item["ipv4"] == "192.168.60.150" }
+    compiled = JSON.generate(snapshot.fetch("compiled"))
+    abort "dormant device leaked into compiled runtime" if compiled.include?("dormant-old-lan") || compiled.include?("192.168.60.150") || compiled.include?("02:00:00:60:01:50")
+  ' "$STATE_DIR/device-policy.applied.json"
+  for path in "$STATE_DIR/dnsmasq.conf" "$STATE_DIR/mihomo.yaml"; do
+    if grep -Eq 'dormant-old-lan|192\.168\.60\.150|02:00:00:60:01:50' "$path"; then
+      echo "out-of-LAN device leaked into generated runtime config $path" >&2
+      exit 1
+    fi
+  done
+  if [[ -n "$output" ]] && grep -Fq 'dormant-old-lan' "$output"; then
+    echo "out-of-LAN device leaked into active runtime device list" >&2
     exit 1
   fi
 }
@@ -1286,13 +1709,20 @@ EOF
     {
       "id": "$client_two",
       "mac": "$mac_two",
-      "ipv4": "192.168.50.102",
+      "ipv4": "192.168.51.102",
       "profile": "direct-blocked",
       "egress_mode": "inherit_global"
     },
     {
       "id": "paused-ip-only",
       "ipv4": "192.168.50.150",
+      "profile": "controlled",
+      "egress_mode": "dedicated"
+    },
+    {
+      "id": "dormant-old-lan",
+      "mac": "02:00:00:60:01:50",
+      "ipv4": "192.168.60.150",
       "profile": "controlled",
       "egress_mode": "dedicated"
     }
@@ -1335,13 +1765,20 @@ write_device_block_rule() {
     {
       "id": "$client_two",
       "mac": "$mac_two",
-      "ipv4": "192.168.50.102",
+      "ipv4": "192.168.51.102",
       "profile": "direct-blocked",
       "egress_mode": "dedicated"
     },
     {
       "id": "paused-ip-only",
       "ipv4": "192.168.50.150",
+      "profile": "controlled",
+      "egress_mode": "dedicated"
+    },
+    {
+      "id": "dormant-old-lan",
+      "mac": "02:00:00:60:01:50",
+      "ipv4": "192.168.60.150",
       "profile": "controlled",
       "egress_mode": "dedicated"
     }
@@ -1351,10 +1788,12 @@ EOF
 }
 
 run_device_policy_test() {
-  local client_one client_two gateway_started egress_probe_started host
+  local client_one client_two client_one_hold_pid client_two_hold_pid gateway_started egress_probe_started control_api_started hold_connections_started host
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
+  start_sudo_keepalive
+  trap stop_sudo_keepalive EXIT
   ensure_lab_state_writable
   set -- $CLIENTS
   [[ "$#" -eq 2 ]] || { echo "device-policy lab requires exactly two clients" >&2; exit 1; }
@@ -1371,19 +1810,32 @@ run_device_policy_test() {
   GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
     go build -o "$BINARY" ./cmd/omg
   build_egress_probe
+  build_control_api
 
   gateway_started=0
   egress_probe_started=0
+  control_api_started=0
+  hold_connections_started=0
+  client_one_hold_pid=""
+  client_two_hold_pid=""
   cleanup_test() {
     status=$?
     collect_artifacts || true
     restore_client_control_dns
+    if [[ "$hold_connections_started" == 1 ]]; then
+      stop_client_hold_connection "$client_one_hold_pid"
+      stop_client_hold_connection "$client_two_hold_pid"
+    fi
+    if [[ "$control_api_started" == 1 ]]; then
+      stop_control_api
+    fi
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
     fi
     if [[ "$egress_probe_started" == 1 ]]; then
       stop_egress_probe || true
     fi
+    stop_sudo_keepalive
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
@@ -1392,17 +1844,28 @@ run_device_policy_test() {
   egress_probe_started=1
   sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
+  start_control_api
+  control_api_started=1
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+  assert_lab_ipv4_prefix
   assert_client_ipv4 "$client_one" "192.168.50.101"
-  assert_client_ipv4 "$client_two" "192.168.50.102"
+  assert_client_ipv4 "$client_two" "192.168.51.102"
+  assert_client_ipv4_prefix "$client_one" "192.168.50.101/22"
+  assert_client_ipv4_prefix "$client_two" "192.168.51.102/22"
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies.json"
   grep -Fq '"ipv4": "192.168.50.101"' "$STATE_DIR/device-policies.json"
-  grep -Fq '"ipv4": "192.168.50.102"' "$STATE_DIR/device-policies.json"
+  grep -Fq '"ipv4": "192.168.51.102"' "$STATE_DIR/device-policies.json"
   grep -Fq '"egress_mode": "dedicated"' "$STATE_DIR/device-policies.json"
   grep -Fq '"egress_mode": "inherit_global"' "$STATE_DIR/device-policies.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies.json"
   assert_ip_only_device_paused "$STATE_DIR/device-policies.json"
+  assert_out_of_lan_device_dormant "$STATE_DIR/device-policies.json"
+  if "$BINARY" device-policy-select --config "$CONFIG" --device dormant-old-lan --slot default --policy DIRECT --format json >"$STATE_DIR/dormant-device-select.json" 2>&1; then
+    echo "out-of-LAN device unexpectedly accepted a runtime selector change" >&2
+    exit 1
+  fi
+  grep -Fq 'unknown device' "$STATE_DIR/dormant-device-select.json"
 
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
   wait_for_tun_udp_reject "192.168.50.101" "1.1.1.1" 443
@@ -1414,7 +1877,7 @@ run_device_policy_test() {
 
   : >"$STATE_DIR/egress/proxy.log"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
-  wait_for_tun_action_log "$host" "DIRECT" "192.168.50.102"
+  wait_for_tun_action_log "$host" "DIRECT" "192.168.51.102"
   assert_tun_egress_proxy_unused
   "$BINARY" policies --config "$CONFIG" --format json >"$STATE_DIR/device-policies-initial-live.json"
   if grep -Fq "\"name\": \"device/$client_two/default\"" "$STATE_DIR/device-policies-initial-live.json"; then
@@ -1456,6 +1919,7 @@ run_device_policy_test() {
   assert_applied_policy_synced "$STATE_DIR/device-policies-after-reload.json"
   assert_device_policy_identity_ready "$STATE_DIR/device-policies-after-reload.json"
   assert_ip_only_device_paused "$STATE_DIR/device-policies-after-reload.json"
+  assert_out_of_lan_device_dormant "$STATE_DIR/device-policies-after-reload.json"
 
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct-after-reload.json"
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-two-controlled-after-reload.json"
@@ -1473,18 +1937,53 @@ run_device_policy_test() {
   wait_for_tun_policy_log_for_host "device/$client_two/default" "lab-controlled" "$host"
   assert_tun_egress_proxy_used
 
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-one-controlled-for-refresh.json"
+  start_client_hold_connection "$client_one" "$STATE_DIR/logs/connection-refresh-$client_one.log"
+  client_one_hold_pid="$LAST_CLIENT_HOLD_PID"
+  start_client_hold_connection "$client_two" "$STATE_DIR/logs/connection-refresh-$client_two.log"
+  client_two_hold_pid="$LAST_CLIENT_HOLD_PID"
+  hold_connections_started=1
+  wait_for_client_hold_connection "$client_one" "$STATE_DIR/logs/connection-refresh-$client_one.log" "$client_one_hold_pid"
+  wait_for_client_hold_connection "$client_two" "$STATE_DIR/logs/connection-refresh-$client_two.log" "$client_two_hold_pid"
+  wait_for_connection_ids "192.168.50.101" "$CONNECTION_REFRESH_TEST_HOST" \
+    "$STATE_DIR/connection-refresh-before.json" "$STATE_DIR/connection-refresh-target.ids"
+  wait_for_connection_ids "192.168.51.102" "$CONNECTION_REFRESH_TEST_HOST" \
+    "$STATE_DIR/connection-refresh-before.json" "$STATE_DIR/connection-refresh-other.ids"
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct-for-refresh.json"
+  /usr/bin/curl --fail --silent --show-error --request POST \
+    --header "Authorization: Bearer $CONTROL_API_TOKEN" \
+    "http://127.0.0.1:$CONTROL_API_PORT/api/v1/devices/$client_one/connections/refresh" \
+    >"$STATE_DIR/connection-refresh-response.json"
+  assert_connection_refresh_response "$STATE_DIR/connection-refresh-response.json" "$client_one"
+  wait_for_scoped_connection_refresh "$STATE_DIR/connection-refresh-target.ids" \
+    "$STATE_DIR/connection-refresh-other.ids" "$STATE_DIR/connection-refresh-after.json"
+
+  : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_one/default" "DIRECT" "$host"
+  assert_tun_egress_proxy_unused
+  echo "device connection refresh removed only the target device old connection; its new connection used DIRECT"
+
+  stop_client_hold_connection "$client_one_hold_pid"
+  stop_client_hold_connection "$client_two_hold_pid"
+  hold_connections_started=0
+
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy DIRECT --format json >"$STATE_DIR/device-two-direct-after-reload.json"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
-  wait_for_tun_udp_reject "192.168.50.102" "1.1.1.1" 443
+  wait_for_tun_udp_reject "192.168.51.102" "1.1.1.1" 443
 
   cp "$STATE_DIR/device-policy.applied.json" "$STATE_DIR/device-policy.applied.evidence.json"
   cp "$STATE_DIR/state.json" "$STATE_DIR/state.evidence.json"
   restore_client_control_dns
+  stop_control_api
+  control_api_started=0
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
   stop_egress_probe
   egress_probe_started=0
   [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
+  stop_sudo_keepalive
   trap - EXIT INT TERM
   collect_artifacts
   echo "virtual LAN device-policy TUN test passed"
@@ -1492,7 +1991,7 @@ run_device_policy_test() {
 
 run_ipv6_userspace_test() {
   local client_one client_two source_one source_two gateway_started broker_pid iface rdnss client_gateway
-  local egress_probe_started dns_fixture_started topology config_mode
+  local egress_probe_started dns_fixture_started http3_probe_started udp_proxy_started topology config_mode
   topology="${1:-isolated_lan}"
   case "$topology" in
     isolated_lan) config_mode=ipv6 ;;
@@ -1503,6 +2002,8 @@ run_ipv6_userspace_test() {
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
+  start_sudo_keepalive
+  trap stop_sudo_keepalive EXIT
   ensure_lab_state_writable
   set -- $CLIENTS
   [[ "$#" -eq 2 ]] || { echo "IPv6 lab requires exactly two clients" >&2; exit 1; }
@@ -1519,6 +2020,8 @@ run_ipv6_userspace_test() {
   write_ipv6_device_policy_fixture "$topology"
   build_ipv6_lab_binaries
   build_egress_probe
+  build_http3_lab_binaries
+  install_http3_lab_client
   write_tun_egress_provider
   write_config "$config_mode"
   mkdir -p "$ROOT/bin"
@@ -1528,6 +2031,8 @@ run_ipv6_userspace_test() {
   gateway_started=0
   egress_probe_started=0
   dns_fixture_started=0
+  http3_probe_started=0
+  udp_proxy_started=0
   cleanup_test() {
     status=$?
     collect_artifacts || true
@@ -1540,20 +2045,31 @@ run_ipv6_userspace_test() {
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
     fi
+    if [[ "$udp_proxy_started" == 1 ]]; then
+      stop_ipv6_udp_proxy || true
+    fi
+    if [[ "$http3_probe_started" == 1 ]]; then
+      stop_http3_probe || true
+    fi
     if [[ "$dns_fixture_started" == 1 ]]; then
       stop_ipv6_dns_fixture || true
     fi
     if [[ "$egress_probe_started" == 1 ]]; then
       stop_egress_probe || true
     fi
+    stop_sudo_keepalive
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
 
   start_egress_probe
   egress_probe_started=1
+  start_http3_probe
+  http3_probe_started=1
   start_ipv6_dns_fixture
   dns_fixture_started=1
+  start_ipv6_udp_proxy
+  udp_proxy_started=1
   sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
   rdnss="$(/sbin/ifconfig "$iface" | awk '/inet6 fe80:/ { split($2, value, "%"); print value[1]; exit }')"
@@ -1614,6 +2130,7 @@ run_ipv6_userspace_test() {
   grep -Fq 'type: opensurge-packet' "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_one")\": \"device:$client_one\"" "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_two")\": \"device:$client_two\"" "$STATE_DIR/mihomo.yaml"
+  assert_out_of_lan_device_dormant
   if [[ "$topology" == "same_wifi_dhcp" ]]; then
     grep -Fq -- "- AND,((IN-TYPE,TUN),(IN-USER,device:$client_one)),REJECT" "$STATE_DIR/mihomo.yaml"
     "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/ipv6-devices.json"
@@ -1642,6 +2159,39 @@ run_ipv6_userspace_test() {
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client ipv6-quic "$LAN_IP" "$IPV6_QUIC_TEST_HOST" "$IPV6_DNS_FIXTURE_PORT"
   wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_QUIC_TEST_HOST:$IPV6_DNS_FIXTURE_PORT" "device/$client_two/default[DIRECT]"
 
+  run_ipv6_http3_client "$client_two" "$source_two" "$IPV6_HTTP3_DIRECT_HOST" "/ipv6-http3-direct" "http3-client-direct.txt"
+  grep -Fq 'CLIENT_IPV6_HTTP3_OK protocol=HTTP/3.0' "$STATE_DIR/egress/http3-client-direct.txt"
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_HTTP3_DIRECT_HOST:$IPV6_HTTP3_FIXTURE_PORT" "device/$client_two/default[DIRECT]"
+  wait_for_http3_origin "$IPV6_HTTP3_DIRECT_HOST" "/ipv6-http3-direct"
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-udp-proxy --format json \
+    >"$STATE_DIR/egress/http3-select-udp-proxy.json"
+  run_ipv6_http3_client "$client_two" "$source_two" "$IPV6_HTTP3_PROXY_HOST" "/ipv6-http3-proxy" "http3-client-udp-proxy.txt"
+  grep -Fq 'CLIENT_IPV6_HTTP3_OK protocol=HTTP/3.0' "$STATE_DIR/egress/http3-client-udp-proxy.txt"
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_HTTP3_PROXY_HOST:$IPV6_HTTP3_FIXTURE_PORT" "device/$client_two/default[lab-udp-proxy]"
+  wait_for_http3_origin "$IPV6_HTTP3_PROXY_HOST" "/ipv6-http3-proxy"
+  wait_for_controlled_udp_proxy
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy lab-http-only --format json \
+    >"$STATE_DIR/egress/http3-select-http-only.json"
+  if run_ipv6_http3_client "$client_two" "$source_two" "$IPV6_HTTP3_BLOCKED_HOST" "/ipv6-http3-blocked" "http3-client-http-only.txt"; then
+    echo "HTTP/3 unexpectedly crossed the HTTP-only outbound" >&2
+    exit 1
+  fi
+  wait_for_ipv6_policy_log UDP "$source_two" "$IPV6_HTTP3_BLOCKED_HOST:$IPV6_HTTP3_FIXTURE_PORT" REJECT
+  if grep -Fq '/ipv6-http3-blocked' "$STATE_DIR/egress/http3-origin.log"; then
+    echo "HTTP-only fail-closed probe unexpectedly reached the HTTP/3 origin" >&2
+    exit 1
+  fi
+  if [[ -s "$STATE_DIR/egress/proxy.log" ]]; then
+    echo "HTTP-only fail-closed probe unexpectedly reached the controlled CONNECT proxy" >&2
+    cat "$STATE_DIR/egress/proxy.log" >&2
+    exit 1
+  fi
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy DIRECT --format json \
+    >"$STATE_DIR/egress/http3-select-direct-restored.json"
+  assert_ipv6_bpf_bidirectional
+
   cp "$STATE_DIR/state.json" "$STATE_DIR/ipv6-state.evidence.json"
   broker_pid="$(sed -n 's/.*"pid_ipv6_packet": \([0-9][0-9]*\).*/\1/p' "$STATE_DIR/state.json" | head -1)"
   [[ -n "$broker_pid" ]] || { echo "IPv6 packet broker PID missing from runtime state" >&2; exit 1; }
@@ -1650,6 +2200,10 @@ run_ipv6_userspace_test() {
   restore_client_control_dns
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
+  stop_ipv6_udp_proxy
+  udp_proxy_started=0
+  stop_http3_probe
+  http3_probe_started=0
   stop_ipv6_dns_fixture
   dns_fixture_started=0
   stop_egress_probe
@@ -1675,9 +2229,10 @@ run_ipv6_userspace_test() {
       assert_client_ipv6_withdrawn "$client"
     done
   fi
+  stop_sudo_keepalive
   trap - EXIT INT TERM
   collect_artifacts
-  echo "virtual LAN $topology userspace IPv6 TCP, UDP/QUIC carrier, device identity, upstream-router IPv6 block, and rollback test passed"
+  echo "virtual LAN $topology userspace IPv6 TCP, UDP, QUIC carrier, HTTP/3-only DIRECT and SOCKS5 UDP, HTTP-only fail-closed, device identity, upstream-router IPv6 block, and rollback test passed"
 }
 
 run_ipv6_imported_egress_test() {

@@ -22,7 +22,7 @@ type templateData struct {
 }
 
 func RenderAnchor(cfg config.Config) (string, error) {
-	lanCIDR, err := cfg.LANPrefix24()
+	lanCIDR, err := cfg.LANPrefix()
 	if err != nil {
 		return "", err
 	}

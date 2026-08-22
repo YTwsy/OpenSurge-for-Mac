@@ -35,6 +35,15 @@ sing-tun gVisor 处理 TCP/UDP，把 MAC 映射为内部 `device:<id>` InUser，
 IPv6-to-MAC 邻居表写回 Ethernet。QUIC 由 UDP/443 路径承载；这个实现不宣称代理
 ICMPv6、ESP 或任意非 TCP/UDP 协议。
 
+patched listener 当前显式设置 `DisableICMPForwarding: true`。这不影响本机链路上的
+RA/SLAAC、RDNSS 与 Neighbor Discovery；它们由 dnsmasq、macOS 和客户端协议栈处理，
+三个拓扑门槛会通过地址、默认路由、DNS 与真实双向 TCP/UDP/HTTP3 间接验证这些控制面
+前置条件。不要仅为“ping 可用”打开 gVisor ICMP forwarding：常见代理 outbound 没有
+对应的 ICMP 语义。若以后把 ping/traceroute 或跨出口 ICMPv6 定为产品需求，应先定义
+每类 outbound 的映射与 fail-closed 行为，再新增专门 Lab。Packet Too Big / PMTUD 也应
+作为独立的 MTU 与大包门槛验证；当前 HTTP/3 fixture 只证明基线 QUIC/HTTP3 流量，不
+证明所有 PMTUD 场景。
+
 安装包将 broker 安装为 `<OpenSurge root>/bin/opensurge-network`。新安装生成的配置
 使用该绝对路径；升级保留的旧配置可能仍使用短名称，因此 broker 解析在 `PATH` 和当前
 可执行文件旁边均未命中时，还要根据 `runtime.dir` 检查同一安装根目录的 `bin`。root

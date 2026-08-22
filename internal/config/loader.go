@@ -117,6 +117,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Gateway.Interface = value
 	case "gateway.lan_ip":
 		cfg.Gateway.LANIP = value
+	case "gateway.lan_prefix_len":
+		prefixLen, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("gateway.lan_prefix_len must be a number")
+		}
+		cfg.Gateway.LANPrefixLen = prefixLen
 	case "gateway.upstream_interface":
 		cfg.Gateway.UpstreamInterface = value
 	case "dhcp.binary":
@@ -167,6 +173,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Mihomo.ProfileMode = strings.ToLower(value)
 	case "mihomo.profile":
 		cfg.Mihomo.Profile = value
+	case "mihomo.store_fake_ip":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("mihomo.store_fake_ip must be a boolean")
+		}
+		cfg.Mihomo.StoreFakeIP = enabled
 	case "mihomo.mixed_port":
 		port, err := strconv.Atoi(value)
 		if err != nil {

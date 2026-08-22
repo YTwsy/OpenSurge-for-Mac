@@ -1,4 +1,4 @@
-import type { APIError, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile } from './types'
+import type { APIError, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -67,6 +67,8 @@ export const api = {
   selectPolicy: (group: string, policy: string) => request(`/api/v1/policies/${encodeURIComponent(group)}/selection`, { method: 'POST', body: JSON.stringify({ policy }) }),
   localRouting: () => request<LocalRouting>('/api/v1/local-routing'),
   setLocalRouting: (mode: LocalRoutingMode, globalPolicy?: string) => request<LocalRouting>('/api/v1/local-routing', { method: 'POST', body: JSON.stringify({ mode, global_policy: globalPolicy }) }),
+  refreshLocalConnections: () => request<ConnectionRefreshResult>('/api/v1/local-routing/connections/refresh', { method: 'POST' }),
+  refreshDeviceConnections: (device: string) => request<ConnectionRefreshResult>(`/api/v1/devices/${encodeURIComponent(device)}/connections/refresh`, { method: 'POST' }),
   selectDevicePolicy: (device: string, slot: string, policy: string) => request(`/api/v1/devices/${encodeURIComponent(device)}/selectors/${encodeURIComponent(slot)}`, { method: 'POST', body: JSON.stringify({ policy }) }),
   proxyHealth: () => request<ProxyHealthSnapshot>('/api/v1/proxy-health'),
   testProxyHealth: (names: string[]) => request<ProxyHealthTestResponse>('/api/v1/proxy-health/tests', { method: 'POST', body: JSON.stringify({ names }) }),

@@ -9,6 +9,15 @@ import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkDefaults,
 const ipv4Pattern = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 type NetworkMode = ControlConfig['gateway']['mode']
 
+// The gateway rejects prefixes outside /8-/30: wider has no private use here and
+// narrower leaves no host addresses beside the Mac itself.
+const supportedPrefixLengths = Array.from({ length: 23 }, (_, index) => index + 8)
+
+function netmaskForPrefixLength(prefixLength: number): string {
+  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0
+  return [24, 16, 8, 0].map(shift => (mask >>> shift) & 0xff).join('.')
+}
+
 function isInstallerNetworkSeed(config: ControlConfig): boolean {
   return config.gateway.mode === 'isolated_lan'
     && config.gateway.interface === 'en0'
@@ -120,7 +129,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
     }
   })
 
-  const applyInitialNetworkDefaults = async (mode: NetworkDefaults['mode']) => {
+  const applyNetworkDefaults = async (mode: NetworkDefaults['mode']) => {
     setNetworkDefaultsBusy(true); setNetworkDefaultsError(''); setNetworkDefaultsMessage('')
     try {
       const defaults = await api.networkDefaults(mode)
@@ -138,13 +147,19 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
           : currentConfig.dhcp
         return {
           ...currentConfig,
-          gateway: { ...currentConfig.gateway, interface: defaults.snapshot.interface, upstream_interface: defaults.snapshot.interface, lan_ip: defaults.gateway_ipv4 },
+          gateway: {
+            ...currentConfig.gateway,
+            interface: defaults.snapshot.interface,
+            upstream_interface: defaults.snapshot.interface,
+            lan_ip: defaults.gateway_ipv4,
+            lan_prefix_len: defaults.lan_prefix_len ?? currentConfig.gateway.lan_prefix_len,
+          },
           dhcp,
           dns: { ...currentConfig.dns, listen: defaults.gateway_ipv4 },
         }
       })
       const warning = defaults.warnings.length ? ` ${defaults.warnings.join('；')}。` : ''
-      const fields = mode === 'same_wifi_dhcp' ? 'IPv4、地址池和主路由建议值' : 'IPv4 建议值'
+      const fields = mode === 'same_wifi_dhcp' ? 'IPv4、子网前缀、地址池和主路由建议值' : 'IPv4 与子网前缀建议值'
       setNetworkDefaultsMessage(`已根据当前 ${defaults.snapshot.network_service}（${defaults.snapshot.interface}）填入 ${fields}，尚未保存。${warning}`)
     } catch (cause) {
       const fields = mode === 'same_lan' ? '接口和 IPv4' : '接口、IPv4、地址池、主路由网关和 DNS'
@@ -160,7 +175,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
     if (mode === 'isolated_lan') { setNetworkDefaultsMessage(''); setNetworkDefaultsError('') }
     if (config?.gateway.mode !== mode) {
       selectMode(mode)
-      if (initialNetworkSetup && mode !== 'isolated_lan') void applyInitialNetworkDefaults(mode)
+      if (initialNetworkSetup && mode !== 'isolated_lan') void applyNetworkDefaults(mode)
     }
   }
 
@@ -396,6 +411,12 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
           {networkDefaultsBusy && <div className="notice" role="status">正在读取当前主网络…</div>}
           {networkDefaultsMessage && <div className="notice ok-notice" role="status">{networkDefaultsMessage}</div>}
           {networkDefaultsError && <div className="notice warn" role="alert">{networkDefaultsError}</div>}
+          {config.gateway.mode !== 'isolated_lan' && <div className="network-defaults-refill">
+            <button type="button" className="text-link" onClick={() => void applyNetworkDefaults(config.gateway.mode as NetworkDefaults['mode'])}>根据当前网络重新填入</button>
+            <small>{config.gateway.mode === 'same_wifi_dhcp'
+              ? '重新读取 Mac 当前主网络，覆盖下面尚未保存的接口、Mac 网关 IPv4、子网前缀、DHCP 地址池和主路由建议值。换网络或换网段后用它对齐。'
+              : '重新读取 Mac 当前主网络，覆盖下面尚未保存的接口、Mac 网关 IPv4 和子网前缀。换网络或换网段后用它对齐。'}</small>
+          </div>}
           <datalist id="network-interface-options">
             {interfaceOptions.map(option => <option key={`${option.interface}:${option.network_service}`} value={option.interface} label={`${option.network_service} · ${option.interface}`} />)}
           </datalist>
@@ -410,10 +431,15 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
           <ConfigField label="Mac 网关 IPv4" setting="gateway.lan_ip / dns.listen" hint="分配给 Mac 的下游网关地址，也是 dnsmasq 的 DNS 监听地址。不能放进 DHCP 地址池；局域网 DHCP 接管时应使用当前网段的固定且未占用地址。">
             <input aria-label="Mac 网关 IPv4" value={config.gateway.lan_ip} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_ip: event.target.value }, dns: { ...config.dns, listen: event.target.value } })} />
           </ConfigField>
+          <ConfigField label="下游 LAN 子网前缀" setting="gateway.lan_prefix_len" hint="下游网段的真实子网掩码。pf NAT、TUN 路由排除、DHCP 地址池校验和设备地址归属都由它推导，填错会让同网段设备被当成外部流量。接入现有局域网时请与主路由保持一致。">
+            <select aria-label="下游 LAN 子网前缀" value={config.gateway.lan_prefix_len || 24} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_prefix_len: Number(event.target.value) } })}>
+              {supportedPrefixLengths.map(prefixLength => <option key={prefixLength} value={prefixLength}>{`/${prefixLength}（${netmaskForPrefixLength(prefixLength)}）`}</option>)}
+            </select>
+          </ConfigField>
           <fieldset className={`dhcp-config-group ${dhcpRuntimeDisabled ? 'runtime-inactive' : ''}`} disabled={dhcpRuntimeDisabled}>
             <legend><strong>DHCP 地址池</strong><small>{dhcpRuntimeDisabled ? '旁路由模式运行时不使用；当前值仅保留供切换网络模式后复用' : 'dnsmasq 为下游客户端分配 IPv4 时使用'}</small></legend>
             <div className="dhcp-config-grid">
-              <ConfigField label="地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4；应与 Mac 网关位于同一 /24。">
+              <ConfigField label="地址池起点" setting="dhcp.range_start" hint="dnsmasq 可以动态租给客户端的第一个 IPv4；必须与 Mac 网关位于同一子网，范围由上面的子网前缀决定。">
                 <input aria-label="DHCP 地址池起点" value={config.dhcp.range_start} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, range_start: event.target.value } })} />
               </ConfigField>
               <ConfigField label="地址池终点" setting="dhcp.range_end" hint="dnsmasq 可以动态租给客户端的最后一个 IPv4；请避开 Mac、路由器和静态地址。">
@@ -427,7 +453,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
           {config.gateway.mode === 'same_wifi_dhcp' && <fieldset className="dhcp-config-group">
             <legend><strong>直连主路由设备</strong><small>仅供设备页“直连主路由”使用；普通接管设备仍获得 Mac 网关和 DNS</small></legend>
             <div className="dhcp-config-grid">
-              <ConfigField label="主路由网关" setting="dhcp.bypass_gateway" hint="向取消 OpenSurge IPv4 网关接管的设备下发。必须与 Mac 网关处于同一 /24，且不能位于 DHCP 地址池中。">
+              <ConfigField label="主路由网关" setting="dhcp.bypass_gateway" hint="向取消 OpenSurge IPv4 网关接管的设备下发。必须与 Mac 网关处于同一子网，且不能位于 DHCP 地址池中。">
                 <input aria-label="直连主路由网关" placeholder="192.168.1.1" value={config.dhcp.bypass_gateway} onChange={event => setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: event.target.value } })} />
               </ConfigField>
               <ConfigField label="主路由 DNS" setting="dhcp.bypass_dns" hint="向直连主路由设备下发，可填写原路由器或公共 DNS；多个地址用逗号分隔。">
@@ -440,20 +466,39 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
               setConfig({ ...config, dhcp: { ...config.dhcp, bypass_gateway: snapshot.router || '', bypass_dns: snapshot.dns.length ? snapshot.dns : snapshot.router ? [snapshot.router] : [] } })
             }}>使用当前网络快照中的路由器与 DNS</button>
           </fieldset>}
-          <ConfigField label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
-            <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
-              <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>
-              <button type="button" aria-pressed={config.dns.upstream === '1.1.1.1'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '1.1.1.1' } })}>公共 DNS（调试）</button>
+          <details className="mihomo-dns-advanced">
+            <summary aria-label="高级 Mihomo / DNS 设置">
+              <span><strong>高级 Mihomo / DNS 设置</strong><small>fake-IP 映射、dnsmasq 上游与透明代理入口</small></span>
+              <span className="mihomo-dns-advanced-status">{config.mihomo.store_fake_ip ? '映射已持久化' : '映射不持久化'} · {config.transparent.mode === 'tun' ? 'TUN' : '透明代理关闭'}</span>
+            </summary>
+            <div className="mihomo-dns-advanced-grid">
+              <ConfigField className="wide" label="上游 DNS" setting="dns.upstream" hint="dnsmasq 转发客户端 DNS 查询时使用的解析器，可填 IPv4 或 IPv4#port（例如 127.0.0.1#1053）。客户端的 DNS 会指向上面的 Mac 网关 IPv4，而不是此地址。">
+                <div className="dns-presets" role="group" aria-label="上游 DNS 预设">
+                  <button type="button" aria-pressed={config.dns.upstream === '127.0.0.1#1053'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '127.0.0.1#1053' } })}>mihomo DNS（推荐）</button>
+                  <button type="button" aria-pressed={config.dns.upstream === '1.1.1.1'} onClick={() => setConfig({ ...config, dns: { ...config.dns, upstream: '1.1.1.1' } })}>公共 DNS（调试）</button>
+                </div>
+                <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
+                <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
+              </ConfigField>
+              <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
+                <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
+                  const mode = event.target.value as 'off' | 'tun'
+                  setConfig({ ...config, dns: { ...config.dns, ipv6: mode === 'tun' && config.dns.ipv6 }, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
+                }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
+              </ConfigField>
+              <ConfigField label="Fake-IP 映射持久化" setting="mihomo.store_fake_ip" hint="生成 profile.store-fake-ip。开启后 mihomo 会在重启时恢复域名与 fake-IP 的映射，避免 cloudflared 等长驻进程继续使用已经失效的 198.18.x.x；不会保留既有 TCP/QUIC 连接。修改 fake-ip-filter 后，旧映射仍可能需要单独清理缓存。">
+                <ConfigSwitch
+                  label="重启后保留 fake-IP 映射"
+                  checked={config.mihomo.store_fake_ip}
+                  onChange={store_fake_ip => setConfig({ ...config, mihomo: { ...config.mihomo, store_fake_ip } })}
+                />
+              </ConfigField>
+              <div className="notice mihomo-dns-import-boundary" role="note" aria-label="导入 mihomo profile 设置边界">
+                <p><strong>OpenSurge 会保留并合并：</strong>导入 profile 中的 DNS 解析器与过滤设置，例如 <code>nameserver</code>、<code>nameserver-policy</code>、<code>proxy-server-nameserver</code>、<code>direct-nameserver</code>、<code>respect-rules</code>、<code>fake-ip-filter</code> 和 <code>fallback</code>。</p>
+                <p><strong>OpenSurge 自主管理，不保留导入值：</strong>DNS 监听、IPv6、fake-IP 模式与网段，以及 <code>profile.store-fake-ip</code>。</p>
+              </div>
             </div>
-            <input aria-label="上游 DNS" placeholder="1.1.1.1 或 127.0.0.1#1053" value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
-            <small>推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。</small>
-          </ConfigField>
-          <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
-            <select aria-label="透明代理模式" value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
-              const mode = event.target.value as 'off' | 'tun'
-              setConfig({ ...config, dns: { ...config.dns, ipv6: mode === 'tun' && config.dns.ipv6 }, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
-            }}><option value="off">关闭（off）</option><option value="tun">mihomo TUN</option></select>
-          </ConfigField>
+          </details>
           <DownstreamIPv6Card
             config={config}
             editable={configurationEditable}

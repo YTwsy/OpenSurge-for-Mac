@@ -10,6 +10,7 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/lan"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
@@ -72,7 +73,7 @@ func (s *Server) handleDeviceTraffic(w http.ResponseWriter, r *http.Request) {
 	if cfg.Gateway.SameLAN() {
 		appliedPolicy = loadAppliedDevicePolicy(paths)
 	}
-	response := aggregateDeviceTrafficWithPolicy(leases, appliedPolicy, connections, cfg.Gateway.LANIP, true)
+	response := aggregateDeviceTrafficWithPolicy(leases, appliedPolicy, connections, cfg.Gateway.LANIP, cfg.Gateway.LANPrefixLen, true)
 	annotateDeviceTrafficIPv6BlockState(response.Devices, cfg.Transparent.TUNIPv6 != config.TUNIPv6Off)
 	if response.GatewayLocal.Transport == localTransportNone && cfg.Transparent.TUNEnabled() {
 		response.GatewayLocal.Transport = localTransportTUN
@@ -208,10 +209,10 @@ func registeredDeviceNames(policy device.PolicySet) map[string]string {
 }
 
 func aggregateDeviceTraffic(leases []device.Client, snapshot mihomo.ConnectionsSnapshot) DeviceTrafficResponse {
-	return aggregateDeviceTrafficWithPolicy(leases, device.PolicySet{}, snapshot, "", false)
+	return aggregateDeviceTrafficWithPolicy(leases, device.PolicySet{}, snapshot, "", 0, false)
 }
 
-func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.PolicySet, snapshot mihomo.ConnectionsSnapshot, gatewayIP string, observeLAN bool) DeviceTrafficResponse {
+func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.PolicySet, snapshot mihomo.ConnectionsSnapshot, gatewayIP string, prefixLen int, observeLAN bool) DeviceTrafficResponse {
 	selected := selectCurrentLeases(leases)
 	rows := make([]DeviceTraffic, 0, len(selected)+len(policy.Devices))
 	byIP := make(map[string]int, len(selected)+len(policy.Devices))
@@ -237,7 +238,7 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 	}
 	for _, managed := range policy.Devices {
 		ip := normalizeTrafficIP(managed.IPv4)
-		if ip == "" || (gatewayIP != "" && !sameLANSourceIPv4(ip, gatewayIP)) {
+		if ip == "" || (gatewayIP != "" && !sameLANSourceIPv4(ip, gatewayIP, prefixLen)) {
 			continue
 		}
 		if index, exists := byIP[ip]; exists {
@@ -261,7 +262,7 @@ func aggregateDeviceTrafficWithPolicy(leases []device.Client, policy device.Poli
 			continue
 		}
 		sourceIP := normalizeTrafficIP(metadataString(connection.Metadata, "sourceIP"))
-		if !observeLAN || !sameLANSourceIPv4(sourceIP, gatewayIP) {
+		if !observeLAN || !sameLANSourceIPv4(sourceIP, gatewayIP, prefixLen) {
 			continue
 		}
 		if _, exists := byIP[sourceIP]; exists {
@@ -449,7 +450,7 @@ func loadAppliedDevicePolicy(paths runtime.Paths) device.PolicySet {
 	return bundle.Policy
 }
 
-func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosnetwork.Neighbor, gatewayIP string, registered ...device.ManagedDevice) []ObservedDevice {
+func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosnetwork.Neighbor, gatewayIP string, prefixLen int, registered ...device.ManagedDevice) []ObservedDevice {
 	neighborByIP := make(map[string]string, len(neighbors))
 	ambiguousNeighborIP := make(map[string]bool)
 	for _, neighbor := range neighbors {
@@ -469,7 +470,7 @@ func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosne
 	byIP := map[string]*ObservedDevice{}
 	for _, connection := range snapshot.Connections {
 		ip := normalizeTrafficIP(metadataString(connection.Metadata, "sourceIP"))
-		if !sameLANSourceIPv4(ip, gatewayIP) {
+		if !sameLANSourceIPv4(ip, gatewayIP, prefixLen) {
 			continue
 		}
 		observed := byIP[ip]
@@ -490,7 +491,7 @@ func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosne
 		}
 		ip := normalizeTrafficIP(managed.IPv4)
 		mac := neighborByIP[ip]
-		if mac == "" || !sameLANSourceIPv4(ip, gatewayIP) {
+		if mac == "" || !sameLANSourceIPv4(ip, gatewayIP, prefixLen) {
 			continue
 		}
 		if observed := byIP[ip]; observed == nil {
@@ -510,13 +511,13 @@ func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosne
 	return result
 }
 
-func sameLANSourceIPv4(value, gatewayIP string) bool {
+func sameLANSourceIPv4(value, gatewayIP string, prefixLen int) bool {
 	ip := net.ParseIP(strings.TrimSpace(value)).To4()
-	gateway := net.ParseIP(strings.TrimSpace(gatewayIP)).To4()
-	if ip == nil || gateway == nil || ip.Equal(gateway) {
+	scope, err := lan.NewScope(strings.TrimSpace(gatewayIP), prefixLen)
+	if ip == nil || err != nil || ip.Equal(scope.Gateway) {
 		return false
 	}
-	return ip[0] == gateway[0] && ip[1] == gateway[1] && ip[2] == gateway[2] && ip[3] != 0 && ip[3] != 255
+	return scope.UsableHost(ip)
 }
 
 func selectCurrentLeases(leases []device.Client) []device.Client {

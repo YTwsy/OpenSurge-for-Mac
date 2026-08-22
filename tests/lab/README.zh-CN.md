@@ -12,7 +12,7 @@ macOS upstream interface
    |
 real omg + pf + dnsmasq + mihomo
    |
-vmnet host network (192.168.50.0/24, no platform DHCP)
+vmnet host network (192.168.48.0/22, no platform DHCP)
    +-- omg-lab-client-1
    +-- omg-lab-client-2
 ```
@@ -39,6 +39,17 @@ make lab-install
 - 校验并把 socket_vmnet 1.2.2 安装到 `/opt/socket_vmnet`；
 - 把功能固定的网络 helper 安装到 `/opt/open-mihomo-gateway`；
 - 默认不安装免密 sudo 规则。
+
+如果 Apple Silicon 上的 agent 终端运行在 Rosetta 下，`uname -m` 可能显示
+`x86_64`，导致 `make lab-install` 被架构检查拒绝。先确认
+`sysctl -n sysctl.proc_translated` 为 `1` 且 `sysctl -n hw.optional.arm64` 为 `1`，
+再以原生 arm64 运行同一个安装器：
+
+```sh
+/usr/bin/arch -arm64 /bin/bash ./tests/lab/install-host-deps.sh
+```
+
+Intel Mac 不应使用这条绕行命令。
 
 需要无人值守启动/停止隔离网络时，可以明确运行
 `./tests/lab/install-host-deps.sh --root-only --with-sudoers`。它只允许当前用户免密执行
@@ -101,8 +112,9 @@ interface，避免代理自身流量重新进入 TUN 或使用 fake IP。
 TUN source、HTTP-only 全局出口的 UDP `REJECT`，以及内部组不会出现在普通
 `policies` 输出。
 
-`lab-test-tun-device-policy` 会把两个客户端作为独立识别的 LAN 设备，给它们分配
-固定 `.101`/`.102` DHCP 租约，先证明 `dedicated` 设备在全局 `MATCH` 前使用 selector，
+`lab-test-tun-device-policy` 会把两个客户端作为独立识别的 LAN 设备，让 bridge 与
+DHCP 客户端实际使用 `/22`，并跨第三段分配固定 `192.168.50.101` 与
+`192.168.51.102` 租约；它先证明 `dedicated` 设备在全局 `MATCH` 前使用 selector，
 再证明 `inherit_global` 设备没有 default selector 且走全局 `MATCH`。脚本制造 desired
 drift 后调用真实 `omg reload` 把后者改成独立模式，验证 applied digest 同步、两台设备的
 selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJECT`。它是设备身份、
@@ -111,7 +123,11 @@ selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJ
 文件后的 desired/applied drift，以及选中 HTTP-only 出口时 UDP/443 必须记录为 `REJECT`
 而不能 fall through 到 `DIRECT`。门禁还保留一条没有 MAC 的原始设备记录，验证 DHCP
 模式会把它保存在 applied snapshot 中供以后补充身份，但不会生成租约、mihomo 规则或
-活动 selector。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
+活动 selector。fixture 还保留一条带 MAC 的旧网段登记，证明它继续存在于 desired，
+但不会进入 compiled/applied 运行态设备、dnsmasq、Mihomo IPv4 规则/selector 或 IPv6
+MAC 身份。它还会为两台设备各建立一条持久连接，切换第一台设备的 selector 后调用真实
+Control API“刷新连接”：第一台设备的旧连接必须消失，第二台设备的连接必须保留，第一台
+设备随后建立的新连接必须命中切换后的出口。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
 初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
 编译仍由单元测试覆盖。
 
@@ -125,12 +141,16 @@ IPv6 接管按拓扑使用 `lab-test-ipv6-userspace`（独立下游 LAN）、
 `TUN + InUser REJECT`；其他
 拓扑仍让它命中设备域名 `REJECT`。第二台客户端的 IPv6 TCP、受控 UDP
 request/response 和 1200-byte QUIC Initial-shaped UDP carrier 命中自己的 `DIRECT`
-selector。TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案，
+selector。它还必须使用没有 TCP/HTTP/2 fallback 的 HTTP/3-only client，分别通过
+`DIRECT` 和受控 SOCKS5 UDP 出口完成 QUIC TLS 与 HTTP/3 request/response；选中
+HTTP-only 出口时必须 fail closed，记录 UDP `REJECT`，且 origin 与 CONNECT proxy
+都不能收到请求。TCP/HTTP3 origin 必须收到对应 request，UDP fixture 必须返回固定答案，
 不把公网上游当作唯一捕获证据。最后会停止网关并
 验证客户端 default route、Mac gateway alias、broker PID、Unix socket、ready file
 和 runtime state 被清理。客户端可能按 RFC 4862 暂时保留 deprecated/等待过期的
-SLAAC 地址；门禁不把“地址立即消失”当成路由撤销条件。QUIC 断言证明的是 UDP
-carrier 与策略命中，不是完整 HTTP/3 握手。
+SLAAC 地址；门禁不把“地址立即消失”当成路由撤销条件。QUIC-shaped 断言只证明 UDP
+carrier 与策略命中；HTTP/3-only fixture 只证明上述三个本机受控出口场景，不代表所有
+QUIC/HTTP3 版本、0-RTT、连接迁移、公网节点或代理组合。
 
 `lab-test-ipv6-imported-egress` 是上述确定性门禁的外部补充，不替代本机 fixture。
 它要求显式提供一个真实 mihomo 订阅：
@@ -190,6 +210,12 @@ sudo 缓存凭据和终端会话有关，也会过期。如果 agent 或自动�
 
 ### 常见基础设施故障
 
+- 自动 RA 模式下，`/etc/resolv.conf` 可能仍只有 IPv4 控制/网关 DNS。IPv6 探针必须
+  回退到 `omg0` IPv6 默认路由的 link-local next hop，并附加 `%omg0` scope。如果
+  HTTP/3 client evidence 为空且 DNS fixture 没收到查询，先排查这个前置条件，不要
+  直接判断 QUIC 数据面失败。
+- quic-go 在最小 guest 中可能提示无法把 UDP receive buffer 增大到建议值。若随后有
+  `CLIENT_IPV6_HTTP3_OK`，这是吞吐告警而不是握手失败；本功能门槛不宣称 QUIC 性能覆盖。
 - guest 启动和清理会恢复 Lima 控制面 DNS，并在 `/etc/hosts` 保证本机 hostname
   可解析。出现 `sudo: unable to resolve host` 或对已停止 `192.168.50.1` 的
   DNS 请求时，先运行 `sudo /usr/local/bin/omg-lab-client restore-control`。
@@ -221,7 +247,7 @@ DNS、镜像下载、apt provisioning 等等待。CPU 大部分时间 idle、仍
 且没有 OOM 时，提高 CPU/内存不会解决启动慢；只有出现持续高 load、明显内存回收或 OOM
 证据时才调整默认规格。
 
-lab 只应该在 vmnet bridge 上拥有 `192.168.50.1/24`。不要把同一个地址留在其他
+lab 只应该在 vmnet bridge 上拥有 `192.168.50.1/22`。不要把同一个地址留在其他
 接口上。真实设备 smoke 也会在 `en7` 等接口上使用 `192.168.50.1`；运行
 `make lab-up` 前请先执行 `make real-device-stop`，或者用
 `sudo ifconfig <iface> inet 192.168.50.1 delete` 移除重复地址。重复 LAN IP 会让

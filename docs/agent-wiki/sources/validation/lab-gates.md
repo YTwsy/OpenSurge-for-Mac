@@ -34,8 +34,8 @@ proxy 时下游仍走 `TunEgress[DIRECT]`，以及本机 Direct 时下游仍可�
 `TunEgress[egress-proxy]`。HTTP-only 全局出口必须报告 UDP `reject`，普通
 `policies` 不能暴露内部 `open-surge/mac-*` 组。
 
-`make lab-test-tun-device-policy` 是每设备策略的数据面门槛。它让两个 Lima 客户端
-分别获得 `.101` 和 `.102` 的 MAC 绑定租约，先对比 `dedicated` selector 与
+`make lab-test-tun-device-policy` 是每设备策略的数据面门槛。它在 `/22` 上让两个 Lima
+客户端跨第三段分别获得 `192.168.50.101` 和 `192.168.51.102` 的 MAC 绑定租约，先对比 `dedicated` selector 与
 `inherit_global` 的全局 `MATCH` 路径，并要求跟随设备不存在 default slot；再经真实
 reload 将其改成独立模式，要求两台设备的 `device/<id>/default` selector 独立改变
 TUN 出口，最后要求设备级 IP `REJECT` 生效。它还要求 applied
@@ -43,19 +43,29 @@ snapshot/state digest、一致的 lease identity、desired 文件修改后的 dr
 selector 上 UDP/443 记录为 `REJECT` 而非 fall through 到 `DIRECT`。它覆盖设备身份、
 路由模式、设备默认出口和设备覆盖；模板、domain/protocol 组合与 HTTP/MRS rule-provider 的编译由
 `make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
+fixture 还保留一条当前 LAN 之外的带 MAC 设备，要求 desired 继续存在，但 compiled/applied
+设备、dnsmasq、Mihomo IPv4 selector/规则和 IPv6 MAC 身份均不可包含它。
+该门槛也会让两台客户端各保留一条真实连接：切换第一台设备 selector 后调用 Control API
+刷新连接，要求只移除第一台设备的旧连接、保留第二台设备的连接，并要求第一台设备的
+下一条连接使用当前 selector。
 
 IPv6 数据面按拓扑使用 `make lab-test-ipv6-userspace`、
 `make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。前两条要求两台客户端
 通过 dnsmasq RA/SLAAC 获得 `fdfe:dcba:9878::/64` 地址、Medium 优先级默认路由和
 RDNSS；第三条要求手工 ULA、Mac link-local 默认网关与 link-local DNS，并证明 dnsmasq 不
-发布 RA。三者都要求 TCP、本机受控 UDP request/response 和 QUIC Initial-shaped UDP
-carrier 通过 macOS BPF broker、Unix sideband 和 patched Mihomo gVisor 路径按
-MAC/InUser 命中各自设备规则。
-TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案；公网上游不是唯一
-捕获证据。stop 必须撤销
+发布 RA。三者都要求 TCP、本机受控 UDP request/response、QUIC Initial-shaped UDP
+carrier 和真实 HTTP/3-only 请求通过 macOS BPF broker、Unix sideband 和 patched
+Mihomo gVisor 路径按 MAC/InUser 命中各自设备规则。HTTP/3 client 只安装 QUIC/H3
+transport，不提供 TCP/HTTP/2 fallback；它必须完成 QUIC TLS、HTTP/3 GET 和响应校验，
+并分别证明 `DIRECT` 与受控 SOCKS5 UDP 出口成功。选中 HTTP-only 出口时必须
+fail closed，Mihomo 记录 UDP `REJECT`，且 HTTP/3 origin 与受控 CONNECT proxy 都不能
+观察到该请求。
+TCP origin 必须收到 HTTP request，UDP fixture 必须返回固定答案，HTTP/3 origin 必须
+记录 `HTTP/3.0` request；公网上游不是唯一捕获证据。stop 必须撤销
 自动模式的 default route（或旁路由手工配置）、gateway alias、broker 和 runtime paths；RFC 4862 允许 SLAAC 地址暂时
-以 deprecated/等待过期状态保留。QUIC 项只证明 UDP carrier，不宣称完成 HTTP/3
-握手。
+以 deprecated/等待过期状态保留。QUIC-shaped 项仍只证明 UDP carrier；真实 HTTP/3
+fixture 只证明上述三个本机受控出口场景，不代表所有 QUIC/HTTP3 实现、版本、迁移、
+0-RTT、拥塞控制或公网代理组合。
 
 `make lab-test-ipv6-imported-egress` 是真实订阅与公网 IPv6 的非确定性补充门槛，不能
 替代上面的本机受控 fixture。它要求通过 `OMG_LAB_IPV6_REAL_PROFILE` 显式提供 profile，
@@ -101,17 +111,30 @@ make lab-down`。`require_cached_sudo` 会在 `sudo -n true` 失败时内部执�
 `sudo -A -v`，使认证发生在 lab.sh 同一上下文；`SUDO_ASKPASS` 也让 lab-up/lab-down
 里无重定向的 `sudo -n` 自动回退到 helper。helper 含密码，用完立即删除。
 
-虚拟 LAN lab 和真实设备 smoke 默认都使用 `192.168.50.1/24`。运行 lab 前，
-这个地址只能存在于 lab 的 vmnet bridge 上。如果 `en7` 等 real-device 下游接口
-仍保留 `192.168.50.1`，macOS 可能把 `192.168.50.0/24` 的回程路由选到错误接口，
+虚拟 LAN lab 使用 `192.168.50.1/22`（`192.168.48.0/22`），真实设备 smoke 默认仍用
+`192.168.50.1/24`。运行 lab 前，这个地址只能存在于 lab 的 vmnet bridge 上。如果
+`en7` 等 real-device 下游接口仍保留 `192.168.50.1`，macOS 可能把重叠范围的回程路由
+选到错误接口，
 表现为 `dig @192.168.50.1 example.com A` timeout，而 dnsmasq 日志仍显示收到了
 查询。先运行 `make real-device-stop`，或手动删除重复地址。
 
 ## 可复用的 Lab 故障边界
 
+- Codex/agent 终端在 Apple Silicon 上可能运行于 Rosetta，表现为 `uname -m` 返回
+  `x86_64`、安装器报告只支持 Apple Silicon，而 `sysctl -n sysctl.proc_translated`
+  返回 `1` 且 `sysctl -n hw.optional.arm64` 返回 `1`。这种情况下用
+  `/usr/bin/arch -arm64 /bin/bash ./tests/lab/install-host-deps.sh` 运行安装器；不要在
+  Intel Mac 上套用这条命令。
 - `tests/lab/lima/client.yaml` 的任何变化都会让 Lima 重建客户端。VZ 冷启动可能
   静默约两分钟，再从 vsock SSH 回退到 usernet forwarder 并进入 `READY`。
   在提前终止前检查 `limactl list` 和 `~/.lima/<client>/ha.stderr.log`。
+- 自动 RA 模式下，guest 的 `/etc/resolv.conf` 可能仍只有 IPv4 控制/网关 DNS；IPv6
+  探针必须像客户端 helper 一样回退到 `omg0` 默认路由的 link-local next hop，并带
+  `%omg0` scope 查询 RDNSS。HTTP/3 evidence 文件为空且 fixture 没有查询日志时，先查
+  这条控制面前置条件，不要直接归因于 QUIC 数据面。
+- quic-go 在 512 MiB guest 中可能打印 `failed to sufficiently increase receive buffer
+  size`。只要随后出现 `CLIENT_IPV6_HTTP3_OK`，它是内核 UDP buffer 的吞吐告警，不是
+  握手失败；当前门槛不据此宣称 QUIC 性能或高吞吐，性能验收要单独调整 buffer 并压测。
 - 每次启动/清理都要把 guest resolver 恢复到 Lima 控制网关，并保证 guest hostname
   可解析。`sudo: unable to resolve host` 或对已停止 `192.168.50.1` 的 DNS 查询
   是 provisioning/control-plane 失败，不是数据面证据。

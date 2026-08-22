@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"open-mihomo-gateway/internal/lan"
 )
 
 // Render serializes the complete supported gateway configuration. It is used
@@ -14,6 +16,7 @@ func Render(cfg Config) string {
   mode: %s
   interface: %s
   lan_ip: %s
+  lan_prefix_len: %d
   upstream_interface: %s
 
 dhcp:
@@ -41,6 +44,7 @@ mihomo:
   config: %s
   profile_mode: %s
   profile: %s
+  store_fake_ip: %t
   mixed_port: %d
   redir_port: %d
   api_addr: %s
@@ -78,11 +82,11 @@ upstream_proxy:
 runtime:
   dir: %s
 `,
-		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), q(cfg.Gateway.UpstreamInterface),
+		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen), q(cfg.Gateway.UpstreamInterface),
 		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain), q(cfg.DHCP.BypassGateway), q(strings.Join(cfg.DHCP.BypassDNS, ",")),
 		q(cfg.DevicePolicy.File), q(strings.Join(cfg.DevicePolicy.ProtectedIPv4, ",")),
 		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream), cfg.DNS.IPv6,
-		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
+		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), cfg.Mihomo.StoreFakeIP, cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
 		q(cfg.PF.AnchorName), cfg.PF.RedirectTCPTo,
 		q(cfg.Transparent.Mode), q(cfg.Transparent.TUNDevice), q(cfg.Transparent.TUNStack), cfg.Transparent.TUNAutoRoute, cfg.Transparent.TUNAutoDetectInterface, cfg.Transparent.TUNStrictRoute,
 		q(cfg.Transparent.TUNIPv6), cfg.Transparent.IPv6SharedL2Ready, q(cfg.Transparent.IPv6PacketBrokerBinary), cfg.Transparent.IPv6PacketMTU,

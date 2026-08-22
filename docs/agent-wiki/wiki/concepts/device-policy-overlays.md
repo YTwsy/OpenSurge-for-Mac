@@ -19,8 +19,10 @@ mihomo YAML”。
   `device-policy-select` 只能选择此设备拥有的 selector。
 - 含 `action` 的规则直接发往 `DIRECT`、`REJECT` 或已有全局 mihomo group。
 - `domains`、`ip_cidrs`、`protocols`、`ports` 和 `rule_sets` 可组合；字段之间为
-  AND，同字段多个值为 OR。
-- `templates` 只复用默认候选与规则片段；项目不预置儿童、影音或第三方规则内容。
+  AND，同字段多个值为 OR。`match.template` 是互斥的简写，按声明顺序
+  展开模版的 `rule_sets`。
+- 面向用户的分流模版只组合 `rule_sets`，不携带默认出口或命中出口；出口始终
+  位于具体设备分流的 `action` 或 `policies`上。Profile 仍是编译和持久化用的内部容器。
 - `gateway_target` 默认为 `opensurge`。只有 `same_wifi_dhcp` 可选
   `upstream_router`：保留 MAC 固定租约，但 dnsmasq 通过 tag 向该客户端下发
   `dhcp.bypass_gateway` 和 `dhcp.bypass_dns`。这是 IPv4-only 绕行：编译结果不为其
@@ -31,11 +33,17 @@ mihomo YAML”。
   设备可能仍有 SLAAC/RDNSS，控制面只能写“IPv6 出站已阻止”。共享 L2 必须关闭主路由
   RA/DHCPv6 或使用 RA Guard，否则 IPv6 会绕过 OpenSurge。
 
-Web GUI 的设备主路径不要求用户先理解这些复用对象：登记默认创建
-`<device-id>-policy` 私有 Profile，并默认选择 `inherit_global`。路由模式修改属于
-save-and-reload；只有 applied 的独立出口设备显示可即时切换的 default selector。若设备仍引用共享 Profile 或继承 Template，第一次从
-设备规则区修改候选或规则时，会将解析后的有效内容复制为无 Template 的确定性私有
-Profile，只改变该设备引用；ID 冲突时追加数字后缀。
+Web GUI 的设备主路径只暴露三个对象：规则集、分流模版和设备分流。默认展开的
+“规则库”用三个 tab 编辑它们，旧的独立设备规则卡片不再渲染。设备卡保持原有出口交互，
+“编辑设备分流”会聚焦规则库的对应设备。登记仍创建 `<device-id>-policy` 私有 Profile，
+但 Profile 不作为规则库中的用户对象。路由模式修改属于 save-and-reload；只有 applied
+的独立出口设备显示可即时切换的 default selector。首次修改共享或旧式继承 Profile 时，
+前端仍把有效内容私有化到该设备，避免修改其他设备。
+
+规则库预置一份可阅读的 Claude Code 社区示例：核心域名、扩展服务、IP/ASN 兜底和
+NTP 通用规则分为四份 classical rule set，再由无出口模版组合。界面标明社区来源、
+非 Anthropic 官方且默认未启用。查看内容不修改 desired；只有用户将该模版添加为某设备
+分流时，才把四份规则集与模版写入草稿。
 
 设备的 `name` 是允许空格和 Unicode 的显示元数据，`id` 则是进入 mihomo selector
 命名空间的稳定技术标识，仍限制为字母、数字、下划线和连字符。Web GUI 从显示名称自动
@@ -44,7 +52,7 @@ Profile，只改变该设备引用；ID 冲突时追加数字后缀。
 客户端不提供 hostname 时也不会继续显示为未知设备。
 
 `same_lan` 不产生 OpenSurge DHCP lease。Control API 会从 mihomo 当前连接收集与 gateway
-同 `/24` 的源 IPv4，并在设备登记页用 macOS ARP cache 尽力补 MAC；总览流量 inventory
+同网段的源 IPv4，并在设备登记页用 macOS ARP cache 尽力补 MAC；总览流量 inventory
 则合并 lease、applied 静态设备与当前观察源。证据必须分层显示为 DHCP 已验证、静态登记、
 流量已观察或邻居已观察。ARP/流量只证明近期观察，不是 MAC 身份认证；未经过 Mac、已经
 离线或经 IPv6 绕过的同 LAN 设备不会因此被自动发现。
@@ -72,8 +80,16 @@ desired 设备占用时必须 fail closed，不提供猜测式更新。
 设备引用时不生成 selector，也不把这些未使用候选加入 imported target 校验。
 
 一个示例配置见 `docs/device-policy.zh-CN.md` 和
-`examples/device-policy.example.json`。设备 IPv4 必须唯一、在 gateway `/24` 内，
-且不能是网段、广播或网关地址。
+`examples/device-policy.example.json`。设备 IPv4 必须唯一；在当前网关网段内的地址
+不能是网段、广播或网关地址。网段由 `gateway.lan_ip` 与 `gateway.lan_prefix_len`
+决定。不在当前网段的登记是 dormant 而不是非法：完整 desired policy 与 digest 保留，
+但 compiled/applied bundle 会将它从运行态设备、dnsmasq reservation、Mihomo IPv4
+selector/规则和 IPv6 MAC→InUser 身份映射中同时排除。`GET /api/v1/devices` 通过
+`out_of_lan_devices` 告诉 GUI 标记它。
+
+同一条“dormant 而不是非法”的规则也适用于 `device_policy.protected_ipv4`：不在当前
+网段的受保护地址被忽略而不是报错。这是刻意的死锁避免：设备只能通过设备页删除或改
+地址，而改配置本身又要通过同一套校验，所以异网段设备不能成为启动或保存的硬阻断。
 
 same-Wi‑Fi DHCP 场景还必须将 router、recovery device、LAN proxy 等地址写入
 `device_policy.protected_ipv4`；reservation 不得占用。启动前会对 reservation 做 ARP
@@ -101,7 +117,8 @@ mihomo 对不支持 UDP 的出口会继续向下匹配。设备 selector/default
 `REJECT` fallback；只有 policy 显式写 `on_unsupported: "fallthrough"` 才保留向下匹配。
 
 大型共享 domain/IP 列表使用 HTTP rule-provider；`mrs` 仅适用于 `domain` 和
-`ipcidr` behavior。此处只是配置编译能力，并不代表内置或验证了任何第三方规则集。
+`ipcidr` behavior。Claude Code 内置内容是定期人工更新的固定示例快照，不是远程规则订阅，
+也不构成对第三方可用性的验证。
 
 ## 验证边界
 

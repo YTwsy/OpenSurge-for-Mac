@@ -1,6 +1,9 @@
 gateway:
   interface: "en0"
   lan_ip: "192.168.50.1"
+  # Real prefix length of the downstream LAN. pf NAT, TUN route exclusion,
+  # DHCP range validation, and device address ownership are derived from it.
+  lan_prefix_len: 24
   upstream_interface: "en0"
 
 dhcp:
@@ -37,6 +40,9 @@ mihomo:
   # OpenSurge-owned gateway fields such as LAN binding, DNS, TUN, and API.
   profile_mode: "managed"
   profile: ""
+  # Preserve fake-IP mappings across apply/restart. Recommended for long-lived
+  # local services such as cloudflared that may cache a 198.18.x.x answer.
+  store_fake_ip: true
   mixed_port: 7890
   # macOS transparent proxying uses transparent.mode: "tun"; redir must stay 0.
   redir_port: 0

@@ -28,6 +28,7 @@ secret: {{ .Secret }}
 
 profile:
   store-selected: true
+  store-fake-ip: {{ .StoreFakeIP }}
 
 # Use MetaCubeX's documented CDN endpoints instead of the GitHub release URLs
 # baked into mihomo. Imported profiles can contain GEOIP/GEOSITE/GEOASN rules,
@@ -132,7 +133,7 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err := config.PrepareDevicePolicy(&cfg); err != nil {
 		return templateData{}, err
 	}
-	lanPrefix, err := cfg.LANPrefix24()
+	lanPrefix, err := cfg.LANPrefix()
 	if err != nil {
 		return templateData{}, err
 	}
@@ -185,7 +186,7 @@ func renderIPv6DeviceUsers(cfg config.Config) string {
 	if cfg.DevicePolicy.Bundle != nil {
 		for _, managed := range cfg.DevicePolicy.Bundle.Compiled.Devices {
 			if managed.MAC != "" {
-				users[managed.MAC] = deviceInboundUser(managed.ID)
+				users[managed.MAC] = DeviceInboundUser(managed.ID)
 			}
 		}
 	}
