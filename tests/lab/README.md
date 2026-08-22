@@ -147,6 +147,10 @@ emitting no reservation, mihomo rule, or active selector for it.
 The fixture also keeps one MAC-backed registration from another LAN and proves
 it remains in desired state while disappearing from compiled/applied runtime
 devices, dnsmasq, Mihomo IPv4 rules/selectors, and IPv6 MAC identity.
+It also opens one held connection from each device, changes the first device
+selector, and calls the real Control API connection-refresh action. The first
+device's old connection must disappear, the second device connection must
+remain, and a new first-device connection must use the newly selected egress.
 The passing artifact retains that applied snapshot, runtime state, generated
 dnsmasq/mihomo configuration, and the initial and post-reload device views so
 the boundary remains auditable.

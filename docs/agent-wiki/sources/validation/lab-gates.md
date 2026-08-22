@@ -45,6 +45,9 @@ selector 上 UDP/443 记录为 `REJECT` 而非 fall through 到 `DIRECT`。它�
 `make test` 覆盖，不需要为每个操作者规则重复运行 Lab。
 fixture 还保留一条当前 LAN 之外的带 MAC 设备，要求 desired 继续存在，但 compiled/applied
 设备、dnsmasq、Mihomo IPv4 selector/规则和 IPv6 MAC 身份均不可包含它。
+该门槛也会让两台客户端各保留一条真实连接：切换第一台设备 selector 后调用 Control API
+刷新连接，要求只移除第一台设备的旧连接、保留第二台设备的连接，并要求第一台设备的
+下一条连接使用当前 selector。
 
 IPv6 数据面按拓扑使用 `make lab-test-ipv6-userspace`、
 `make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。前两条要求两台客户端

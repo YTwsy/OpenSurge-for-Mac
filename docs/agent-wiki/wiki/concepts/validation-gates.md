@@ -430,6 +430,9 @@ selector 隔离；同时要求设备默认 selector 指向 HTTP-only outbound �
 独立模式、默认出口、安全 reload、UDP fail-closed 和覆盖规则的真实 LAN/TUN 数据路径。
 同一 fixture 还保留一条旧 LAN 带 MAC 登记，要求完整 desired 仍在，而 compiled/applied
 设备列表、dnsmasq、Mihomo IPv4 规则/selector 和 IPv6 MAC 身份均排除它。
+门槛还会让两台客户端各建立一条持久连接；切换第一台设备 selector 后，通过真实 Control
+API 刷新该设备连接。第一台设备的旧连接必须消失，第二台设备连接必须保留，第一台设备
+随后建立的新连接必须使用当前 selector。
 
 大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
 `make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。系统 TUN 的设备

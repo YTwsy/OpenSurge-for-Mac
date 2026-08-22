@@ -125,7 +125,9 @@ selector 可以互不影响地选择不同出口，再验证设备专属 IP `REJ
 模式会把它保存在 applied snapshot 中供以后补充身份，但不会生成租约、mihomo 规则或
 活动 selector。fixture 还保留一条带 MAC 的旧网段登记，证明它继续存在于 desired，
 但不会进入 compiled/applied 运行态设备、dnsmasq、Mihomo IPv4 规则/selector 或 IPv6
-MAC 身份。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
+MAC 身份。它还会为两台设备各建立一条持久连接，切换第一台设备的 selector 后调用真实
+Control API“刷新连接”：第一台设备的旧连接必须消失，第二台设备的连接必须保留，第一台
+设备随后建立的新连接必须命中切换后的出口。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
 初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
 编译仍由单元测试覆盖。
 

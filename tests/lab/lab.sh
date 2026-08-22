@@ -21,6 +21,7 @@ CONFIG="$STATE_DIR/config.yaml"
 CLIENT_CONFIG="$STATE_DIR/client.yaml"
 BINARY="$ROOT/bin/omg-lab"
 EGRESS_PROBE_BINARY="$STATE_DIR/egress-probe"
+CONTROL_API_BINARY="$STATE_DIR/opensurge-control"
 EGRESS_PROVIDER="$STATE_DIR/tun-egress-provider.yaml"
 IPV6_PACKET_BINARY="$STATE_DIR/opensurge-network"
 PATCHED_MIHOMO_BINARY="$STATE_DIR/mihomo-opensurge"
@@ -34,6 +35,8 @@ IPV6_DNS_FIXTURE_PORT="${OMG_LAB_IPV6_DNS_FIXTURE_PORT:-19095}"
 IPV6_HTTP3_FIXTURE_PORT="${OMG_LAB_IPV6_HTTP3_FIXTURE_PORT:-19096}"
 IPV6_UDP_PROXY_PORT="${OMG_LAB_IPV6_UDP_PROXY_PORT:-19097}"
 IPV6_UDP_PROXY_DNS_PORT="${OMG_LAB_IPV6_UDP_PROXY_DNS_PORT:-19098}"
+CONTROL_API_PORT="${OMG_LAB_CONTROL_API_PORT:-19099}"
+CONNECTION_REFRESH_TEST_HOST="connection-refresh.opensurge.test"
 IPV6_TCP_TEST_HOST="ipv6-tcp.opensurge.test"
 IPV6_TCP_TEST_URL="http://$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT/ipv6-tcp"
 IPV6_UDP_TEST_HOST="ipv6-udp.opensurge.test"
@@ -61,6 +64,9 @@ LAB_DEVICE_POLICY_FILE=""
 TUN_EGRESS_PROFILE=0
 LOCAL_ROUTING_TEST="${OMG_LAB_LOCAL_ROUTING_TEST:-false}"
 EGRESS_PROBE_PID=""
+CONTROL_API_PID=""
+CONTROL_API_TOKEN=""
+LAST_CLIENT_HOLD_PID=""
 IPV6_DNS_FIXTURE_PID=""
 HTTP3_PROBE_PID=""
 IPV6_UDP_PROXY_PID=""
@@ -442,6 +448,9 @@ collect_artifacts() {
     state.evidence.json \
     device-policies.json \
     device-policies-after-reload.json \
+    connection-refresh-before.json \
+    connection-refresh-after.json \
+    connection-refresh-response.json \
     ipv6-status.json \
     ipv6-devices.json \
     ipv6-state.evidence.json; do
@@ -661,6 +670,11 @@ build_egress_probe() {
     go build -o "$EGRESS_PROBE_BINARY" ./tests/integration/egressprobe
 }
 
+build_control_api() {
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+    go build -o "$CONTROL_API_BINARY" ./cmd/opensurge-control
+}
+
 start_egress_probe() {
   local log_file i
   mkdir -p "$STATE_DIR/logs"
@@ -671,6 +685,8 @@ start_egress_probe() {
     --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
     --upstream-interface "$(upstream_interface)" \
     --upstream-resolver "1.1.1.1:53" \
+    --mapped-target "$CONNECTION_REFRESH_TEST_HOST:443" \
+    --mapped-upstream "127.0.0.1:$EGRESS_ORIGIN_PORT" \
     --provider-file "$EGRESS_PROVIDER" \
     --provider-path "/tun-egress-provider.yaml" \
     --log-dir "$STATE_DIR/egress" >"$log_file" 2>&1 &
@@ -690,6 +706,47 @@ start_egress_probe() {
   echo "TUN egress probe did not become ready" >&2
   cat "$log_file" >&2 || true
   exit 1
+}
+
+start_control_api() {
+  local api log_file store_dir token_file i
+  api="http://127.0.0.1:$CONTROL_API_PORT"
+  store_dir="$STATE_DIR/control-api"
+  token_file="$store_dir/control-token"
+  log_file="$STATE_DIR/logs/control-api.log"
+  rm -rf "$store_dir"
+  rm -f "$log_file"
+  "$CONTROL_API_BINARY" --config "$CONFIG" --addr "127.0.0.1:$CONTROL_API_PORT" --store "$store_dir" >"$log_file" 2>&1 &
+  CONTROL_API_PID=$!
+  for i in {1..50}; do
+    if [[ -s "$token_file" ]]; then
+      CONTROL_API_TOKEN="$(cat "$token_file")"
+      if /usr/bin/curl --fail --silent --show-error \
+        --header "Authorization: Bearer $CONTROL_API_TOKEN" \
+        "$api/api/v1/overview" >/dev/null 2>&1; then
+        echo "Control API ready for connection refresh Lab: $api"
+        return 0
+      fi
+    fi
+    if ! kill -0 "$CONTROL_API_PID" 2>/dev/null; then
+      echo "Control API exited before becoming ready" >&2
+      cat "$log_file" >&2 || true
+      exit 1
+    fi
+    sleep 0.1
+  done
+  echo "Control API did not become ready" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+stop_control_api() {
+  if [[ -n "$CONTROL_API_PID" ]] && kill -0 "$CONTROL_API_PID" 2>/dev/null; then
+    kill "$CONTROL_API_PID" 2>/dev/null || true
+    wait "$CONTROL_API_PID" 2>/dev/null || true
+  fi
+  CONTROL_API_PID=""
+  CONTROL_API_TOKEN=""
 }
 
 stop_egress_probe() {
@@ -887,6 +944,107 @@ client_ipv4() {
 client_ipv6() {
   local client=$1
   limactl shell "$client" -- bash -lc "ip -6 -o addr show dev omg0 scope global | awk '/fdfe:dcba:9878:/ { split(\$4, value, \"/\"); print value[1]; exit }'" | tr -d '\r\n'
+}
+
+start_client_hold_connection() {
+  local client=$1 log_file=$2
+  rm -f "$log_file"
+  limactl shell "$client" -- python3 -c \
+    'import socket,sys,time; connection=socket.create_connection((sys.argv[1],443),10); print("READY",flush=True); time.sleep(180)' \
+    "$CONNECTION_REFRESH_TEST_HOST" >"$log_file" 2>&1 &
+  LAST_CLIENT_HOLD_PID=$!
+}
+
+stop_client_hold_connection() {
+  local pid=$1
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+wait_for_client_hold_connection() {
+  local client=$1 log_file=$2 pid=$3 i output
+  for i in {1..40}; do
+    output="$(cat "$log_file" 2>/dev/null || true)"
+    if grep -Fq READY <<<"$output"; then
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    sleep 0.25
+  done
+  echo "client $client did not establish the held connection" >&2
+  cat "$log_file" >&2 || true
+  exit 1
+}
+
+fetch_mihomo_connections() {
+  local output=$1
+  /usr/bin/curl --fail --silent --show-error "http://127.0.0.1:19090/connections" >"$output"
+}
+
+connection_ids_for_source_host() {
+  local snapshot=$1 source_ip=$2 host=$3 output=$4
+  /usr/bin/ruby -rjson -e '
+    body = JSON.parse(File.read(ARGV.fetch(0)))
+    source, host = ARGV.fetch(1), ARGV.fetch(2)
+    body.fetch("connections", []).each do |connection|
+      metadata = connection.fetch("metadata", {})
+      puts connection["id"] if metadata["sourceIP"].to_s == source && metadata["host"].to_s == host
+    end
+  ' "$snapshot" "$source_ip" "$host" >"$output"
+}
+
+wait_for_connection_ids() {
+  local source_ip=$1 host=$2 snapshot=$3 output=$4 i
+  for i in {1..40}; do
+    fetch_mihomo_connections "$snapshot"
+    connection_ids_for_source_host "$snapshot" "$source_ip" "$host" "$output"
+    if [[ -s "$output" ]]; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "mihomo did not expose the held connection for $source_ip -> $host" >&2
+  cat "$snapshot" >&2 || true
+  exit 1
+}
+
+snapshot_contains_any_ids() {
+  local snapshot=$1 ids=$2
+  /usr/bin/ruby -rjson -rset -e '
+    current = JSON.parse(File.read(ARGV.fetch(0))).fetch("connections", []).map { |connection| connection["id"].to_s }.to_set
+    expected = File.readlines(ARGV.fetch(1), chomp: true).reject(&:empty?).to_set
+    exit((current & expected).empty? ? 1 : 0)
+  ' "$snapshot" "$ids"
+}
+
+wait_for_scoped_connection_refresh() {
+  local target_ids=$1 other_ids=$2 snapshot=$3 i
+  for i in {1..40}; do
+    fetch_mihomo_connections "$snapshot"
+    if ! snapshot_contains_any_ids "$snapshot" "$target_ids" && snapshot_contains_any_ids "$snapshot" "$other_ids"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  echo "connection refresh did not remove only the target device connections" >&2
+  cat "$snapshot" >&2 || true
+  exit 1
+}
+
+assert_connection_refresh_response() {
+  local response=$1 device_id=$2
+  /usr/bin/ruby -rjson -e '
+    payload = JSON.parse(File.read(ARGV.fetch(0)))
+    device = ARGV.fetch(1)
+    abort "unexpected refresh scope" unless payload["scope"] == "device" && payload["device_id"] == device
+    matched = Integer(payload.fetch("matched_connections"))
+    closed = Integer(payload.fetch("closed_connections"))
+    abort "refresh did not close every matched connection" unless matched.positive? && closed == matched
+  ' "$response" "$device_id"
 }
 
 wait_for_ipv6_policy_log() {
@@ -1630,7 +1788,7 @@ EOF
 }
 
 run_device_policy_test() {
-  local client_one client_two gateway_started egress_probe_started host
+  local client_one client_two client_one_hold_pid client_two_hold_pid gateway_started egress_probe_started control_api_started hold_connections_started host
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
   require_cached_sudo
@@ -1652,13 +1810,25 @@ run_device_policy_test() {
   GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
     go build -o "$BINARY" ./cmd/omg
   build_egress_probe
+  build_control_api
 
   gateway_started=0
   egress_probe_started=0
+  control_api_started=0
+  hold_connections_started=0
+  client_one_hold_pid=""
+  client_two_hold_pid=""
   cleanup_test() {
     status=$?
     collect_artifacts || true
     restore_client_control_dns
+    if [[ "$hold_connections_started" == 1 ]]; then
+      stop_client_hold_connection "$client_one_hold_pid"
+      stop_client_hold_connection "$client_two_hold_pid"
+    fi
+    if [[ "$control_api_started" == 1 ]]; then
+      stop_control_api
+    fi
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
     fi
@@ -1674,6 +1844,8 @@ run_device_policy_test() {
   egress_probe_started=1
   sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
+  start_control_api
+  control_api_started=1
   limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   assert_lab_ipv4_prefix
@@ -1765,6 +1937,38 @@ run_device_policy_test() {
   wait_for_tun_policy_log_for_host "device/$client_two/default" "lab-controlled" "$host"
   assert_tun_egress_proxy_used
 
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy lab-controlled --format json >"$STATE_DIR/device-one-controlled-for-refresh.json"
+  start_client_hold_connection "$client_one" "$STATE_DIR/logs/connection-refresh-$client_one.log"
+  client_one_hold_pid="$LAST_CLIENT_HOLD_PID"
+  start_client_hold_connection "$client_two" "$STATE_DIR/logs/connection-refresh-$client_two.log"
+  client_two_hold_pid="$LAST_CLIENT_HOLD_PID"
+  hold_connections_started=1
+  wait_for_client_hold_connection "$client_one" "$STATE_DIR/logs/connection-refresh-$client_one.log" "$client_one_hold_pid"
+  wait_for_client_hold_connection "$client_two" "$STATE_DIR/logs/connection-refresh-$client_two.log" "$client_two_hold_pid"
+  wait_for_connection_ids "192.168.50.101" "$CONNECTION_REFRESH_TEST_HOST" \
+    "$STATE_DIR/connection-refresh-before.json" "$STATE_DIR/connection-refresh-target.ids"
+  wait_for_connection_ids "192.168.51.102" "$CONNECTION_REFRESH_TEST_HOST" \
+    "$STATE_DIR/connection-refresh-before.json" "$STATE_DIR/connection-refresh-other.ids"
+
+  "$BINARY" device-policy-select --config "$CONFIG" --device "$client_one" --slot default --policy DIRECT --format json >"$STATE_DIR/device-one-direct-for-refresh.json"
+  /usr/bin/curl --fail --silent --show-error --request POST \
+    --header "Authorization: Bearer $CONTROL_API_TOKEN" \
+    "http://127.0.0.1:$CONTROL_API_PORT/api/v1/devices/$client_one/connections/refresh" \
+    >"$STATE_DIR/connection-refresh-response.json"
+  assert_connection_refresh_response "$STATE_DIR/connection-refresh-response.json" "$client_one"
+  wait_for_scoped_connection_refresh "$STATE_DIR/connection-refresh-target.ids" \
+    "$STATE_DIR/connection-refresh-other.ids" "$STATE_DIR/connection-refresh-after.json"
+
+  : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
+  wait_for_tun_policy_log_for_host "device/$client_one/default" "DIRECT" "$host"
+  assert_tun_egress_proxy_unused
+  echo "device connection refresh removed only the target device old connection; its new connection used DIRECT"
+
+  stop_client_hold_connection "$client_one_hold_pid"
+  stop_client_hold_connection "$client_two_hold_pid"
+  hold_connections_started=0
+
   "$BINARY" device-policy-select --config "$CONFIG" --device "$client_two" --slot default --policy DIRECT --format json >"$STATE_DIR/device-two-direct-after-reload.json"
   limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client udp "$LAN_IP" 1.1.1.1 443
   wait_for_tun_udp_reject "192.168.51.102" "1.1.1.1" 443
@@ -1772,6 +1976,8 @@ run_device_policy_test() {
   cp "$STATE_DIR/device-policy.applied.json" "$STATE_DIR/device-policy.applied.evidence.json"
   cp "$STATE_DIR/state.json" "$STATE_DIR/state.evidence.json"
   restore_client_control_dns
+  stop_control_api
+  control_api_started=0
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
   stop_egress_probe

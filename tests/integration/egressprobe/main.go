@@ -23,6 +23,8 @@ func main() {
 	upstreamHTTPProxy := flag.String("upstream-http-proxy", "", "optional HTTP CONNECT proxy used by the controlled proxy for upstream dialing")
 	upstreamInterface := flag.String("upstream-interface", "", "optional interface used for direct upstream dialing")
 	upstreamResolver := flag.String("upstream-resolver", "", "optional DNS resolver used for direct upstream dialing")
+	mappedTarget := flag.String("mapped-target", "", "optional CONNECT target redirected to mapped-upstream for deterministic tests")
+	mappedUpstream := flag.String("mapped-upstream", "", "upstream address used when mapped-target matches")
 	logDir := flag.String("log-dir", "", "directory for origin.log and proxy.log")
 	providerFile := flag.String("provider-file", "", "optional provider YAML file served by the origin")
 	providerPath := flag.String("provider-path", "/remote-provider.yaml", "origin path for provider YAML")
@@ -30,6 +32,10 @@ func main() {
 
 	if *originAddr == "" || *proxyAddr == "" || *logDir == "" {
 		fmt.Fprintln(os.Stderr, "origin, proxy, and log-dir are required")
+		os.Exit(2)
+	}
+	if (*mappedTarget == "") != (*mappedUpstream == "") {
+		fmt.Fprintln(os.Stderr, "mapped-target and mapped-upstream must be set together")
 		os.Exit(2)
 	}
 	if err := os.MkdirAll(*logDir, 0o755); err != nil {
@@ -61,6 +67,8 @@ func main() {
 		upstreamHTTPProxy: *upstreamHTTPProxy,
 		upstreamInterface: *upstreamInterface,
 		upstreamResolver:  *upstreamResolver,
+		mappedTarget:      *mappedTarget,
+		mappedUpstream:    *mappedUpstream,
 	}}
 
 	var serverWG sync.WaitGroup
@@ -123,6 +131,8 @@ type connectProxyHandler struct {
 	upstreamHTTPProxy string
 	upstreamInterface string
 	upstreamResolver  string
+	mappedTarget      string
+	mappedUpstream    string
 	mu                sync.Mutex
 }
 
@@ -179,6 +189,9 @@ func (h *connectProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *connectProxyHandler) dialUpstream(target string) (net.Conn, error) {
+	if h.mappedTarget != "" && target == h.mappedTarget {
+		return net.DialTimeout("tcp", h.mappedUpstream, 5*time.Second)
+	}
 	if h.upstreamHTTPProxy == "" {
 		return dialDirect(target, h.upstreamInterface, h.upstreamResolver, 5*time.Second)
 	}
