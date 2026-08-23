@@ -51,6 +51,16 @@ Importing a draft does not change the current network. Applying a source while
 the gateway is running validates the full configuration before briefly
 restarting gateway services.
 
+Use **Global Extension** on the same page when your own rules, proxies, or
+providers should survive every subscription refresh. The guided editor covers
+rule prepend/tail placement, manual proxies, providers, proxy-group extensions,
+and common DNS resolver/filter fields; advanced users can edit the operation
+YAML directly. Saving only creates an overlay draft and rechecks each source for
+name collisions and dangling references. Compare the raw source, overlay,
+effective source, and final mihomo config in the preview before applying a
+source. Refreshing a subscription also creates a new draft and never changes the
+running gateway automatically.
+
 Each imported-source card shows the local snapshot managed by OpenSurge. You
 can copy its full path or select **Finder 中显示** (Show in Finder) to reveal
 the file. Do not edit the managed snapshot because its digest, history, and

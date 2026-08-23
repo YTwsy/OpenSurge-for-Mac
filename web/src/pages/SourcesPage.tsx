@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import type { OperationNotification } from '../components/OperationNotifications'
-import type { Overview, Source } from '../types'
+import { ProfileOverlayPanel } from '../components/ProfileOverlayPanel'
+import type { Overview, ProfileOverlay, Source } from '../types'
 
 type SourceAction =
   | { kind: 'import-url' | 'import-file' | 'apply'; sourceID?: string }
@@ -11,6 +12,7 @@ type SourceAction =
 
 export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overview | null; onChanged: () => void | Promise<void>; onNotify: (notification: OperationNotification) => void }) {
   const [sources, setSources] = useState<Source[]>([])
+  const [overlay, setOverlay] = useState<ProfileOverlay | null>(null)
   const [revision, setRevision] = useState('')
   const [name, setName] = useState('')
   const [url, setURL] = useState('')
@@ -23,8 +25,9 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
 
   const refresh = useCallback(async () => {
     try {
-      const response = await api.sources()
+      const [response, profileOverlay] = await Promise.all([api.sources(), api.profileOverlay()])
       setSources(response.sources ?? [])
+      setOverlay(profileOverlay)
       setRevision(response.revision)
       setError('')
     } catch (cause) {
@@ -132,19 +135,23 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
         </article>
       </div>
     </section>
+    <ProfileOverlayPanel overlay={overlay} sources={sources} onSaved={async saved => { setOverlay(saved); const response = await api.sources(); setSources(response.sources ?? []); setRevision(response.revision) }} />
     <section className="section source-library">
       <SectionTitle title="已导入快照" subtitle="刷新只产生新草稿；应用到运行中的网关需要再次完整校验。" />
       {sources.length ? <div className="source-grid">{sources.map(source => {
         const versions = source.versions ?? []
-        const inventory = source.inventory
+        const inventory = source.effective_inventory ?? source.inventory
         const proxyGroups = inventory?.proxy_groups ?? []
         const proxyProviders = inventory?.proxy_providers ?? []
         const diff = source.diff
         const origin = source.origin ?? ''
         const previousApplied = versions.some(version => version.applied)
         const changed = diff?.previous_digest && diff.previous_digest !== source.digest
-        const state = source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid ? '结构有效' : '无效'
-        const action = source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本'
+        const overlayCompatible = source.overlay_compatible !== false
+        const overlayNeedsApply = Boolean(overlay && !overlay.desired)
+        const sourceNeedsOverlay = (source.applied || source.desired) && overlayNeedsApply
+        const state = sourceNeedsOverlay ? '附加配置待应用' : source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid && overlayCompatible ? '结构有效' : '存在冲突'
+        const action = sourceNeedsOverlay ? running ? '应用附加配置并重载' : '保存附加配置到下次启动' : source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本'
         const refreshing = activeAction?.kind === 'refresh' && activeAction.sourceID === source.id
         const copyingPath = activeAction?.kind === 'copy-path' && activeAction.sourceID === source.id
         const revealing = activeAction?.kind === 'reveal' && activeAction.sourceID === source.id
@@ -173,17 +180,18 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
           </div>
           {changed && <div className="source-diff"><strong>本次变化</strong><span>proxy +{diff?.proxies_added?.length ?? 0}/-{diff?.proxies_removed?.length ?? 0}</span><span>group +{diff?.groups_added?.length ?? 0}/-{diff?.groups_removed?.length ?? 0}</span><span>rules {(diff?.rule_count_delta ?? 0) >= 0 ? '+' : ''}{diff?.rule_count_delta ?? 0}</span></div>}
           <div className={`source-validation ${source.valid ? 'valid' : 'invalid'}`}><span aria-hidden="true">{source.valid ? '✓' : '!'}</span><div><strong>{source.valid ? '结构校验通过' : '结构校验失败'}</strong><small>{source.validation || (source.valid ? '可以进入完整候选配置校验' : '请修正来源后重新导入')}</small></div></div>
+          <div className={`source-validation ${overlayCompatible ? 'valid overlay' : 'invalid overlay'}`}><span aria-hidden="true">{overlayCompatible ? '✓' : '!'}</span><div><strong>{overlayCompatible ? '附加配置兼容' : '附加配置冲突'}</strong><small>{source.overlay_validation || (overlayCompatible ? '当前来源可与附加配置组合' : '等待附加配置检查')}</small></div></div>
           {versions.length > 0 && <small className="source-history">历史：{versions.slice(-3).map(version => `${version.digest.slice(0, 8)}${version.applied ? ' (运行)' : version.desired ? ' (待应用)' : ''}`).join(' · ')}</small>}
           <div className="source-actions">
             {origin.startsWith('https://') && <button type="button" disabled={busy} onClick={() => void run({ kind: 'refresh', sourceID: source.id }, () => api.refreshSource(source.id), `${source.name} 已刷新；新内容已保存为草稿。`)}><ActionLabel active={refreshing} idle="刷新草稿" pending="正在刷新…" /></button>}
-            <button className="primary" type="button" disabled={busy || !revision || !source.valid || source.applied || (source.desired && !running)} onClick={() => openApply(source)}>{action}</button>
+            <button className="primary" type="button" disabled={busy || !revision || !source.valid || !overlayCompatible || (source.applied && !sourceNeedsOverlay) || (source.desired && !running && !sourceNeedsOverlay)} onClick={() => openApply(source)}>{action}</button>
           </div>
         </article>
       })}</div> : <Empty text="尚未导入任何来源" />}
     </section>
     {pending && <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="source-apply-title">
-      <h2 id="source-apply-title">{running ? '应用订阅并重载网关？' : '设为下次启动版本？'}</h2>
-      <p>{running ? 'OpenSurge 会先验证完整候选配置，再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : '当前网关未运行。订阅会保存为 desired 配置，并在下次启动成功后成为运行版本。'}</p>
+      <h2 id="source-apply-title">{running ? overlay?.document.enabled ? '应用来源与附加配置并重载网关？' : '应用订阅并重载网关？' : '设为下次启动版本？'}</h2>
+      <p>{running ? overlay?.document.enabled ? 'OpenSurge 会组合订阅、全局附加配置和网关规则，验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : 'OpenSurge 会验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : overlay?.document.enabled ? '当前网关未运行。来源与全局附加配置的组合结果会保存为 desired 配置，并在下次启动成功后成为运行版本。' : '当前网关未运行。来源会保存为 desired 配置，并在下次启动成功后成为运行版本。'}</p>
       {running && <ul><li>当前连接会中断并重新建立。</li><li>验证失败不会停止现有网关。</li><li>重载失败会恢复旧配置，并尽力恢复原网关。</li></ul>}
       <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setPending(null)}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={() => void apply()}><ActionLabel active={activeAction?.kind === 'apply'} idle={running ? '确认应用并重载' : '确认设为下次启动版本'} pending="正在验证并应用…" /></button></div>
     </dialog>}

@@ -3,10 +3,12 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestRenderRoundTrip(t *testing.T) {
+	dir := t.TempDir()
 	cfg := Default()
 	cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
 	cfg.Gateway.Interface = "en0"
@@ -19,8 +21,14 @@ func TestRenderRoundTrip(t *testing.T) {
 	cfg.Transparent.Mode = TransparentModeTUN
 	cfg.LocalSystemProxy.Enabled = true
 	cfg.Mihomo.StoreFakeIP = false
+	cfg.Mihomo.ProfileMode = MihomoProfileModeImported
+	cfg.Mihomo.Profile = filepath.Join(dir, "profile.yaml")
+	cfg.Mihomo.ProfileSourceDigest = strings.Repeat("a", 64)
+	cfg.Mihomo.ProfileOverlayDigest = strings.Repeat("b", 64)
+	if err := os.WriteFile(cfg.Mihomo.Profile, []byte("rules:\n  - MATCH,DIRECT\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cfg.DevicePolicy.ProtectedIPv4 = []string{"192.168.1.1", "192.168.1.21"}
-	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "devices.json")
 	if err := os.WriteFile(policyPath, []byte(`{"devices":[],"profiles":[],"templates":[],"rule_sets":[]}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -34,7 +42,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(Render()) error = %v", err)
 	}
-	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP {
+	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP || loaded.Mihomo.ProfileSourceDigest != cfg.Mihomo.ProfileSourceDigest || loaded.Mihomo.ProfileOverlayDigest != cfg.Mihomo.ProfileOverlayDigest {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 }

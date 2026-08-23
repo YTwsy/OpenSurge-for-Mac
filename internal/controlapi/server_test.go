@@ -1210,6 +1210,171 @@ func TestSourceApplyDelegatesAuthoritativeEngineValidationToRunner(t *testing.T)
 	}
 }
 
+func TestGlobalProfileOverlaySaveDecoratesSourcesAndPreviewsFinalConfig(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader(`proxies:
+  - {name: edge, type: http, server: 127.0.0.1, port: 18080}
+proxy-groups:
+  - {name: Main, type: select, proxies: [edge, DIRECT]}
+rules:
+  - DOMAIN,source.example,Main
+  - MATCH,DIRECT
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	get := performAuthorized(server, http.MethodGet, "/api/v1/profile-overlay", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("get overlay status=%d body=%s", get.Code, get.Body.String())
+	}
+	var initial ProfileOverlayResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &initial); err != nil {
+		t.Fatal(err)
+	}
+	if initial.Document.Enabled || initial.Revision == "" {
+		t.Fatalf("initial overlay = %#v", initial)
+	}
+
+	overlayYAML := `schema-version: 1
+enabled: true
+rules:
+  prepend:
+    - DOMAIN,first.example,DIRECT
+  append-before-match:
+    - DOMAIN,last.example,Main
+proxies:
+  add:
+    - name: LAN-Proxy
+      type: socks5
+      server: 192.168.1.10
+      port: 1080
+proxy-groups:
+  patch:
+    - name: Main
+      append-proxies:
+        - LAN-Proxy
+`
+	body, _ := json.Marshal(ProfileOverlaySaveRequest{YAML: &overlayYAML})
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/profile-overlay", bytes.NewReader(body))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+initial.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("save overlay status=%d body=%s", response.Code, response.Body.String())
+	}
+	var savedOverlay ProfileOverlayResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &savedOverlay); err != nil {
+		t.Fatal(err)
+	}
+
+	sourcesResponse := performAuthorized(server, http.MethodGet, "/api/v1/sources", nil)
+	var listed struct {
+		Sources []Source `json:"sources"`
+	}
+	if err := json.Unmarshal(sourcesResponse.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Sources) != 1 || !listed.Sources[0].OverlayCompatible || listed.Sources[0].EffectiveDigest == source.Digest {
+		t.Fatalf("decorated sources = %#v", listed.Sources)
+	}
+	if got := listed.Sources[0].EffectiveInventory; len(got.Proxies) != 2 || got.RuleCount != 4 {
+		t.Fatalf("effective inventory = %#v", got)
+	}
+
+	previewResponse := performAuthorized(server, http.MethodGet, "/api/v1/sources/"+source.ID+"/preview", nil)
+	if previewResponse.Code != http.StatusOK {
+		t.Fatalf("preview status=%d body=%s", previewResponse.Code, previewResponse.Body.String())
+	}
+	var preview ProfileOverlayPreview
+	if err := json.Unmarshal(previewResponse.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	first := strings.Index(preview.FinalMihomoYAML, "DOMAIN,first.example,DIRECT")
+	sourceRule := strings.Index(preview.FinalMihomoYAML, "DOMAIN,source.example,Main")
+	last := strings.Index(preview.FinalMihomoYAML, "DOMAIN,last.example,Main")
+	match := strings.Index(preview.FinalMihomoYAML, "MATCH,DIRECT")
+	if first < 0 || !(first < sourceRule && sourceRule < last && last < match) || !strings.Contains(preview.FinalMihomoYAML, "LAN-Proxy") {
+		t.Fatalf("unexpected final preview:\n%s", preview.FinalMihomoYAML)
+	}
+
+	recorder := &recordingConfigurationRunner{}
+	server.configRunner = recorder
+	applyRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/sources/"+source.ID+"/apply", nil)
+	applyRequest.Host = "127.0.0.1:61767"
+	applyRequest.SetPathValue("id", source.ID)
+	applyRequest.Header.Set("Authorization", "Bearer "+server.token)
+	applyRequest.Header.Set("If-Match", `"`+fileDigest(server.configPath)+`"`)
+	applyResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(applyResponse, applyRequest)
+	if applyResponse.Code != http.StatusOK {
+		t.Fatalf("apply overlay status=%d body=%s", applyResponse.Code, applyResponse.Body.String())
+	}
+	if recorder.sourceDigest != source.Digest || recorder.overlayDigest != savedOverlay.Revision {
+		t.Fatalf("composition digests source=%q overlay=%q", recorder.sourceDigest, recorder.overlayDigest)
+	}
+	first = strings.Index(string(recorder.profilePayload), "DOMAIN,first.example,DIRECT")
+	sourceRule = strings.Index(string(recorder.profilePayload), "DOMAIN,source.example,Main")
+	last = strings.Index(string(recorder.profilePayload), "DOMAIN,last.example,Main")
+	match = strings.Index(string(recorder.profilePayload), "MATCH,DIRECT")
+	if first < 0 || !(first < sourceRule && sourceRule < last && last < match) || !strings.Contains(string(recorder.profilePayload), "LAN-Proxy") {
+		t.Fatalf("runner received unexpected profile:\n%s", recorder.profilePayload)
+	}
+}
+
+func TestGlobalProfileOverlayRejectsGatewayFieldsAndSourceConflicts(t *testing.T) {
+	server := newTestServer(t)
+	source, err := server.importReader("home", "mihomo_profile", "file:home.yaml", strings.NewReader("proxy-groups:\n  - {name: Main, type: select, proxies: [DIRECT]}\nrules:\n  - MATCH,DIRECT\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := performAuthorized(server, http.MethodGet, "/api/v1/profile-overlay", nil)
+	var initial ProfileOverlayResponse
+	if err := json.Unmarshal(get.Body.Bytes(), &initial); err != nil {
+		t.Fatal(err)
+	}
+	invalid := "schema-version: 1\nenabled: true\ndns:\n  merge:\n    listen: 127.0.0.1:53\n"
+	body, _ := json.Marshal(ProfileOverlaySaveRequest{YAML: &invalid})
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/profile-overlay", bytes.NewReader(body))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+initial.Revision+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "managed by OpenSurge") {
+		t.Fatalf("protected field status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	conflict := "schema-version: 1\nenabled: true\nproxy-groups:\n  add:\n    - {name: Main, type: select, proxies: [DIRECT]}\n"
+	body, _ = json.Marshal(ProfileOverlaySaveRequest{YAML: &conflict})
+	request = httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/profile-overlay", bytes.NewReader(body))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+initial.Revision+`"`)
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("conflicting overlay draft status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	preview := performAuthorized(server, http.MethodGet, "/api/v1/sources/"+source.ID+"/preview", nil)
+	if preview.Code != http.StatusUnprocessableEntity || !strings.Contains(preview.Body.String(), "conflicts with imported proxy-groups") {
+		t.Fatalf("conflicting preview status=%d body=%s", preview.Code, preview.Body.String())
+	}
+	applyRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/sources/"+source.ID+"/apply", nil)
+	applyRequest.Host = "127.0.0.1:61767"
+	applyRequest.SetPathValue("id", source.ID)
+	applyRequest.Header.Set("Authorization", "Bearer "+server.token)
+	applyRequest.Header.Set("If-Match", `"`+fileDigest(server.configPath)+`"`)
+	apply := httptest.NewRecorder()
+	server.Handler().ServeHTTP(apply, applyRequest)
+	if apply.Code != http.StatusUnprocessableEntity || !strings.Contains(apply.Body.String(), "profile_overlay_incompatible") {
+		t.Fatalf("conflicting apply status=%d body=%s", apply.Code, apply.Body.String())
+	}
+}
+
 func TestDevicePolicyUsesOptimisticRevisionAndConfigurationRunner(t *testing.T) {
 	server := newTestServer(t)
 	get := performAuthorized(server, http.MethodGet, "/api/v1/device-policy", nil)
@@ -2147,7 +2312,21 @@ type fakeConfigurationRunner struct {
 	profileReloaded bool
 }
 
-func (f fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte) (ProfileApplyResult, error) {
+type recordingConfigurationRunner struct {
+	fakeConfigurationRunner
+	profilePayload []byte
+	sourceDigest   string
+	overlayDigest  string
+}
+
+func (f *recordingConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, payload []byte, sourceDigest, overlayDigest string) (ProfileApplyResult, error) {
+	f.profilePayload = append([]byte(nil), payload...)
+	f.sourceDigest = sourceDigest
+	f.overlayDigest = overlayDigest
+	return ProfileApplyResult{Revision: revision + "-applied"}, nil
+}
+
+func (f fakeConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, _ []byte, _, _ string) (ProfileApplyResult, error) {
 	if f.profileErr != nil {
 		return ProfileApplyResult{}, f.profileErr
 	}

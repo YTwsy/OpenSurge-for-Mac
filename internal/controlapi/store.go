@@ -205,6 +205,18 @@ func (s *Store) SaveSources(sources []Source) error {
 	return writeAtomic(filepath.Join(s.dir, "sources.json"), append(data, '\n'), 0o600)
 }
 
+func (s *Store) ProfileOverlay() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return os.ReadFile(filepath.Join(s.dir, "global-profile-overlay.yaml"))
+}
+
+func (s *Store) SaveProfileOverlay(data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return writeAtomic(filepath.Join(s.dir, "global-profile-overlay.yaml"), data, 0o600)
+}
+
 func readJSON(path string, value any) error {
 	data, err := os.ReadFile(path)
 	if err != nil {

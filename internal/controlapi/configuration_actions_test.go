@@ -36,7 +36,7 @@ func TestApplyProfileReloadsRunningGateway(t *testing.T) {
 			return nil
 		},
 	}
-	result, err := applyProfile(t.Context(), configPath, fileDigest(configPath), profileApplyFixture(), deps)
+	result, err := applyProfile(t.Context(), configPath, fileDigest(configPath), profileApplyFixture(), profileApplySourceDigest(), profileApplyOverlayDigest(), deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,6 +50,9 @@ func TestApplyProfileReloadsRunningGateway(t *testing.T) {
 	digest, err := config.MihomoProfileDigest(cfg)
 	if err != nil || digest != fileDigestBytes(profileApplyFixture()) {
 		t.Fatalf("profile digest=%q err=%v", digest, err)
+	}
+	if cfg.Mihomo.ProfileSourceDigest != profileApplySourceDigest() || cfg.Mihomo.ProfileOverlayDigest != profileApplyOverlayDigest() {
+		t.Fatalf("composition metadata = %#v", cfg.Mihomo)
 	}
 }
 
@@ -75,7 +78,7 @@ func TestApplyProfileRestoresPreviousConfigAndGatewayAfterReloadFailure(t *testi
 			return nil
 		},
 	}
-	_, err := applyProfile(t.Context(), configPath, fileDigest(configPath), profileApplyFixture(), deps)
+	_, err := applyProfile(t.Context(), configPath, fileDigest(configPath), profileApplyFixture(), profileApplySourceDigest(), profileApplyOverlayDigest(), deps)
 	if err == nil || !strings.Contains(err.Error(), "previous config restored") || !strings.Contains(err.Error(), "previous running gateway preserved or restored") {
 		t.Fatalf("error = %v", err)
 	}
@@ -110,7 +113,7 @@ func TestApplyProfileLeavesStoppedGatewayPendingForNextStart(t *testing.T) {
 			return nil
 		},
 	}
-	result, err := applyProfile(t.Context(), configPath, fileDigest(configPath), profileApplyFixture(), deps)
+	result, err := applyProfile(t.Context(), configPath, fileDigest(configPath), profileApplyFixture(), profileApplySourceDigest(), "", deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +150,7 @@ rules: ['DOMAIN,example.com,Main', 'MATCH,DIRECT']
 			return nil
 		},
 	}
-	result, err := applyProfile(t.Context(), configPath, fileDigest(configPath), payload, deps)
+	result, err := applyProfile(t.Context(), configPath, fileDigest(configPath), payload, profileApplySourceDigest(), profileApplyOverlayDigest(), deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +190,7 @@ func TestApplyProfileValidationFailureCleansCandidateAndPreservesConfig(t *testi
 			return nil
 		},
 	}
-	if _, err := applyProfile(t.Context(), configPath, fileDigest(configPath), payload, deps); err == nil || !strings.Contains(err.Error(), "candidate render failed") {
+	if _, err := applyProfile(t.Context(), configPath, fileDigest(configPath), payload, profileApplySourceDigest(), profileApplyOverlayDigest(), deps); err == nil || !strings.Contains(err.Error(), "candidate render failed") {
 		t.Fatalf("applyProfile() error = %v", err)
 	}
 	current, err := os.ReadFile(configPath)
@@ -200,6 +203,32 @@ func TestApplyProfileValidationFailureCleansCandidateAndPreservesConfig(t *testi
 	profilePath := filepath.Join(filepath.Dir(configPath), "data", "imported-profile-"+fileDigestBytes(payload)[:16]+".yaml")
 	if _, err := os.Stat(profilePath); !os.IsNotExist(err) {
 		t.Fatalf("failed candidate profile remains: %v", err)
+	}
+}
+
+func TestApplyProfileRejectsInvalidCompositionDigestsBeforeWriting(t *testing.T) {
+	configPath, original := writeProfileApplyTestConfig(t)
+	deps := profileApplyDeps{geteuid: func() int { return 0 }}
+	tests := []struct {
+		name          string
+		sourceDigest  string
+		overlayDigest string
+		want          string
+	}{
+		{name: "source", sourceDigest: strings.Repeat("A", 64), want: "source digest"},
+		{name: "overlay", sourceDigest: profileApplySourceDigest(), overlayDigest: "abcd", want: "overlay digest"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := applyProfile(t.Context(), configPath, fileDigest(configPath), profileApplyFixture(), tt.sourceDigest, tt.overlayDigest, deps)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("applyProfile() error = %v", err)
+			}
+			current, readErr := os.ReadFile(configPath)
+			if readErr != nil || !bytes.Equal(current, original) {
+				t.Fatalf("invalid digest changed config: err=%v", readErr)
+			}
+		})
 	}
 }
 
@@ -221,6 +250,14 @@ func writeProfileApplyTestConfig(t *testing.T) (string, []byte) {
 
 func profileApplyFixture() []byte {
 	return []byte("proxies:\n  - {name: edge, type: http, server: 127.0.0.1, port: 8080}\nproxy-groups:\n  - {name: Main, type: select, proxies: [edge, DIRECT]}\nrules:\n  - MATCH,Main\n")
+}
+
+func profileApplySourceDigest() string {
+	return fileDigestBytes([]byte("source profile"))
+}
+
+func profileApplyOverlayDigest() string {
+	return fileDigestBytes([]byte("global profile overlay"))
 }
 
 func fileDigestBytes(data []byte) string {
