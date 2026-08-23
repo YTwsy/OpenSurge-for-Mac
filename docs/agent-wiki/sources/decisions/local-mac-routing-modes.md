@@ -17,6 +17,18 @@ uses `IN-TYPE,SOCKS/HTTP` plus either loopback or the gateway LAN IPv4. These
 rules precede device and imported rules. Downstream device source addresses
 must not match them.
 
+System-TUN IPv6 identities additionally require `IN-NAME,DEFAULT-TUN`. When
+AAAA answers are enabled but host TUN IPv6 is inactive, the source match is
+exactly `fdfe:dcba:9876::1/128`. When host TUN IPv6 is effective, its explicit
+address replaces that default and the generated match is exactly
+`fdfe:dcba:9877::1/128`. Generate only the identity selected by the effective
+configuration and never broaden either source match to a subnet.
+Downstream IPv6 uses the distinct `opensurge-ipv6` packet listener, device
+`IN-USER`, and `fdfe:dcba:9878::/64`, so it remains outside the local overlay.
+IPv6 local-destination guards may include loopback, the product-owned host-TUN
+and downstream prefixes, link-local, and multicast, but not all of
+`fc00::/7`, because the fake-IPv6 destination pool is ULA.
+
 Rule selects `PASS` for both TCP and UDP so evaluation continues through the
 normal gateway rules. Direct selects `DIRECT`. Global selects
 `open-surge/mac-global` for TCP. UDP uses the same selector only when the

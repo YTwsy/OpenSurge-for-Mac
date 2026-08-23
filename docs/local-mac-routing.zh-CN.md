@@ -24,23 +24,29 @@ selector 或 DHCP/DNS 配置。
 OpenSurge 同时约束 **入口类型** 和 **源地址**：
 
 - TUN 入口中源地址为 mihomo 本机 TUN 身份 `198.18.0.1` 的连接；
+- `DEFAULT-TUN` 入口中，开启 AAAA、但 IPv6 TUN 未启用时精确匹配 fake-IPv6 本机
+  身份 `fdfe:dcba:9876::1/128`；实际启用 IPv6 TUN 时改为精确匹配
+  `fdfe:dcba:9877::1/128`；
 - 从 `127.0.0.0/8` 或网关 Mac LAN IPv4 进入 mihomo mixed-port 的本机显式代理连接。
 
-下游连接使用它们自己的 LAN IPv4，不会命中这些本机规则。它们随后继续进入设备
-`SRC-IP-CIDR` 覆盖和 imported/managed 网关规则。
+下游 IPv4 连接使用自己的 LAN IPv4；下游 IPv6 则从独立的 `opensurge-ipv6` packet
+listener 进入，携带设备 `IN-USER`，源地址位于 `fdfe:dcba:9878::/64`。它们都不会命中
+上述本机规则，随后继续进入设备覆盖和 imported/managed 网关规则。
 
-### 当前已知限制：AAAA 与本机模式
+### AAAA 与本机模式
 
 `dns.ipv6` 与 `transparent.tun_ipv6` 相互独立。即使“何时为下游启用 IPv6”设为
 `auto` 且因没有原生上游 IPv6 而未实际启用下游 IPv6，开启“允许 AAAA 查询”仍会让
-mihomo DNS 返回 `fdfe:dcba:9876::/64` 中的 fake IPv6。一些应用会优先使用这类 AAAA；
-当前本机模式规则只覆盖 `198.18.0.1` 的 IPv4 TUN 身份，因此这部分 Mac 本机 IPv6
-连接可能绕过 `open-surge/mac-mode-*`，继续匹配 imported/managed 网关规则。表现上，
-“本机直连”仍可能有连接走代理，反复刷新连接也只会让应用按同一路径重新建立连接。
+mihomo DNS 返回 `fdfe:dcba:9876::/64` 中的 fake IPv6。一些应用会优先使用这类 AAAA。
+IPv6 TUN 未启用时，本机模式会把对应的 `fdfe:dcba:9876::1/128` 系统 TUN 源身份送入
+`open-surge/mac-mode-*`，因此不需要为了让本机直连生效而关闭 AAAA。若 IPv6 TUN
+实际启用，mihomo 会用显式配置的 `fdfe:dcba:9877::1/128` 取代前者，本机模式也随之
+匹配这个身份。
 
-没有原生上游 IPv6、也不需要下游 IPv6 时，可暂时关闭“允许 AAAA 查询”，保存并重载
-网关后完全退出并重新打开受影响的应用。`auto` 未实际启用下游 IPv6，不等于自动关闭
-AAAA；关闭 AAAA 是当前规避方式，不是完整的本机 IPv6 模式支持。
+这两种 IPv6 规则都额外要求 `IN-NAME,DEFAULT-TUN`，且不会同时生成或匹配整个
+fake-IP `/64`、
+下游 `fdfe:dcba:9878::/64` 或 `opensurge-ipv6` listener。升级到包含此支持的版本后需要
+重载网关以生成新规则；模式切换仍只影响新连接，已有连接需刷新或由应用重新建立。
 
 因此，Web GUI 中的“Mac 本机流量模式”和设备的“跟随网关规则 / 独立设备出口”是两套
 正交控制：
@@ -53,7 +59,8 @@ AAAA；关闭 AAAA 是当前规避方式，不是完整的本机 IPv6 模式支�
 
 Mac 本机的规则 / 全局 / 直连开关本身不会开启或改写 macOS“系统设置 → 网络 → 代理”。
 当 TUN 已启用时，可路由的 Mac 本机 IPv4 流量由 TUN 进入这套模式；没有经过 TUN 的
-流量不在其作用域。应用若显式使用 OpenSurge mixed-port，也会进入同一模式。
+流量不在其作用域。上文列出的系统 TUN IPv6 身份也进入同一模式。应用若显式使用
+OpenSurge mixed-port，也会进入同一模式。
 
 网络设置另有一个默认关闭的 **Mac 本机系统代理协同**兼容开关。它只在 TUN 模式下把
 当前上游网络服务的 HTTP/HTTPS 代理临时指向 `127.0.0.1:<mixed-port>`，用于处理

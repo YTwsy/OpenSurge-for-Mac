@@ -7,11 +7,13 @@ cd "$ROOT"
 BASE_DIR="$ROOT/runtime/integration/policy-control"
 WORK_DIR="${OMG_POLICY_CONTROL_WORK_DIR:-$BASE_DIR/run-$$}"
 CONFIG="$WORK_DIR/config.yaml"
+IPV6_CONFIG="$WORK_DIR/config-local-ipv6.yaml"
 PROFILE="$WORK_DIR/profile.yaml"
 PROVIDER="$WORK_DIR/provider.yaml"
 REMOTE_PROVIDER="$WORK_DIR/remote-provider.yaml"
 DEVICE_POLICY="$WORK_DIR/device-policy.json"
 MIHOMO_CONFIG="$WORK_DIR/mihomo.yaml"
+IPV6_MIHOMO_CONFIG="$WORK_DIR/mihomo-local-ipv6.yaml"
 MIHOMO_LOG="$WORK_DIR/logs/mihomo.log"
 OMG_BIN="$WORK_DIR/omg"
 EGRESS_PROBE_BIN="$WORK_DIR/egress-probe"
@@ -130,6 +132,30 @@ mihomo:
   mixed_port: $MIXED_PORT
   api_addr: "$API_ADDR"
   secret: ""
+
+runtime:
+  dir: "$WORK_DIR"
+
+device_policy:
+  file: "$DEVICE_POLICY"
+EOF
+
+  cat >"$IPV6_CONFIG" <<EOF
+mihomo:
+  binary: "$MIHOMO_BINARY"
+  config: "$IPV6_MIHOMO_CONFIG"
+  profile_mode: "imported"
+  profile: "$PROFILE"
+  mixed_port: $MIXED_PORT
+  api_addr: "$API_ADDR"
+  secret: ""
+
+dns:
+  ipv6: true
+
+transparent:
+  mode: "tun"
+  tun_ipv6: "off"
 
 runtime:
   dir: "$WORK_DIR"
@@ -260,6 +286,20 @@ if grep -Fq -- "device/integration-inherited/default" "$MIHOMO_CONFIG"; then
   echo "inherit_global integration fixture unexpectedly generated a default selector" >&2
   exit 1
 fi
+
+section "validate local fake-AAAA identity rules"
+"$OMG_BIN" validate-mihomo --config "$IPV6_CONFIG" --format json
+assert_file_contains "$IPV6_MIHOMO_CONFIG" "AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp"
+assert_file_contains "$IPV6_MIHOMO_CONFIG" "AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp"
+for forbidden in \
+  "SRC-IP-CIDR,fdfe:dcba:9876::/64" \
+  "SRC-IP-CIDR,fdfe:dcba:9878::/64" \
+  "IN-NAME,opensurge-ipv6"; do
+  if grep -Fq -- "$forbidden" "$IPV6_MIHOMO_CONFIG"; then
+    echo "local fake-AAAA identity rules crossed an IPv6 isolation boundary: $forbidden" >&2
+    exit 1
+  fi
+done
 
 section "start mihomo"
 start_mihomo "initial start"
