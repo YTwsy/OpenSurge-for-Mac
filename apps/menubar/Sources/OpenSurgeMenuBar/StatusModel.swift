@@ -14,6 +14,7 @@ final class StatusModel: ObservableObject {
     @Published private(set) var isChangingSleepPrevention = false
     @Published private(set) var availableUpdate: AvailableUpdate?
     @Published private(set) var updateCheckMessage: String?
+    @Published private(set) var requestedLanguage: RequestedAppLanguage = .system
     @Published var openAtLogin = false
 
     private let client: ControlAPIClient
@@ -46,6 +47,7 @@ final class StatusModel: ObservableObject {
     }
 
     var indicator: IndicatorState { menuBarIndicator(status: status, hasError: error != nil) }
+    var resolvedLanguage: ResolvedAppLanguage { AppLanguageResolver.resolve(requestedLanguage) }
     var canQuitOpenSurge: Bool { status?.canQuitOpenSurge == true && !isChangingServices }
     var canUninstall: Bool { status?.canUninstall == true && !isChangingServices }
 
@@ -132,7 +134,7 @@ final class StatusModel: ObservableObject {
 
     func quitOpenSurge() {
         guard canQuitOpenSurge else {
-            error = openSurgeQuitWarning(for: status)
+            error = L10n.text(openSurgeQuitWarning(for: status))
             return
         }
         timer?.invalidate()
@@ -154,7 +156,7 @@ final class StatusModel: ObservableObject {
 
     func uninstall(_ mode: UninstallMode) {
         guard canUninstall else {
-            error = uninstallWarning(for: status)
+            error = L10n.text(uninstallWarning(for: status))
             return
         }
         timer?.invalidate()
@@ -206,6 +208,11 @@ final class StatusModel: ObservableObject {
     }
 
     private func storeStatus(_ nextStatus: MenuBarStatus, sleepGeneration: Int) {
+        if let language = nextStatus.uiPreferences?.language,
+           language != requestedLanguage {
+            requestedLanguage = language
+            L10n.activate(language)
+        }
         status = menuBarStatusAfterRefresh(
             nextStatus,
             currentStatus: status,
@@ -248,11 +255,11 @@ final class StatusModel: ObservableObject {
 
         do {
             availableUpdate = try await updateChecker.check(currentVersion: currentVersion)
-            updateCheckMessage = availableUpdate == nil ? "当前已是最新稳定版" : nil
+            updateCheckMessage = availableUpdate == nil ? L10n.text("当前已是最新稳定版") : nil
         } catch {
             updateCheckMessage = manual
-                ? "检查更新失败：\(error.localizedDescription)"
-                : "自动检查更新失败，可手动重试"
+                ? L10n.format("检查更新失败：%@", error.localizedDescription)
+                : L10n.text("自动检查更新失败，可手动重试")
         }
     }
 
@@ -261,7 +268,7 @@ final class StatusModel: ObservableObject {
         do {
             try urlLauncher.open(availableUpdate.releasePage)
         } catch {
-            updateCheckMessage = "无法打开下载页，请前往 OpenSurge GitHub Releases"
+            updateCheckMessage = L10n.text("无法打开下载页，请前往 OpenSurge GitHub Releases")
         }
     }
 

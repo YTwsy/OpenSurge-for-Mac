@@ -7,6 +7,7 @@ MODULE_CACHE="${CLANG_MODULE_CACHE_PATH:-/private/tmp/opensurge-swift-module-cac
 OUTPUT="${OPENSURGE_MENUBAR_CHECK_BINARY:-/private/tmp/opensurge-menubar-check}"
 
 swiftc -parse-as-library -sdk "$SDKROOT" -module-cache-path "$MODULE_CACHE" \
+  "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/Localization.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/APIClient.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/ControlServiceLauncher.swift" \
   "$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuBarController.swift" \
@@ -49,11 +50,11 @@ if grep -Fq 'ProgressView' "$MENU_CONTENT"; then
   echo "background menu bar polling must not show a periodic loading spinner" >&2
   exit 1
 fi
-grep -Fq 'Button(model.isUninstalling ? "正在卸载…" : "卸载 OpenSurge…")' "$MENU_CONTENT" || {
+grep -Fq 'Button(L10n.text(model.isUninstalling ? "正在卸载…" : "卸载 OpenSurge…"))' "$MENU_CONTENT" || {
   echo "menu bar must expose the native OpenSurge uninstall entry" >&2
   exit 1
 }
-grep -Fq 'Toggle("合盖保持运行"' "$MENU_CONTENT" || {
+grep -Fq 'Toggle(L10n.text("合盖保持运行")' "$MENU_CONTENT" || {
   echo "menu bar must expose the independent lid-closed operation switch" >&2
   exit 1
 }
@@ -65,11 +66,11 @@ grep -Fq '退出 OpenSurge 或重启 Mac 后自动释放' "$MENU_CONTENT" || {
   echo "lid-closed operation help must explain its non-persistent lifetime" >&2
   exit 1
 }
-grep -Fq 'alert.addButton(withTitle: "保留数据并卸载")' "$MENU_CONTENT" || {
+grep -Fq 'alert.addButton(withTitle: L10n.text("保留数据并卸载"))' "$MENU_CONTENT" || {
   echo "uninstall confirmation must offer a data-preserving choice" >&2
   exit 1
 }
-grep -Fq 'alert.addButton(withTitle: "彻底卸载")' "$MENU_CONTENT" || {
+grep -Fq 'alert.addButton(withTitle: L10n.text("彻底卸载"))' "$MENU_CONTENT" || {
   echo "uninstall confirmation must offer a full-removal choice" >&2
   exit 1
 }

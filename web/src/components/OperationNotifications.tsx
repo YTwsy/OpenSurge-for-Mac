@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { t } from '../i18n'
 
 export type OperationNotification = {
   tone: 'success' | 'error'
@@ -10,7 +11,7 @@ export type OperationNotificationItem = OperationNotification & { id: number }
 
 export function OperationNotifications({ notifications, onDismiss }: { notifications: OperationNotificationItem[]; onDismiss: (id: number) => void }) {
   if (!notifications.length) return null
-  return <aside className="operation-notifications" aria-label="操作结果通知">
+  return <aside className="operation-notifications" aria-label={t('操作结果通知')}>
     {notifications.map(notification => <OperationNotificationCard key={notification.id} notification={notification} onDismiss={onDismiss} />)}
   </aside>
 }
@@ -23,7 +24,7 @@ function OperationNotificationCard({ notification, onDismiss }: { notification: 
 
   return <div className={`operation-notification ${notification.tone}`} role={notification.tone === 'error' ? 'alert' : 'status'}>
     <span className="operation-notification-icon" aria-hidden="true">{notification.tone === 'success' ? '✓' : '!'}</span>
-    <div><strong>{notification.title}</strong><p>{notification.message}</p></div>
-    <button type="button" aria-label={`关闭通知：${notification.title}`} onClick={() => onDismiss(notification.id)}>×</button>
+    <div><strong>{t(notification.title)}</strong><p>{t(notification.message)}</p></div>
+    <button type="button" aria-label={t('关闭通知：{{title}}', { title: t(notification.title) })} onClick={() => onDismiss(notification.id)}>×</button>
   </div>
 }

@@ -1,4 +1,6 @@
 import type { ControlConfig } from '../types'
+import { t } from '../i18n'
+import { TopologyDiagram } from './TopologyDiagram'
 
 type NetworkMode = ControlConfig['gateway']['mode']
 
@@ -55,23 +57,21 @@ export function NetworkModeDetail({ mode }: { mode: NetworkMode }) {
 
   return <section className="section mode-detail">
     <div className="mode-detail-heading">
-      <div><h2>{detail.title}</h2><p>{detail.subtitle}</p></div>
-      <span className="pill ok">{detail.badge}</span>
+      <div><h2>{t(detail.title)}</h2><p>{t(detail.subtitle)}</p></div>
+      <span className="pill ok">{t(detail.badge)}</span>
     </div>
     <div className="mode-detail-layout">
       <div
-        className={`mode-topology-image mode-topology-image-${mode}`}
-        role="img"
-        aria-label={`${detail.title}：${detail.accessibleDescription}`}
-      />
+        className="mode-topology-image"
+      ><TopologyDiagram mode={mode} /></div>
       <div className="mode-detail-copy">
         <dl className="mode-facts">
-          <div><dt>DHCP 来源</dt><dd>{detail.dhcp}</dd></div>
-          <div><dt>设备设置</dt><dd>{detail.client}</dd></div>
-          <div><dt>需要操作</dt><dd>{detail.change}</dd></div>
-          <div><dt>接入范围</dt><dd>{detail.scope}</dd></div>
+          <div><dt>{t('DHCP 来源')}</dt><dd>{t(detail.dhcp)}</dd></div>
+          <div><dt>{t('设备设置')}</dt><dd>{t(detail.client)}</dd></div>
+          <div><dt>{t('需要操作')}</dt><dd>{t(detail.change)}</dd></div>
+          <div><dt>{t('接入范围')}</dt><dd>{t(detail.scope)}</dd></div>
         </dl>
-        <div className="notice mode-guidance">{detail.guidance}</div>
+        <div className="notice mode-guidance">{t(detail.guidance)}</div>
       </div>
     </div>
   </section>

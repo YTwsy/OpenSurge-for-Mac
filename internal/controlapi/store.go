@@ -54,6 +54,51 @@ func (s *Store) Token() (string, error) {
 	return token, nil
 }
 
+func defaultUIPreferences() UIPreferences {
+	return UIPreferences{SchemaVersion: SchemaVersion, Language: UILanguageSystem}
+}
+
+func validUILanguage(language string) bool {
+	switch language {
+	case UILanguageSystem, UILanguageZHCHS, UILanguageEN:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Store) UIPreferences() (UIPreferences, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	preferences := defaultUIPreferences()
+	err := readJSON(filepath.Join(s.dir, "preferences.json"), &preferences)
+	if errors.Is(err, os.ErrNotExist) {
+		return defaultUIPreferences(), nil
+	}
+	if err != nil {
+		return UIPreferences{}, err
+	}
+	if !validUILanguage(preferences.Language) {
+		return UIPreferences{}, fmt.Errorf("unsupported UI language %q", preferences.Language)
+	}
+	preferences.SchemaVersion = SchemaVersion
+	return preferences, nil
+}
+
+func (s *Store) SaveUIPreferences(preferences UIPreferences) error {
+	if !validUILanguage(preferences.Language) {
+		return fmt.Errorf("unsupported UI language %q", preferences.Language)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	preferences.SchemaVersion = SchemaVersion
+	data, err := json.MarshalIndent(preferences, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(s.dir, "preferences.json"), append(data, '\n'), 0o600)
+}
+
 func (s *Store) Recovery() (RecoveryState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

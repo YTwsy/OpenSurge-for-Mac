@@ -4,6 +4,7 @@ import { ConnectivityCategory } from '../components/ConnectivityCategory'
 import { Empty, PageHeader } from '../components/Common'
 import { connectivityCategories, median } from '../connectivity'
 import type { ConnectivityResponse, ConnectivityResult, Overview } from '../types'
+import { t } from '../i18n'
 
 const baselineKey = 'opensurge-connectivity-baseline'
 
@@ -77,7 +78,7 @@ export function ConnectivityPage({ overview, onChanged }: { overview: Overview |
 
   const recoverMihomo = async () => {
     if (!manualMihomoRecoveryNeeded || recovering) return
-    if (!window.confirm('这会验证当前 applied 配置并恢复 Mihomo。DHCP/DNS、PF、IPv4 forwarding 和 Mac 网络设置不会改变；现有代理连接会重新建立。继续吗？')) return
+    if (!window.confirm(t('这会验证当前 applied 配置并恢复 Mihomo。DHCP/DNS、PF、IPv4 forwarding 和 Mac 网络设置不会改变；现有代理连接会重新建立。继续吗？'))) return
     setRecovering(true); setError('')
     try {
       const operation = await api.gateway('restart-mihomo')
@@ -91,20 +92,20 @@ export function ConnectivityPage({ overview, onChanged }: { overview: Overview |
   }
 
   return <>
-    <PageHeader eyebrow="CONNECTIVITY" title="分流与网络连通性" description="通过当前 applied 配置与 Mac 本机运行模式访问真实服务，展示三轮中位延迟、命中规则和实际出口链。" action={<button className="primary" type="button" disabled={!canProbe || !targets.length || testing.size > 0} onClick={() => void run(targets.map(target => target.id))}>{testing.size ? `正在检测 ${testing.size} 项…` : '检测全部'}</button>} />
-    <section className="probe-scope" aria-label="检测来源"><button className="active" type="button" aria-pressed="true"><span>◉</span><strong>Mac 本机运行路径</strong><small>opensurge-control → mihomo</small></button><a href="https://ip.net.coffee/link/" target="_blank" rel="noreferrer"><span>↗</span><strong>本机浏览器线路</strong><small>在 Net.Coffee 中打开</small></a><button type="button" disabled title="需要真实下游设备发起探测"><span>◇</span><strong>设备端检测</strong><small>后续：真实 DHCP / DNS / TUN</small></button></section>
-    {overview?.drift && <div className="notice warn" role="status">当前存在未应用修改。本页只检测正在运行的 applied 配置；保存但未重载的规则不会反映在结果中。</div>}
-    {!canProbe && !mihomoFailureDetected && !runtimeInterrupted && <div className="notice warn" role="status">启动网关和 mihomo 后才能执行策略路径检测。浏览器线路测试仍可通过上方 Net.Coffee 打开。</div>}
-    {runtimeInterrupted && <div className="notice warn" role="status">上一次网关运行已被系统重启中断。请先到“网络设置”安全清理旧 runtime，再重新启动完整网关；此时不能只重启 Mihomo。</div>}
-    {mihomoFailureDetected && automaticMihomoRecoveryState === 'observing' && <div className="notice warn" role="status"><strong>正在确认 Mihomo 本地服务状态</strong><p>连续异常确认后会自动执行一次 Mihomo-only 恢复，不改动 DHCP/DNS、PF 或 IPv4 forwarding。</p></div>}
-    {mihomoFailureDetected && automaticMihomoRecoveryState === 'recovering' && <div className="notice actionable" role="status"><div><strong>正在自动恢复 Mihomo</strong><p>OpenSurge 正在验证 applied 配置、归档旧日志并重建 Mihomo/TUN；无需手动操作。</p></div></div>}
-    {manualMihomoRecoveryNeeded && <div className="notice actionable" role="status"><div><strong>Mihomo 自动恢复未成功</strong><p>可以手动重试这条 Mihomo-only 恢复路径；不会停止 DHCP/DNS、卸载 PF 或修改 Mac 网络设置，旧 Mihomo 日志会先归档。</p></div><button className="primary" type="button" disabled={recovering || testing.size > 0} onClick={() => void recoverMihomo()}>{recovering ? '正在恢复…' : '恢复 Mihomo'}</button></div>}
-    {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button type="button" onClick={() => void loadCatalog()}>重试</button></div>}
-    <section className="connectivity-overview"><div className="connectivity-score"><span className={`score-orb ${tested.length ? mismatches || reachable < tested.length ? 'mixed' : 'healthy' : ''}`}><strong>{tested.length ? `${reachable}/${tested.length}` : '—'}</strong><small>可达</small></span><div><small>APPLIED ROUTING</small><h2>{tested.length ? mismatches ? `${mismatches} 项路径需要关注` : '当前分流符合所选基线' : '等待首次检测'}</h2><p>{tested.length ? `三轮探测 · 整体中位 ${overallMedian || '—'} ms` : '不会在打开页面时自动访问第三方服务'}</p></div></div><div className="connectivity-metrics"><span><small>已检测</small><strong>{tested.length}</strong></span><span><small>路径不符</small><strong className={mismatches ? 'attention' : ''}>{mismatches}</strong></span><span><small>中位延迟</small><strong>{overallMedian ? `${overallMedian} ms` : '—'}</strong></span></div><div className="baseline-control"><span><strong>分流判断基线</strong><small>只影响界面判断，不修改 mihomo 配置</small></span><div className="segmented"><button type="button" aria-pressed={enforceBaseline} onClick={() => setBaseline(true)}>国内直连 / 海外代理</button><button type="button" aria-pressed={!enforceBaseline} onClick={() => setBaseline(false)}>仅观察</button></div></div></section>
+    <PageHeader eyebrow="CONNECTIVITY" title="分流与网络连通性" description="通过当前 applied 配置与 Mac 本机运行模式访问真实服务，展示三轮中位延迟、命中规则和实际出口链。" action={<button className="primary" type="button" disabled={!canProbe || !targets.length || testing.size > 0} onClick={() => void run(targets.map(target => target.id))}>{testing.size ? t('正在检测 {{count}} 项…', { count: testing.size }) : t('检测全部')}</button>} />
+    <section className="probe-scope" aria-label={t('检测来源')}><button className="active" type="button" aria-pressed="true"><span>◉</span><strong>{t('Mac 本机运行路径')}</strong><small>opensurge-control → mihomo</small></button><a href="https://ip.net.coffee/link/" target="_blank" rel="noreferrer"><span>↗</span><strong>{t('本机浏览器线路')}</strong><small>{t('在 Net.Coffee 中打开')}</small></a><button type="button" disabled title={t('需要真实下游设备发起探测')}><span>◇</span><strong>{t('设备端检测')}</strong><small>{t('后续：真实 DHCP / DNS / TUN')}</small></button></section>
+    {overview?.drift && <div className="notice warn" role="status">{t('当前存在未应用修改。本页只检测正在运行的 applied 配置；保存但未重载的规则不会反映在结果中。')}</div>}
+    {!canProbe && !mihomoFailureDetected && !runtimeInterrupted && <div className="notice warn" role="status">{t('启动网关和 mihomo 后才能执行策略路径检测。浏览器线路测试仍可通过上方 Net.Coffee 打开。')}</div>}
+    {runtimeInterrupted && <div className="notice warn" role="status">{t('上一次网关运行已被系统重启中断。请先到“网络设置”安全清理旧 runtime，再重新启动完整网关；此时不能只重启 Mihomo。')}</div>}
+    {mihomoFailureDetected && automaticMihomoRecoveryState === 'observing' && <div className="notice warn" role="status"><strong>{t('正在确认 Mihomo 本地服务状态')}</strong><p>{t('连续异常确认后会自动执行一次 Mihomo-only 恢复，不改动 DHCP/DNS、PF 或 IPv4 forwarding。')}</p></div>}
+    {mihomoFailureDetected && automaticMihomoRecoveryState === 'recovering' && <div className="notice actionable" role="status"><div><strong>{t('正在自动恢复 Mihomo')}</strong><p>{t('OpenSurge 正在验证 applied 配置、归档旧日志并重建 Mihomo/TUN；无需手动操作。')}</p></div></div>}
+    {manualMihomoRecoveryNeeded && <div className="notice actionable" role="status"><div><strong>{t('Mihomo 自动恢复未成功')}</strong><p>{t('可以手动重试这条 Mihomo-only 恢复路径；不会停止 DHCP/DNS、卸载 PF 或修改 Mac 网络设置，旧 Mihomo 日志会先归档。')}</p></div><button className="primary" type="button" disabled={recovering || testing.size > 0} onClick={() => void recoverMihomo()}>{t(recovering ? '正在恢复…' : '恢复 Mihomo')}</button></div>}
+    {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button type="button" onClick={() => void loadCatalog()}>{t('重试')}</button></div>}
+    <section className="connectivity-overview"><div className="connectivity-score"><span className={`score-orb ${tested.length ? mismatches || reachable < tested.length ? 'mixed' : 'healthy' : ''}`}><strong>{tested.length ? `${reachable}/${tested.length}` : '—'}</strong><small>{t('可达')}</small></span><div><small>APPLIED ROUTING</small><h2>{tested.length ? mismatches ? t('{{count}} 项路径需要关注', { count: mismatches }) : t('当前分流符合所选基线') : t('等待首次检测')}</h2><p>{tested.length ? t('三轮探测 · 整体中位 {{median}} ms', { median: overallMedian || '—' }) : t('不会在打开页面时自动访问第三方服务')}</p></div></div><div className="connectivity-metrics"><span><small>{t('已检测')}</small><strong>{tested.length}</strong></span><span><small>{t('路径不符')}</small><strong className={mismatches ? 'attention' : ''}>{mismatches}</strong></span><span><small>{t('中位延迟')}</small><strong>{overallMedian ? `${overallMedian} ms` : '—'}</strong></span></div><div className="baseline-control"><span><strong>{t('分流判断基线')}</strong><small>{t('只影响界面判断，不修改 mihomo 配置')}</small></span><div className="segmented"><button type="button" aria-pressed={enforceBaseline} onClick={() => setBaseline(true)}>{t('国内直连 / 海外代理')}</button><button type="button" aria-pressed={!enforceBaseline} onClick={() => setBaseline(false)}>{t('仅观察')}</button></div></div></section>
     {targets.length ? categories.map(category => {
       const items = targets.filter(target => target.category === category)
       return items.length ? <ConnectivityCategory key={category} category={category} targets={items} results={results} testing={testing} enforceBaseline={enforceBaseline} onTest={run} /> : null
-    }) : !error && <Empty text="正在加载检测目录…" />}
-    <p className="evidence-note"><strong>证据范围：</strong>这里的请求由 Mac 上的 Control Service 经 mihomo mixed-port 发起，会经过当前 Mac 本机规则 / 全局 / 直连模式。它不证明下游设备的网关规则、设备级 SRC-IP、DHCP、DNS 或 TUN；选择全局或直连时，分流判断基线出现差异可能正是当前模式的结果。HTTP 响应表示网络可达，不等同于已登录后的完整产品功能可用。</p>
+    }) : !error && <Empty text={t('正在加载检测目录…')} />}
+    <p className="evidence-note"><strong>{t('证据范围：')}</strong>{t('这里的请求由 Mac 上的 Control Service 经 mihomo mixed-port 发起，会经过当前 Mac 本机规则 / 全局 / 直连模式。它不证明下游设备的网关规则、设备级 SRC-IP、DHCP、DNS 或 TUN；选择全局或直连时，分流判断基线出现差异可能正是当前模式的结果。HTTP 响应表示网络可达，不等同于已登录后的完整产品功能可用。')}</p>
   </>
 }

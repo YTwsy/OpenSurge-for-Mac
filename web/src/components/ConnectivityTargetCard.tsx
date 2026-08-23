@@ -1,5 +1,6 @@
 import { connectivityStatusLabel, connectivityTone, routeLabel } from '../connectivity'
 import type { ConnectivityResult, ConnectivityTarget } from '../types'
+import { localeIdentifier, t } from '../i18n'
 
 type ConnectivityTargetCardProps = {
   target: ConnectivityTarget
@@ -17,8 +18,8 @@ export function ConnectivityTargetCard({ target, result, testing, enforceBaselin
   return <article className={`connectivity-target ${tone} ${mismatch ? 'route-mismatch' : ''}`}>
     <div className="target-main"><span className="target-symbol" aria-hidden="true">{target.symbol}</span><div><strong>{target.name}</strong><small>{new URL(target.url).hostname}</small></div><span className={`connectivity-value ${tone}`}>{connectivityStatusLabel(result, testing)}</span></div>
     <div className="signal-meter" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <i className={index < filled ? 'active' : ''} key={index} />)}</div>
-    <div className="route-summary"><span><small>预期</small><strong>{expected === 'any' ? '仅观察' : expected === 'direct' ? 'DIRECT' : '代理链路'}</strong></span><span className="route-arrow" aria-hidden="true">→</span><span><small>实际</small><strong>{result?.chain.length ? result.chain.join(' → ') : routeLabel(result?.route)}</strong></span>{mismatch && <span className="mismatch-badge">路径不符</span>}</div>
-    {result && <details className="target-details"><summary>查看检测证据</summary><div className="target-evidence"><p><span>命中规则</span><strong>{result.rule || '未采集'}{result.rule_payload ? ` · ${result.rule_payload}` : ''}</strong></p><p><span>HTTP 状态</span><strong>{result.http_status || '—'}</strong></p><p><span>检测时间</span><strong>{new Date(result.tested_at).toLocaleTimeString()}</strong></p><div className="sample-list">{result.samples.map((sample, index) => <span key={`${sample.status}-${index}`} title={sample.error}><b>第 {index + 1} 轮</b>{sample.delay_ms ? `${sample.delay_ms} ms` : connectivitySampleLabel(sample.status)}</span>)}</div></div></details>}
+    <div className="route-summary"><span><small>{t('预期')}</small><strong>{expected === 'any' ? t('仅观察') : expected === 'direct' ? 'DIRECT' : t('代理链路')}</strong></span><span className="route-arrow" aria-hidden="true">→</span><span><small>{t('实际')}</small><strong>{result?.chain.length ? result.chain.join(' → ') : routeLabel(result?.route)}</strong></span>{mismatch && <span className="mismatch-badge">{t('路径不符')}</span>}</div>
+    {result && <details className="target-details"><summary>{t('查看检测证据')}</summary><div className="target-evidence"><p><span>{t('命中规则')}</span><strong>{result.rule || t('未采集')}{result.rule_payload ? ` · ${result.rule_payload}` : ''}</strong></p><p><span>{t('HTTP 状态')}</span><strong>{result.http_status || '—'}</strong></p><p><span>{t('检测时间')}</span><strong>{new Date(result.tested_at).toLocaleTimeString(localeIdentifier())}</strong></p><div className="sample-list">{result.samples.map((sample, index) => <span key={`${sample.status}-${index}`} title={sample.error}><b>{t('第 {{index}} 轮', { index: index + 1 })}</b>{sample.delay_ms ? `${sample.delay_ms} ms` : connectivitySampleLabel(sample.status)}</span>)}</div></div></details>}
   </article>
 }
 
@@ -32,9 +33,9 @@ function signalStrength(tone: string) {
 }
 
 function connectivitySampleLabel(status: string) {
-  if (status === 'timeout') return '超时'
-  if (status === 'dns_error') return 'DNS 失败'
-  if (status === 'tls_error') return 'TLS 失败'
-  if (status === 'reachable') return '可达'
-  return '失败'
+  if (status === 'timeout') return t('超时')
+  if (status === 'dns_error') return t('DNS 失败')
+  if (status === 'tls_error') return t('TLS 失败')
+  if (status === 'reachable') return t('可达')
+  return t('失败')
 }

@@ -3,6 +3,7 @@ import { api } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import type { OperationNotification } from '../components/OperationNotifications'
 import type { Overview, Source } from '../types'
+import { t } from '../i18n'
 
 type SourceAction =
   | { kind: 'import-url' | 'import-file' | 'apply'; sourceID?: string }
@@ -51,7 +52,7 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
 
   const openApply = (source: Source) => {
     setPending(source)
-    setMessage(`已选择 ${source.name}；确认后会先校验完整候选配置。`)
+    setMessage(t('已选择 {{name}}；确认后会先校验完整候选配置。', { name: source.name }))
     setError('')
   }
 
@@ -64,14 +65,14 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
     try {
       const applied = await api.applySource(selected.id, revision)
       setPending(null)
-      const result = applied.applied ? '订阅已应用，网关已使用新的运行配置。' : '订阅已保存，将在下次启动网关时应用。'
+      const result = t(applied.applied ? '订阅已应用，网关已使用新的运行配置。' : '订阅已保存，将在下次启动网关时应用。')
       setMessage(result)
-      if (running && applied.applied) onNotify({ tone: 'success', title: '应用并重载网关成功', message: `${selected.name} 已应用，网关正在使用新的运行配置。` })
+      if (running && applied.applied) onNotify({ tone: 'success', title: t('应用并重载网关成功'), message: t('{{name}} 已应用，网关正在使用新的运行配置。', { name: selected.name }) })
       await Promise.all([refresh(), Promise.resolve(onChanged())])
     } catch (cause) {
       const failure = cause instanceof Error ? cause.message : String(cause)
       setError(failure)
-      if (running) onNotify({ tone: 'error', title: '应用并重载网关失败', message: failure })
+      if (running) onNotify({ tone: 'error', title: t('应用并重载网关失败'), message: failure })
     } finally {
       setActiveAction(null)
     }
@@ -85,13 +86,13 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
       if (kind === 'copy-path') {
         const location = await api.sourceSnapshotLocation(source.id)
         await copyText(location.path)
-        setMessage(`${source.name} 的本地快照路径已复制。`)
+        setMessage(t('{{name}} 的本地快照路径已复制。', { name: source.name }))
       } else if (kind === 'reveal') {
         await api.revealSourceSnapshot(source.id)
-        setMessage(`${source.name} 的本地快照已在 Finder 中选中。`)
+        setMessage(t('{{name}} 的本地快照已在 Finder 中选中。', { name: source.name }))
       } else {
         const exported = await api.exportSourceSnapshot(source.id)
-        setMessage(`${source.name} 已导出为可编辑副本，并在 Finder 中选中：${exported.display_path}`)
+        setMessage(t('{{name}} 已导出为可编辑副本，并在 Finder 中选中：{{path}}', { name: source.name, path: exported.display_path }))
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -103,32 +104,32 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
   return <>
     <PageHeader eyebrow="SOURCES" title="代理与规则源" description="导入、校验、应用各自有明确状态；运行配置只会在完整校验成功后切换。" />
     <div className="source-feedback" aria-live="polite">
-      {error && <div className="notice warn" role="alert"><span aria-hidden="true">!</span><div><strong>操作未完成</strong><p>{error}</p></div></div>}
-      {message && <div className="ok-notice" role="status"><span aria-hidden="true">✓</span><div><strong>操作已确认</strong><p>{message}</p></div></div>}
+      {error && <div className="notice warn" role="alert"><span aria-hidden="true">!</span><div><strong>{t('操作未完成')}</strong><p>{error}</p></div></div>}
+      {message && <div className="ok-notice" role="status"><span aria-hidden="true">✓</span><div><strong>{t('操作已确认')}</strong><p>{message}</p></div></div>}
     </div>
     <section className="section source-import-panel" aria-busy={activeAction?.kind === 'import-url' || activeAction?.kind === 'import-file'}>
       <SectionTitle title="添加配置来源" subtitle="导入只产生草稿，不会立即改变正在运行的 DHCP、DNS、TUN 或策略。" />
       <div className="source-import-grid">
         <article className="source-import-card">
-          <div className="source-import-head"><span aria-hidden="true">↗</span><div><small>REMOTE PROFILE</small><h3>HTTPS 订阅</h3></div></div>
-          <label><span>来源名称</span><input aria-label="来源名称" placeholder="例如 Home" value={name} onChange={event => setName(event.target.value)} /></label>
-          <label><span>订阅地址</span><input aria-label="HTTPS 订阅 URL" placeholder="https://…" value={url} onChange={event => setURL(event.target.value)} /></label>
-          <button className="primary source-action-button" type="button" disabled={busy || !url} onClick={() => void run({ kind: 'import-url' }, () => api.importURL(name, url), `${name || 'HTTPS 来源'} 已导入为草稿并完成结构校验。`)}>
+          <div className="source-import-head"><span aria-hidden="true">↗</span><div><small>REMOTE PROFILE</small><h3>{t('HTTPS 订阅')}</h3></div></div>
+          <label><span>{t('来源名称')}</span><input aria-label={t('来源名称')} placeholder={t('例如 Home')} value={name} onChange={event => setName(event.target.value)} /></label>
+          <label><span>{t('订阅地址')}</span><input aria-label={t('HTTPS 订阅 URL')} placeholder="https://…" value={url} onChange={event => setURL(event.target.value)} /></label>
+          <button className="primary source-action-button" type="button" disabled={busy || !url} onClick={() => void run({ kind: 'import-url' }, () => api.importURL(name, url), t('{{name}} 已导入为草稿并完成结构校验。', { name: name || t('HTTPS 来源') }))}>
             <ActionLabel active={activeAction?.kind === 'import-url'} idle="导入为草稿" pending="正在导入并校验…" />
           </button>
         </article>
         <article className="source-import-card local">
-          <div className="source-import-head"><span aria-hidden="true">⇧</span><div><small>LOCAL PROFILE</small><h3>本地 mihomo YAML</h3></div></div>
+          <div className="source-import-head"><span aria-hidden="true">⇧</span><div><small>LOCAL PROFILE</small><h3>{t('本地 mihomo YAML')}</h3></div></div>
           <label className={`dropzone source-dropzone ${activeAction?.kind === 'import-file' ? 'busy' : ''}`}>
             <span className="dropzone-icon" aria-hidden="true">＋</span>
-            <strong>{activeAction?.kind === 'import-file' ? '正在读取并校验…' : '选择或拖入 YAML'}</strong>
-            <small>.yaml / .yml · 仅创建草稿</small>
-            <input aria-label="本地 mihomo YAML" type="file" accept=".yaml,.yml,text/yaml" disabled={busy} onChange={event => {
+            <strong>{t(activeAction?.kind === 'import-file' ? '正在读取并校验…' : '选择或拖入 YAML')}</strong>
+            <small>{t('.yaml / .yml · 仅创建草稿')}</small>
+            <input aria-label={t('本地 mihomo YAML')} type="file" accept=".yaml,.yml,text/yaml" disabled={busy} onChange={event => {
               const file = event.target.files?.[0]
-              if (file) void run({ kind: 'import-file' }, () => api.importFile(file), `${file.name} 已导入为草稿并完成结构校验。`)
+              if (file) void run({ kind: 'import-file' }, () => api.importFile(file), t('{{name}} 已导入为草稿并完成结构校验。', { name: file.name }))
             }} />
           </label>
-          <p className="source-guard-note"><span aria-hidden="true">⌁</span>DNS、TUN、Controller 与 LAN binding 始终由 OpenSurge 管理。</p>
+          <p className="source-guard-note"><span aria-hidden="true">⌁</span>{t('DNS、TUN、Controller 与 LAN binding 始终由 OpenSurge 管理。')}</p>
         </article>
       </div>
     </section>
@@ -143,8 +144,8 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
         const origin = source.origin ?? ''
         const previousApplied = versions.some(version => version.applied)
         const changed = diff?.previous_digest && diff.previous_digest !== source.digest
-        const state = source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid ? '结构有效' : '无效'
-        const action = source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本'
+        const state = t(source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid ? '结构有效' : '无效')
+        const action = t(source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本')
         const refreshing = activeAction?.kind === 'refresh' && activeAction.sourceID === source.id
         const copyingPath = activeAction?.kind === 'copy-path' && activeAction.sourceID === source.id
         const revealing = activeAction?.kind === 'reveal' && activeAction.sourceID === source.id
@@ -155,14 +156,14 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
           {source.snapshot_display_path && <div className="source-location">
             <span className="source-location-icon" aria-hidden="true">▤</span>
             <div className="source-location-copy">
-              <small>本地快照</small>
+              <small>{t('本地快照')}</small>
               <code title={source.snapshot_display_path} dir="ltr">{source.snapshot_display_path}</code>
-              <span>OpenSurge 管理 · 请勿直接编辑</span>
+              <span>{t('OpenSurge 管理 · 请勿直接编辑')}</span>
             </div>
-            <div className="source-location-actions" aria-label={`${source.name} 本地快照操作`}>
-              <button type="button" disabled={busy} aria-label={`复制 ${source.name} 本地快照路径`} onClick={() => void runFileAction(source, 'copy-path')}><ActionLabel active={copyingPath} idle="复制路径" pending="复制中…" /></button>
-              <button type="button" disabled={busy} aria-label={`在 Finder 中显示 ${source.name} 本地快照`} onClick={() => void runFileAction(source, 'reveal')}><ActionLabel active={revealing} idle="Finder 中显示" pending="正在打开…" /></button>
-              <button type="button" disabled={busy} aria-label={`导出 ${source.name} 可编辑副本`} onClick={() => void runFileAction(source, 'export')}><ActionLabel active={exporting} idle="导出副本" pending="正在导出…" /></button>
+            <div className="source-location-actions" aria-label={t('{{name}} 本地快照操作', { name: source.name })}>
+              <button type="button" disabled={busy} aria-label={t('复制 {{name}} 本地快照路径', { name: source.name })} onClick={() => void runFileAction(source, 'copy-path')}><ActionLabel active={copyingPath} idle="复制路径" pending="复制中…" /></button>
+              <button type="button" disabled={busy} aria-label={t('在 Finder 中显示 {{name}} 本地快照', { name: source.name })} onClick={() => void runFileAction(source, 'reveal')}><ActionLabel active={revealing} idle="Finder 中显示" pending="正在打开…" /></button>
+              <button type="button" disabled={busy} aria-label={t('导出 {{name}} 可编辑副本', { name: source.name })} onClick={() => void runFileAction(source, 'export')}><ActionLabel active={exporting} idle="导出副本" pending="正在导出…" /></button>
             </div>
           </div>}
           <div className="source-inventory">
@@ -171,31 +172,31 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
             <SourceMetric value={inventory?.rule_count ?? 0} label="规则" />
             <SourceMetric value={versions.length + 1} label="版本" />
           </div>
-          {changed && <div className="source-diff"><strong>本次变化</strong><span>proxy +{diff?.proxies_added?.length ?? 0}/-{diff?.proxies_removed?.length ?? 0}</span><span>group +{diff?.groups_added?.length ?? 0}/-{diff?.groups_removed?.length ?? 0}</span><span>rules {(diff?.rule_count_delta ?? 0) >= 0 ? '+' : ''}{diff?.rule_count_delta ?? 0}</span></div>}
-          <div className={`source-validation ${source.valid ? 'valid' : 'invalid'}`}><span aria-hidden="true">{source.valid ? '✓' : '!'}</span><div><strong>{source.valid ? '结构校验通过' : '结构校验失败'}</strong><small>{source.validation || (source.valid ? '可以进入完整候选配置校验' : '请修正来源后重新导入')}</small></div></div>
-          {versions.length > 0 && <small className="source-history">历史：{versions.slice(-3).map(version => `${version.digest.slice(0, 8)}${version.applied ? ' (运行)' : version.desired ? ' (待应用)' : ''}`).join(' · ')}</small>}
+          {changed && <div className="source-diff"><strong>{t('本次变化')}</strong><span>proxy +{diff?.proxies_added?.length ?? 0}/-{diff?.proxies_removed?.length ?? 0}</span><span>group +{diff?.groups_added?.length ?? 0}/-{diff?.groups_removed?.length ?? 0}</span><span>rules {(diff?.rule_count_delta ?? 0) >= 0 ? '+' : ''}{diff?.rule_count_delta ?? 0}</span></div>}
+          <div className={`source-validation ${source.valid ? 'valid' : 'invalid'}`}><span aria-hidden="true">{source.valid ? '✓' : '!'}</span><div><strong>{t(source.valid ? '结构校验通过' : '结构校验失败')}</strong><small>{source.validation || t(source.valid ? '可以进入完整候选配置校验' : '请修正来源后重新导入')}</small></div></div>
+          {versions.length > 0 && <small className="source-history">{t('历史：')}{versions.slice(-3).map(version => `${version.digest.slice(0, 8)}${version.applied ? ` (${t('运行')})` : version.desired ? ` (${t('待应用')})` : ''}`).join(' · ')}</small>}
           <div className="source-actions">
-            {origin.startsWith('https://') && <button type="button" disabled={busy} onClick={() => void run({ kind: 'refresh', sourceID: source.id }, () => api.refreshSource(source.id), `${source.name} 已刷新；新内容已保存为草稿。`)}><ActionLabel active={refreshing} idle="刷新草稿" pending="正在刷新…" /></button>}
+            {origin.startsWith('https://') && <button type="button" disabled={busy} onClick={() => void run({ kind: 'refresh', sourceID: source.id }, () => api.refreshSource(source.id), t('{{name}} 已刷新；新内容已保存为草稿。', { name: source.name }))}><ActionLabel active={refreshing} idle="刷新草稿" pending="正在刷新…" /></button>}
             <button className="primary" type="button" disabled={busy || !revision || !source.valid || source.applied || (source.desired && !running)} onClick={() => openApply(source)}>{action}</button>
           </div>
         </article>
-      })}</div> : <Empty text="尚未导入任何来源" />}
+      })}</div> : <Empty text={t('尚未导入任何来源')} />}
     </section>
     {pending && <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="source-apply-title">
-      <h2 id="source-apply-title">{running ? '应用订阅并重载网关？' : '设为下次启动版本？'}</h2>
-      <p>{running ? 'OpenSurge 会先验证完整候选配置，再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : '当前网关未运行。订阅会保存为 desired 配置，并在下次启动成功后成为运行版本。'}</p>
-      {running && <ul><li>当前连接会中断并重新建立。</li><li>验证失败不会停止现有网关。</li><li>重载失败会恢复旧配置，并尽力恢复原网关。</li></ul>}
-      <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setPending(null)}>取消</button><button className="primary" type="button" autoFocus disabled={busy} onClick={() => void apply()}><ActionLabel active={activeAction?.kind === 'apply'} idle={running ? '确认应用并重载' : '确认设为下次启动版本'} pending="正在验证并应用…" /></button></div>
+      <h2 id="source-apply-title">{t(running ? '应用订阅并重载网关？' : '设为下次启动版本？')}</h2>
+      <p>{t(running ? 'OpenSurge 会先验证完整候选配置，再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : '当前网关未运行。订阅会保存为 desired 配置，并在下次启动成功后成为运行版本。')}</p>
+      {running && <ul><li>{t('当前连接会中断并重新建立。')}</li><li>{t('验证失败不会停止现有网关。')}</li><li>{t('重载失败会恢复旧配置，并尽力恢复原网关。')}</li></ul>}
+      <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setPending(null)}>{t('取消')}</button><button className="primary" type="button" autoFocus disabled={busy} onClick={() => void apply()}><ActionLabel active={activeAction?.kind === 'apply'} idle={running ? '确认应用并重载' : '确认设为下次启动版本'} pending="正在验证并应用…" /></button></div>
     </dialog>}
   </>
 }
 
 function SourceMetric({ value, label }: { value: number; label: string }) {
-  return <span><strong>{value}</strong><small>{label}</small></span>
+  return <span><strong>{value}</strong><small>{t(label)}</small></span>
 }
 
 function ActionLabel({ active, idle, pending }: { active: boolean; idle: string; pending: string }) {
-  return <>{active && <span className="button-spinner" aria-hidden="true" />}{active ? pending : idle}</>
+  return <>{active && <span className="button-spinner" aria-hidden="true" />}{t(active ? pending : idle)}</>
 }
 
 async function copyText(value: string) {
@@ -212,5 +213,5 @@ async function copyText(value: string) {
   field.select()
   const copied = document.execCommand('copy')
   field.remove()
-  if (!copied) throw new Error('浏览器未允许复制路径，请使用 Finder 中显示。')
+  if (!copied) throw new Error(t('浏览器未允许复制路径，请使用 Finder 中显示。'))
 }

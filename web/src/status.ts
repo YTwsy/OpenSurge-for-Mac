@@ -1,13 +1,15 @@
+import { t } from './i18n'
+
 export function statusLabel(status?: string, runtimeState?: string) {
-  if (runtimeState === 'interrupted') return '重启后待清理'
-  return status === 'running' ? '正在运行'
-    : status === 'degraded' ? '运行异常'
-      : status === 'stopped' ? '已停止'
-        : '无法连接'
+  if (runtimeState === 'interrupted') return t('重启后待清理')
+  return status === 'running' ? t('正在运行')
+    : status === 'degraded' ? t('运行异常')
+      : status === 'stopped' ? t('已停止')
+        : t('无法连接')
 }
 
 export function recoveryLabel(stage: string) {
-  return ({
+  const label = ({
     prepared: '恢复资料已准备',
     mac_static: 'Mac 已使用固定 IPv4',
     router_dhcp_disabled_confirmed: '路由器 DHCP 已关闭',
@@ -19,7 +21,8 @@ export function recoveryLabel(stage: string) {
     complete: 'Mac 与客户端已恢复自动获取',
     complete_static: '流程已结束，Mac 保持静态 IPv4',
     idle: '尚未开始',
-  } as Record<string, string>)[stage] ?? stage
+  } as Record<string, string>)[stage]
+  return label ? t(label) : stage
 }
 
 // A running takeover still has a recovery plan, but it is the intended steady

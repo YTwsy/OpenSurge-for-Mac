@@ -51,12 +51,12 @@ struct OpenSurgeMenuBarLabel: View {
 }
 
 @MainActor
-func openSurgeMenuBarImage(for indicator: IndicatorState) -> NSImage {
+func openSurgeMenuBarImage(for indicator: IndicatorState, accessibilityDescription: String? = nil) -> NSImage {
     let source: NSImage
     if indicator.usesBrandMenuBarIcon {
         source = OpenSurgeMenuBarIconAsset.image
     } else {
-        source = NSImage(systemSymbolName: indicator.systemImage, accessibilityDescription: indicator.accessibilityLabel)
+        source = NSImage(systemSymbolName: indicator.systemImage, accessibilityDescription: accessibilityDescription ?? indicator.accessibilityLabel)
             ?? OpenSurgeMenuBarIconAsset.image
     }
     let image = source.copy() as? NSImage ?? source

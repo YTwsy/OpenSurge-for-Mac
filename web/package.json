@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "build": "pnpm check:i18n && tsc -b && vite build",
+    "check:i18n": "node scripts/check-i18n.mjs",
     "test": "vitest run"
   },
   "dependencies": {

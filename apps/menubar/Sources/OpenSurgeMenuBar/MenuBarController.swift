@@ -111,6 +111,7 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     private var popoverWindowDeadline: Date?
     private var panelPresented = false
     private var renderedIndicator: IndicatorState?
+    private var renderedLanguage: ResolvedAppLanguage?
     private var outsideClickMonitor: Any?
     private var escapeKeyMonitor: Any?
     private var finalPresentationVerificationScheduled = false
@@ -468,19 +469,20 @@ final class MenuBarController: NSObject, MenuBarPresenting {
     private func updateStatusItem() {
         guard let button = statusItem.button else { return }
         let indicator = model.indicator
-        guard menuBarStatusItemNeedsRefresh(
-            renderedIndicator: renderedIndicator,
-            nextIndicator: indicator
-        ) else {
+        let language = model.resolvedLanguage
+        guard menuBarStatusItemNeedsRefresh(renderedIndicator: renderedIndicator, nextIndicator: indicator)
+                || renderedLanguage != language else {
             applyStatusItemPresentedState()
             return
         }
         renderedIndicator = indicator
-        button.image = openSurgeMenuBarImage(for: indicator)
+        renderedLanguage = language
+        let accessibilityLabel = L10n.text(indicator.accessibilityLabel)
+        button.image = openSurgeMenuBarImage(for: indicator, accessibilityDescription: accessibilityLabel)
         button.imagePosition = .imageOnly
         button.alphaValue = indicator.menuBarIconOpacity
-        button.toolTip = indicator.accessibilityLabel
-        button.setAccessibilityLabel(indicator.accessibilityLabel)
+        button.toolTip = accessibilityLabel
+        button.setAccessibilityLabel(accessibilityLabel)
         applyStatusItemPresentedState()
     }
 }

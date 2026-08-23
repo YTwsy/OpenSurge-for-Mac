@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ProxyGroup, ProxyHealthEntry } from '../types'
 import { OutletPicker } from './OutletPicker'
 import { ProxyHealthBadge } from './ProxyHealthBadge'
+import { t } from '../i18n'
 
 type OutletSummaryProps = {
   title: string
@@ -20,9 +21,9 @@ export function OutletSummary({ title, group, healthByName, testing, onTest, onS
   const displayedHealth = leafName ? healthByName.get(leafName) ?? selectedHealth : selectedHealth
 
   return <>
-    <button className="outlet-summary" type="button" aria-label={ariaLabel} aria-haspopup="dialog" onClick={() => setOpen(true)}>
-      <span className="outlet-summary-copy"><small>{title}</small><strong>{group.selected || '未选择'}</strong>{leafName && <span>当前链路 → {leafName}</span>}</span>
-      <span className="outlet-summary-state"><ProxyHealthBadge health={displayedHealth} testing={testing.has(leafName || group.selected)} compact /><span className="summary-action">更换</span></span>
+    <button className="outlet-summary" type="button" aria-label={t(ariaLabel)} aria-haspopup="dialog" onClick={() => setOpen(true)}>
+      <span className="outlet-summary-copy"><small>{t(title)}</small><strong>{group.selected || t('未选择')}</strong>{leafName && <span>{t('当前链路')} → {leafName}</span>}</span>
+      <span className="outlet-summary-state"><ProxyHealthBadge health={displayedHealth} testing={testing.has(leafName || group.selected)} compact /><span className="summary-action">{t('更换')}</span></span>
     </button>
     <OutletPicker open={open} title={title} group={group} healthByName={healthByName} testing={testing} onTest={onTest} onSelect={onSelect} onClose={() => setOpen(false)} />
   </>

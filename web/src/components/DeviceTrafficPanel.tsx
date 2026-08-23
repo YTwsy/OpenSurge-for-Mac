@@ -4,6 +4,7 @@ import { formatBytes, formatRate } from '../trafficFormat'
 import { deviceKey, gatewayLocalDeviceKey } from '../hooks/useDeviceTraffic'
 import { Empty, StatusDot } from './Common'
 import { TrafficTrendCard } from './TrafficTrendCard'
+import { t } from '../i18n'
 
 type DeviceTrafficPanelProps = {
   gateway?: string
@@ -41,14 +42,14 @@ export function DeviceTrafficPanel({ gateway, traffic, history, error }: DeviceT
   }
 
   return <section className="section traffic-section">
-    <div className="traffic-section-heading"><div><h2>活跃设备</h2><p>实时速度来自相邻连接样本；累计值仅覆盖当前活跃会话</p></div>{selectedDevice && <button type="button" onClick={() => selectDevice(selectedDevice)}>{detailOpen ? '收起趋势' : '展开趋势'}</button>}</div>
-    {error && !traffic ? <Empty text={`暂时无法读取设备流量：${error}`} /> : <>
-      {traffic?.connection_error && <div className="notice warn">{gateway === 'running' || gateway === 'degraded' ? 'mihomo 连接数据暂时不可用；已有设备清单仍会显示。' : '网关未运行；DHCP 租约或已应用静态登记仍会显示，启动后才有活跃连接流量。'}</div>}
+    <div className="traffic-section-heading"><div><h2>{t('活跃设备')}</h2><p>{t('实时速度来自相邻连接样本；累计值仅覆盖当前活跃会话')}</p></div>{selectedDevice && <button type="button" onClick={() => selectDevice(selectedDevice)}>{t(detailOpen ? '收起趋势' : '展开趋势')}</button>}</div>
+    {error && !traffic ? <Empty text={t('暂时无法读取设备流量：{{error}}', { error })} /> : <>
+      {traffic?.connection_error && <div className="notice warn">{t(gateway === 'running' || gateway === 'degraded' ? 'mihomo 连接数据暂时不可用；已有设备清单仍会显示。' : '网关未运行；DHCP 租约或已应用静态登记仍会显示，启动后才有活跃连接流量。')}</div>}
       <div className={`device-traffic-layout ${detailOpen ? 'expanded' : ''}`}>
         <div className="device-traffic-list">
-          {visibleDevices.length ? <div className="device-traffic-grid" aria-label="活跃设备流量">
+          {visibleDevices.length ? <div className="device-traffic-grid" aria-label={t('活跃设备流量')}>
             <div className="device-traffic-grid-head">
-              <span>设备</span><span>IP</span><span>连接</span><span>↑ 当前</span><span>↓ 当前</span><span>主出口</span>
+              <span>{t('设备')}</span><span>IP</span><span>{t('连接')}</span><span>↑ {t('当前')}</span><span>↓ {t('当前')}</span><span>{t('主出口')}</span>
             </div>
             {visibleDevices.map(device => {
               const key = trafficRowKey(device)
@@ -56,27 +57,27 @@ export function DeviceTrafficPanel({ gateway, traffic, history, error }: DeviceT
               const expanded = key === selectedKey && detailOpen
               const local = device.identity_source === 'gateway_local'
               const online = local ? gatewayActive(gateway) : device.online
-              return <button className={`device-traffic-row ${expanded ? 'selected' : ''}`} type="button" key={key} aria-label={`查看 ${name} ${device.ip} 流量趋势`} aria-expanded={expanded} onClick={() => selectDevice(device)}>
+              return <button className={`device-traffic-row ${expanded ? 'selected' : ''}`} type="button" key={key} aria-label={t('查看 {{name}} {{ip}} 流量趋势', { name, ip: device.ip })} aria-expanded={expanded} onClick={() => selectDevice(device)}>
                 <span className="traffic-device"><StatusDot status={online ? 'running' : 'stopped'} /><span><strong>{name}</strong><small>{deviceIdentityDetail(device, gateway)}</small></span></span>
                 <span className="traffic-ip"><code>{device.ip || '—'}</code></span>
                 <span className="traffic-connections">{device.active_connections}</span>
                 <RateCell rate={device.upload_rate} total={device.upload} />
                 <RateCell rate={device.download_rate} total={device.download} />
-                <span className="traffic-egress" title={device.primary_egress}><strong>{compactEgress(device.primary_egress)}</strong><small>{device.primary_egress || '暂无出口'}</small></span>
+                <span className="traffic-egress" title={device.primary_egress}><strong>{compactEgress(device.primary_egress)}</strong><small>{device.primary_egress || t('暂无出口')}</small></span>
               </button>
             })}
-          </div> : <Empty text={traffic ? '暂无 DHCP、静态登记或当前流量观察到的 LAN 设备' : '正在读取设备流量…'} />}
+          </div> : <Empty text={t(traffic ? '暂无 DHCP、静态登记或当前流量观察到的 LAN 设备' : '正在读取设备流量…')} />}
           {traffic && <div className="traffic-summary">
-            <strong>合计 {traffic.totals.devices} 台设备接入 · {traffic.totals.active_connections} 个连接 · ↑ {formatRate(traffic.totals.upload_rate)} · ↓ {formatRate(traffic.totals.download_rate)}</strong>
-            {traffic.unidentified_device_connections > 0 && <small>其中 {traffic.unidentified_device_connections} 个待识别设备连接，仅确认了当前 LAN 源 IP。</small>}
-            {traffic.unclassified_connections > 0 && <small>另有 {traffic.unclassified_connections} 个连接无法判断来源，请在诊断中查看。</small>}
+            <strong>{t('合计 {{devices}} 台设备接入 · {{connections}} 个连接 · ↑ {{upload}} · ↓ {{download}}', { devices: traffic.totals.devices, connections: traffic.totals.active_connections, upload: formatRate(traffic.totals.upload_rate), download: formatRate(traffic.totals.download_rate) })}</strong>
+            {traffic.unidentified_device_connections > 0 && <small>{t('其中 {{connections}} 个待识别设备连接，仅确认了当前 LAN 源 IP。', { connections: traffic.unidentified_device_connections })}</small>}
+            {traffic.unclassified_connections > 0 && <small>{t('另有 {{connections}} 个连接无法判断来源，请在诊断中查看。', { connections: traffic.unclassified_connections })}</small>}
           </div>}
-          {error && traffic && <small className="traffic-refresh-error">刷新失败：{error}</small>}
+          {error && traffic && <small className="traffic-refresh-error">{t('刷新失败：{{error}}', { error })}</small>}
         </div>
         <aside className="device-trend-shell" aria-hidden={!detailOpen}>
           {selectedDevice && <TrafficTrendCard
-            title={`${deviceName(selectedDevice)} 流量趋势`}
-            subtitle={`${selectedDevice.ip} · ${selectedDevice.primary_egress || '暂无出口信息'}`}
+            title={t('{{name}} 流量趋势', { name: deviceName(selectedDevice) })}
+            subtitle={`${selectedDevice.ip} · ${selectedDevice.primary_egress || t('暂无出口信息')}`}
             history={history}
             deviceKey={trafficRowKey(selectedDevice)}
             className="device-trend-card"
@@ -88,45 +89,45 @@ export function DeviceTrafficPanel({ gateway, traffic, history, error }: DeviceT
 }
 
 function RateCell({ rate = 0, total = 0 }: { rate?: number; total?: number }) {
-  return <span className="traffic-rate"><strong>{formatRate(rate)}</strong><small>累计 {formatBytes(total)}</small></span>
+  return <span className="traffic-rate"><strong>{formatRate(rate)}</strong><small>{t('累计 {{total}}', { total: formatBytes(total) })}</small></span>
 }
 
 function deviceName(device: DeviceTrafficRow) {
-  if (device.identity_source === 'gateway_local') return '本机 Mac'
+  if (device.identity_source === 'gateway_local') return t('本机 Mac')
   if (device.name) return device.name
   if (device.hostname) return device.hostname
-  if (!device.mac) return `当前设备 ${device.ip}`
+  if (!device.mac) return t('当前设备 {{ip}}', { ip: device.ip })
   const parts = device.mac.toLowerCase().split(':')
-  return `未知设备 ${parts.length > 3 ? `${parts.slice(0, 3).join(':')}:…` : device.mac.toLowerCase()}`
+  return t('未知设备 {{identifier}}', { identifier: parts.length > 3 ? `${parts.slice(0, 3).join(':')}:…` : device.mac.toLowerCase() })
 }
 
 function deviceIdentityDetail(device: DeviceTrafficRow, gateway?: string) {
   if (device.identity_source === 'gateway_local') return gatewayLocalDetail(device, gateway)
   const source = device.identity_source === 'dhcp_lease'
-    ? 'DHCP 已验证'
+    ? t('DHCP 已验证')
     : device.identity_source === 'registered_static'
-      ? '静态登记'
+      ? t('静态登记')
       : device.identity_source === 'observed_traffic'
-        ? '流量已观察'
-        : '身份来源未标记'
-  const route = device.gateway_target === 'upstream_router' ? ' · IPv4 主路由直连' : ''
-  const ipv6 = device.ipv6_blocked ? ' · IPv6 出站已阻止' : ''
-  return device.mac ? `${source}${route}${ipv6} · ${device.mac}` : `${source}${route}${ipv6} · MAC 待识别`
+        ? t('流量已观察')
+        : t('身份来源未标记')
+  const route = device.gateway_target === 'upstream_router' ? ` · ${t('IPv4 主路由直连')}` : ''
+  const ipv6 = device.ipv6_blocked ? ` · ${t('IPv6 出站已阻止')}` : ''
+  return device.mac ? `${source}${route}${ipv6} · ${device.mac}` : `${source}${route}${ipv6} · ${t('MAC 待识别')}`
 }
 
 function gatewayLocalDetail(device: DeviceTrafficRow, gateway?: string) {
-  if (!gatewayActive(gateway)) return '网关本机 · 网关未运行'
+  if (!gatewayActive(gateway)) return t('网关本机 · 网关未运行')
   switch (device.transport) {
   case 'tun':
-    return '网关本机 · TUN'
+    return t('网关本机 · TUN')
   case 'explicit_proxy':
-    return '网关本机 · 显式代理'
+    return t('网关本机 · 显式代理')
   case 'tun_and_explicit_proxy':
-    return '网关本机 · TUN / 显式代理'
+    return t('网关本机 · TUN / 显式代理')
   case 'other':
-    return '网关本机 · 本机流量'
+    return t('网关本机 · 本机流量')
   default:
-    return '网关本机 · 暂无活跃连接'
+    return t('网关本机 · 暂无活跃连接')
   }
 }
 

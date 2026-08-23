@@ -30,6 +30,7 @@ vi.mock('./api', () => ({
     saveConfig: vi.fn(),
     gateway: vi.fn(),
     setSleepPrevention: vi.fn(),
+    setUIPreferences: vi.fn(async (preferences: { language: 'system' | 'zh-Hans' | 'en' }) => ({ schema_version: 1, ...preferences })),
     operation: vi.fn(),
     gatewayPlan: vi.fn(async () => ({
       schema_version: 1,
@@ -186,6 +187,19 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByText('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
     await waitFor(() => expect(close).toHaveBeenCalled())
+  })
+
+  it('changes the shared interface language from the polished Web GUI selector', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+
+    const selector = screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' })
+    await userEvent.selectOptions(selector, 'en')
+
+    await screen.findByRole('heading', { name: 'Your whole-home gateway at a glance' })
+    expect(api.setUIPreferences).toHaveBeenCalledWith({ language: 'en' })
+    expect(document.documentElement.lang).toBe('en')
+    expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en')
   })
 
   it('does not present a saved recovery card as an unfinished network recovery', async () => {
