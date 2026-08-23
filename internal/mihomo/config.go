@@ -64,6 +64,10 @@ tun:
 {{- end }}
   dns-hijack:
     - any:53
+{{- if .TUNRouteAddresses }}
+  route-address:
+{{ .TUNRouteAddresses }}
+{{- end }}
   route-exclude-address:
     - {{ .LANPrefix }}
     - 127.0.0.0/8
@@ -111,6 +115,7 @@ type templateData struct {
 	TUNAutoRoute           bool
 	TUNAutoDetectInterface bool
 	TUNStrictRoute         bool
+	TUNRouteAddresses      string
 	IPv6Enabled            bool
 	TUNIPv6Enabled         bool
 	TUNIPv6Address         string
@@ -164,6 +169,7 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 		TUNAutoRoute:           transparent.TUNAutoRoute,
 		TUNAutoDetectInterface: transparent.TUNAutoDetectInterface,
 		TUNStrictRoute:         transparent.TUNStrictRoute,
+		TUNRouteAddresses:      renderTailscaleRouteAddresses(cfg),
 		IPv6Enabled:            cfg.DNS.IPv6 || transparent.TUNIPv6 != config.TUNIPv6Off,
 		TUNIPv6Enabled:         transparent.TUNIPv6 != config.TUNIPv6Off,
 		TUNIPv6Address:         config.MihomoTUNIPv6,

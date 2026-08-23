@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import type { OperationNotification } from '../components/OperationNotifications'
+import { TailscaleCard } from '../components/TailscaleCard'
 import type { Overview, Source } from '../types'
 
 type SourceAction =
@@ -106,6 +107,7 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
       {error && <div className="notice warn" role="alert"><span aria-hidden="true">!</span><div><strong>操作未完成</strong><p>{error}</p></div></div>}
       {message && <div className="ok-notice" role="status"><span aria-hidden="true">✓</span><div><strong>操作已确认</strong><p>{message}</p></div></div>}
     </div>
+    <TailscaleCard onChanged={onChanged} onNotify={onNotify} />
     <section className="section source-import-panel" aria-busy={activeAction?.kind === 'import-url' || activeAction?.kind === 'import-file'}>
       <SectionTitle title="添加配置来源" subtitle="导入只产生草稿，不会立即改变正在运行的 DHCP、DNS、TUN 或策略。" />
       <div className="source-import-grid">

@@ -3,12 +3,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_ARCHIVE_OVERRIDE="${OPENSURGE_MIHOMO_SOURCE_ARCHIVE:-}"
-SOURCE_ARCHIVE="${SOURCE_ARCHIVE_OVERRIDE:-$ROOT/runtime/release-tools/cache/mihomo-1.19.27-source.tar.gz}"
-SOURCE_SHA256=bf3a188a83475000df235178edf61cd70fda22b884b19a539d0cfd9b89a51e6a
-SOURCE_URL=https://github.com/MetaCubeX/mihomo/archive/5184081ac327394d9e15fa5d5f9f4a61e723fd94.tar.gz
+SOURCE_ARCHIVE="${SOURCE_ARCHIVE_OVERRIDE:-$ROOT/runtime/release-tools/cache/mihomo-1.19.30-source.tar.gz}"
+SOURCE_SHA256=971dd4533e4e2c3dad7473e8115200da8c0d7471b4b61da54da896345c5b3850
+SOURCE_URL=https://github.com/MetaCubeX/mihomo/archive/ac017cdd246ce8bd547653d927e7bf77d7ee73d5.tar.gz
 OUTPUT="${OPENSURGE_MIHOMO_OUTPUT:-$ROOT/bin/mihomo}"
 TARGET_ARCH="${OPENSURGE_MIHOMO_ARCH:-$(uname -m)}"
-VERSION="${OPENSURGE_MIHOMO_VERSION:-1.19.27-opensurge.1}"
+VERSION="${OPENSURGE_MIHOMO_VERSION:-1.19.30-opensurge.1}"
 GO_BIN="${GO_BIN:-$(command -v go || true)}"
 
 [[ -x "$GO_BIN" ]] || { echo "Go toolchain not found" >&2; exit 1; }

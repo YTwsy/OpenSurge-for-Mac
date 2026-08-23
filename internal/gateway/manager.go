@@ -107,6 +107,7 @@ type gatewayDeps struct {
 	currentBoot         func() (runtime.BootSession, error)
 	processFingerprint  func(int) (string, error)
 	processMatches      func(int, string) (bool, error)
+	warmTailscale       func(context.Context, config.Config) mihomo.ProxyDelayResult
 	now                 func() time.Time
 }
 
@@ -149,6 +150,7 @@ func defaultGatewayDeps() gatewayDeps {
 		currentBoot:        runtime.CurrentBootSession,
 		processFingerprint: process.Fingerprint,
 		processMatches:     process.MatchesFingerprint,
+		warmTailscale:      mihomo.WarmTailscale,
 		now:                time.Now,
 	}
 }
@@ -468,6 +470,7 @@ func (m Manager) Start(ctx context.Context) error {
 			return m.rollback(ctx, fmt.Errorf("enable local system proxy coordination: %w", err), state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, true)
 		}
 	}
+	m.warmManagedTailscale(ctx, deps)
 
 	fmt.Printf("Gateway runtime prepared in %s\n", m.paths.Dir)
 	if mihomoPID > 0 {
@@ -614,12 +617,27 @@ func (m Manager) RestartMihomo(ctx context.Context) error {
 		stopErr := mihomoManager.Stop(newPID)
 		return errors.Join(fmt.Errorf("save replacement mihomo pid: %w", err), restoreErr, stopErr)
 	}
+	m.warmManagedTailscale(ctx, deps)
 
 	fmt.Printf("mihomo restarted with pid %d\n", newPID)
 	if archivedLog != "" {
 		fmt.Printf("previous mihomo log archived at %s\n", archivedLog)
 	}
 	return nil
+}
+
+func (m Manager) warmManagedTailscale(ctx context.Context, deps gatewayDeps) {
+	if !m.cfg.Tailscale.Enabled || deps.warmTailscale == nil {
+		return
+	}
+	warmCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	result := deps.warmTailscale(warmCtx, m.cfg)
+	if result.Status == "reachable" {
+		fmt.Printf("Tailscale outbound warm-up completed in %d ms\n", result.DelayMS)
+		return
+	}
+	fmt.Printf("Tailscale outbound warm-up initiated; the first Tailnet request may still need a retry: %s\n", result.Status)
 }
 
 func archiveMihomoLog(path string, now time.Time) (string, error) {

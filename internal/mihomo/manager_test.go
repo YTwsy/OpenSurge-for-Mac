@@ -203,6 +203,40 @@ func TestPatchedMihomoAcceptsIPv6PacketListenerConfig(t *testing.T) {
 	}
 }
 
+func TestPatchedMihomoAcceptsManagedTailscaleOutboundConfig(t *testing.T) {
+	binary := os.Getenv("OPENSURGE_TEST_PATCHED_MIHOMO")
+	if binary == "" {
+		t.Skip("OPENSURGE_TEST_PATCHED_MIHOMO is not set")
+	}
+	dir := t.TempDir()
+	authKey := filepath.Join(dir, "tailscale-auth-key")
+	if err := os.WriteFile(authKey, []byte("tskey-auth-validation-only\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Runtime.Dir = dir
+	cfg.Mihomo.Binary = binary
+	cfg.Mihomo.Config = filepath.Join(dir, "mihomo.yaml")
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Tailscale = config.TailscaleConfig{
+		Enabled:          true,
+		DisplayName:      "Test Tailnet",
+		Hostname:         "opensurge-test",
+		ControlURL:       "https://controlplane.tailscale.com",
+		AuthKeyFile:      authKey,
+		StateDir:         filepath.Join(dir, "tailscale-state"),
+		AcceptRoutes:     true,
+		MagicDNSSuffixes: []string{"example.ts.net"},
+		PeerCIDRs:        []string{"100.82.10.7/32"},
+		SubnetRoutes:     []string{"10.20.0.0/16"},
+		AllowMac:         true,
+	}
+	manager := New(cfg, runtime.NewPaths(cfg))
+	if err := manager.ValidateConfig(); err != nil {
+		t.Fatalf("patched Mihomo rejected managed Tailscale outbound config: %v", err)
+	}
+}
+
 func TestPatchedMihomoRoutesInjectedIPv6ByMACIdentity(t *testing.T) {
 	binaryPath := os.Getenv("OPENSURGE_TEST_PATCHED_MIHOMO")
 	if binaryPath == "" {

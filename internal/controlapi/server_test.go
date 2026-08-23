@@ -823,6 +823,51 @@ func TestControlConfigCanCorrectPreparedRecoveryBeforeNetworkChanges(t *testing.
 	}
 }
 
+func TestTailscaleEndpointNeverReturnsStoredAuthKey(t *testing.T) {
+	server := newTestServer(t)
+	authKeyPath, stateDir := tailscaleManagedPaths(server.configPath)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "tailscaled.state"), []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authKeyPath, []byte("tskey-auth-must-not-leak\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = append(body, []byte(`tailscale:
+  enabled: true
+  display_name: "Home Tailnet"
+  hostname: "opensurge-home"
+  control_url: "https://controlplane.tailscale.com"
+  auth_key_file: "`+authKeyPath+`"
+  state_dir: "`+stateDir+`"
+  allow_mac: true
+`)...)
+	if err := os.WriteFile(server.configPath, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	response := performAuthorized(server, http.MethodGet, "/api/v1/tailscale", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "tskey-auth-must-not-leak") || strings.Contains(response.Body.String(), "auth_key\"") {
+		t.Fatalf("Tailscale response leaked the write-only key: %s", response.Body.String())
+	}
+	var payload TailscaleResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.AuthKeyPresent || !payload.IdentityPresent || payload.Settings.DisplayName != "Home Tailnet" {
+		t.Fatalf("Tailscale response = %#v", payload)
+	}
+}
+
 func TestSafeDialRejectsLoopback(t *testing.T) {
 	ctx := t.Context()
 	_, err := safeDialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", "443"))
@@ -2165,6 +2210,14 @@ func (fakeConfigurationRunner) ApplyDevicePolicy(_ context.Context, _, _ string,
 
 func (fakeConfigurationRunner) ApplyControlConfig(_ context.Context, path, revision string, payload []byte) (string, error) {
 	return applyControlConfig(path, revision, payload)
+}
+
+func (fakeConfigurationRunner) ApplyTailscale(_ context.Context, _, revision string, _ []byte) (ProfileApplyResult, error) {
+	return ProfileApplyResult{Revision: revision + "-tailscale"}, nil
+}
+
+func (fakeConfigurationRunner) ForgetTailscaleIdentity(_ context.Context, _, revision string) (string, error) {
+	return revision, nil
 }
 
 type fakeNetworkRunner struct {

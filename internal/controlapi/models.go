@@ -220,6 +220,41 @@ type DevicePolicyConfigInput struct {
 	ProtectedIPv4 []string `json:"protected_ipv4"`
 }
 
+type TailscaleSettings struct {
+	Enabled                bool     `json:"enabled"`
+	DisplayName            string   `json:"display_name"`
+	Hostname               string   `json:"hostname"`
+	ControlURL             string   `json:"control_url"`
+	AcceptRoutes           bool     `json:"accept_routes"`
+	MagicDNSSuffixes       []string `json:"magic_dns_suffixes"`
+	PeerCIDRs              []string `json:"peer_cidrs"`
+	SubnetRoutes           []string `json:"subnet_routes"`
+	AllowMac               bool     `json:"allow_mac"`
+	AllowAllDevices        bool     `json:"allow_all_devices"`
+	AllowedDevices         []string `json:"allowed_devices"`
+	ExitNode               string   `json:"exit_node"`
+	ExitNodeAllowLANAccess bool     `json:"exit_node_allow_lan_access"`
+}
+
+type TailscaleUpdateRequest struct {
+	TailscaleSettings
+	// AuthKey is write-only. It is accepted only when replacing the stored key
+	// and is never included in GET or PUT responses.
+	AuthKey string `json:"auth_key,omitempty"`
+}
+
+type TailscaleResponse struct {
+	SchemaVersion   int               `json:"schema_version"`
+	Revision        string            `json:"revision"`
+	Settings        TailscaleSettings `json:"settings"`
+	AuthKeyPresent  bool              `json:"auth_key_present"`
+	IdentityPresent bool              `json:"identity_present"`
+	GatewayActive   bool              `json:"gateway_active"`
+	RuntimeState    string            `json:"runtime_state"`
+	SelectableExit  bool              `json:"selectable_exit"`
+	Warnings        []string          `json:"warnings"`
+}
+
 const (
 	RecoveryIdle                        = "idle"
 	RecoveryPrepared                    = "prepared"

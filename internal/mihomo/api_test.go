@@ -170,6 +170,58 @@ func TestFetchProxyHealthKeepsLeafStatusAndLatestDelay(t *testing.T) {
 	}
 }
 
+func TestFetchProxyHealthUsesRoleSpecificTailscaleStatus(t *testing.T) {
+	response := func() *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"proxies":{"open-surge/tailscale":{"name":"open-surge/tailscale","type":"Tailscale","alive":false,"udp":true}}}`)),
+			Header:     make(http.Header),
+		}
+	}
+	cfg := config.Default()
+	cfg.Tailscale.Enabled = true
+	cfg.Tailscale.DisplayName = "Home Tailnet"
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return response(), nil })}
+
+	tailnet, err := fetchProxyHealthWithClient(context.Background(), cfg, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tailnet.Proxies[0]; got.DisplayName != "Home Tailnet" || got.Role != "tailnet" || got.Status != "available_on_demand" || got.Probeable {
+		t.Fatalf("Tailnet-only health = %#v", got)
+	}
+
+	cfg.Tailscale.ExitNode = "100.90.3.4"
+	exit, err := fetchProxyHealthWithClient(context.Background(), cfg, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := exit.Proxies[0]; got.Role != "exit_node" || got.Status != "unreachable" || !got.Probeable {
+		t.Fatalf("Exit Node health = %#v", got)
+	}
+}
+
+func TestTailscaleWarmupUsesRoleSpecificTarget(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		exitNode string
+		wantURL  string
+	}{
+		{name: "tailnet", wantURL: DefaultTailscaleWarmupURL},
+		{name: "exit node", exitNode: "100.90.3.4", wantURL: DefaultProxyDelayTestURL},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Tailscale.Enabled = true
+			cfg.Tailscale.ExitNode = tt.exitNode
+			if got := tailscaleWarmupURL(cfg); got != tt.wantURL {
+				t.Fatalf("warm-up URL = %q, want %q", got, tt.wantURL)
+			}
+		})
+	}
+}
+
 func TestMeasureProxyDelay(t *testing.T) {
 	cfg := config.Default()
 	cfg.Mihomo.APIAddr = "127.0.0.1:9090"

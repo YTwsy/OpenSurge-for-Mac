@@ -12,7 +12,8 @@ diff --git a/listener/parse.go b/listener/parse.go
 diff --git a/config/config.go b/config/config.go
 --- a/config/config.go
 +++ b/config/config.go
-@@ -1649,0 +1650,9 @@ func parseAuthentication(rawRecords []string) []auth.AuthUser {
+@@ -1663,0 +1664,10 @@ func parseAuthentication(rawRecords []string) []auth.AuthUser {
++
 +func hasOpenSurgePacketListener(listeners []map[string]any) bool {
 +	for _, listener := range listeners {
 +		if listener["type"] == "opensurge-packet" {
@@ -22,7 +23,7 @@ diff --git a/config/config.go b/config/config.go
 +	return false
 +}
 +
-@@ -1651 +1660,4 @@ func parseIPV6(rawCfg *RawConfig) {
+@@ -1665 +1675,4 @@ func parseIPV6(rawCfg *RawConfig) {
 -	if !rawCfg.IPv6 || !verifyIP6() {
 +	// OpenSurge's userspace packet listener is an IPv6 data plane in its own
 +	// right. DNS IPv6 is also an explicit operator choice. Neither must be

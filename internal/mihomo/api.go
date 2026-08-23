@@ -40,7 +40,10 @@ type ProxyGroup struct {
 	Options  []string `json:"options"`
 }
 
-const DefaultProxyDelayTestURL = "https://www.gstatic.com/generate_204"
+const (
+	DefaultProxyDelayTestURL  = "https://www.gstatic.com/generate_204"
+	DefaultTailscaleWarmupURL = "http://100.100.100.100/"
+)
 
 type ProxyHealthSnapshot struct {
 	TestURL string        `json:"test_url"`
@@ -48,15 +51,17 @@ type ProxyHealthSnapshot struct {
 }
 
 type ProxyHealth struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Selected  string `json:"selected,omitempty"`
-	Provider  string `json:"provider,omitempty"`
-	UDP       bool   `json:"udp"`
-	Status    string `json:"status"`
-	DelayMS   int    `json:"delay_ms,omitempty"`
-	TestedAt  string `json:"tested_at,omitempty"`
-	Probeable bool   `json:"probeable"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
+	Type        string `json:"type"`
+	Role        string `json:"role,omitempty"`
+	Selected    string `json:"selected,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	UDP         bool   `json:"udp"`
+	Status      string `json:"status"`
+	DelayMS     int    `json:"delay_ms,omitempty"`
+	TestedAt    string `json:"tested_at,omitempty"`
+	Probeable   bool   `json:"probeable"`
 }
 
 type ProxyDelayResult struct {
@@ -218,6 +223,25 @@ func MeasureProxyDelay(ctx context.Context, cfg config.Config, proxyName, testUR
 	return measureProxyDelayWithClient(ctx, cfg, client, proxyName, testURL, timeout)
 }
 
+// WarmTailscale deliberately sends one best-effort request through the managed
+// outbound. mihomo initializes its embedded Tailscale node lazily on the first
+// dial, so this moves that work into gateway startup instead of waiting for a
+// user's first Tailnet request. A failed target probe still exercises the
+// outbound initialization path and must not make the gateway lifecycle fail.
+func WarmTailscale(ctx context.Context, cfg config.Config) ProxyDelayResult {
+	testURL := tailscaleWarmupURL(cfg)
+	timeout := 4 * time.Second
+	client := &http.Client{Timeout: timeout + time.Second}
+	return measureProxyDelayWithClient(ctx, cfg, client, config.TailscaleProxyName, testURL, timeout)
+}
+
+func tailscaleWarmupURL(cfg config.Config) string {
+	if cfg.Tailscale.ExitNode != "" {
+		return DefaultProxyDelayTestURL
+	}
+	return DefaultTailscaleWarmupURL
+}
+
 func SelectProxyGroup(ctx context.Context, cfg config.Config, groupName, selected string) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 	return selectProxyGroupWithClient(ctx, cfg, client, groupName, selected)
@@ -341,7 +365,18 @@ func fetchProxyHealthWithClient(ctx context.Context, cfg config.Config, client *
 			Status:    "untested",
 			Probeable: proxyIsProbeable(proxy.Type),
 		}
-		if !health.Probeable {
+		if health.Name == config.TailscaleProxyName && cfg.Tailscale.Enabled {
+			health.DisplayName = cfg.Tailscale.DisplayName
+			health.Type = "Tailscale"
+			health.Role = "tailnet"
+			if cfg.Tailscale.ExitNode != "" {
+				health.Role = "exit_node"
+			} else {
+				health.Probeable = false
+				health.Status = "available_on_demand"
+			}
+		}
+		if !health.Probeable && health.Role != "tailnet" {
 			health.Status = "not_applicable"
 		}
 		if health.Probeable && len(proxy.History) > 0 {

@@ -7,6 +7,7 @@ import { LocalRoutingCard } from '../components/LocalRoutingCard'
 import { CLAUDE_CODE_RULE_SET_NAMES, CLAUDE_CODE_RULE_SETS, CLAUDE_CODE_SOURCE, CLAUDE_CODE_TEMPLATE } from '../data/builtinRuleLibrary'
 import type { OperationNotification } from '../components/OperationNotifications'
 import { useProxyHealth } from '../hooks/useProxyHealth'
+import { policyDisplayName, TAILSCALE_POLICY } from '../policyDisplay'
 import type { AppliedDeviceEgressMode, CompiledDevice, ControlConfig, DeviceEgressMode, DeviceGatewayTarget, DevicePolicyDocument, DevicesResponse, Lease, ObservedDevice, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, PolicyTemplate, ProxyGroup, ProxyHealthEntry } from '../types'
 
 const emptyPolicy = (): PolicySet => ({ devices: [], profiles: [], templates: [], rule_sets: [] })
@@ -31,6 +32,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
   const [document, setDocument] = useState<DevicePolicyDocument | null>(null)
   const [policy, setPolicy] = useState<PolicySet>(emptyPolicy)
   const [importedCandidates, setImportedCandidates] = useState<string[]>([])
+  const [tailscaleExitAvailable, setTailscaleExitAvailable] = useState(false)
   const [selectedDeviceID, setSelectedDeviceID] = useState('')
   const [ruleLibraryTab, setRuleLibraryTab] = useState<RuleLibraryTab>('rule_sets')
   const ruleLibraryRef = useRef<HTMLElement | null>(null)
@@ -50,7 +52,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
 
   const groups = overview?.policies ?? []
   const globalGroups = useMemo(() => groups.filter(group => !group.name.startsWith('device/')), [groups])
-  const candidates = useMemo(() => [...new Set(['DIRECT', 'REJECT', ...globalGroups.map(group => group.name), ...importedCandidates])], [globalGroups, importedCandidates])
+  const candidates = useMemo(() => [...new Set(['DIRECT', 'REJECT', ...globalGroups.map(group => group.name), ...importedCandidates, ...(tailscaleExitAvailable ? [TAILSCALE_POLICY] : [])])], [globalGroups, importedCandidates, tailscaleExitAvailable])
   const routerBypass = {
     gateway: controlConfig?.dhcp.bypass_gateway.trim() ?? '',
     dns: controlConfig?.dhcp.bypass_dns ?? [],
@@ -62,12 +64,13 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
 
   const refresh = useCallback(async (discardDraft = false) => {
     try {
-      const [devices, config, sources] = await Promise.all([api.devices(), api.config(), api.sources().catch(() => ({ revision: '', sources: [] }))])
+      const [devices, config, sources, tailscale] = await Promise.all([api.devices(), api.config(), api.sources().catch(() => ({ revision: '', sources: [] })), api.tailscale().catch(() => null)])
       const nextDocument = config.device_policy.enabled ? await api.devicePolicy() : null
       const imported = sources.sources.filter(source => source.applied && source.valid).flatMap(source => [...source.inventory.proxies, ...source.inventory.proxy_groups])
       setData(devices)
       setControlConfig(config)
       setImportedCandidates(imported)
+      setTailscaleExitAvailable(Boolean(tailscale?.selectable_exit))
       setDocument(nextDocument)
       if (nextDocument && (!dirtyRef.current || discardDraft)) {
         const nextPolicy = copyPolicy(nextDocument.policy)
@@ -549,7 +552,7 @@ function CandidatePicker({ label, values, candidates, onChange }: { label: strin
   const available = candidates.filter(item => !values.includes(item))
   const validCandidate = available.includes(candidate)
   const add = () => { if (validCandidate) onChange([...values, candidate]); setCandidate('') }
-  return <div className="candidate-picker"><label>{label}<span className="candidate-add"><input type="search" aria-label={label} list={listID} autoComplete="off" placeholder="搜索出口…" value={candidate} onChange={event => setCandidate(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }} /><datalist id={listID}>{available.map(item => <option key={item} value={item} />)}</datalist><button type="button" disabled={!validCandidate} onClick={add}>添加</button></span></label><div className="token-list">{values.map(value => <span className="token" key={value}>{value}<button type="button" disabled={values.length === 1} aria-label={`移除 ${value}`} title={values.length === 1 ? '至少保留一个出口' : undefined} onClick={() => onChange(values.filter(item => item !== value))}>×</button></span>)}</div></div>
+  return <div className="candidate-picker"><label>{label}<span className="candidate-add"><input type="search" aria-label={label} list={listID} autoComplete="off" placeholder="搜索出口…" value={candidate} onChange={event => setCandidate(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }} /><datalist id={listID}>{available.map(item => <option key={item} value={item} label={policyDisplayName(item)} />)}</datalist><button type="button" disabled={!validCandidate} onClick={add}>添加</button></span></label><div className="token-list">{values.map(value => <span className="token" key={value}>{policyDisplayName(value)}<button type="button" disabled={values.length === 1} aria-label={`移除 ${policyDisplayName(value)}`} title={values.length === 1 ? '至少保留一个出口' : undefined} onClick={() => onChange(values.filter(item => item !== value))}>×</button></span>)}</div></div>
 }
 
 
@@ -684,7 +687,7 @@ function DeviceRoutesLibrary({ policy, selectedDeviceID, onSelectedDeviceChange,
     <div className="library-pane-heading"><div><h3>设备分流</h3><p>从上到下匹配；每条分流为规则集或分流模版指定单独出口。</p></div><label className="device-route-picker">设备<select aria-label="设备分流设备" value={deviceID} onChange={event => { setEditing(null); onSelectedDeviceChange(event.target.value) }}>{policy.devices.map(item => <option key={item.id} value={item.id}>{displayDeviceName(item)}</option>)}</select></label></div>
     {desiredGatewayTarget(device) === 'upstream_router' && <div className="notice info">直连主路由期间，设备分流和出口设置会保留但不生效；切回 OpenSurge 后恢复。</div>}
     {mode === 'inherit_global' ? <div className="device-defaults following"><strong>设备出口跟随网关规则</strong><small>未命中下方设备分流的流量继续使用网关规则。</small></div> : <div className={`device-defaults ${mode === 'legacy_fallback' ? 'legacy' : ''}`}><CandidatePicker label={mode === 'dedicated' ? '独立设备出口候选' : '兼容兜底出口候选'} values={effective.default_policies} candidates={candidates} onChange={values => changeProfile(profile => ({ ...profile, default_policies: values }))} /><small>候选成员变化需要保存并重载；应用后仍可在设备卡即时切换。</small></div>}
-    <div className="flat-rules">{effective.rules?.map((rule, index) => <div className="flat-rule" key={rule.id}><div className="rule-summary"><div>{routeMatchChips(rule, policy).map(chip => <span className="rule-chip" key={chip}>{chip}</span>)}</div><span className="rule-arrow">→</span><strong>{rule.policies?.length ? rule.policies.join(' / ') : rule.action}</strong></div><div className="rule-actions"><button type="button" disabled={index === 0} aria-label={`上移设备分流 ${rule.id}`} onClick={() => move(index, -1)}>↑</button><button type="button" disabled={index === (effective.rules?.length ?? 0) - 1} aria-label={`下移设备分流 ${rule.id}`} onClick={() => move(index, 1)}>↓</button><button type="button" onClick={() => setEditing(editing === index ? null : index)}>编辑</button><button className="danger-link" type="button" onClick={() => remove(index)}>删除</button></div>{editing === index && <DeviceRouteEditor initial={rule} existing={effective.rules ?? []} policy={policy} candidates={candidates} onCancel={() => setEditing(null)} onSave={updated => saveRoute(updated, index)} />}</div>)}{!effective.rules?.length && <Empty text="尚未添加设备分流；未命中流量继续使用上方设备出口设置。" />}</div>
+    <div className="flat-rules">{effective.rules?.map((rule, index) => <div className="flat-rule" key={rule.id}><div className="rule-summary"><div>{routeMatchChips(rule, policy).map(chip => <span className="rule-chip" key={chip}>{chip}</span>)}</div><span className="rule-arrow">→</span><strong>{rule.policies?.length ? rule.policies.map(value => policyDisplayName(value)).join(' / ') : policyDisplayName(rule.action ?? '')}</strong></div><div className="rule-actions"><button type="button" disabled={index === 0} aria-label={`上移设备分流 ${rule.id}`} onClick={() => move(index, -1)}>↑</button><button type="button" disabled={index === (effective.rules?.length ?? 0) - 1} aria-label={`下移设备分流 ${rule.id}`} onClick={() => move(index, 1)}>↓</button><button type="button" onClick={() => setEditing(editing === index ? null : index)}>编辑</button><button className="danger-link" type="button" onClick={() => remove(index)}>删除</button></div>{editing === index && <DeviceRouteEditor initial={rule} existing={effective.rules ?? []} policy={policy} candidates={candidates} onCancel={() => setEditing(null)} onSave={updated => saveRoute(updated, index)} />}</div>)}{!effective.rules?.length && <Empty text="尚未添加设备分流；未命中流量继续使用上方设备出口设置。" />}</div>
     {editing === 'new' ? <DeviceRouteEditor key={presetTemplate || 'new'} presetTemplate={presetTemplate} existing={effective.rules ?? []} policy={policy} candidates={candidates} onCancel={() => { setEditing(null); onPresetConsumed() }} onSave={rule => saveRoute(rule)} /> : <button className="add-rule" type="button" onClick={() => setEditing('new')}>＋ 添加设备分流</button>}
   </div>
 }
@@ -706,7 +709,7 @@ function DeviceRouteEditor({ initial, presetTemplate = '', existing, policy, can
     onSave(mode === 'selector' ? { id, match, policies, on_unsupported: 'reject' } : { id, match, action, on_unsupported: 'reject' })
   }
   const sources = kind === 'template' ? templates : policy.rule_sets
-  return <div className="library-editor device-route-editor"><fieldset className="route-source-kind"><legend>匹配对象</legend><label><input type="radio" checked={kind === 'template'} onChange={() => { setKind('template'); setSourceID('') }} /> 分流模版</label><label><input type="radio" checked={kind === 'rule_set'} onChange={() => { setKind('rule_set'); setSourceID('') }} /> 单个规则集</label></fieldset><label>{kind === 'template' ? '分流模版' : '规则集'}<select aria-label="设备分流匹配对象" value={sourceID} onChange={event => setSourceID(event.target.value)}><option value="">请选择</option>{sources.map(item => <option key={item.id} value={item.id}>{item.id === CLAUDE_CODE_TEMPLATE.id ? 'Claude Code（内置示例）' : CLAUDE_CODE_RULE_SET_NAMES[item.id] ?? item.id}</option>)}</select></label><fieldset className="egress-mode"><legend>命中后的出口</legend><label><input type="radio" checked={mode === 'action'} onChange={() => setMode('action')} /> 固定出口</label><label><input type="radio" checked={mode === 'selector'} onChange={() => setMode('selector')} /> 独立即时切换</label>{mode === 'action' ? <select aria-label="设备分流出口" value={action} onChange={event => setAction(event.target.value)}>{candidates.map(candidate => <option key={candidate}>{candidate}</option>)}</select> : <CandidatePicker label="设备分流出口候选" values={policies} candidates={candidates} onChange={setPolicies} />}</fieldset>{error && <small className="field-error" role="alert">{error}</small>}<div className="editor-actions"><button type="button" onClick={onCancel}>取消</button><button className="primary" type="button" onClick={save}>添加到草稿</button></div></div>
+  return <div className="library-editor device-route-editor"><fieldset className="route-source-kind"><legend>匹配对象</legend><label><input type="radio" checked={kind === 'template'} onChange={() => { setKind('template'); setSourceID('') }} /> 分流模版</label><label><input type="radio" checked={kind === 'rule_set'} onChange={() => { setKind('rule_set'); setSourceID('') }} /> 单个规则集</label></fieldset><label>{kind === 'template' ? '分流模版' : '规则集'}<select aria-label="设备分流匹配对象" value={sourceID} onChange={event => setSourceID(event.target.value)}><option value="">请选择</option>{sources.map(item => <option key={item.id} value={item.id}>{item.id === CLAUDE_CODE_TEMPLATE.id ? 'Claude Code（内置示例）' : CLAUDE_CODE_RULE_SET_NAMES[item.id] ?? item.id}</option>)}</select></label><fieldset className="egress-mode"><legend>命中后的出口</legend><label><input type="radio" checked={mode === 'action'} onChange={() => setMode('action')} /> 固定出口</label><label><input type="radio" checked={mode === 'selector'} onChange={() => setMode('selector')} /> 独立即时切换</label>{mode === 'action' ? <select aria-label="设备分流出口" value={action} onChange={event => setAction(event.target.value)}>{candidates.map(candidate => <option key={candidate} value={candidate}>{policyDisplayName(candidate)}</option>)}</select> : <CandidatePicker label="设备分流出口候选" values={policies} candidates={candidates} onChange={setPolicies} />}</fieldset>{error && <small className="field-error" role="alert">{error}</small>}<div className="editor-actions"><button type="button" onClick={onCancel}>取消</button><button className="primary" type="button" onClick={save}>添加到草稿</button></div></div>
 }
 
 function installClaudeCodeExample(policy: PolicySet): PolicySet {

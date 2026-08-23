@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -100,6 +102,9 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 		return fmt.Errorf("mihomo.api_addr is required")
 	}
 	if err := validateMihomoProfile(cfg); err != nil {
+		return err
+	}
+	if err := validateTailscale(cfg, scope, checkDevicePolicy); err != nil {
 		return err
 	}
 	if strings.TrimSpace(cfg.PF.AnchorName) == "" {
@@ -432,6 +437,140 @@ func validateUpstreamProxy(cfg UpstreamProxyConfig) error {
 		return fmt.Errorf("upstream_proxy credentials must not contain control characters")
 	}
 	return nil
+}
+
+func validateTailscale(cfg Config, scope lan.Scope, checkDevicePolicy bool) error {
+	ts := cfg.Tailscale
+	if !ts.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(ts.DisplayName) == "" || hasControlChar(ts.DisplayName) {
+		return fmt.Errorf("tailscale.display_name must be a non-empty label without control characters")
+	}
+	if len([]rune(ts.DisplayName)) > 64 {
+		return fmt.Errorf("tailscale.display_name must not exceed 64 characters")
+	}
+	if !validDNSLabel(ts.Hostname) {
+		return fmt.Errorf("tailscale.hostname must be a DNS label using letters, numbers, and hyphens")
+	}
+	if err := validateTailscaleControlURL(ts.ControlURL); err != nil {
+		return err
+	}
+	if strings.TrimSpace(ts.AuthKeyFile) == "" {
+		return fmt.Errorf("tailscale.auth_key_file is required")
+	}
+	if strings.TrimSpace(ts.StateDir) == "" {
+		return fmt.Errorf("tailscale.state_dir is required")
+	}
+	if ts.ExitNodeAllowLANAccess && strings.TrimSpace(ts.ExitNode) == "" {
+		return fmt.Errorf("tailscale.exit_node_allow_lan_access requires tailscale.exit_node")
+	}
+	if ts.ExitNode != "" && !validRuleToken(ts.ExitNode) {
+		return fmt.Errorf("tailscale.exit_node must not contain whitespace, commas, or control characters")
+	}
+	if ts.AllowAllDevices && len(ts.AllowedDevices) > 0 {
+		return fmt.Errorf("tailscale.allowed_devices must be empty when tailscale.allow_all_devices is true")
+	}
+	for _, suffix := range ts.MagicDNSSuffixes {
+		if !validDomainRule(suffix) || strings.HasPrefix(suffix, ".") || strings.Contains(suffix, "*") {
+			return fmt.Errorf("tailscale.magic_dns_suffixes entry %q must be a domain suffix without wildcard", suffix)
+		}
+	}
+	if err := validateTailscaleCIDRs("peer_cidrs", ts.PeerCIDRs, false, scope); err != nil {
+		return err
+	}
+	if err := validateTailscaleCIDRs("subnet_routes", ts.SubnetRoutes, true, scope); err != nil {
+		return err
+	}
+	if len(ts.SubnetRoutes) > 0 && !ts.AcceptRoutes {
+		return fmt.Errorf("tailscale.subnet_routes requires tailscale.accept_routes: true")
+	}
+	if !checkDevicePolicy {
+		return nil
+	}
+	if (ts.AllowAllDevices || len(ts.AllowedDevices) > 0) && cfg.DevicePolicy.Bundle == nil {
+		return fmt.Errorf("tailscale device access requires device_policy.file")
+	}
+	if cfg.DevicePolicy.Bundle != nil {
+		available := make(map[string]bool, len(cfg.DevicePolicy.Bundle.Compiled.Devices))
+		for _, managed := range cfg.DevicePolicy.Bundle.Compiled.Devices {
+			available[managed.ID] = true
+		}
+		for _, id := range ts.AllowedDevices {
+			if !validRuleToken(id) {
+				return fmt.Errorf("tailscale.allowed_devices entry %q is not a valid device ID", id)
+			}
+			if !available[id] {
+				return fmt.Errorf("tailscale.allowed_devices references unknown or inactive device %q", id)
+			}
+		}
+	}
+	return nil
+}
+
+func validateTailscaleControlURL(value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return fmt.Errorf("tailscale.control_url must be an HTTP or HTTPS URL")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("tailscale.control_url must not contain credentials, query, or fragment")
+	}
+	return nil
+}
+
+func validateTailscaleCIDRs(field string, values []string, privateOnly bool, scope lan.Scope) error {
+	seen := map[netip.Prefix]bool{}
+	lanPrefix, err := netip.ParsePrefix(scope.String())
+	if err != nil {
+		return err
+	}
+	for _, value := range values {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(value))
+		if err != nil || prefix != prefix.Masked() || prefix.String() != strings.TrimSpace(value) {
+			return fmt.Errorf("tailscale.%s entry %q must be a canonical IP CIDR", field, value)
+		}
+		if !prefix.Addr().IsGlobalUnicast() {
+			return fmt.Errorf("tailscale.%s entry %q must be a unicast network", field, value)
+		}
+		if field == "peer_cidrs" && tailscaleAddressSpaceNeedsExactHost(prefix) {
+			return fmt.Errorf("tailscale.peer_cidrs entry %q must identify one exact Tailscale peer (/32 for IPv4 or /128 for IPv6); broad Tailnet address-space capture is not allowed", value)
+		}
+		if privateOnly && !prefix.Addr().IsPrivate() {
+			return fmt.Errorf("tailscale.%s entry %q must be a private IPv4/ULA subnet", field, value)
+		}
+		if prefix.Addr().Is4() && prefix.Overlaps(lanPrefix) {
+			return fmt.Errorf("tailscale.%s entry %q overlaps the OpenSurge LAN %s", field, value, scope)
+		}
+		if seen[prefix] {
+			return fmt.Errorf("tailscale.%s contains duplicate CIDR %q", field, value)
+		}
+		seen[prefix] = true
+	}
+	return nil
+}
+
+func tailscaleAddressSpaceNeedsExactHost(prefix netip.Prefix) bool {
+	addressSpace := netip.MustParsePrefix("100.64.0.0/10")
+	wantBits := 32
+	if prefix.Addr().Is6() {
+		addressSpace = netip.MustParsePrefix("fd7a:115c:a1e0::/48")
+		wantBits = 128
+	}
+	return prefix.Overlaps(addressSpace) && prefix.Bits() != wantBits
+}
+
+func validDNSLabel(value string) bool {
+	if value == "" || len(value) > 63 || value[0] == '-' || value[len(value)-1] == '-' {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func validRuleToken(value string) bool {

@@ -1,12 +1,11 @@
 package config
 
-import "open-mihomo-gateway/internal/device"
-
 import (
 	"fmt"
 	"net"
 	"path/filepath"
 
+	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/lan"
 )
 
@@ -16,6 +15,7 @@ type Config struct {
 	DevicePolicy     DevicePolicyConfig
 	DNS              DNSConfig
 	Mihomo           MihomoConfig
+	Tailscale        TailscaleConfig
 	PF               PFConfig
 	Transparent      TransparentConfig
 	LocalSystemProxy LocalSystemProxyConfig
@@ -71,6 +71,29 @@ type MihomoConfig struct {
 	APIAddr     string
 	Secret      string
 }
+
+// TailscaleConfig describes the single OpenSurge-managed Tailscale outbound.
+// The auth key is deliberately stored in a separate root-owned file so API
+// responses and the ordinary gateway configuration never disclose it.
+type TailscaleConfig struct {
+	Enabled                bool
+	DisplayName            string
+	Hostname               string
+	ControlURL             string
+	AuthKeyFile            string
+	StateDir               string
+	AcceptRoutes           bool
+	MagicDNSSuffixes       []string
+	PeerCIDRs              []string
+	SubnetRoutes           []string
+	AllowMac               bool
+	AllowAllDevices        bool
+	AllowedDevices         []string
+	ExitNode               string
+	ExitNodeAllowLANAccess bool
+}
+
+const TailscaleProxyName = "open-surge/tailscale"
 
 type PFConfig struct {
 	AnchorName    string
@@ -199,6 +222,21 @@ func Default() Config {
 			RedirPort:   0,
 			APIAddr:     "127.0.0.1:9090",
 			Secret:      "",
+		},
+		Tailscale: TailscaleConfig{
+			Enabled:          false,
+			DisplayName:      "Tailnet",
+			Hostname:         "opensurge-mac",
+			ControlURL:       "https://controlplane.tailscale.com",
+			AuthKeyFile:      "./data/tailscale-auth-key",
+			StateDir:         "./data/tailscale",
+			AcceptRoutes:     false,
+			AllowMac:         true,
+			AllowAllDevices:  false,
+			MagicDNSSuffixes: []string{},
+			PeerCIDRs:        []string{},
+			SubnetRoutes:     []string{},
+			AllowedDevices:   []string{},
 		},
 		PF: PFConfig{
 			AnchorName:    "com.apple/open_mihomo_gateway",

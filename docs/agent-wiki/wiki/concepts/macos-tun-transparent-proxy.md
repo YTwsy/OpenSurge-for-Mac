@@ -57,7 +57,7 @@ rollback。运行中的 status/overview 每次只读取一次轻量运行时状�
 `degraded`。只有明确读取到 `tun.enable: false` 才是失败信号。不要增加独立后台
 watchdog，也不要在状态热路径反复执行 route/scutil 扫描。
 
-`tun.enable: false` 的失败语义已经针对项目固定的 mihomo v1.19.27 验证。升级
+`tun.enable: false` 的失败语义已经针对项目固定的 mihomo v1.19.30 验证。升级
 mihomo 时必须重新核对失败后的 `/configs` 行为并跑真实 TUN Lab，不能把这个语义
 当作所有历史版本都具备的通用契约。
 

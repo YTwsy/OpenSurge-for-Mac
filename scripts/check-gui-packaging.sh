@@ -347,7 +347,7 @@ grep -Fq 'MIHOMO_SOURCE_ARCHIVE="mihomo-${MIHOMO_VERSION}-source.tar.gz"' "$RELE
   echo "release dependencies must build patched mihomo from the pinned source archive" >&2
   exit 1
 }
-grep -Fq -- '-tags with_gvisor' "$MIHOMO_BUILD" && grep -Fq '0001-opensurge-packet-listener.patch' "$MIHOMO_BUILD" && grep -Fq 'SOURCE_SHA256=bf3a188a' "$MIHOMO_BUILD" && grep -Fq 'SOURCE_URL=https://github.com/MetaCubeX/mihomo/archive/' "$MIHOMO_BUILD" && grep -Fq 'source_archive_valid' "$MIHOMO_BUILD" || {
+grep -Fq -- '-tags with_gvisor' "$MIHOMO_BUILD" && grep -Fq '0001-opensurge-packet-listener.patch' "$MIHOMO_BUILD" && grep -Fq 'SOURCE_SHA256=971dd453' "$MIHOMO_BUILD" && grep -Fq 'SOURCE_URL=https://github.com/MetaCubeX/mihomo/archive/' "$MIHOMO_BUILD" && grep -Fq 'source_archive_valid' "$MIHOMO_BUILD" || {
   echo "OpenSurge mihomo build must download and verify pinned source before applying the gVisor packet-listener patch" >&2
   exit 1
 }
