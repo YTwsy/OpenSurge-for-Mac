@@ -27,6 +27,14 @@ AND,((IN-TYPE,SOCKS/HTTP),(SRC-IP-CIDR,127.0.0.0/8),(NETWORK,TCP)),open-surge/ma
 网关 LAN IPv4 也有一组显式代理入口规则。每个入口在分派到模式组前先生成
 local/private `DIRECT` 保护。
 
+当前实现的 TUN 本机身份只覆盖 `198.18.0.1/32`。`dns.ipv6: true` 会独立于
+`transparent.tun_ipv6` 是否实际生效而返回 `fdfe:dcba:9876::/64` fake AAAA；应用选择
+该地址族后，live connections 可呈现 `fdfe:dcba:9876::1` 本机源身份并绕过
+`open-surge/mac-mode-*`，继续进入 imported/managed 规则。连接刷新能够关闭这类带本机
+进程证据的会话，但客户端重建后仍会重复同一路径。修复前，无上游 IPv6 且不需要下游
+IPv6 的环境可关闭 AAAA、重载后重启受影响应用；后续实现必须补充 IPv6 本机身份规则和
+fake-AAAA 的 TUN Lab 证据。
+
 `PASS/PASS` 表示 Rule，`DIRECT/DIRECT` 表示 Direct。Global 的 TCP 指向 mac-global；
 UDP 只有在 live `/proxies` 能确认当前目标支持 UDP 时才指向 mac-global，否则指向
 `REJECT`。TCP/UDP/global 三个选择通过专用控制器事务式切换，失败时逆序回滚。

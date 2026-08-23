@@ -29,6 +29,19 @@ OpenSurge 同时约束 **入口类型** 和 **源地址**：
 下游连接使用它们自己的 LAN IPv4，不会命中这些本机规则。它们随后继续进入设备
 `SRC-IP-CIDR` 覆盖和 imported/managed 网关规则。
 
+### 当前已知限制：AAAA 与本机模式
+
+`dns.ipv6` 与 `transparent.tun_ipv6` 相互独立。即使“何时为下游启用 IPv6”设为
+`auto` 且因没有原生上游 IPv6 而未实际启用下游 IPv6，开启“允许 AAAA 查询”仍会让
+mihomo DNS 返回 `fdfe:dcba:9876::/64` 中的 fake IPv6。一些应用会优先使用这类 AAAA；
+当前本机模式规则只覆盖 `198.18.0.1` 的 IPv4 TUN 身份，因此这部分 Mac 本机 IPv6
+连接可能绕过 `open-surge/mac-mode-*`，继续匹配 imported/managed 网关规则。表现上，
+“本机直连”仍可能有连接走代理，反复刷新连接也只会让应用按同一路径重新建立连接。
+
+没有原生上游 IPv6、也不需要下游 IPv6 时，可暂时关闭“允许 AAAA 查询”，保存并重载
+网关后完全退出并重新打开受影响的应用。`auto` 未实际启用下游 IPv6，不等于自动关闭
+AAAA；关闭 AAAA 是当前规避方式，不是完整的本机 IPv6 模式支持。
+
 因此，Web GUI 中的“Mac 本机流量模式”和设备的“跟随网关规则 / 独立设备出口”是两套
 正交控制：
 

@@ -35,6 +35,24 @@ Downstream connections carry their own LAN IPv4 source and cannot match those
 local rules. They continue into device `SRC-IP-CIDR` overrides and the
 imported/managed gateway rules.
 
+### Current limitation: AAAA and local modes
+
+`dns.ipv6` and `transparent.tun_ipv6` are independent. Even when downstream
+IPv6 is set to `auto` and remains inactive because no native upstream IPv6 is
+available, enabling AAAA responses still makes mihomo DNS return fake IPv6
+addresses from `fdfe:dcba:9876::/64`. Some applications prefer those AAAA
+answers. The current local-mode rules cover only the `198.18.0.1` IPv4 TUN
+identity, so these local-Mac IPv6 connections can bypass
+`open-surge/mac-mode-*` and continue through imported/managed gateway rules.
+As a result, connections may still use a proxy in Direct mode; repeatedly
+refreshing connections only lets the application recreate the same path.
+
+When no native upstream IPv6 or downstream IPv6 behavior is needed, temporarily
+disable AAAA responses, save and reload the gateway, then fully quit and reopen
+the affected application. An inactive `auto` downstream mode does not disable
+AAAA automatically. Disabling AAAA is a current workaround, not complete
+local-Mac IPv6 mode support.
+
 The Web GUI's local-Mac mode and a device's “Follow gateway rules / Dedicated
 device egress” are therefore orthogonal controls:
 
