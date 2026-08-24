@@ -35,6 +35,13 @@ Tailnet 规则在普通 CGNAT/RFC1918 `DIRECT` 保护规则之前，但只包含
 RFC1918 地址就被 Tailscale 接管。命中后直接选择 Tailscale outbound；节点
 离线时 fail closed，不增加 `DIRECT` 回退。
 
+`allow_mac` 必须复用本机 Rule/Global/Direct 编译器的同一组入口身份，
+不能另写一套宽泛的 IPv6 来源匹配。对系统 TUN 的 IPv6，规则同时
+限定 `IN-NAME,DEFAULT-TUN` 和当前实际生效的单个 `/128`：DNS fake-AAAA
+路径使用 `fdfe:dcba:9876::1/128`，显式 TUN IPv6 则使用
+`fdfe:dcba:9877::1/128`。不得扩大为 fake-IP `/64`、下游 `/64`、`fc00::/7`，
+也不得把 `opensurge-ipv6` packet listener 的下游设备流量当成 Mac 本机。
+
 TUN `route-address` 只增加 peer CIDR 和 subnet route 这些明确的网段，以覆盖
 原有私网 route exclusion。不删除对整个 RFC1918 和 CGNAT 空间的保护。
 远端 subnet route 必须是 private IPv4 或 ULA，必须启用 `accept-routes`，并且

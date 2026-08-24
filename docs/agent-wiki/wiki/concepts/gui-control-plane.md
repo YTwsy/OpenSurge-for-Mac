@@ -19,6 +19,10 @@ Go gateway、device、mihomo 和 runtime 包中。
 状态轮询最终同步 Web 的选择，在取得第一份状态前仍按本机语言显示。网络模式的三张拓扑图
 使用 React 内联 SVG，共享主题色并通过同一文案目录翻译 `<title>`、`<desc>` 与图内标签，
 不要恢复成明暗主题各一套、无法随语言变化的静态 SVG。
+新增或合并的 Web GUI 页面必须把所有面向用户的中文传入统一 `t()`
+目录，不能只翻译导航和旧页面。`make web-test` 中的 `check-i18n.mjs`
+是覆盖门槛；新功能的英文组件测试还应展开主要对话框/预览，断言可见
+内容不再包含 CJK 字符，避免仅首屏看起来已翻译。
 
 睡眠开关默认关闭、不写 preference，只由 Control Service 内存中的 lease 表示本次运行
 意图。菜单栏与 Web GUI 都调用 `PUT /api/v1/sleep-prevention`；Control Service 保持到 root

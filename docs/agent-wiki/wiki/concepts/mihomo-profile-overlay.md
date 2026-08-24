@@ -45,13 +45,18 @@ snapshot. Its schema is intentionally operation-based:
 
 `add` fails on a name collision, `replace` fails when its target is absent, and
 group/rule references added by the overlay must resolve after composition.
-OpenSurge-owned namespaces and gateway-facing fields are rejected. Saving this
-document only creates a draft: source refresh recomputes compatibility and the
-effective preview, while the running gateway changes only after the user
-applies a source and the complete generated mihomo config passes engine
-validation. The desired config records both the raw source digest and the
-enabled overlay digest so the GUI can distinguish source drift from overlay
-drift; legacy imported configs without this metadata remain readable.
+OpenSurge-owned namespaces and gateway-facing fields are rejected. In
+particular, an overlay cannot add or replace the managed
+`open-surge/tailscale` proxy; the generated Tailscale proxy and its access
+rules remain owned by OpenSurge and are composed after the imported profile.
+Saving this document only creates a draft: source refresh recomputes
+compatibility and the effective preview, while the running gateway changes
+only after the user applies a source and the complete generated mihomo config
+passes engine validation. A final preview that includes the managed Tailscale
+proxy must replace its `auth-key` value with `<redacted>`. The desired config
+records both the raw source digest and the enabled overlay digest so the GUI
+can distinguish source drift from overlay drift; legacy imported configs
+without this metadata remain readable.
 
 The profile's top-level `dns` section is merged at field level. OpenSurge
 rejects the imported values for `enable`, `listen`, `ipv6`, `enhanced-mode`,
