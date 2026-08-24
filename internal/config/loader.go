@@ -179,6 +179,10 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Mihomo.ProfileMode = strings.ToLower(value)
 	case "mihomo.profile":
 		cfg.Mihomo.Profile = value
+	case "mihomo.profile_source_digest":
+		cfg.Mihomo.ProfileSourceDigest = value
+	case "mihomo.profile_overlay_digest":
+		cfg.Mihomo.ProfileOverlayDigest = value
 	case "mihomo.store_fake_ip":
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {

@@ -166,6 +166,56 @@ export type Source = {
     terminal_match: boolean
     warnings: string[]
   }
+  effective_digest?: string
+  effective_inventory?: SourceInventory
+  overlay_compatible?: boolean
+  overlay_validation?: string
+}
+
+export type SourceInventory = {
+  proxies: string[]
+  proxy_providers: string[]
+  proxy_groups: string[]
+  rule_providers: string[]
+  rule_count: number
+  terminal_match: boolean
+  warnings: string[]
+}
+
+export type ProfileOverlayRuleOps = { prepend: string[]; append_before_match: string[] }
+export type ProfileOverlaySequenceOps = { add: Array<Record<string, unknown>>; replace: Array<Record<string, unknown>> }
+export type ProfileOverlayMappingOps = { add: Record<string, Record<string, unknown>>; replace: Record<string, Record<string, unknown>> }
+export type ProfileOverlayGroupPatch = { name: string; append_proxies: string[]; append_use: string[] }
+export type ProfileOverlayDocument = {
+  schema_version: number
+  enabled: boolean
+  rules: ProfileOverlayRuleOps
+  proxies: ProfileOverlaySequenceOps
+  proxy_providers: ProfileOverlayMappingOps
+  proxy_groups: ProfileOverlaySequenceOps & { patch: ProfileOverlayGroupPatch[] }
+  rule_providers: ProfileOverlayMappingOps
+  dns: { merge: Record<string, unknown>; append: Record<string, unknown[]> }
+}
+export type ProfileOverlay = {
+  schema_version: number
+  revision: string
+  yaml: string
+  document: ProfileOverlayDocument
+  desired: boolean
+  applied: boolean
+  validation: string
+}
+export type ProfileOverlayPreview = {
+  schema_version: number
+  source_id: string
+  source_yaml: string
+  overlay_yaml: string
+  effective_profile_yaml: string
+  final_mihomo_yaml: string
+  original_inventory: SourceInventory
+  effective_inventory: SourceInventory
+  diff: Source['diff']
+  validation: string
 }
 
 export type SourceSnapshotFile = {

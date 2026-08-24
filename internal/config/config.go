@@ -61,15 +61,17 @@ type DNSConfig struct {
 }
 
 type MihomoConfig struct {
-	Binary      string
-	Config      string
-	ProfileMode string
-	Profile     string
-	StoreFakeIP bool
-	MixedPort   int
-	RedirPort   int
-	APIAddr     string
-	Secret      string
+	Binary               string
+	Config               string
+	ProfileMode          string
+	Profile              string
+	ProfileSourceDigest  string
+	ProfileOverlayDigest string
+	StoreFakeIP          bool
+	MixedPort            int
+	RedirPort            int
+	APIAddr              string
+	Secret               string
 }
 
 // TailscaleConfig describes the single OpenSurge-managed Tailscale outbound.

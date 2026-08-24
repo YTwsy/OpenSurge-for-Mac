@@ -2,7 +2,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ControlConfig, GatewayPlan, Overview, Source } from './types'
+import type { ControlConfig, GatewayPlan, Overview, ProfileOverlay, Source } from './types'
 
 vi.mock('./api', () => ({
   authenticationRequiredEvent: 'opensurge:authentication-required',
@@ -55,7 +55,7 @@ vi.mock('./api', () => ({
     validateClient: vi.fn(),
     skipClientValidation: vi.fn(),
     sources: vi.fn(async () => ({ revision: 'config-revision', sources: [] })),
-    tailscale: vi.fn(async () => ({
+	tailscale: vi.fn(async () => ({
       schema_version: 1,
       revision: 'config-revision',
       settings: {
@@ -78,8 +78,31 @@ vi.mock('./api', () => ({
       gateway_active: false,
       runtime_state: 'disabled',
       selectable_exit: false,
-      warnings: [],
+		warnings: [],
+	})),
+	saveTailscale: vi.fn(),
+	forgetTailscaleIdentity: vi.fn(),
+	profileOverlay: vi.fn(async () => ({
+      schema_version: 1,
+      revision: 'overlay-revision',
+      yaml: 'schema-version: 1\nenabled: false\n',
+      document: {
+        schema_version: 1,
+        enabled: false,
+        rules: { prepend: [], append_before_match: [] },
+        proxies: { add: [], replace: [] },
+        proxy_providers: { add: {}, replace: {} },
+        proxy_groups: { add: [], replace: [], patch: [] },
+        rule_providers: { add: {}, replace: {} },
+        dns: { merge: {}, append: {} },
+      },
+      desired: true,
+      applied: false,
+      validation: '附加配置未启用',
     })),
+	saveProfileOverlayDocument: vi.fn(),
+	saveProfileOverlayYAML: vi.fn(),
+	sourcePreview: vi.fn(),
     importURL: vi.fn(),
     importFile: vi.fn(),
     refreshSource: vi.fn(),
@@ -131,6 +154,28 @@ const overview: Overview = {
     },
   },
   sleep_prevention: { enabled: false, active: false },
+}
+
+function overlayForApp(overrides: Partial<ProfileOverlay> = {}): ProfileOverlay {
+  return {
+    schema_version: 1,
+    revision: 'overlay-revision',
+    yaml: 'schema-version: 1\nenabled: false\n',
+    document: {
+      schema_version: 1,
+      enabled: false,
+      rules: { prepend: [], append_before_match: [] },
+      proxies: { add: [], replace: [] },
+      proxy_providers: { add: {}, replace: {} },
+      proxy_groups: { add: [], replace: [], patch: [] },
+      rule_providers: { add: {}, replace: {} },
+      dns: { merge: {}, append: {} },
+    },
+    desired: true,
+    applied: false,
+    validation: '附加配置结构有效',
+    ...overrides,
+  }
 }
 
 function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
@@ -191,6 +236,8 @@ describe('OpenSurge app shell', () => {
     scrollTo.mockReset()
     vi.mocked(api.overview).mockResolvedValue(overview)
     vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [] })
+    vi.mocked(api.profileOverlay).mockResolvedValue(overlayForApp())
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
@@ -1260,6 +1307,30 @@ describe('OpenSurge app shell', () => {
     resolveApply({ ...source, desired: true, applied: true })
     expect(await screen.findByText('订阅已应用，网关已使用新的运行配置。')).toBeTruthy()
     expect(screen.getByText('应用并重载网关成功')).toBeTruthy()
+  })
+
+  it('allows a pending global overlay to be applied to a stopped desired source', async () => {
+    const source: Source = {
+      id: 'home', name: 'Home', kind: 'mihomo_profile', origin: 'file:home.yaml', digest: 'next', size: 100,
+      valid: true, validation: 'valid', desired: true, applied: false, versions: [], imported_at: '2026-08-24T00:00:00Z',
+      diff: { proxies_added: [], proxies_removed: [], groups_added: [], groups_removed: [], proxy_providers_added: [], proxy_providers_removed: [], rule_providers_added: [], rule_providers_removed: [], rule_count_delta: 0 },
+      inventory: { proxies: ['edge'], proxy_providers: [], proxy_groups: ['Main'], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
+      overlay_compatible: true,
+      overlay_validation: 'compatible',
+    }
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
+    vi.mocked(api.profileOverlay).mockResolvedValue(overlayForApp({
+      desired: false,
+      document: { ...overlayForApp().document, enabled: true },
+    }))
+
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+
+    const applyButton = await screen.findByRole('button', { name: '保存附加配置到下次启动' })
+    expect((applyButton as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText('附加配置待应用')).toBeTruthy()
   })
 
   it('edits templates in the structured device policy editor', async () => {

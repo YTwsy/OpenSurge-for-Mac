@@ -199,31 +199,51 @@ func sourceVersion(source Source) SourceVersion {
 }
 
 func (s *Server) decorateSourceStates(sources []Source) []Source {
-	desired, applied := s.profileDigests()
+	desiredProfile, appliedProfile, desiredSource := s.profileCompositionDigests()
+	_, overlay, _, overlayErr := s.loadProfileOverlay()
 	result := append([]Source(nil), sources...)
 	for i := range result {
 		result[i].Versions = append([]SourceVersion(nil), result[i].Versions...)
-		result[i].Desired = desired != "" && result[i].Digest == desired
-		result[i].Applied = applied != "" && result[i].Digest == applied
+		result[i].EffectiveInventory = result[i].Inventory
+		result[i].OverlayCompatible = overlayErr == nil
+		if overlayErr != nil {
+			result[i].OverlayValidation = overlayErr.Error()
+		} else if data, err := os.ReadFile(result[i].SnapshotPath); err != nil {
+			result[i].OverlayCompatible = false
+			result[i].OverlayValidation = err.Error()
+		} else if composition, err := mihomo.ComposeProfileOverlay(data, overlay); err != nil {
+			result[i].OverlayCompatible = false
+			result[i].OverlayValidation = err.Error()
+		} else {
+			result[i].EffectiveDigest = composition.Digest
+			result[i].EffectiveInventory = inventoryFromInspection(composition.Inspection)
+			result[i].OverlayValidation = "compatible with global profile overlay"
+		}
+		result[i].Desired = desiredSource != "" && result[i].Digest == desiredSource
+		result[i].Applied = result[i].Desired && desiredProfile != "" && desiredProfile == appliedProfile
 		for j := range result[i].Versions {
-			result[i].Versions[j].Desired = desired != "" && result[i].Versions[j].Digest == desired
-			result[i].Versions[j].Applied = applied != "" && result[i].Versions[j].Digest == applied
+			result[i].Versions[j].Desired = desiredSource != "" && result[i].Versions[j].Digest == desiredSource
+			result[i].Versions[j].Applied = result[i].Versions[j].Desired && desiredProfile != "" && desiredProfile == appliedProfile
 		}
 	}
 	return result
 }
 
-func (s *Server) profileDigests() (string, string) {
+func (s *Server) profileCompositionDigests() (string, string, string) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	desired, _ := config.MihomoProfileDigest(cfg)
+	desiredSource := cfg.Mihomo.ProfileSourceDigest
+	if desiredSource == "" {
+		desiredSource = desired
+	}
 	applied := ""
 	if state, exists, _ := runtime.LoadState(runtime.NewPaths(cfg).StateFile); exists {
 		applied = state.ProfileDigest
 	}
-	return desired, applied
+	return desired, applied, desiredSource
 }
 
 func emptySourceDiff() SourceDiff {

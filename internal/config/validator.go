@@ -355,9 +355,18 @@ func validateMihomoProfile(cfg Config) error {
 		if strings.TrimSpace(cfg.Mihomo.Profile) != "" {
 			return fmt.Errorf("mihomo.profile requires mihomo.profile_mode: \"imported\"")
 		}
+		if cfg.Mihomo.ProfileSourceDigest != "" || cfg.Mihomo.ProfileOverlayDigest != "" {
+			return fmt.Errorf("mihomo profile composition digests require mihomo.profile_mode: \"imported\"")
+		}
 	case MihomoProfileModeImported:
 		if strings.TrimSpace(cfg.Mihomo.Profile) == "" {
 			return fmt.Errorf("mihomo.profile is required when mihomo.profile_mode is imported")
+		}
+		if cfg.Mihomo.ProfileSourceDigest != "" && !validSHA256Digest(cfg.Mihomo.ProfileSourceDigest) {
+			return fmt.Errorf("mihomo.profile_source_digest must be a lowercase SHA-256 digest")
+		}
+		if cfg.Mihomo.ProfileOverlayDigest != "" && !validSHA256Digest(cfg.Mihomo.ProfileOverlayDigest) {
+			return fmt.Errorf("mihomo.profile_overlay_digest must be a lowercase SHA-256 digest")
 		}
 		if cfg.UpstreamProxy.Enabled {
 			return fmt.Errorf("upstream_proxy.enabled cannot be true when mihomo.profile_mode is imported")
@@ -366,6 +375,18 @@ func validateMihomoProfile(cfg Config) error {
 		return fmt.Errorf("mihomo.profile_mode must be managed or imported")
 	}
 	return nil
+}
+
+func validSHA256Digest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func validateTransparent(cfg TransparentConfig) error {

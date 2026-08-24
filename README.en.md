@@ -57,7 +57,9 @@ gateway or DNS changes.
 | **Isolated downstream LAN** | A separate AP, SSID, or VLAN | Existing-LAN DHCP stays unchanged; the Mac provides DHCP/DNS and the gateway for the isolated downstream network |
 
 - Import an existing mihomo subscription. OpenSurge takes ownership only of
-  gateway-critical fields without replacing its nodes or rules.
+  gateway-critical fields, and a separate global overlay draft keeps custom
+  proxies, providers, group extensions, and rules across subscription refreshes
+  without changing the running gateway automatically.
 - Use the Web GUI and menu bar app to see which devices are active, how much
   traffic they are moving, and which egress chain they use.
 - Temporarily keep the Mac running with its lid closed from either UI. The

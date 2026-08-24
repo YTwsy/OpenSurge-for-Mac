@@ -44,6 +44,8 @@ mihomo:
   config: %s
   profile_mode: %s
   profile: %s
+  profile_source_digest: %s
+  profile_overlay_digest: %s
   store_fake_ip: %t
   mixed_port: %d
   redir_port: %d
@@ -103,7 +105,7 @@ runtime:
 		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain), q(cfg.DHCP.BypassGateway), q(strings.Join(cfg.DHCP.BypassDNS, ",")),
 		q(cfg.DevicePolicy.File), q(strings.Join(cfg.DevicePolicy.ProtectedIPv4, ",")),
 		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream), cfg.DNS.IPv6,
-		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), cfg.Mihomo.StoreFakeIP, cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
+		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), q(cfg.Mihomo.ProfileSourceDigest), q(cfg.Mihomo.ProfileOverlayDigest), cfg.Mihomo.StoreFakeIP, cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
 		cfg.Tailscale.Enabled, q(cfg.Tailscale.DisplayName), q(cfg.Tailscale.Hostname), q(cfg.Tailscale.ControlURL), q(cfg.Tailscale.AuthKeyFile), q(cfg.Tailscale.StateDir), cfg.Tailscale.AcceptRoutes,
 		q(strings.Join(cfg.Tailscale.MagicDNSSuffixes, ",")), q(strings.Join(cfg.Tailscale.PeerCIDRs, ",")), q(strings.Join(cfg.Tailscale.SubnetRoutes, ",")), cfg.Tailscale.AllowMac, cfg.Tailscale.AllowAllDevices,
 		q(strings.Join(cfg.Tailscale.AllowedDevices, ",")), q(cfg.Tailscale.ExitNode), cfg.Tailscale.ExitNodeAllowLANAccess,

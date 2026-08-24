@@ -36,6 +36,15 @@ provider mappings therefore have the same semantics. The imported source
 snapshot remains byte-for-byte unchanged; only the generated runtime config may
 normalize YAML presentation.
 
+The user-editable global overlay is stored separately from imported snapshots
+and uses explicit `add`, `replace`, group `patch`, rule prepend/tail, and DNS
+merge/append operations. Implicit name replacement, dangling overlay-created
+references, a non-terminal extra `MATCH`, reserved OpenSurge namespaces, and
+gateway-owned fields are rejected. Saving or refreshing produces a draft and a
+new effective preview; only source apply runs the authoritative mihomo
+validation and changes desired/running configuration. The desired config keeps
+the raw source and overlay digests as composition metadata.
+
 OpenSurge continues to render and own gateway-critical fields, including:
 
 - `mixed-port`

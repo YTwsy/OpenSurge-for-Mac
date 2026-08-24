@@ -313,6 +313,10 @@ type Source struct {
 	Applied             bool            `json:"applied"`
 	Versions            []SourceVersion `json:"versions"`
 	Diff                SourceDiff      `json:"diff"`
+	EffectiveDigest     string          `json:"effective_digest,omitempty"`
+	EffectiveInventory  Inventory       `json:"effective_inventory"`
+	OverlayCompatible   bool            `json:"overlay_compatible"`
+	OverlayValidation   string          `json:"overlay_validation,omitempty"`
 }
 
 type SourceSnapshotFile struct {
@@ -362,6 +366,34 @@ type SourceImportRequest struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
 	URL  string `json:"url"`
+}
+
+type ProfileOverlayResponse struct {
+	SchemaVersion int                           `json:"schema_version"`
+	Revision      string                        `json:"revision"`
+	YAML          string                        `json:"yaml"`
+	Document      mihomo.ProfileOverlayDocument `json:"document"`
+	Desired       bool                          `json:"desired"`
+	Applied       bool                          `json:"applied"`
+	Validation    string                        `json:"validation"`
+}
+
+type ProfileOverlaySaveRequest struct {
+	YAML     *string                        `json:"yaml,omitempty"`
+	Document *mihomo.ProfileOverlayDocument `json:"document,omitempty"`
+}
+
+type ProfileOverlayPreview struct {
+	SchemaVersion        int        `json:"schema_version"`
+	SourceID             string     `json:"source_id"`
+	SourceYAML           string     `json:"source_yaml"`
+	OverlayYAML          string     `json:"overlay_yaml"`
+	EffectiveProfileYAML string     `json:"effective_profile_yaml"`
+	FinalMihomoYAML      string     `json:"final_mihomo_yaml"`
+	OriginalInventory    Inventory  `json:"original_inventory"`
+	EffectiveInventory   Inventory  `json:"effective_inventory"`
+	Diff                 SourceDiff `json:"diff"`
+	Validation           string     `json:"validation"`
 }
 
 type SelectionRequest struct {

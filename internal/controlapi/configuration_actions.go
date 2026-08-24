@@ -52,11 +52,11 @@ func defaultProfileApplyDeps() profileApplyDeps {
 	}
 }
 
-func (DirectRunner) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte) (ProfileApplyResult, error) {
-	return applyProfile(ctx, configPath, revision, payload, defaultProfileApplyDeps())
+func (DirectRunner) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte, sourceDigest, overlayDigest string) (ProfileApplyResult, error) {
+	return applyProfile(ctx, configPath, revision, payload, sourceDigest, overlayDigest, defaultProfileApplyDeps())
 }
 
-func applyProfile(ctx context.Context, configPath, revision string, payload []byte, deps profileApplyDeps) (ProfileApplyResult, error) {
+func applyProfile(ctx context.Context, configPath, revision string, payload []byte, sourceDigest, overlayDigest string, deps profileApplyDeps) (ProfileApplyResult, error) {
 	if deps.geteuid() != 0 {
 		return ProfileApplyResult{}, fmt.Errorf("privileged helper is required")
 	}
@@ -65,6 +65,12 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 	}
 	if revision == "" || revision != fileDigest(configPath) {
 		return ProfileApplyResult{}, fmt.Errorf("config revision conflict")
+	}
+	if !validProfileCompositionDigest(sourceDigest) {
+		return ProfileApplyResult{}, fmt.Errorf("source digest must be a lowercase SHA-256 digest")
+	}
+	if overlayDigest != "" && !validProfileCompositionDigest(overlayDigest) {
+		return ProfileApplyResult{}, fmt.Errorf("overlay digest must be a lowercase SHA-256 digest")
 	}
 	if _, err := inspectSource(payload, "mihomo_profile"); err != nil {
 		return ProfileApplyResult{}, err
@@ -99,6 +105,8 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 	}
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
 	cfg.Mihomo.Profile = profilePath
+	cfg.Mihomo.ProfileSourceDigest = sourceDigest
+	cfg.Mihomo.ProfileOverlayDigest = overlayDigest
 	if err := deps.validate(cfg); err != nil {
 		cleanupProfile()
 		return ProfileApplyResult{}, err
@@ -415,6 +423,14 @@ func forgetTailscaleIdentity(configPath, revision string, deps forgetTailscaleDe
 		return "", err
 	}
 	return fileDigest(configPath), nil
+}
+
+func validProfileCompositionDigest(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil && strings.ToLower(value) == value
 }
 
 func profileApplyRollbackError(reloadErr, rollbackErr, restartErr error) error {

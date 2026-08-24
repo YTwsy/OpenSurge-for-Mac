@@ -260,12 +260,15 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/sources", s.auth(http.HandlerFunc(s.handleSources)))
 	mux.Handle("POST /api/v1/sources/{id}/refresh", s.auth(http.HandlerFunc(s.handleSourceRefresh)))
 	mux.Handle("POST /api/v1/sources/{id}/apply", s.auth(http.HandlerFunc(s.handleSourceApply)))
+	mux.Handle("GET /api/v1/sources/{id}/preview", s.auth(http.HandlerFunc(s.handleSourcePreview)))
 	mux.Handle("GET /api/v1/sources/{id}/snapshot-location", s.auth(http.HandlerFunc(s.handleSourceSnapshotLocation)))
 	mux.Handle("POST /api/v1/sources/{id}/reveal", s.auth(http.HandlerFunc(s.handleSourceReveal)))
 	mux.Handle("POST /api/v1/sources/{id}/export", s.auth(http.HandlerFunc(s.handleSourceExport)))
 	mux.Handle("GET /api/v1/tailscale", s.auth(http.HandlerFunc(s.handleTailscale)))
 	mux.Handle("PUT /api/v1/tailscale", s.auth(http.HandlerFunc(s.handleTailscale)))
 	mux.Handle("POST /api/v1/tailscale/forget-identity", s.auth(http.HandlerFunc(s.handleTailscaleForgetIdentity)))
+	mux.Handle("GET /api/v1/profile-overlay", s.auth(http.HandlerFunc(s.handleProfileOverlay)))
+	mux.Handle("PUT /api/v1/profile-overlay", s.auth(http.HandlerFunc(s.handleProfileOverlay)))
 	mux.Handle("GET /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
@@ -1541,10 +1544,25 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "revision_conflict", "If-Match must contain the current config revision")
 		return
 	}
-	payload, err := os.ReadFile(source.SnapshotPath)
+	sourcePayload, err := os.ReadFile(source.SnapshotPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "source_snapshot_unavailable", err.Error())
 		return
+	}
+	_, overlay, overlayRevision, err := s.loadProfileOverlay()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "profile_overlay_failed", err.Error())
+		return
+	}
+	composition, err := mihomo.ComposeProfileOverlay(sourcePayload, overlay)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "profile_overlay_incompatible", err.Error())
+		return
+	}
+	payload := []byte(composition.ProfileYAML)
+	effectiveOverlayRevision := ""
+	if overlay.Enabled {
+		effectiveOverlayRevision = overlayRevision
 	}
 	// The privileged configuration runner performs the authoritative mihomo
 	// engine validation after writing the candidate beside the persistent
@@ -1561,7 +1579,7 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		}
 		operation = &op
 	}
-	result, err := s.configRunner.ApplyProfile(r.Context(), s.configPath, match, payload)
+	result, err := s.configRunner.ApplyProfile(r.Context(), s.configPath, match, payload, source.Digest, effectiveOverlayRevision)
 	if err == nil && gatewayActive && !result.Reloaded {
 		err = fmt.Errorf("running gateway did not reload the selected profile")
 	}
@@ -2078,6 +2096,7 @@ func publicSources(sources []Source, storeDir string) []Source {
 			result[i].SnapshotDisplayPath = displayLocalPath(path, storeDir)
 		}
 		result[i].Inventory = normalizeInventory(result[i].Inventory)
+		result[i].EffectiveInventory = normalizeInventory(result[i].EffectiveInventory)
 		if result[i].Versions == nil {
 			result[i].Versions = []SourceVersion{}
 		}

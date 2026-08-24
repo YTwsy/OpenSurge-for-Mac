@@ -381,6 +381,8 @@ func TestValidateAcceptsImportedMihomoProfile(t *testing.T) {
 	cfg := Default()
 	cfg.Mihomo.ProfileMode = MihomoProfileModeImported
 	cfg.Mihomo.Profile = "./profiles/home.yaml"
+	cfg.Mihomo.ProfileSourceDigest = strings.Repeat("a", 64)
+	cfg.Mihomo.ProfileOverlayDigest = strings.Repeat("b", 64)
 
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("Validate() error = %v", err)
@@ -408,11 +410,36 @@ func TestValidateRejectsInvalidMihomoProfileConfig(t *testing.T) {
 			want: "mihomo.profile requires",
 		},
 		{
+			name: "managed composition digest",
+			edit: func(cfg *Config) {
+				cfg.Mihomo.ProfileSourceDigest = strings.Repeat("a", 64)
+			},
+			want: "composition digests require",
+		},
+		{
 			name: "imported missing profile path",
 			edit: func(cfg *Config) {
 				cfg.Mihomo.ProfileMode = MihomoProfileModeImported
 			},
 			want: "mihomo.profile is required",
+		},
+		{
+			name: "uppercase source digest",
+			edit: func(cfg *Config) {
+				cfg.Mihomo.ProfileMode = MihomoProfileModeImported
+				cfg.Mihomo.Profile = "./profiles/home.yaml"
+				cfg.Mihomo.ProfileSourceDigest = strings.Repeat("A", 64)
+			},
+			want: "profile_source_digest must be a lowercase SHA-256 digest",
+		},
+		{
+			name: "short overlay digest",
+			edit: func(cfg *Config) {
+				cfg.Mihomo.ProfileMode = MihomoProfileModeImported
+				cfg.Mihomo.Profile = "./profiles/home.yaml"
+				cfg.Mihomo.ProfileOverlayDigest = "abcd"
+			},
+			want: "profile_overlay_digest must be a lowercase SHA-256 digest",
 		},
 		{
 			name: "imported with upstream proxy smoke",

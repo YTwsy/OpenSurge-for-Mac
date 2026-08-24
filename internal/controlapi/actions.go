@@ -32,7 +32,7 @@ type NetworkRunner interface {
 }
 
 type ConfigurationRunner interface {
-	ApplyProfile(context.Context, string, string, []byte) (ProfileApplyResult, error)
+	ApplyProfile(context.Context, string, string, []byte, string, string) (ProfileApplyResult, error)
 	ApplyDevicePolicy(context.Context, string, string, []byte) (string, error)
 	ApplyControlConfig(context.Context, string, string, []byte) (string, error)
 	ApplyTailscale(context.Context, string, string, []byte) (ProfileApplyResult, error)
@@ -111,6 +111,8 @@ type HelperRequest struct {
 	TimeoutMillis  int                        `json:"timeout_millis,omitempty"`
 	Revision       string                     `json:"revision,omitempty"`
 	Payload        []byte                     `json:"payload,omitempty"`
+	SourceDigest   string                     `json:"source_digest,omitempty"`
+	OverlayDigest  string                     `json:"overlay_digest,omitempty"`
 }
 
 type HelperResponse struct {
@@ -141,8 +143,8 @@ func (c HelperClient) ProbeDHCP(ctx context.Context, configPath, interfaceName s
 	return response.DHCPServers, err
 }
 
-func (c HelperClient) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte) (ProfileApplyResult, error) {
-	response, err := c.call(ctx, HelperRequest{Action: "config-apply-profile", ConfigPath: configPath, Revision: revision, Payload: payload})
+func (c HelperClient) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte, sourceDigest, overlayDigest string) (ProfileApplyResult, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-apply-profile", ConfigPath: configPath, Revision: revision, Payload: payload, SourceDigest: sourceDigest, OverlayDigest: overlayDigest})
 	return ProfileApplyResult{Revision: response.Revision, Reloaded: response.Reloaded}, err
 }
 
@@ -354,7 +356,7 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 				response.DHCPServers, err = runner.ProbeDHCP(ctx, configPath, request.Interface, timeout)
 			}
 		case "config-apply-profile":
-			result, applyErr := runner.ApplyProfile(ctx, configPath, request.Revision, request.Payload)
+			result, applyErr := runner.ApplyProfile(ctx, configPath, request.Revision, request.Payload, request.SourceDigest, request.OverlayDigest)
 			response.Revision, response.Reloaded, err = result.Revision, result.Reloaded, applyErr
 		case "config-apply-device-policy":
 			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)

@@ -29,6 +29,30 @@ text. Both block and flow collections are supported, including compact
 OpenSurge does not rewrite the imported source snapshot; only the generated
 runtime mihomo config may normalize collection style or indentation.
 
+## Global profile overlay draft
+
+The Web GUI's **Global Extension** is an independent, versioned draft in
+`global-profile-overlay.yaml`. It is reapplied to each raw imported source for
+compatibility checks and previews, but never mutates the managed source
+snapshot. Its schema is intentionally operation-based:
+
+- prepend rules, or append rules immediately before the imported terminal
+  `MATCH`; an overlay may not add its own `MATCH`;
+- add or explicitly replace named proxies, proxy providers, proxy groups, and
+  rule providers;
+- patch an existing proxy group by appending proxies/groups or proxy providers;
+- merge or append only retained DNS resolver/filter fields.
+
+`add` fails on a name collision, `replace` fails when its target is absent, and
+group/rule references added by the overlay must resolve after composition.
+OpenSurge-owned namespaces and gateway-facing fields are rejected. Saving this
+document only creates a draft: source refresh recomputes compatibility and the
+effective preview, while the running gateway changes only after the user
+applies a source and the complete generated mihomo config passes engine
+validation. The desired config records both the raw source digest and the
+enabled overlay digest so the GUI can distinguish source drift from overlay
+drift; legacy imported configs without this metadata remain readable.
+
 The profile's top-level `dns` section is merged at field level. OpenSurge
 rejects the imported values for `enable`, `listen`, `ipv6`, `enhanced-mode`,
 and `fake-ip-range`, but preserves the remaining resolver and filtering fields.
