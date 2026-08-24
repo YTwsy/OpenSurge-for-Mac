@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/device"
 )
 
 func TestRenderConfig(t *testing.T) {
@@ -96,6 +97,102 @@ func TestRenderConfigWithUpstreamProxy(t *testing.T) {
 	}
 	if strings.Contains(rendered, "18080proxy-groups") {
 		t.Fatalf("rendered config glues port and proxy group:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigWithManagedTailscaleTargetsAndExitNode(t *testing.T) {
+	dir := t.TempDir()
+	authKeyPath := filepath.Join(dir, "tailscale-auth-key")
+	if err := os.WriteFile(authKeyPath, []byte("tskey-auth-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := device.CompilePolicyBundle(device.PolicySet{
+		Devices:  []device.ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home", EgressMode: device.EgressModeDedicated}},
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{config.TailscaleProxyName}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.DevicePolicy.Bundle = &bundle
+	cfg.Tailscale = config.TailscaleConfig{
+		Enabled:                true,
+		DisplayName:            "Home Tailnet",
+		Hostname:               "opensurge-home",
+		ControlURL:             "https://controlplane.tailscale.com",
+		AuthKeyFile:            authKeyPath,
+		StateDir:               filepath.Join(dir, "tailscale-state"),
+		AcceptRoutes:           true,
+		MagicDNSSuffixes:       []string{"home.example.ts.net"},
+		PeerCIDRs:              []string{"100.82.10.7/32"},
+		SubnetRoutes:           []string{"10.20.0.0/16"},
+		AllowMac:               true,
+		AllowedDevices:         []string{"phone"},
+		ExitNode:               "100.90.3.4",
+		ExitNodeAllowLANAccess: true,
+	}
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`name: "open-surge/tailscale"`,
+		"type: tailscale",
+		`auth-key: "tskey-auth-secret"`,
+		`state-dir: "` + cfg.Tailscale.StateDir + `"`,
+		`exit-node: "100.90.3.4"`,
+		"exit-node-allow-lan-access: true",
+		"route-address:\n    - 100.82.10.7/32\n    - 10.20.0.0/16",
+		"AND,((IN-TYPE,TUN),(SRC-IP-CIDR,198.18.0.1/32),(DOMAIN-SUFFIX,home.example.ts.net)),open-surge/tailscale",
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,10.20.0.0/16)),open-surge/tailscale",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered Tailscale config missing %q:\n%s", want, rendered)
+		}
+	}
+	assertOrdered(t, rendered,
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,10.20.0.0/16)),open-surge/tailscale",
+		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,10.0.0.0/8)),DIRECT",
+	)
+}
+
+func TestRenderConfigExplainsTailscaleExitNodeStillSelected(t *testing.T) {
+	bundle, err := device.CompilePolicyBundle(device.PolicySet{
+		Devices:  []device.ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home", EgressMode: device.EgressModeDedicated}},
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{config.TailscaleProxyName}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.DevicePolicy.Bundle = &bundle
+
+	_, err = RenderConfig(cfg)
+	if err == nil || !strings.Contains(err.Error(), "device route still selects the Tailscale Exit Node") {
+		t.Fatalf("RenderConfig() error = %v", err)
+	}
+}
+
+func TestRenderConfigUsesPersistedTailscaleIdentityWithoutAuthKey(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := filepath.Join(dir, "tailscale-state")
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "tailscaled.state"), []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Tailscale.Enabled = true
+	cfg.Tailscale.AuthKeyFile = filepath.Join(dir, "missing-auth-key")
+	cfg.Tailscale.StateDir = stateDir
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(rendered, "auth-key:") {
+		t.Fatalf("persisted identity should not require an auth key:\n%s", rendered)
 	}
 }
 
@@ -194,6 +291,51 @@ tun:
 			t.Fatalf("rendered config kept unwanted profile/default value %q:\n%s", notWant, rendered)
 		}
 	}
+}
+
+func TestRenderConfigAddsManagedTailscaleToImportedProfile(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := filepath.Join(dir, "profile.yaml")
+	authKeyPath := filepath.Join(dir, "tailscale-auth-key")
+	if err := os.WriteFile(profilePath, []byte("proxies: []\nrules:\n  - MATCH,DIRECT\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(authKeyPath, []byte("tskey-auth-imported\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+	cfg.Mihomo.Profile = profilePath
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Tailscale = config.TailscaleConfig{
+		Enabled:          true,
+		DisplayName:      "Home Tailnet",
+		Hostname:         "opensurge-home",
+		ControlURL:       "https://controlplane.tailscale.com",
+		AuthKeyFile:      authKeyPath,
+		StateDir:         filepath.Join(dir, "tailscale-state"),
+		MagicDNSSuffixes: []string{"home.example.ts.net"},
+		AllowMac:         true,
+	}
+
+	rendered, err := RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`name: "open-surge/tailscale"`,
+		"type: tailscale",
+		`auth-key: "tskey-auth-imported"`,
+		"AND,((IN-TYPE,TUN),(SRC-IP-CIDR,198.18.0.1/32),(DOMAIN-SUFFIX,home.example.ts.net)),open-surge/tailscale",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("imported Tailscale config missing %q:\n%s", want, rendered)
+		}
+	}
+	assertOrdered(t, rendered,
+		"AND,((IN-TYPE,TUN),(SRC-IP-CIDR,198.18.0.1/32),(DOMAIN-SUFFIX,home.example.ts.net)),open-surge/tailscale",
+		"MATCH,DIRECT",
+	)
 }
 
 func TestRenderConfigRejectsMalformedImportedDNS(t *testing.T) {

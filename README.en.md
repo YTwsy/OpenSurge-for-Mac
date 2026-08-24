@@ -96,6 +96,9 @@ common local-network, TUN, and device configuration questions, see the
 - Start and stop DHCP/DNS, mihomo, pf NAT, and IPv4 forwarding with rollback.
 - Provide explicit proxying through mihomo `mixed-port`.
 - Provide transparent proxying through mihomo TUN on macOS.
+- Use Tailscale or Headscale as an on-demand mihomo outbound for explicit
+  MagicDNS suffixes, Tailnet peers, accepted subnet routes, or an optional
+  per-device Exit Node.
 - In experimental downstream IPv6 mode, isolated-LAN and whole-LAN DHCP
   takeover use dnsmasq RA/SLAAC/RDNSS for automatic onboarding, while
   bypass-router mode uses manual ULAs. IPv6 traffic does not enter a macOS
@@ -153,6 +156,27 @@ an inspectable community Claude Code example, but does not apply that example
 to any device by default. Operators supply all other policy content; the empty
 starter file remains valid. See [per-device policy overlays](docs/device-policy.md)
 for the JSON model, precedence, CLI commands, and validation boundary.
+
+### Tailscale outbound
+
+The **Proxy and rule sources** page can manage one OpenSurge-owned Tailscale
+outbound. The Auth Key is write-only and stored in a separate `0600` file;
+the persistent `state-dir` keeps the same local Tailnet identity across reloads
+and temporary disable/enable cycles. Forgetting that local identity is a
+separate action available only while Tailscale and the gateway are stopped,
+and does not remove the device from the Tailscale or Headscale admin console.
+
+Tailnet-only access is destination-scoped and fails closed. It never becomes a
+general device egress. Only an outbound with an explicit Exit Node appears in
+per-device outlet selectors. Remote subnet routes must be entered explicitly
+and are rejected when they overlap the OpenSurge LAN. Mihomo starts its
+Tailscale node lazily on the outbound's first request. OpenSurge sends a
+best-effort warm-up after gateway start, reload, and mihomo recovery, but the
+first application request may still need a retry. Tailnet-only status remains
+on-demand instead of being tested against a public `generate_204` URL.
+
+This integration is outbound-only: OpenSurge does not advertise its local LAN,
+act as a subnet router, or expose inbound services through the managed node.
 
 ## Web GUI and menu bar app
 

@@ -3,6 +3,7 @@ import type { ProxyHealthEntry } from './types'
 export function healthLabel(health: ProxyHealthEntry | undefined, testing = false) {
   if (testing) return '检测中…'
   if (!health) return '未检测'
+  if (health.status === 'available_on_demand') return '按需连接'
   if (health.status === 'reachable') return health.delay_ms ? `${health.delay_ms} ms` : '可达'
   if (health.status === 'timeout') return '超时'
   if (health.status === 'unreachable') return '不可达'
@@ -14,6 +15,7 @@ export function healthLabel(health: ProxyHealthEntry | undefined, testing = fals
 export function healthTone(health: ProxyHealthEntry | undefined, testing = false) {
   if (testing) return 'testing'
   if (!health) return 'untested'
+  if (health.status === 'available_on_demand') return 'on-demand'
   if (health.status !== 'reachable') return health.status
   const delay = health.delay_ms ?? 0
   if (!delay || delay <= 250) return 'excellent'

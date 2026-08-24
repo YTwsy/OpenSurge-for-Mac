@@ -12,7 +12,7 @@ vi.mock('../api', () => {
     RequestError,
     waitForOperation: vi.fn(async () => ({ id: 'reload-1', kind: 'reload', state: 'succeeded' })),
     api: {
-      devices: vi.fn(), config: vi.fn(), sources: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
+      devices: vi.fn(), config: vi.fn(), sources: vi.fn(), tailscale: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
       selectPolicy: vi.fn(), selectDevicePolicy: vi.fn(), gateway: vi.fn(),
       localRouting: vi.fn(), setLocalRouting: vi.fn(),
       refreshLocalConnections: vi.fn(), refreshDeviceConnections: vi.fn(),
@@ -75,6 +75,7 @@ describe('DevicesPage', () => {
       device_policy: { enabled: true },
     } as never)
     vi.mocked(api.sources).mockResolvedValue({ revision: 'sources-r1', sources: [] })
+    vi.mocked(api.tailscale).mockResolvedValue({ selectable_exit: false } as never)
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(basePolicy))
     vi.mocked(api.devices).mockResolvedValue(devicesResponse())
     vi.mocked(api.selectPolicy).mockResolvedValue({} as never)
@@ -307,6 +308,24 @@ describe('DevicesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
     expect(vi.mocked(api.saveDevicePolicy).mock.calls[0][0].devices[0].egress_mode).toBe('dedicated')
+  })
+
+  it('offers a configured Tailscale Exit Node as a friendly device outlet candidate', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.tailscale).mockResolvedValue({ selectable_exit: true } as never)
+    renderPage()
+
+    await userEvent.click(await screen.findByRole('tab', { name: /设备分流/ }))
+    const input = screen.getByLabelText('独立设备出口候选')
+    await userEvent.type(input, 'open-surge/tailscale')
+    await userEvent.click(screen.getByRole('button', { name: '添加' }))
+
+    expect(screen.getByText('Tailscale Exit Node')).toBeTruthy()
   })
 
   it('keeps legacy routing readable and requires an explicit migration choice', async () => {

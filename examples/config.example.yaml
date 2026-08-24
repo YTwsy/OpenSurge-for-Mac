@@ -84,5 +84,27 @@ upstream_proxy:
   password: ""
   match_domain: "example.com"
 
+# Optional first-class mihomo Tailscale outbound. The Web GUI owns the actual
+# Auth Key and state paths; the key itself is never written into this file.
+tailscale:
+  enabled: false
+  display_name: "Tailnet"
+  hostname: "opensurge-mac"
+  control_url: "https://controlplane.tailscale.com"
+  auth_key_file: "./data/tailscale-auth-key"
+  state_dir: "./data/tailscale"
+  accept_routes: false
+  # Explicit targets only. OpenSurge does not claim all CGNAT or RFC1918 space.
+  magic_dns_suffixes: ""
+  peer_cidrs: ""
+  subnet_routes: ""
+  allow_mac: true
+  allow_all_devices: false
+  allowed_devices: ""
+  # Optional peer IP or name. Only a configured Exit Node becomes a selectable
+  # public device outlet; Tailnet-only access stays destination-scoped.
+  exit_node: ""
+  exit_node_allow_lan_access: false
+
 runtime:
   dir: "./runtime"

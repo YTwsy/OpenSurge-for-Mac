@@ -75,6 +75,12 @@ func resolveRelativePaths(configPath string, cfg *Config) {
 	if cfg.DevicePolicy.File != "" && !filepath.IsAbs(cfg.DevicePolicy.File) {
 		cfg.DevicePolicy.File = filepath.Join(filepath.Dir(configPath), cfg.DevicePolicy.File)
 	}
+	if cfg.Tailscale.AuthKeyFile != "" && !filepath.IsAbs(cfg.Tailscale.AuthKeyFile) {
+		cfg.Tailscale.AuthKeyFile = filepath.Join(filepath.Dir(configPath), cfg.Tailscale.AuthKeyFile)
+	}
+	if cfg.Tailscale.StateDir != "" && !filepath.IsAbs(cfg.Tailscale.StateDir) {
+		cfg.Tailscale.StateDir = filepath.Join(filepath.Dir(configPath), cfg.Tailscale.StateDir)
+	}
 }
 
 func stripComment(line string) string {
@@ -195,6 +201,56 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Mihomo.APIAddr = value
 	case "mihomo.secret":
 		cfg.Mihomo.Secret = value
+	case "tailscale.enabled":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("tailscale.enabled must be a boolean")
+		}
+		cfg.Tailscale.Enabled = enabled
+	case "tailscale.display_name":
+		cfg.Tailscale.DisplayName = value
+	case "tailscale.hostname":
+		cfg.Tailscale.Hostname = strings.ToLower(value)
+	case "tailscale.control_url":
+		cfg.Tailscale.ControlURL = value
+	case "tailscale.auth_key_file":
+		cfg.Tailscale.AuthKeyFile = value
+	case "tailscale.state_dir":
+		cfg.Tailscale.StateDir = value
+	case "tailscale.accept_routes":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("tailscale.accept_routes must be a boolean")
+		}
+		cfg.Tailscale.AcceptRoutes = enabled
+	case "tailscale.magic_dns_suffixes":
+		cfg.Tailscale.MagicDNSSuffixes = splitCommaSeparated(strings.ToLower(value))
+	case "tailscale.peer_cidrs":
+		cfg.Tailscale.PeerCIDRs = splitCommaSeparated(value)
+	case "tailscale.subnet_routes":
+		cfg.Tailscale.SubnetRoutes = splitCommaSeparated(value)
+	case "tailscale.allow_mac":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("tailscale.allow_mac must be a boolean")
+		}
+		cfg.Tailscale.AllowMac = enabled
+	case "tailscale.allow_all_devices":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("tailscale.allow_all_devices must be a boolean")
+		}
+		cfg.Tailscale.AllowAllDevices = enabled
+	case "tailscale.allowed_devices":
+		cfg.Tailscale.AllowedDevices = splitCommaSeparated(value)
+	case "tailscale.exit_node":
+		cfg.Tailscale.ExitNode = value
+	case "tailscale.exit_node_allow_lan_access":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("tailscale.exit_node_allow_lan_access must be a boolean")
+		}
+		cfg.Tailscale.ExitNodeAllowLANAccess = enabled
 	case "pf.anchor_name":
 		cfg.PF.AnchorName = value
 	case "pf.redirect_tcp_to":

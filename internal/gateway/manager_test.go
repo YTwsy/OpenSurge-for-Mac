@@ -14,8 +14,27 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
+	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
+
+func TestWarmManagedTailscaleOnlyWhenEnabled(t *testing.T) {
+	calls := 0
+	deps := gatewayDeps{warmTailscale: func(context.Context, config.Config) mihomo.ProxyDelayResult {
+		calls++
+		return mihomo.ProxyDelayResult{Status: "reachable", DelayMS: 12}
+	}}
+	manager := Manager{cfg: config.Default()}
+	manager.warmManagedTailscale(context.Background(), deps)
+	if calls != 0 {
+		t.Fatalf("disabled Tailscale warm-up calls = %d", calls)
+	}
+	manager.cfg.Tailscale.Enabled = true
+	manager.warmManagedTailscale(context.Background(), deps)
+	if calls != 1 {
+		t.Fatalf("enabled Tailscale warm-up calls = %d", calls)
+	}
+}
 
 func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 	cfg := config.Default()

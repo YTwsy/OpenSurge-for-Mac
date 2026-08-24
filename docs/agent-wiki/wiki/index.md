@@ -22,6 +22,8 @@
   overlay 实现规则 / 全局 / 直连，同时保持下游设备规则不变。
 - [Mac 本机系统代理协同](concepts/local-system-proxy-coordination.md)：默认关闭的
   TUN HTTP/HTTPS 兼容层、fail-closed 冲突检查和恢复契约。
+- [Tailscale 出站](concepts/tailscale-outbound.md)：托管节点身份、目标范围、
+  subnet route、Exit Node 与 outbound-only 边界。
 - [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、SwiftUI 菜单栏
   launcher、本地 API 与恢复状态的职责边界。
 - [合盖运行临时接管](../sources/decisions/lid-closed-sleep-prevention.md)：为什么

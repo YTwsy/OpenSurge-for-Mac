@@ -35,6 +35,8 @@ type ConfigurationRunner interface {
 	ApplyProfile(context.Context, string, string, []byte) (ProfileApplyResult, error)
 	ApplyDevicePolicy(context.Context, string, string, []byte) (string, error)
 	ApplyControlConfig(context.Context, string, string, []byte) (string, error)
+	ApplyTailscale(context.Context, string, string, []byte) (ProfileApplyResult, error)
+	ForgetTailscaleIdentity(context.Context, string, string) (string, error)
 }
 
 type ProfileApplyResult struct {
@@ -154,6 +156,16 @@ func (c HelperClient) ApplyControlConfig(ctx context.Context, configPath, revisi
 	return response.Revision, err
 }
 
+func (c HelperClient) ApplyTailscale(ctx context.Context, configPath, revision string, payload []byte) (ProfileApplyResult, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-apply-tailscale", ConfigPath: configPath, Revision: revision, Payload: payload})
+	return ProfileApplyResult{Revision: response.Revision, Reloaded: response.Reloaded}, err
+}
+
+func (c HelperClient) ForgetTailscaleIdentity(ctx context.Context, configPath, revision string) (string, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-forget-tailscale-identity", ConfigPath: configPath, Revision: revision})
+	return response.Revision, err
+}
+
 func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperResponse, error) {
 	dialer := net.Dialer{Timeout: 2 * time.Second}
 	conn, err := dialer.DialContext(ctx, "unix", c.SocketPath)
@@ -263,10 +275,10 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 	if err == nil {
 		err = requireTrustedRuntime(cfg, allowedRoot)
 	}
-	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile") {
+	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile" || request.Action == "config-apply-tailscale") {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
-	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control") {
+	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control" || request.Action == "config-apply-tailscale" || request.Action == "config-forget-tailscale-identity") {
 		err = requireTrustedDirectory(filepath.Join(filepath.Dir(configPath), "data"), allowedRoot)
 	}
 	if err == nil && request.Action == "config-apply-device-policy" {
@@ -348,6 +360,11 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)
 		case "config-apply-control":
 			response.Revision, err = runner.ApplyControlConfig(ctx, configPath, request.Revision, request.Payload)
+		case "config-apply-tailscale":
+			result, applyErr := runner.ApplyTailscale(ctx, configPath, request.Revision, request.Payload)
+			response.Revision, response.Reloaded, err = result.Revision, result.Reloaded, applyErr
+		case "config-forget-tailscale-identity":
+			response.Revision, err = runner.ForgetTailscaleIdentity(ctx, configPath, request.Revision)
 		}
 	}
 	response.OK = err == nil
@@ -371,7 +388,7 @@ func loadHelperConfig(action, configPath string) (config.Config, error) {
 
 func helperActionAllowed(action string) bool {
 	switch action {
-	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "sleep-prevention-hold":
+	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "config-apply-tailscale", "config-forget-tailscale-identity", "sleep-prevention-hold":
 		return true
 	default:
 		return false
@@ -449,6 +466,30 @@ func requireTrustedStartInputs(cfg config.Config, allowedRoot string) error {
 	if cfg.DevicePolicy.File != "" {
 		if err := requireTrustedFile(cfg.DevicePolicy.File, allowedRoot, false); err != nil {
 			return fmt.Errorf("device_policy.file: %w", err)
+		}
+	}
+	if cfg.Tailscale.Enabled {
+		if _, err := trustedPathWithinRoot(cfg.Tailscale.StateDir, allowedRoot); err != nil {
+			return fmt.Errorf("tailscale.state_dir: %w", err)
+		}
+		if info, err := os.Stat(cfg.Tailscale.StateDir); err == nil {
+			if !info.IsDir() {
+				return fmt.Errorf("tailscale.state_dir: must be a directory")
+			}
+			if err := requireRootOwnedMode(info); err != nil {
+				return fmt.Errorf("tailscale.state_dir: %w", err)
+			}
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("tailscale.state_dir: %w", err)
+		} else if err := requireTrustedDirectory(filepath.Dir(cfg.Tailscale.StateDir), allowedRoot); err != nil {
+			return fmt.Errorf("tailscale.state_dir parent: %w", err)
+		}
+		if _, err := os.Stat(cfg.Tailscale.AuthKeyFile); err == nil {
+			if err := requireTrustedFile(cfg.Tailscale.AuthKeyFile, allowedRoot, false); err != nil {
+				return fmt.Errorf("tailscale.auth_key_file: %w", err)
+			}
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("tailscale.auth_key_file: %w", err)
 		}
 	}
 	return nil

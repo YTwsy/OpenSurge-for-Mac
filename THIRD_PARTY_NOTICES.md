@@ -7,8 +7,8 @@ places this notice and the referenced license texts under
 
 ## mihomo
 
-- Upstream base version: `1.19.27`
-- Distributed OpenSurge build version: `1.19.27-opensurge.1`
+- Upstream base version: `1.19.30`
+- Distributed OpenSurge build version: `1.19.30-opensurge.1`
 - License: `GPL-3.0-only`
 - Distributed form: architecture-specific binaries compiled from the pinned
   upstream source with the OpenSurge packet-listener patch stored under

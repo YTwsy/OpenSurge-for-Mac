@@ -48,11 +48,13 @@ export type LocalRouting = {
 }
 export type ProxyHealthEntry = {
   name: string
+  display_name?: string
+  role?: 'tailnet' | 'exit_node'
   type: string
   selected?: string
   provider?: string
   udp: boolean
-  status: 'untested' | 'reachable' | 'unreachable' | 'timeout' | 'error' | 'not_applicable'
+  status: 'untested' | 'reachable' | 'unreachable' | 'timeout' | 'error' | 'not_applicable' | 'available_on_demand'
   delay_ms?: number
   tested_at?: string
   probeable: boolean
@@ -85,6 +87,36 @@ export type ControlConfig = {
   transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }
   device_policy: { enabled: boolean; protected_ipv4: string[] }
+}
+
+export type TailscaleSettings = {
+  enabled: boolean
+  display_name: string
+  hostname: string
+  control_url: string
+  accept_routes: boolean
+  magic_dns_suffixes: string[]
+  peer_cidrs: string[]
+  subnet_routes: string[]
+  allow_mac: boolean
+  allow_all_devices: boolean
+  allowed_devices: string[]
+  exit_node: string
+  exit_node_allow_lan_access: boolean
+}
+
+export type TailscaleUpdate = TailscaleSettings & { auth_key?: string }
+
+export type TailscaleResponse = {
+  schema_version: number
+  revision: string
+  settings: TailscaleSettings
+  auth_key_present: boolean
+  identity_present: boolean
+  gateway_active: boolean
+  runtime_state: 'disabled' | 'pending_gateway_start' | 'available_on_demand'
+  selectable_exit: boolean
+  warnings: string[]
 }
 
 export type Overview = {

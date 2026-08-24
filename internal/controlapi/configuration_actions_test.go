@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -200,6 +201,130 @@ func TestApplyProfileValidationFailureCleansCandidateAndPreservesConfig(t *testi
 	profilePath := filepath.Join(filepath.Dir(configPath), "data", "imported-profile-"+fileDigestBytes(payload)[:16]+".yaml")
 	if _, err := os.Stat(profilePath); !os.IsNotExist(err) {
 		t.Fatalf("failed candidate profile remains: %v", err)
+	}
+}
+
+func TestApplyTailscaleStoresWriteOnlyAuthKeyAndNormalizesTargets(t *testing.T) {
+	configPath, _ := writeProfileApplyTestConfig(t)
+	input := TailscaleUpdateRequest{TailscaleSettings: TailscaleSettings{
+		Enabled:          true,
+		DisplayName:      " Home Tailnet ",
+		Hostname:         "OpenSurge-Home",
+		ControlURL:       "https://controlplane.tailscale.com/",
+		MagicDNSSuffixes: []string{"*.HOME.example.ts.net", "home.example.ts.net"},
+		PeerCIDRs:        []string{"100.82.10.7"},
+		AllowMac:         true,
+	}, AuthKey: "tskey-auth-private"}
+	payload, _ := json.Marshal(input)
+	validated := false
+	deps := profileApplyDeps{
+		geteuid: func() int { return 0 },
+		validate: func(candidate config.Config) error {
+			validated = true
+			if candidate.Tailscale.PeerCIDRs[0] != "100.82.10.7/32" || candidate.Tailscale.MagicDNSSuffixes[0] != "home.example.ts.net" {
+				t.Fatalf("candidate Tailscale settings = %#v", candidate.Tailscale)
+			}
+			return nil
+		},
+		stateExists: func(config.Config) (bool, error) { return false, nil },
+		reload: func(context.Context, config.Config) error {
+			t.Fatal("reload called for stopped gateway")
+			return nil
+		},
+		start: func(context.Context, config.Config) error { return nil },
+	}
+	result, err := applyTailscale(t.Context(), configPath, fileDigest(configPath), payload, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validated || result.Reloaded || result.Revision == "" {
+		t.Fatalf("result=%#v validated=%v", result, validated)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Tailscale.Enabled || cfg.Tailscale.Hostname != "opensurge-home" || cfg.Tailscale.ControlURL != "https://controlplane.tailscale.com" {
+		t.Fatalf("saved Tailscale settings = %#v", cfg.Tailscale)
+	}
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(configData, []byte("tskey-auth-private")) {
+		t.Fatal("write-only auth key leaked into gateway config")
+	}
+	authData, err := os.ReadFile(cfg.Tailscale.AuthKeyFile)
+	if err != nil || strings.TrimSpace(string(authData)) != "tskey-auth-private" {
+		t.Fatalf("stored auth key = %q err=%v", authData, err)
+	}
+	if info, err := os.Stat(cfg.Tailscale.AuthKeyFile); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("auth key mode = %v err=%v", info.Mode().Perm(), err)
+	}
+}
+
+func TestApplyTailscaleReloadFailureRestoresConfigAndAuthKey(t *testing.T) {
+	configPath, original := writeProfileApplyTestConfig(t)
+	authKeyPath, _ := tailscaleManagedPaths(configPath)
+	if err := writeAtomic(authKeyPath, []byte("old-key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(TailscaleUpdateRequest{TailscaleSettings: TailscaleSettings{Enabled: true, DisplayName: "Tailnet", Hostname: "opensurge", ControlURL: "https://controlplane.tailscale.com", AllowMac: true}, AuthKey: "new-key"})
+	deps := profileApplyDeps{
+		geteuid:     func() int { return 0 },
+		validate:    func(config.Config) error { return nil },
+		stateExists: func(config.Config) (bool, error) { return true, nil },
+		reload:      func(context.Context, config.Config) error { return errors.New("candidate failed") },
+		start:       func(context.Context, config.Config) error { return nil },
+	}
+	if _, err := applyTailscale(t.Context(), configPath, fileDigest(configPath), payload, deps); err == nil || !strings.Contains(err.Error(), "previous config and auth key restored") {
+		t.Fatalf("applyTailscale() error = %v", err)
+	}
+	current, _ := os.ReadFile(configPath)
+	if !bytes.Equal(current, original) {
+		t.Fatal("failed Tailscale reload did not restore gateway config")
+	}
+	authData, _ := os.ReadFile(authKeyPath)
+	if string(authData) != "old-key\n" {
+		t.Fatalf("auth key after rollback = %q", authData)
+	}
+}
+
+func TestForgetTailscaleIdentityRequiresDisabledStoppedGateway(t *testing.T) {
+	configPath, _ := writeProfileApplyTestConfig(t)
+	_, stateDir := tailscaleManagedPaths(configPath)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "tailscaled.state"), []byte("state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	removed := ""
+	deps := forgetTailscaleDeps{
+		geteuid:     func() int { return 0 },
+		stateExists: func(config.Config) (bool, error) { return false, nil },
+		removeAll: func(path string) error {
+			removed = path
+			return os.RemoveAll(path)
+		},
+	}
+	if _, err := forgetTailscaleIdentity(configPath, fileDigest(configPath), deps); err != nil {
+		t.Fatal(err)
+	}
+	if removed != stateDir || tailscaleLocalIdentityPresent(stateDir) {
+		t.Fatalf("removed=%q identity_present=%v", removed, tailscaleLocalIdentityPresent(stateDir))
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Tailscale.Enabled = true
+	if err := writeAtomic(configPath, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgetTailscaleIdentity(configPath, fileDigest(configPath), deps); err == nil || !strings.Contains(err.Error(), "disable Tailscale") {
+		t.Fatalf("forget enabled Tailscale error = %v", err)
 	}
 }
 

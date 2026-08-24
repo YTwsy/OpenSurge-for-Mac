@@ -555,3 +555,44 @@ func TestValidateDownstreamIPv6TakeoverContract(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateTailscaleTargetsAndRouteConflicts(t *testing.T) {
+	valid := Default()
+	valid.Tailscale.Enabled = true
+	valid.Tailscale.DisplayName = "Home Tailnet"
+	valid.Tailscale.Hostname = "opensurge-home"
+	valid.Tailscale.ControlURL = "https://controlplane.tailscale.com"
+	valid.Tailscale.AuthKeyFile = "/tmp/tailscale-auth-key"
+	valid.Tailscale.StateDir = "/tmp/tailscale-state"
+	valid.Tailscale.AcceptRoutes = true
+	valid.Tailscale.MagicDNSSuffixes = []string{"home.example.ts.net"}
+	valid.Tailscale.PeerCIDRs = []string{"100.82.10.7/32"}
+	valid.Tailscale.SubnetRoutes = []string{"10.20.0.0/16"}
+	if err := Validate(valid); err != nil {
+		t.Fatalf("Validate(valid Tailscale) error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		edit func(*Config)
+		want string
+	}{
+		{"LAN overlap", func(cfg *Config) { cfg.Tailscale.SubnetRoutes = []string{"192.168.50.0/24"} }, "overlaps the OpenSurge LAN"},
+		{"route not accepted", func(cfg *Config) { cfg.Tailscale.AcceptRoutes = false }, "requires tailscale.accept_routes"},
+		{"public subnet route", func(cfg *Config) { cfg.Tailscale.SubnetRoutes = []string{"203.0.113.0/24"} }, "must be a private"},
+		{"wildcard suffix", func(cfg *Config) { cfg.Tailscale.MagicDNSSuffixes = []string{"*.example.ts.net"} }, "without wildcard"},
+		{"noncanonical CIDR", func(cfg *Config) { cfg.Tailscale.PeerCIDRs = []string{"100.82.10.7/24"} }, "canonical IP CIDR"},
+		{"broad Tailnet IPv4 capture", func(cfg *Config) { cfg.Tailscale.PeerCIDRs = []string{"100.64.0.0/10"} }, "one exact Tailscale peer"},
+		{"broad Tailnet IPv6 capture", func(cfg *Config) { cfg.Tailscale.PeerCIDRs = []string{"fd7a:115c:a1e0::/48"} }, "one exact Tailscale peer"},
+		{"LAN access without exit", func(cfg *Config) { cfg.Tailscale.ExitNodeAllowLANAccess = true }, "requires tailscale.exit_node"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := valid
+			tt.edit(&cfg)
+			if err := Validate(cfg); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}

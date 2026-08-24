@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +58,39 @@ func TestRenderRoundTripPreservesIPv6Controls(t *testing.T) {
 	}
 	if !loaded.DNS.IPv6 || loaded.Transparent.TUNIPv6 != TUNIPv6Always || !loaded.Transparent.IPv6SharedL2Ready || loaded.Transparent.IPv6PacketBrokerBinary != "/tmp/opensurge-network" || loaded.Transparent.IPv6PacketMTU != 1420 {
 		t.Fatalf("IPv6 round trip mismatch: %#v", loaded.Transparent)
+	}
+}
+
+func TestRenderRoundTripPreservesTailscaleWithoutAuthKey(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Default()
+	cfg.Tailscale = TailscaleConfig{
+		Enabled:                true,
+		DisplayName:            "Home Tailnet",
+		Hostname:               "opensurge-home",
+		ControlURL:             "https://headscale.example.com",
+		AuthKeyFile:            filepath.Join(dir, "tailscale-auth-key"),
+		StateDir:               filepath.Join(dir, "tailscale-state"),
+		AcceptRoutes:           true,
+		MagicDNSSuffixes:       []string{"home.example.ts.net"},
+		PeerCIDRs:              []string{"100.82.10.7/32"},
+		SubnetRoutes:           []string{"10.20.0.0/16"},
+		AllowMac:               true,
+		ExitNode:               "100.90.3.4",
+		ExitNodeAllowLANAccess: true,
+	}
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(Render()) error = %v", err)
+	}
+	if loaded.Tailscale.DisplayName != "Home Tailnet" || loaded.Tailscale.AuthKeyFile != cfg.Tailscale.AuthKeyFile || loaded.Tailscale.StateDir != cfg.Tailscale.StateDir || len(loaded.Tailscale.SubnetRoutes) != 1 || loaded.Tailscale.ExitNode != "100.90.3.4" {
+		t.Fatalf("Tailscale round trip mismatch: %#v", loaded.Tailscale)
+	}
+	if strings.Contains(Render(loaded), "tskey-") {
+		t.Fatal("rendered gateway config unexpectedly contains an auth key")
 	}
 }

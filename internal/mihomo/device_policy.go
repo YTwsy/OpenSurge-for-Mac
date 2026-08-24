@@ -35,15 +35,15 @@ func renderPolicySections(cfg config.Config, imported *importedProfile) (string,
 		if imported == nil {
 			return "", fmt.Errorf("imported mihomo profile was not loaded")
 		}
-		if err := validateImportedPolicySections(imported.inventory, sections); err != nil {
+		if err := validateImportedPolicySections(cfg, imported.inventory, sections); err != nil {
 			return "", err
 		}
-		return composeImportedPolicySections(imported, sections, localRouting)
+		return composeImportedPolicySections(cfg, imported, sections, localRouting)
 	}
 	if err := validateManagedPolicySections(cfg, sections); err != nil {
 		return "", err
 	}
-	return composeManagedPolicySections(cfg, sections, localRouting), nil
+	return composeManagedPolicySections(cfg, sections, localRouting)
 }
 
 func loadPolicySections(bundle *device.PolicyBundle, path string, scope lan.Scope, ipOnlyDevicesActive bool, ipv6 bool) (policySections, error) {
@@ -74,23 +74,30 @@ func loadPolicySections(bundle *device.PolicyBundle, path string, scope lan.Scop
 	return sections, nil
 }
 
-func composeManagedPolicySections(cfg config.Config, policy policySections, localRouting localRoutingGeneratedPolicy) string {
+func composeManagedPolicySections(cfg config.Config, policy policySections, localRouting localRoutingGeneratedPolicy) (string, error) {
 	var out strings.Builder
-	if cfg.UpstreamProxy.Enabled {
+	if cfg.UpstreamProxy.Enabled || cfg.Tailscale.Enabled {
 		out.WriteString("proxies:\n")
-		out.WriteString("  - name: " + yamlQuote(cfg.UpstreamProxy.Name) + "\n")
-		out.WriteString("    type: " + cfg.UpstreamProxy.Type + "\n")
-		if cfg.UpstreamProxy.Type == "socks5" {
-			out.WriteString("    udp: true\n")
+		if cfg.UpstreamProxy.Enabled {
+			out.WriteString("  - name: " + yamlQuote(cfg.UpstreamProxy.Name) + "\n")
+			out.WriteString("    type: " + cfg.UpstreamProxy.Type + "\n")
+			if cfg.UpstreamProxy.Type == "socks5" {
+				out.WriteString("    udp: true\n")
+			}
+			out.WriteString("    server: " + yamlQuote(cfg.UpstreamProxy.Server) + "\n")
+			out.WriteString(fmt.Sprintf("    port: %d\n", cfg.UpstreamProxy.Port))
+			if cfg.UpstreamProxy.Username != "" {
+				out.WriteString("    username: " + yamlQuote(cfg.UpstreamProxy.Username) + "\n")
+			}
+			if cfg.UpstreamProxy.Password != "" {
+				out.WriteString("    password: " + yamlQuote(cfg.UpstreamProxy.Password) + "\n")
+			}
 		}
-		out.WriteString("    server: " + yamlQuote(cfg.UpstreamProxy.Server) + "\n")
-		out.WriteString(fmt.Sprintf("    port: %d\n", cfg.UpstreamProxy.Port))
-		if cfg.UpstreamProxy.Username != "" {
-			out.WriteString("    username: " + yamlQuote(cfg.UpstreamProxy.Username) + "\n")
+		tailscaleProxy, err := renderManagedTailscaleProxy(cfg)
+		if err != nil {
+			return "", err
 		}
-		if cfg.UpstreamProxy.Password != "" {
-			out.WriteString("    password: " + yamlQuote(cfg.UpstreamProxy.Password) + "\n")
-		}
+		out.WriteString(tailscaleProxy)
 		out.WriteString("\n")
 	} else {
 		out.WriteString("proxies: []\n\n")
@@ -115,6 +122,7 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 	}
 
 	rules := routerBypassIPv6RejectRules(policy)
+	rules = append(rules, renderTailscaleRules(cfg, policy)...)
 	rules = append(rules, localRouting.Rules...)
 	rules = append(rules, orderedDevicePreRules(policy)...)
 	if cfg.UpstreamProxy.Enabled {
@@ -124,10 +132,13 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 	rules = append(rules, "MATCH,DIRECT")
 	out.WriteString("rules:\n")
 	writeRuleLines(&out, rules)
-	return out.String()
+	return out.String(), nil
 }
 
-func composeImportedPolicySections(imported *importedProfile, policy policySections, localRouting localRoutingGeneratedPolicy) (string, error) {
+func composeImportedPolicySections(cfg config.Config, imported *importedProfile, policy policySections, localRouting localRoutingGeneratedPolicy) (string, error) {
+	if err := appendImportedTailscaleProxy(imported, cfg); err != nil {
+		return "", err
+	}
 	appendImportedLocalRoutingGroups(imported, localRouting.Groups)
 	if len(policy.groups) > 0 {
 		appendImportedSelectorGroups(imported, policy.groups)
@@ -136,6 +147,7 @@ func composeImportedPolicySections(imported *importedProfile, policy policySecti
 		appendImportedRuleProviders(imported, policy.providers)
 	}
 	preRules := routerBypassIPv6RejectRules(policy)
+	preRules = append(preRules, renderTailscaleRules(cfg, policy)...)
 	preRules = append(preRules, localRouting.Rules...)
 	preRules = append(preRules, orderedDevicePreRules(policy)...)
 	if err := composeImportedRules(imported.sections["rules"], preRules, policy.defaults); err != nil {
@@ -356,8 +368,11 @@ func addIPv6IdentityRules(rules []string, devices []device.CompiledDevice) []str
 	return out
 }
 
-func validateImportedPolicySections(inventory importedProfileInventory, policy policySections) error {
+func validateImportedPolicySections(cfg config.Config, inventory importedProfileInventory, policy policySections) error {
 	for name := range inventory.targets {
+		if name == config.TailscaleProxyName {
+			return fmt.Errorf("imported mihomo profile target %q occupies reserved OpenSurge Tailscale target", name)
+		}
 		if IsLocalRoutingGroup(name) {
 			return fmt.Errorf("imported mihomo profile target %q occupies reserved %s namespace", name, LocalRoutingGroupPrefix)
 		}
@@ -387,6 +402,12 @@ func validateImportedPolicySections(inventory importedProfileInventory, policy p
 		if builtinPolicyTarget(target) {
 			continue
 		}
+		if target == config.TailscaleProxyName {
+			if cfg.Tailscale.Enabled && cfg.Tailscale.ExitNode != "" {
+				continue
+			}
+			return tailscaleExitNodeStillSelectedError()
+		}
 		if _, exists := inventory.targets[target]; !exists {
 			return fmt.Errorf("device policy references unknown imported proxy or group %q", target)
 		}
@@ -403,13 +424,23 @@ func validateManagedPolicySections(cfg config.Config, policy policySections) err
 		available[cfg.UpstreamProxy.Name] = true
 		available["open-surge-egress"] = true
 	}
+	if cfg.Tailscale.Enabled && cfg.Tailscale.ExitNode != "" {
+		available[config.TailscaleProxyName] = true
+	}
 	for _, target := range append(append([]string(nil), policy.bundle.Compiled.SelectorTargets...), policy.bundle.Compiled.ActionTargets...) {
 		if builtinPolicyTarget(target) || available[target] {
 			continue
 		}
+		if target == config.TailscaleProxyName {
+			return tailscaleExitNodeStillSelectedError()
+		}
 		return fmt.Errorf("device policy references unknown managed proxy or group %q", target)
 	}
 	return nil
+}
+
+func tailscaleExitNodeStillSelectedError() error {
+	return fmt.Errorf("a device route still selects the Tailscale Exit Node; choose another route for that device before disabling Tailscale or removing its Exit Node")
 }
 
 func builtinPolicyTarget(target string) bool {
