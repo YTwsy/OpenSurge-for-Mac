@@ -1,4 +1,5 @@
 import type { ConnectivityResult } from './types'
+import { t } from './i18n'
 
 export const connectivityCategories = {
   china: { title: '国内直连', description: '用于观察国内站点是否保持低延迟直连', flag: 'CN' },
@@ -8,14 +9,14 @@ export const connectivityCategories = {
 } as const
 
 export function connectivityStatusLabel(result?: ConnectivityResult, testing = false) {
-  if (testing) return '检测中…'
-  if (!result) return '未检测'
-  if (result.status === 'reachable') return result.median_ms ? `${result.median_ms} ms` : '可达'
-  if (result.status === 'degraded') return result.median_ms ? `${result.median_ms} ms · 波动` : '部分可达'
-  if (result.status === 'timeout') return '超时'
-  if (result.status === 'dns_error') return 'DNS 失败'
-  if (result.status === 'tls_error') return 'TLS 失败'
-  return '连接失败'
+  if (testing) return t('检测中…')
+  if (!result) return t('未检测')
+  if (result.status === 'reachable') return result.median_ms ? `${result.median_ms} ms` : t('可达')
+  if (result.status === 'degraded') return result.median_ms ? t('{{value}} ms · 波动', { value: result.median_ms }) : t('部分可达')
+  if (result.status === 'timeout') return t('超时')
+  if (result.status === 'dns_error') return t('DNS 失败')
+  if (result.status === 'tls_error') return t('TLS 失败')
+  return t('连接失败')
 }
 
 export function connectivityTone(result?: ConnectivityResult, testing = false) {
@@ -27,9 +28,9 @@ export function connectivityTone(result?: ConnectivityResult, testing = false) {
 
 export function routeLabel(route?: ConnectivityResult['route']) {
   if (route === 'direct') return 'DIRECT'
-  if (route === 'proxy') return '代理链路'
+  if (route === 'proxy') return t('代理链路')
   if (route === 'reject') return 'REJECT'
-  return '未采集'
+  return t('未采集')
 }
 
 export function median(values: number[]) {

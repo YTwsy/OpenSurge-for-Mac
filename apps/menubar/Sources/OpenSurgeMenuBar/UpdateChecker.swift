@@ -15,15 +15,15 @@ enum UpdateCheckError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidCurrentVersion:
-            "无法识别当前 OpenSurge 版本"
+            L10n.text("无法识别当前 OpenSurge 版本")
         case .invalidRelease:
-            "GitHub 返回了无效的 OpenSurge Release"
+            L10n.text("GitHub 返回了无效的 OpenSurge Release")
         case .networkUnavailable:
-            "无法连接 GitHub"
+            L10n.text("无法连接 GitHub")
         case .invalidResponse:
-            "GitHub 返回了无效响应"
+            L10n.text("GitHub 返回了无效响应")
         case .http(let status):
-            "GitHub 请求失败（HTTP \(status)）"
+            L10n.format("GitHub 请求失败（HTTP %@）", String(status))
         }
     }
 }
@@ -89,7 +89,7 @@ func installedReleaseVersion(
     if let candidate, !candidate.isEmpty {
         value = candidate
     } else {
-        value = fallback ?? "未知"
+        value = fallback ?? L10n.text("未知")
     }
     return value.hasPrefix("v") ? String(value.dropFirst()) : value
 }

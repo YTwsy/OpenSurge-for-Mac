@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, Source } from '../types'
+import { activateLanguage, prepareLanguage } from '../i18n'
 
 vi.mock('../api', () => ({
   api: {
@@ -71,7 +72,21 @@ const preview: ProfileOverlayPreview = {
 
 describe('ProfileOverlayPanel', () => {
   beforeEach(() => vi.clearAllMocks())
-  afterEach(cleanup)
+  afterEach(() => { cleanup(); activateLanguage('zh-Hans') })
+
+  it('renders the guided editor and preview in English', async () => {
+    await prepareLanguage('en')
+    activateLanguage('en')
+    vi.mocked(api.sourcePreview).mockResolvedValue(preview)
+    render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
+
+    expect(screen.getByRole('heading', { name: 'Global Profile Overlay' })).toBeTruthy()
+    await userEvent.selectOptions(screen.getByLabelText('Select a source to preview'), 'home')
+    await userEvent.click(screen.getByRole('button', { name: 'View composed result' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Final configuration preview' })
+    expect(within(dialog).getByText('Composition order')).toBeTruthy()
+    expect(globalThis.document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
+  })
 
   it('guides a user from enabling and adding a rule to a saved draft', async () => {
     const onSaved = vi.fn()

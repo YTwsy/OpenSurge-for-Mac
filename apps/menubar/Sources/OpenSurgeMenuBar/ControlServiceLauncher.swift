@@ -7,7 +7,7 @@ enum OpenSurgeServiceLifecycleError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .commandFailed(let detail):
-            detail.isEmpty ? "无法停止 OpenSurge Control Service。" : "无法停止 OpenSurge Control Service：\(detail)"
+            detail.isEmpty ? L10n.text("无法停止 OpenSurge Control Service。") : L10n.format("无法停止 OpenSurge Control Service：%@", detail)
         }
     }
 }

@@ -9,6 +9,17 @@ Go gateway、device、mihomo 和 runtime 包中。
 客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。唯一独立动作是
 与网关状态无关的临时“合盖保持运行”开关；不要借此把菜单栏演变成第二套网关控制面。
 
+界面语言同样保持单一设置入口：Web GUI 的侧栏提供“跟随系统 / 简体中文 / English”，
+菜单栏面板不再增加第二个选择器。默认值是 `system`；用户没有选择过语言时，Web 按浏览器
+第一语言、菜单栏按 `Locale.preferredLanguages` 的第一项决定显示语言，所有 `zh-*` 偏好
+使用简体中文，其他语言回退到 English。Web 通过受认证的
+`GET/PUT /api/v1/ui-preferences` 保存 `system | zh-Hans | en`，Control Service 将该偏好以
+`0600` 写入用户数据目录的 `preferences.json`，并在 overview、menubar 与 state event 中
+返回同一值。浏览器 localStorage 只用于避免首屏闪烁，不是第二份权威偏好；菜单栏通过现有
+状态轮询最终同步 Web 的选择，在取得第一份状态前仍按本机语言显示。网络模式的三张拓扑图
+使用 React 内联 SVG，共享主题色并通过同一文案目录翻译 `<title>`、`<desc>` 与图内标签，
+不要恢复成明暗主题各一套、无法随语言变化的静态 SVG。
+
 睡眠开关默认关闭、不写 preference，只由 Control Service 内存中的 lease 表示本次运行
 意图。菜单栏与 Web GUI 都调用 `PUT /api/v1/sleep-prevention`；Control Service 保持到 root
 Helper 的长连接，连接 EOF、完整退出或服务崩溃都会释放。普通 `caffeinate` 的 idle sleep

@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { LocalRouting, LocalRoutingMode, ProxyHealthEntry } from '../types'
 import { ConnectionRefreshControl } from './ConnectionRefreshControl'
 import { OutletSummary } from './OutletSummary'
+import { t } from '../i18n'
 
 const modeDetails: Record<LocalRoutingMode, { label: string; description: string }> = {
   rule: { label: '按规则', description: '根据网站和网关规则自动分流' },
@@ -68,27 +69,27 @@ export function LocalRoutingCard({
   const udpRejected = routing?.mode === 'global' && routing.udp_behavior === 'reject'
   const runtimeWarning = udpRejected ? '' : routing?.warning
   return <article className="this-mac local-routing-card">
-    <div className="source-head"><div><small>THIS MAC</small><h3>出口方式</h3></div><span className="effect-badge live">仅影响本机</span></div>
-    <p>{interfaceName || 'Mac'} · {lanIP || '本机网络'}</p>
-    <div className="local-mode-switch" role="group" aria-label="这台 Mac 的出口方式">
+    <div className="source-head"><div><small>THIS MAC</small><h3>{t('出口方式')}</h3></div><span className="effect-badge live">{t('仅影响本机')}</span></div>
+    <p>{interfaceName || 'Mac'} · {lanIP || t('本机网络')}</p>
+    <div className="local-mode-switch" role="group" aria-label={t('这台 Mac 的出口方式')}>
       {(['rule', 'global', 'direct'] as const).map(mode => <button
         key={mode}
         type="button"
         aria-pressed={routing?.mode === mode}
         disabled={!running || !routing || busy || (mode === 'global' && !routing.available_modes.includes('global'))}
         onClick={() => void apply(mode)}
-      >{modeDetails[mode].label}</button>)}
+      >{t(modeDetails[mode].label)}</button>)}
     </div>
-    {!running && <div className="local-routing-note">启动网关后可以切换本机模式。</div>}
-    {running && !routing && !error && <div className="local-routing-note">正在读取本机设置…</div>}
+    {!running && <div className="local-routing-note">{t('启动网关后可以切换本机模式。')}</div>}
+    {running && !routing && !error && <div className="local-routing-note">{t('正在读取本机设置…')}</div>}
     {mode && <div className="local-routing-state" role="status">
-      <strong>{mode.description}</strong>
-      <small>局域网访问和下游设备不受影响；切换只影响新连接。</small>
+      <strong>{t(mode.description)}</strong>
+      <small>{t('局域网访问和下游设备不受影响；切换只影响新连接。')}</small>
     </div>}
     {routing?.mode === 'global' && routing.global_group && <div className="local-global-policy">
       <OutletSummary
-        title="本机全局出口"
-        ariaLabel={`本机全局策略组 当前策略 ${routing.global_group.selected}`}
+        title={t('本机全局出口')}
+        ariaLabel={t('本机全局策略组 当前策略 {{selected}}', { selected: routing.global_group.selected })}
         group={routing.global_group}
         healthByName={healthByName}
         testing={testing}
@@ -96,9 +97,9 @@ export function LocalRoutingCard({
         onSelect={policy => apply('global', policy)}
       />
     </div>}
-    {udpRejected && <div className="notice warn local-routing-warning" role="alert">当前固定出口不支持 UDP，部分应用可能无法联网。</div>}
+    {udpRejected && <div className="notice warn local-routing-warning" role="alert">{t('当前固定出口不支持 UDP，部分应用可能无法联网。')}</div>}
     {(runtimeWarning || error) && <div className="notice warn local-routing-warning" role="alert">{error || runtimeWarning}</div>}
-    <ConnectionRefreshControl ariaLabel="刷新 Mac 本机连接" disabled={!running || !routing} disabledReason="启动网关并读取本机设置后可以刷新连接。" refresh={api.refreshLocalConnections} onRefreshed={onChanged} />
-    <button className="text-link" type="button" onClick={onPolicies}>前往策略与节点健康 →</button>
+    <ConnectionRefreshControl ariaLabel={t('刷新 Mac 本机连接')} disabled={!running || !routing} disabledReason={t('启动网关并读取本机设置后可以刷新连接。')} refresh={api.refreshLocalConnections} onRefreshed={onChanged} />
+    <button className="text-link" type="button" onClick={onPolicies}>{t('前往策略与节点健康')} →</button>
   </article>
 }

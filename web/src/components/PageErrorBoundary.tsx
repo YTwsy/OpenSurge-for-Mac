@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { t } from '../i18n'
 
 type PageErrorBoundaryProps = {
   children: ReactNode
@@ -24,9 +25,9 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
       return <section className="session-expired" role="alert">
         <span aria-hidden="true">!</span>
         <div>
-          <h1>当前页面暂时无法显示</h1>
-          <p>你仍可使用左侧导航打开其他页面。请重试；如果问题持续，请前往诊断页查看运行信息。</p>
-          <button className="primary" type="button" onClick={() => this.setState({ error: null })}>重试当前页面</button>
+          <h1>{t('当前页面暂时无法显示')}</h1>
+          <p>{t('你仍可使用左侧导航打开其他页面。请重试；如果问题持续，请前往诊断页查看运行信息。')}</p>
+          <button className="primary" type="button" onClick={() => this.setState({ error: null })}>{t('重试当前页面')}</button>
         </div>
       </section>
     }

@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TailscaleResponse } from '../types'
+import { activateLanguage, prepareLanguage } from '../i18n'
 
 vi.mock('../api', () => ({
   api: {
@@ -49,10 +50,23 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  activateLanguage('zh-Hans')
   vi.clearAllMocks()
 })
 
 describe('TailscaleCard', () => {
+  it('renders the complete setup surface in English', async () => {
+    await prepareLanguage('en')
+    activateLanguage('en')
+    render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
+    const dialog = screen.getByRole('dialog', { name: 'Configure Tailscale outbound' })
+    expect(document.body.textContent).toContain('Use the Tailnet as an outbound')
+    expect(dialog.textContent).toContain('Who can access Tailnet targets')
+    expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
+  })
+
   it('collects a write-only key, explicit targets, device scope, and exit node', async () => {
     vi.mocked(api.saveTailscale).mockImplementation(async (_revision, update) => ({
       ...base,

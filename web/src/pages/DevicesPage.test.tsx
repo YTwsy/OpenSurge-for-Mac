@@ -317,7 +317,7 @@ describe('DevicesPage', () => {
       profiles: [{ id: 'alice-policy', default_policies: ['DIRECT'], rules: [] }],
     }
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
-    vi.mocked(api.tailscale).mockResolvedValue({ selectable_exit: true } as never)
+    vi.mocked(api.tailscale).mockResolvedValue({ selectable_exit: true, settings: { display_name: 'Home Tailnet' } } as never)
     renderPage()
 
     await userEvent.click(await screen.findByRole('tab', { name: /设备分流/ }))
@@ -325,7 +325,7 @@ describe('DevicesPage', () => {
     await userEvent.type(input, 'open-surge/tailscale')
     await userEvent.click(screen.getByRole('button', { name: '添加' }))
 
-    expect(screen.getByText('Tailscale Exit Node')).toBeTruthy()
+    expect(screen.getByText('Home Tailnet')).toBeTruthy()
   })
 
   it('keeps legacy routing readable and requires an explicit migration choice', async () => {

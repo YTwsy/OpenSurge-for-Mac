@@ -20,11 +20,11 @@ enum OpenSurgeUninstallError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .componentMissing:
-            "找不到已安装的 OpenSurge 卸载组件。请重新安装当前版本后再试。"
+            L10n.text("找不到已安装的 OpenSurge 卸载组件。请重新安装当前版本后再试。")
         case .authorizationCancelled:
-            "已取消卸载。"
+            L10n.text("已取消卸载。")
         case .commandFailed(let detail):
-            detail.isEmpty ? "无法卸载 OpenSurge。" : "无法卸载 OpenSurge：\(detail)"
+            detail.isEmpty ? L10n.text("无法卸载 OpenSurge。") : L10n.format("无法卸载 OpenSurge：%@", detail)
         }
     }
 }

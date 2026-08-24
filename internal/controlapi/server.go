@@ -231,6 +231,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
 	mux.Handle("PUT /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
 	mux.Handle("GET /api/v1/menubar", s.auth(http.HandlerFunc(s.handleMenuBar)))
+	mux.Handle("GET /api/v1/ui-preferences", s.auth(http.HandlerFunc(s.handleUIPreferences)))
+	mux.Handle("PUT /api/v1/ui-preferences", s.auth(http.HandlerFunc(s.handleUIPreferences)))
 	mux.Handle("GET /api/v1/sleep-prevention", s.auth(http.HandlerFunc(s.handleSleepPrevention)))
 	mux.Handle("PUT /api/v1/sleep-prevention", s.auth(http.HandlerFunc(s.handleSleepPrevention)))
 	mux.Handle("GET /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
@@ -612,6 +614,7 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		Recovery:             recovery,
 		MihomoRecovery:       s.mihomoRecovery.snapshot(),
 		SleepPrevention:      s.sleepPrevention.Status(),
+		UIPreferences:        uiPreferencesOrDefault(s.store),
 	}, nil
 }
 
@@ -631,7 +634,42 @@ func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
 		Recovery: overview.Recovery.Required, RecoveryStage: overview.Recovery.Stage, Warnings: overview.Warnings,
 		MihomoRecovery:  overview.MihomoRecovery,
 		SleepPrevention: overview.SleepPrevention,
+		UIPreferences:   overview.UIPreferences,
 	})
+}
+
+func uiPreferencesOrDefault(store *Store) UIPreferences {
+	preferences, err := store.UIPreferences()
+	if err != nil {
+		return defaultUIPreferences()
+	}
+	return preferences
+}
+
+func (s *Server) handleUIPreferences(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		preferences, err := s.store.UIPreferences()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "ui_preferences_read_failed", err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, preferences)
+		return
+	}
+	var preferences UIPreferences
+	if err := decodeJSON(r, &preferences, 4<<10); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if !validUILanguage(preferences.Language) {
+		writeError(w, http.StatusUnprocessableEntity, "ui_language_unsupported", "language must be system, zh-Hans, or en")
+		return
+	}
+	if err := s.store.SaveUIPreferences(preferences); err != nil {
+		writeError(w, http.StatusInternalServerError, "ui_preferences_write_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, UIPreferences{SchemaVersion: SchemaVersion, Language: preferences.Language})
 }
 
 func (s *Server) handleSleepPrevention(w http.ResponseWriter, r *http.Request) {
@@ -2072,7 +2110,7 @@ func (s *Server) stateEvent(ctx context.Context) (StateEvent, error) {
 		appliedProfile = state.ProfileDigest
 	}
 	recovery, _ := s.store.Recovery()
-	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, DesiredProfileDigest: desiredProfile, AppliedProfileDigest: appliedProfile, Drift: desired != applied || desiredProfile != appliedProfile, Recovery: recovery, SleepPrevention: s.sleepPrevention.Status()}, nil
+	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, DesiredProfileDigest: desiredProfile, AppliedProfileDigest: appliedProfile, Drift: desired != applied || desiredProfile != appliedProfile, Recovery: recovery, SleepPrevention: s.sleepPrevention.Status(), UIPreferences: uiPreferencesOrDefault(s.store)}, nil
 }
 
 func (s *Server) sourceByID(id string) (Source, error) {

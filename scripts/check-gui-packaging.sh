@@ -12,6 +12,8 @@ RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
 MENUBAR_PACKAGE="$ROOT/apps/menubar/Package.swift"
 MENUBAR_INFO="$ROOT/apps/menubar/Resources/Info.plist"
+MENUBAR_EN_STRINGS="$ROOT/apps/menubar/Resources/en.lproj/Localizable.strings"
+MENUBAR_ZH_STRINGS="$ROOT/apps/menubar/Resources/zh-Hans.lproj/Localizable.strings"
 GUI_COMPONENTS="$ROOT/packaging/gui-components.plist"
 APP_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeAppIcon.png"
 MENU_BAR_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeMenuBarIcon.png"
@@ -275,6 +277,26 @@ grep -Fq 'plutil -replace OpenSurgeReleaseTag' "$ROOT/scripts/build-menubar-app.
 }
 [[ -s "$APP_ICON_SOURCE" && -s "$MENU_BAR_ICON_SOURCE" ]] || {
   echo "menu bar app icon assets must be present" >&2
+  exit 1
+}
+[[ -s "$MENUBAR_EN_STRINGS" && -s "$MENUBAR_ZH_STRINGS" ]] || {
+  echo "menu bar localization resources are missing" >&2
+  exit 1
+}
+/usr/bin/plutil -lint "$MENUBAR_EN_STRINGS" "$MENUBAR_ZH_STRINGS" >/dev/null || {
+  echo "menu bar localization resources must be valid strings files" >&2
+  exit 1
+}
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDevelopmentRegion' "$MENUBAR_INFO")" == "en" ]] || {
+  echo "menu bar development language must be English" >&2
+  exit 1
+}
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:0' "$MENUBAR_INFO")" == "en" && "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:1' "$MENUBAR_INFO")" == "zh-Hans" ]] || {
+  echo "menu bar bundle must declare English and Simplified Chinese localizations" >&2
+  exit 1
+}
+grep -Fq 'cp -R "$PACKAGE/Resources/en.lproj" "$PACKAGE/Resources/zh-Hans.lproj"' "$ROOT/scripts/build-menubar-app.sh" || {
+  echo "menu bar build must copy localization resources into the app bundle" >&2
   exit 1
 }
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$MENUBAR_INFO")" == "OpenSurgeAppIcon" ]] || {

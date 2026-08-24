@@ -36,6 +36,7 @@ mkdir -p "$OUTPUT/Contents/MacOS" "$OUTPUT/Contents/Resources"
 cp "$SCRATCH/$ARCH-apple-macosx/release/OpenSurgeMenuBar" "$OUTPUT/Contents/MacOS/OpenSurgeMenuBar"
 cp "$PACKAGE/Resources/Info.plist" "$OUTPUT/Contents/Info.plist"
 cp "$MENU_BAR_ICON_SOURCE" "$OUTPUT/Contents/Resources/OpenSurgeMenuBarIcon.png"
+cp -R "$PACKAGE/Resources/en.lproj" "$PACKAGE/Resources/zh-Hans.lproj" "$OUTPUT/Contents/Resources/"
 if [[ -n "$APP_ICON_ICNS" ]]; then
   [[ -s "$APP_ICON_ICNS" ]] || { echo "OpenSurge ICNS fallback is missing: $APP_ICON_ICNS" >&2; exit 1; }
   cp "$APP_ICON_ICNS" "$OUTPUT/Contents/Resources/OpenSurgeAppIcon.icns"

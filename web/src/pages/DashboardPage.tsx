@@ -6,6 +6,7 @@ import { LiveRateCard } from '../components/LiveRateCard'
 import { TrafficTrendCard } from '../components/TrafficTrendCard'
 import { useDeviceTraffic } from '../hooks/useDeviceTraffic'
 import type { Overview } from '../types'
+import { t } from '../i18n'
 
 export function DashboardPage({ overview, onOpenNetwork }: { overview: Overview | null; onOpenNetwork: (action: 'start' | 'stop' | 'cleanup') => void }) {
   const running = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
@@ -15,8 +16,8 @@ export function DashboardPage({ overview, onOpenNetwork }: { overview: Overview 
   const { traffic, history, error } = useDeviceTraffic(overview?.status.gateway)
   const rates = traffic?.gateway_rates ?? { upload: 0, download: 0 }
   return <>
-    <PageHeader eyebrow="CONTROL CENTER" title="全屋网关，一眼可见" description="OpenSurge 负责网关生命周期；mihomo 是当前代理引擎。" action={<button className={interrupted ? 'primary' : running ? 'danger' : 'primary'} disabled={!overview || (!running && !stopped)} onClick={() => onOpenNetwork(interrupted ? 'cleanup' : running ? 'stop' : 'start')}>{interrupted ? '安全清理旧状态' : running ? '停止网关' : '启动网关'}</button>} />
-    {interrupted && <div className="notice warn" role="status"><strong>上一次网关运行被 Mac 重启中断。</strong> 请安全清理旧状态，再重新启动完整网关。</div>}
+    <PageHeader eyebrow="CONTROL CENTER" title="全屋网关，一眼可见" description="OpenSurge 负责网关生命周期；mihomo 是当前代理引擎。" action={<button className={interrupted ? 'primary' : running ? 'danger' : 'primary'} disabled={!overview || (!running && !stopped)} onClick={() => onOpenNetwork(interrupted ? 'cleanup' : running ? 'stop' : 'start')}>{t(interrupted ? '安全清理旧状态' : running ? '停止网关' : '启动网关')}</button>} />
+    {interrupted && <div className="notice warn" role="status"><strong>{t('上一次网关运行被 Mac 重启中断。')}</strong> {t('请安全清理旧状态，再重新启动完整网关。')}</div>}
     {warnings.length ? <div className="dashboard-warning-stack" role="status">{warnings.map(item => <div className="notice warn" key={item}>{item}</div>)}</div> : null}
     <section className="dashboard-live-grid">
       <GatewayHealthCard overview={overview} />

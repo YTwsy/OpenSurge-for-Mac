@@ -44,6 +44,7 @@ type Overview struct {
 	Recovery             RecoveryState            `json:"recovery"`
 	MihomoRecovery       MihomoRecoveryStatus     `json:"mihomo_recovery"`
 	SleepPrevention      SleepPreventionStatus    `json:"sleep_prevention"`
+	UIPreferences        UIPreferences            `json:"ui_preferences"`
 }
 
 type DoctorRunStatus struct {
@@ -81,6 +82,18 @@ type MenuBarStatus struct {
 	ErrorCode       string                `json:"error_code,omitempty"`
 	MihomoRecovery  MihomoRecoveryStatus  `json:"mihomo_recovery"`
 	SleepPrevention SleepPreventionStatus `json:"sleep_prevention"`
+	UIPreferences   UIPreferences         `json:"ui_preferences"`
+}
+
+const (
+	UILanguageSystem = "system"
+	UILanguageZHCHS  = "zh-Hans"
+	UILanguageEN     = "en"
+)
+
+type UIPreferences struct {
+	SchemaVersion int    `json:"schema_version"`
+	Language      string `json:"language"`
 }
 
 type MihomoRecoveryStatus struct {
@@ -523,6 +536,7 @@ type StateEvent struct {
 	Drift                bool                  `json:"drift"`
 	Recovery             RecoveryState         `json:"recovery"`
 	SleepPrevention      SleepPreventionStatus `json:"sleep_prevention"`
+	UIPreferences        UIPreferences         `json:"ui_preferences"`
 	At                   time.Time             `json:"at"`
 }
 

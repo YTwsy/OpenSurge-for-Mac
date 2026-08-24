@@ -6,6 +6,16 @@ struct SleepPreventionStatus: Codable, Equatable {
     let error: String?
 }
 
+struct UIPreferences: Codable, Equatable {
+    let schemaVersion: Int
+    let language: RequestedAppLanguage
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case language
+    }
+}
+
 struct MenuBarStatus: Codable, Equatable {
     let schemaVersion: Int
     let revision: String
@@ -27,6 +37,7 @@ struct MenuBarStatus: Codable, Equatable {
     let warnings: [String]
     let errorCode: String?
     var sleepPrevention: SleepPreventionStatus?
+    let uiPreferences: UIPreferences?
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -45,6 +56,7 @@ struct MenuBarStatus: Codable, Equatable {
         case warnings
         case errorCode = "error_code"
         case sleepPrevention = "sleep_prevention"
+        case uiPreferences = "ui_preferences"
     }
 
     init(
@@ -67,7 +79,8 @@ struct MenuBarStatus: Codable, Equatable {
         recoveryStage: String?,
         warnings: [String],
         errorCode: String?,
-        sleepPrevention: SleepPreventionStatus? = nil
+        sleepPrevention: SleepPreventionStatus? = nil,
+        uiPreferences: UIPreferences? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.revision = revision
@@ -89,6 +102,7 @@ struct MenuBarStatus: Codable, Equatable {
         self.warnings = warnings
         self.errorCode = errorCode
         self.sleepPrevention = sleepPrevention
+        self.uiPreferences = uiPreferences
     }
 }
 

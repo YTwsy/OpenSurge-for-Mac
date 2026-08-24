@@ -7,7 +7,7 @@ enum WebGUIURLLaunchError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .browserUnavailable:
-            return "Web GUI 链接已生成，但 macOS 未能交给默认浏览器。请检查默认浏览器后重试。"
+            return L10n.text("Web GUI 链接已生成，但 macOS 未能交给默认浏览器。请检查默认浏览器后重试。")
         }
     }
 }

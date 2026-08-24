@@ -140,7 +140,11 @@ export type Overview = {
   recovery: Recovery
   mihomo_recovery?: MihomoRecoveryStatus
   sleep_prevention?: SleepPreventionStatus
+  ui_preferences?: UIPreferences
 }
+
+export type RequestedLanguage = 'system' | 'zh-Hans' | 'en'
+export type UIPreferences = { schema_version: number; language: RequestedLanguage }
 
 export type Source = {
   id: string
