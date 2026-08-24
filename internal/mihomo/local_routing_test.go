@@ -87,6 +87,123 @@ rules:
 	)
 }
 
+func TestBuildLocalRoutingPolicyAddsOnlyEffectiveSystemTUNIPv6Identities(t *testing.T) {
+	tests := []struct {
+		name     string
+		dnsIPv6  bool
+		tunIPv6  string
+		wantFake bool
+		wantHost bool
+	}{
+		{name: "IPv6 disabled", tunIPv6: config.TUNIPv6Off},
+		{name: "AAAA enabled without downstream IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Off, wantFake: true},
+		{name: "host TUN IPv6 enabled without AAAA", tunIPv6: config.TUNIPv6Always, wantHost: true},
+		{name: "host TUN IPv6 replaces fake range TUN address", dnsIPv6: true, tunIPv6: config.TUNIPv6Always, wantHost: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Transparent.Mode = config.TransparentModeTUN
+			cfg.Transparent.TUNIPv6 = tt.tunIPv6
+			cfg.DNS.IPv6 = tt.dnsIPv6
+			rules := strings.Join(buildLocalRoutingPolicy(cfg, nil).Rules, "\n")
+
+			for source, wanted := range map[string]bool{
+				localRoutingFakeIPv6Source():    tt.wantFake,
+				localRoutingHostTUNIPv6Source(): tt.wantHost,
+			} {
+				match := "(IN-NAME," + localRoutingSystemTUNName + "),(SRC-IP-CIDR," + source + ")"
+				if got := strings.Contains(rules, match); got != wanted {
+					t.Fatalf("system TUN IPv6 identity %q present = %t, want %t:\n%s", source, got, wanted, rules)
+				}
+			}
+			for _, forbidden := range []string{
+				"SRC-IP-CIDR," + config.MihomoFakeIPv6Range,
+				"SRC-IP-CIDR," + config.DownstreamIPv6Prefix,
+				"IN-NAME," + config.IPv6PacketListenerName,
+				"IP-CIDR6,fc00::/7",
+			} {
+				if strings.Contains(rules, forbidden) {
+					t.Fatalf("local routing rules broadened into downstream or fake IPv6 space with %q:\n%s", forbidden, rules)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderConfigOrdersLocalIPv6IdentityBeforeDownstreamAndImportedRules(t *testing.T) {
+	dir := t.TempDir()
+	profilePath := dir + "/profile.yaml"
+	policyPath := dir + "/devices.json"
+	profile := `proxies:
+  - name: edge
+    type: http
+    server: 127.0.0.1
+    port: 18080
+rules:
+  - DOMAIN,global.example,edge
+  - MATCH,DIRECT
+`
+	policy := `{
+  "profiles":[{"id":"home","default_policies":["DIRECT"]}],
+  "devices":[{"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.101","profile":"home","egress_mode":"dedicated"}]
+}`
+	if err := os.WriteFile(profilePath, []byte(profile), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(policyPath, []byte(policy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name      string
+		dnsIPv6   bool
+		tunIPv6   string
+		source    string
+		forbidden string
+	}{
+		{name: "fake-AAAA with inactive downstream IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Off, source: localRoutingFakeIPv6Source(), forbidden: localRoutingHostTUNIPv6Source()},
+		{name: "effective host TUN IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Always, source: localRoutingHostTUNIPv6Source(), forbidden: localRoutingFakeIPv6Source()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Transparent.Mode = config.TransparentModeTUN
+			cfg.Transparent.TUNIPv6 = tt.tunIPv6
+			cfg.DNS.IPv6 = tt.dnsIPv6
+			cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
+			cfg.Mihomo.Profile = profilePath
+			cfg.DevicePolicy.File = policyPath
+
+			rendered, err := RenderConfig(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, network := range []string{"TCP", "UDP"} {
+				want := "AND,((IN-TYPE,TUN),(IN-NAME," + localRoutingSystemTUNName + "),(SRC-IP-CIDR," + tt.source + "),(NETWORK," + network + ")),open-surge/mac-mode-"
+				if !strings.Contains(rendered, want) {
+					t.Fatalf("rendered config missing scoped local IPv6 %s rule for %s:\n%s", network, tt.source, rendered)
+				}
+			}
+			assertOrdered(t, rendered,
+				"SRC-IP-CIDR,"+tt.source,
+				"SRC-IP-CIDR,192.168.50.101/32,device/phone/default",
+				"DOMAIN,global.example,edge",
+			)
+			for _, forbidden := range []string{
+				"SRC-IP-CIDR," + tt.forbidden,
+				"SRC-IP-CIDR," + config.MihomoFakeIPv6Range,
+				"SRC-IP-CIDR," + config.DownstreamIPv6Prefix,
+				"IN-NAME," + config.IPv6PacketListenerName,
+				"IP-CIDR6,fc00::/7",
+			} {
+				if strings.Contains(rendered, forbidden) {
+					t.Fatalf("rendered local routing policy crossed the IPv6 identity boundary with %q:\n%s", forbidden, rendered)
+				}
+			}
+		})
+	}
+}
+
 func TestSetLocalRoutingKeepsUnsupportedGlobalUDPFailClosed(t *testing.T) {
 	api := newLocalRoutingTestAPI(t)
 	cfg := config.Default()

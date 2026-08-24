@@ -3,6 +3,7 @@ package mihomo
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -19,8 +20,17 @@ const (
 	LocalRoutingUDPGroup    = "open-surge/mac-mode-udp"
 	LocalRoutingGroupPrefix = "open-surge/mac-"
 
-	localRoutingTUNSource = "198.18.0.1/32"
+	localRoutingTUNSource     = "198.18.0.1/32"
+	localRoutingSystemTUNName = "DEFAULT-TUN"
 )
+
+var localRoutingIPv6DestinationCIDRs = []string{
+	"::1/128",
+	netip.MustParsePrefix(config.MihomoTUNIPv6).Masked().String(),
+	config.DownstreamIPv6Prefix,
+	"fe80::/10",
+	"ff00::/8",
+}
 
 type LocalRoutingSnapshot struct {
 	Mode               string      `json:"mode"`
@@ -42,6 +52,11 @@ type localRoutingGeneratedGroup struct {
 type localRoutingGeneratedPolicy struct {
 	Groups []localRoutingGeneratedGroup
 	Rules  []string
+}
+
+type localRoutingInbound struct {
+	match []string
+	ipv6  bool
 }
 
 func IsLocalRoutingGroup(name string) bool {
@@ -285,24 +300,64 @@ func buildLocalRoutingPolicy(cfg config.Config, imported *importedProfile) local
 		localRoutingGeneratedGroup{Name: LocalRoutingUDPGroup, Policies: udpPolicies},
 	)
 
-	inbounds := [][]string{
-		{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR,127.0.0.0/8"},
-		{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR," + cfg.Gateway.LANIP + "/32"},
+	inbounds := []localRoutingInbound{
+		{match: []string{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR,127.0.0.0/8"}},
+		{match: []string{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR," + cfg.Gateway.LANIP + "/32"}},
 	}
 	if cfg.Transparent.TUNEnabled() {
-		inbounds = append([][]string{{"IN-TYPE,TUN", "SRC-IP-CIDR," + localRoutingTUNSource}}, inbounds...)
+		tunInbounds := []localRoutingInbound{
+			{match: []string{"IN-TYPE,TUN", "SRC-IP-CIDR," + localRoutingTUNSource}},
+		}
+		if cfg.Transparent.IPv6Requested() {
+			tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingHostTUNIPv6Source()))
+		} else if cfg.DNS.IPv6 {
+			// Without an explicit inet6-address, Mihomo derives the system TUN
+			// IPv6 address from fake-ip-range6. An effective OpenSurge IPv6 TUN
+			// replaces that default with config.MihomoTUNIPv6 instead.
+			tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingFakeIPv6Source()))
+		}
+		inbounds = append(tunInbounds, inbounds...)
 	}
-	rules := make([]string, 0, len(inbounds)*(len(dedicatedLocalCIDRs)+2))
+	rules := make([]string, 0, len(inbounds)*(len(dedicatedLocalCIDRs)+len(localRoutingIPv6DestinationCIDRs)+2))
 	for _, inbound := range inbounds {
 		for _, cidr := range dedicatedLocalCIDRs {
-			rules = append(rules, localRoutingRule(inbound, "IP-CIDR,"+cidr, "DIRECT"))
+			rules = append(rules, localRoutingRule(inbound.match, "IP-CIDR,"+cidr, "DIRECT"))
+		}
+		if inbound.ipv6 {
+			for _, cidr := range localRoutingIPv6DestinationCIDRs {
+				rules = append(rules, localRoutingRule(inbound.match, "IP-CIDR6,"+cidr, "DIRECT"))
+			}
 		}
 		rules = append(rules,
-			localRoutingRule(inbound, "NETWORK,TCP", LocalRoutingTCPGroup),
-			localRoutingRule(inbound, "NETWORK,UDP", LocalRoutingUDPGroup),
+			localRoutingRule(inbound.match, "NETWORK,TCP", LocalRoutingTCPGroup),
+			localRoutingRule(inbound.match, "NETWORK,UDP", LocalRoutingUDPGroup),
 		)
 	}
 	return localRoutingGeneratedPolicy{Groups: groups, Rules: rules}
+}
+
+func localRoutingSystemTUNIPv6Inbound(source string) localRoutingInbound {
+	return localRoutingInbound{
+		match: []string{
+			"IN-TYPE,TUN",
+			"IN-NAME," + localRoutingSystemTUNName,
+			"SRC-IP-CIDR," + source,
+		},
+		ipv6: true,
+	}
+}
+
+func localRoutingFakeIPv6Source() string {
+	prefix := netip.MustParsePrefix(config.MihomoFakeIPv6Range).Masked()
+	return localRoutingHostPrefix(prefix.Addr().Next())
+}
+
+func localRoutingHostTUNIPv6Source() string {
+	return localRoutingHostPrefix(netip.MustParsePrefix(config.MihomoTUNIPv6).Addr())
+}
+
+func localRoutingHostPrefix(addr netip.Addr) string {
+	return netip.PrefixFrom(addr, addr.BitLen()).String()
 }
 
 func localRoutingRule(inbound []string, extra, target string) string {

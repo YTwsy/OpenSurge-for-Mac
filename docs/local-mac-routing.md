@@ -28,30 +28,35 @@ a remote global egress is selected.
 OpenSurge constrains both the **inbound type** and the **source address**:
 
 - TUN connections whose mihomo local-TUN source identity is `198.18.0.1`;
+- on the `DEFAULT-TUN` inbound, the exact fake-IPv6 local identity
+  `fdfe:dcba:9876::1/128` when AAAA is enabled but IPv6 TUN is inactive, or the
+  exact host-TUN identity `fdfe:dcba:9877::1/128` when IPv6 TUN is effective;
 - explicit mixed-port connections from `127.0.0.0/8` or the gateway Mac's LAN
   IPv4 address.
 
-Downstream connections carry their own LAN IPv4 source and cannot match those
-local rules. They continue into device `SRC-IP-CIDR` overrides and the
-imported/managed gateway rules.
+Downstream IPv4 connections carry their own LAN source. Downstream IPv6 enters
+through the separate `opensurge-ipv6` packet listener with a device `IN-USER`
+and a source from `fdfe:dcba:9878::/64`. Neither path can match the local rules;
+they continue into device overrides and the imported/managed gateway rules.
 
-### Current limitation: AAAA and local modes
+### AAAA and local modes
 
 `dns.ipv6` and `transparent.tun_ipv6` are independent. Even when downstream
 IPv6 is set to `auto` and remains inactive because no native upstream IPv6 is
 available, enabling AAAA responses still makes mihomo DNS return fake IPv6
-addresses from `fdfe:dcba:9876::/64`. Some applications prefer those AAAA
-answers. The current local-mode rules cover only the `198.18.0.1` IPv4 TUN
-identity, so these local-Mac IPv6 connections can bypass
-`open-surge/mac-mode-*` and continue through imported/managed gateway rules.
-As a result, connections may still use a proxy in Direct mode; repeatedly
-refreshing connections only lets the application recreate the same path.
+addresses from `fdfe:dcba:9876::/64`. Some applications prefer those answers.
+When IPv6 TUN is inactive, the corresponding `fdfe:dcba:9876::1/128`
+system-TUN source identity is sent through `open-surge/mac-mode-*`, so AAAA
+does not need to be disabled merely to make local Direct mode effective. When
+IPv6 TUN is effective, mihomo's explicit `fdfe:dcba:9877::1/128` host-TUN
+identity replaces it and uses the same mode.
 
-When no native upstream IPv6 or downstream IPv6 behavior is needed, temporarily
-disable AAAA responses, save and reload the gateway, then fully quit and reopen
-the affected application. An inactive `auto` downstream mode does not disable
-AAAA automatically. Disabling AAAA is a current workaround, not complete
-local-Mac IPv6 mode support.
+Both IPv6 alternatives additionally require `IN-NAME,DEFAULT-TUN`; only the
+effective identity is generated. They do not match the whole fake-IP `/64`,
+downstream `fdfe:dcba:9878::/64`, or the
+`opensurge-ipv6` listener. Reload the gateway after upgrading to a version with
+this support so it generates the new rules. Mode switches still affect only
+new connections; refresh or let applications recreate existing connections.
 
 The Web GUI's local-Mac mode and a device's “Follow gateway rules / Dedicated
 device egress” are therefore orthogonal controls:
@@ -65,8 +70,8 @@ device egress” are therefore orthogonal controls:
 
 The local-Mac Rule / Global / Direct switch does not itself enable or rewrite
 macOS **System Settings → Network → Proxies**. With TUN enabled, routable local
-IPv4 traffic entering the TUN uses this mode. Applications that explicitly use
-the OpenSurge mixed-port enter the same mode.
+IPv4 traffic and the system-TUN IPv6 identities listed above use this mode.
+Applications that explicitly use the OpenSurge mixed-port enter the same mode.
 
 Network Settings has a separate, off-by-default **local system-proxy
 coordination** compatibility option. In TUN mode it temporarily points the

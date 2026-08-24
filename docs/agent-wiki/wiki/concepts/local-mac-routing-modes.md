@@ -21,19 +21,23 @@ mihomo 顶层 `mode: global` 或 `mode: direct` 会改变同一进程内的所�
 
 ```text
 AND,((IN-TYPE,TUN),(SRC-IP-CIDR,198.18.0.1/32),(NETWORK,TCP)),open-surge/mac-mode-tcp
+AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp
+AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp
 AND,((IN-TYPE,SOCKS/HTTP),(SRC-IP-CIDR,127.0.0.0/8),(NETWORK,TCP)),open-surge/mac-mode-tcp
 ```
 
 网关 LAN IPv4 也有一组显式代理入口规则。每个入口在分派到模式组前先生成
-local/private `DIRECT` 保护。
+local/private `DIRECT` 保护。IPv6 本机入口只保护 `::1/128`、本项目拥有的 host-TUN
+`/126`、下游 `/64`、link-local 和 multicast 目标；不能把整个 `fc00::/7` 设为
+`DIRECT`，否则 fake-AAAA 目的地址会绕过模式选择。
 
-当前实现的 TUN 本机身份只覆盖 `198.18.0.1/32`。`dns.ipv6: true` 会独立于
-`transparent.tun_ipv6` 是否实际生效而返回 `fdfe:dcba:9876::/64` fake AAAA；应用选择
-该地址族后，live connections 可呈现 `fdfe:dcba:9876::1` 本机源身份并绕过
-`open-surge/mac-mode-*`，继续进入 imported/managed 规则。连接刷新能够关闭这类带本机
-进程证据的会话，但客户端重建后仍会重复同一路径。修复前，无上游 IPv6 且不需要下游
-IPv6 的环境可关闭 AAAA、重载后重启受影响应用；后续实现必须补充 IPv6 本机身份规则和
-fake-AAAA 的 TUN Lab 证据。
+`dns.ipv6: true` 会独立于 `transparent.tun_ipv6` 是否实际生效而返回
+`fdfe:dcba:9876::/64` fake AAAA。AAAA 开启、IPv6 TUN 未启用时，mihomo 使用
+`fdfe:dcba:9876::1/126` 作为默认系统 TUN 地址，生成器只匹配精确的 `/128` 源身份；
+IPv6 TUN 有效时，显式 `fdfe:dcba:9877::1/126` 取代该默认值，生成器也只匹配它的
+`/128`。两种规则都要求系统 TUN 名 `DEFAULT-TUN`，但只生成当前配置对应的一种。下游 IPv6 使用独立
+`opensurge-ipv6` packet listener、`fdfe:dcba:9878::/64` 源和设备 `IN-USER`，不能命中
+本机规则。不要把本机源扩大成 fake-IP `/64`、host-TUN 子网或下游 `/64`。
 
 `PASS/PASS` 表示 Rule，`DIRECT/DIRECT` 表示 Direct。Global 的 TCP 指向 mac-global；
 UDP 只有在 live `/proxies` 能确认当前目标支持 UDP 时才指向 mac-global，否则指向
@@ -55,7 +59,8 @@ UDP 只有在 live `/proxies` 能确认当前目标支持 UDP 时才指向 mac-g
 
 ## 验证
 
-单元测试覆盖 AST 组合顺序、模式推导、UDP fail-closed、事务回滚、API/CLI 保留边界。
-`make policy-control-test` 使用真实 mihomo 验证生成配置和 live selector 控制。
-TUN 与下游隔离必须由 `make lab-test-tun-local-routing` 证明；未运行该门槛时不能声称
-真实 host-network 路径已验证。
+单元测试覆盖 AST 组合顺序、IPv4/IPv6 本机身份、下游隔离、模式推导、UDP
+fail-closed、事务回滚和 API/CLI 保留边界。`make policy-control-test` 使用真实 mihomo
+校验 fake-AAAA 精确身份规则的语法和 live selector 控制。TUN 与下游隔离仍必须由
+`make lab-test-tun-local-routing` 证明；该门槛补齐并实际运行 fake-AAAA TCP/QUIC 分支
+前，不能声称本机 IPv6 的真实 host-network 路径已验证。
