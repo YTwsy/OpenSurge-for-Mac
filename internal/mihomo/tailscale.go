@@ -130,10 +130,9 @@ func renderTailscaleAccessRule(source tailscaleRuleSource, destination string) s
 func tailscaleRuleSources(cfg config.Config, policy policySections) []tailscaleRuleSource {
 	sources := []tailscaleRuleSource{}
 	if cfg.Tailscale.AllowMac {
-		sources = append(sources,
-			tailscaleRuleSource{"IN-TYPE,TUN", "SRC-IP-CIDR," + localRoutingTUNSource},
-			tailscaleRuleSource{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR,127.0.0.0/8"},
-		)
+		for _, inbound := range localRoutingInbounds(cfg) {
+			sources = append(sources, tailscaleRuleSource(append([]string(nil), inbound.match...)))
+		}
 	}
 	if policy.bundle == nil {
 		return sources

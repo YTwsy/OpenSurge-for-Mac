@@ -300,24 +300,7 @@ func buildLocalRoutingPolicy(cfg config.Config, imported *importedProfile) local
 		localRoutingGeneratedGroup{Name: LocalRoutingUDPGroup, Policies: udpPolicies},
 	)
 
-	inbounds := []localRoutingInbound{
-		{match: []string{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR,127.0.0.0/8"}},
-		{match: []string{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR," + cfg.Gateway.LANIP + "/32"}},
-	}
-	if cfg.Transparent.TUNEnabled() {
-		tunInbounds := []localRoutingInbound{
-			{match: []string{"IN-TYPE,TUN", "SRC-IP-CIDR," + localRoutingTUNSource}},
-		}
-		if cfg.Transparent.IPv6Requested() {
-			tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingHostTUNIPv6Source()))
-		} else if cfg.DNS.IPv6 {
-			// Without an explicit inet6-address, Mihomo derives the system TUN
-			// IPv6 address from fake-ip-range6. An effective OpenSurge IPv6 TUN
-			// replaces that default with config.MihomoTUNIPv6 instead.
-			tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingFakeIPv6Source()))
-		}
-		inbounds = append(tunInbounds, inbounds...)
-	}
+	inbounds := localRoutingInbounds(cfg)
 	rules := make([]string, 0, len(inbounds)*(len(dedicatedLocalCIDRs)+len(localRoutingIPv6DestinationCIDRs)+2))
 	for _, inbound := range inbounds {
 		for _, cidr := range dedicatedLocalCIDRs {
@@ -334,6 +317,28 @@ func buildLocalRoutingPolicy(cfg config.Config, imported *importedProfile) local
 		)
 	}
 	return localRoutingGeneratedPolicy{Groups: groups, Rules: rules}
+}
+
+func localRoutingInbounds(cfg config.Config) []localRoutingInbound {
+	inbounds := []localRoutingInbound{
+		{match: []string{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR,127.0.0.0/8"}},
+		{match: []string{"IN-TYPE,SOCKS/HTTP", "SRC-IP-CIDR," + cfg.Gateway.LANIP + "/32"}},
+	}
+	if !cfg.Transparent.TUNEnabled() {
+		return inbounds
+	}
+	tunInbounds := []localRoutingInbound{
+		{match: []string{"IN-TYPE,TUN", "SRC-IP-CIDR," + localRoutingTUNSource}},
+	}
+	if cfg.Transparent.IPv6Requested() {
+		tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingHostTUNIPv6Source()))
+	} else if cfg.DNS.IPv6 {
+		// Without an explicit inet6-address, Mihomo derives the system TUN
+		// IPv6 address from fake-ip-range6. An effective OpenSurge IPv6 TUN
+		// replaces that default with config.MihomoTUNIPv6 instead.
+		tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingFakeIPv6Source()))
+	}
+	return append(tunInbounds, inbounds...)
 }
 
 func localRoutingSystemTUNIPv6Inbound(source string) localRoutingInbound {
