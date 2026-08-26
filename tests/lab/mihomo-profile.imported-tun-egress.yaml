@@ -20,6 +20,11 @@ proxy-groups:
     proxies:
       - DIRECT
 
+dns:
+  nameserver:
+    - "__TUN_EGRESS_DNS__"
+
 rules:
   - DOMAIN,__TUN_EGRESS_HOST__,TunEgress
+  - DOMAIN,__LOCAL_ROUTING_IPV6_HOST__,TunEgress
   - MATCH,DIRECT

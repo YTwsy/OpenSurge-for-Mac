@@ -126,7 +126,12 @@ local Global can use the controlled proxy while the client follows direct
 gateway rules, and local Direct can bypass the proxy while the client still
 uses it through gateway rules. It also checks the local TUN source identity,
 UDP `REJECT` for an HTTP-only global egress, and that generic `policies` hides
-the internal groups.
+the internal groups. The same gate enables fake-AAAA and sends controlled TCP
+and QUIC probes to TEST-NET-1 to verify the exact `DEFAULT-TUN` +
+`fdfe:dcba:9876::1/128` local IPv6 identity: Rule reaches the imported rule,
+Direct logs `DIRECT`, and HTTP-only Global selects its TCP egress while UDP
+logs `REJECT`. It rejects broad fake-IP, downstream IPv6, ULA, or
+`opensurge-ipv6` identity matching.
 
 `lab-test-tun-device-policy` uses both clients as independently identified LAN
 devices. It runs the bridge and DHCP clients on `/22`, assigns fixed

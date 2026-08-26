@@ -409,11 +409,14 @@ make lab-test-tun-local-routing
 LAN IPv4。`make test`、`make web-test` 或 `make policy-control-test` 都不能替代这条
 真实 host-network/TUN 隔离证据。
 
-本机 IPv6 身份改动还要求把该门槛扩展到 `dns.ipv6: true`：无原生上游 IPv6 时，
-fake-AAAA TCP 与 QUIC 必须以 `DEFAULT-TUN`、`fdfe:dcba:9876::1` 命中
-`open-surge/mac-mode-*`，同时下游 `opensurge-ipv6` / `IN-USER` 流量保持原设备策略。
-实际补齐并运行这些断言前，单元测试和真实 mihomo 配置校验只证明生成与解析契约，
-不构成本机 IPv6 host-network 验证。
+该门槛同时启用 `dns.ipv6: true`。无原生上游 IPv6 时，它向 TEST-NET-1
+发送受控 fake-AAAA TCP 与 QUIC 探针，证明流量以 `DEFAULT-TUN`、
+`fdfe:dcba:9876::1` 命中 `open-surge/mac-mode-*`：Rule 继续到导入规则，
+Direct 命中 `DIRECT`，Global 的 TCP 走所选出口而 HTTP-only UDP 明确命中
+`REJECT`。生成配置还必须只包含
+`DEFAULT-TUN + fdfe:dcba:9876::1/128`，不得扩大到 fake-IP `/64`、
+下游 `/64`、`fc00::/7` 或 `opensurge-ipv6`。再结合下游 IPv6 门槛中
+`opensurge-ipv6` / `IN-USER` 仍保持设备策略的证据，才能完成本机与下游隔离结论。
 
 ## 每设备策略门槛
 

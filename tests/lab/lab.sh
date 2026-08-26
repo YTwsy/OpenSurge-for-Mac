@@ -36,6 +36,7 @@ IPV6_HTTP3_FIXTURE_PORT="${OMG_LAB_IPV6_HTTP3_FIXTURE_PORT:-19096}"
 IPV6_UDP_PROXY_PORT="${OMG_LAB_IPV6_UDP_PROXY_PORT:-19097}"
 IPV6_UDP_PROXY_DNS_PORT="${OMG_LAB_IPV6_UDP_PROXY_DNS_PORT:-19098}"
 CONTROL_API_PORT="${OMG_LAB_CONTROL_API_PORT:-19099}"
+CONFIG_DNS_PORT=1053
 CONNECTION_REFRESH_TEST_HOST="connection-refresh.opensurge.test"
 IPV6_TCP_TEST_HOST="ipv6-tcp.opensurge.test"
 IPV6_TCP_TEST_URL="http://$IPV6_TCP_TEST_HOST:$EGRESS_ORIGIN_PORT/ipv6-tcp"
@@ -45,6 +46,7 @@ IPV6_QUIC_TEST_HOST="ipv6-quic.opensurge.test"
 IPV6_HTTP3_DIRECT_HOST="ipv6-http3-direct.opensurge.test"
 IPV6_HTTP3_PROXY_HOST="ipv6-http3-proxy.opensurge.test"
 IPV6_HTTP3_BLOCKED_HOST="ipv6-http3-blocked.opensurge.test"
+LOCAL_ROUTING_IPV6_HTTP3_HOST="local-ipv6-http3.opensurge.test"
 IPV6_REAL_PROFILE_SOURCE="${OMG_LAB_IPV6_REAL_PROFILE:-}"
 IPV6_REAL_PROFILE="$STATE_DIR/mihomo-profile.ipv6-real.yaml"
 IPV6_REAL_TCP_HOST="${OMG_LAB_IPV6_REAL_TCP_HOST:-api64.ipify.org}"
@@ -57,6 +59,7 @@ IPV6_NATIVE_DIRECT_HOST="${OMG_LAB_IPV6_NATIVE_DIRECT_HOST:-api6.ipify.org}"
 IPV6_NATIVE_DIRECT_URL="${OMG_LAB_IPV6_NATIVE_DIRECT_URL:-https://api6.ipify.org/}"
 IPV6_NATIVE_DIRECT_TARGET="${OMG_LAB_IPV6_NATIVE_DIRECT_TARGET:-2001:4860:4860::8888}"
 LAN_IP=192.168.50.1
+SAME_WIFI_BYPASS_GATEWAY=192.168.49.254
 CLIENTS="${OMG_LAB_CLIENTS:-omg-lab-client-1 omg-lab-client-2}"
 TEST_URL="${OMG_LAB_TEST_URL:-https://example.com/}"
 LAB_MIHOMO_PROFILE="${OMG_LAB_MIHOMO_PROFILE:-}"
@@ -221,12 +224,18 @@ EOF
 }
 
 render_tun_egress_profile() {
-  local source=$1 destination=$2 host
+  local source=$1 destination=$2 host resolver
   host="$(url_host "$TEST_URL")"
+  resolver="1.1.1.1"
+  if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
+    resolver="127.0.0.1:$IPV6_DNS_FIXTURE_PORT"
+  fi
   write_tun_egress_provider
   sed \
     -e "s|__TUN_EGRESS_PROVIDER_URL__|$(sed_escape "$EGRESS_PROVIDER_URL")|g" \
     -e "s|__TUN_EGRESS_HOST__|$(sed_escape "$host")|g" \
+    -e "s|__TUN_EGRESS_DNS__|$(sed_escape "$resolver")|g" \
+    -e "s|__LOCAL_ROUTING_IPV6_HOST__|$(sed_escape "$LOCAL_ROUTING_IPV6_HTTP3_HOST")|g" \
     "$source" >"$destination"
 }
 
@@ -239,7 +248,8 @@ write_config() {
 	iface="$(lab_interface)"
 	upstream="$(upstream_interface)"
 	dnsmasq_bin="$(command -v dnsmasq)"
-	mihomo_bin="$(command -v mihomo)"
+	mihomo_bin="${OMG_LAB_MIHOMO_BINARY:-$(command -v mihomo)}"
+  [[ -x "$mihomo_bin" ]] || { echo "mihomo binary is not executable: $mihomo_bin" >&2; exit 1; }
   runtime_dir="$STATE_DIR"
   device_policy_file="$LAB_DEVICE_POLICY_FILE"
   dns_upstream_line=""
@@ -290,7 +300,7 @@ write_config() {
         ipv6_shared_l2_ready=true
         # Use an address outside the dynamic pool as the fixture's stand-in
         # upstream router. IPv6 still enters through the OpenSurge packet path.
-        dhcp_bypass_gateway=192.168.50.254
+        dhcp_bypass_gateway="$SAME_WIFI_BYPASS_GATEWAY"
         dhcp_bypass_dns=192.168.50.1
       elif [[ "$mode" == "ipv6-same-lan" ]]; then
         gateway_mode=same_lan
@@ -301,6 +311,9 @@ write_config() {
       ;;
     *) echo "unknown transparent mode: $mode" >&2; exit 2 ;;
   esac
+  if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
+    dns_ipv6=true
+  fi
 
   case "$iface" in
     bridge*) ;;
@@ -623,6 +636,23 @@ wait_for_tun_source_log_after() {
   exit 1
 }
 
+wait_for_local_ipv6_log_after() {
+  local network=$1 source_ip=$2 host=$3 port=$4 action=$5 first_line=$6 i log_file
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..30}; do
+    if [[ -f "$log_file" ]] &&
+      tail -n +"$first_line" "$log_file" | grep -F "[$network]" | grep -F -- "$source_ip" |
+        grep -F -- "--> $host:$port" | grep -Fq -e "using $action" -e "dial $action "; then
+      echo "local IPv6 $network log observed for $source_ip -> $host:$port via $action"
+      return 0
+    fi
+    sleep 0.2
+  done
+  echo "mihomo did not log local IPv6 $network traffic for $source_ip -> $host:$port via $action" >&2
+  tail -180 "$log_file" >&2 || true
+  exit 1
+}
+
 wait_for_tun_udp_reject() {
   local source_ip=$1 target=$2 port=$3 i log_file
   log_file="$STATE_DIR/logs/mihomo.log"
@@ -758,13 +788,18 @@ stop_egress_probe() {
 }
 
 build_http3_lab_binaries() {
-  local go_cache go_path
+  local go_cache go_path go_no_proxy
   go_cache="${GOCACHE:-/private/tmp/opensurge-http3-gocache}"
   go_path="${OMG_LAB_HTTP3_GOPATH:-/private/tmp/opensurge-http3-gopath}"
+  go_no_proxy="${NO_PROXY:+$NO_PROXY,}goproxy.cn,proxy.golang.org,github.com,codeload.github.com,objects.githubusercontent.com"
   GOPATH="$go_path" GOMODCACHE="$go_path/pkg/mod" GOCACHE="$go_cache" \
+    GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
+    NO_PROXY="$go_no_proxy" no_proxy="$go_no_proxy" \
     go build -o "$HTTP3_PROBE_BINARY" ./tests/integration/http3probe
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
     GOPATH="$go_path" GOMODCACHE="$go_path/pkg/mod" GOCACHE="$go_cache" \
+    GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
+    NO_PROXY="$go_no_proxy" no_proxy="$go_no_proxy" \
     go build -o "$HTTP3_CLIENT_BINARY" ./tests/integration/http3probe
 }
 
@@ -868,11 +903,19 @@ stop_ipv6_udp_proxy() {
 }
 
 start_ipv6_dns_fixture() {
-  local log_file i
+  local log_file upstream upstream_ipv4 i
   log_file="$STATE_DIR/logs/ipv6-dns-fixture.log"
+  upstream="$(upstream_interface)"
+  upstream_ipv4="$(/sbin/ifconfig "$upstream" | awk '$1 == "inet" { print $2; exit }')"
+  [[ -n "$upstream_ipv4" ]] || {
+    echo "upstream interface $upstream has no IPv4 source address for the IPv6 DNS fixture" >&2
+    return 1
+  }
   dnsmasq \
     --no-daemon \
     --conf-file=/dev/null \
+    --no-resolv \
+    --server="1.1.1.1@$upstream_ipv4" \
     --port="$IPV6_DNS_FIXTURE_PORT" \
     --listen-address=127.0.0.1 \
     --bind-interfaces \
@@ -882,6 +925,7 @@ start_ipv6_dns_fixture() {
     --address="/$IPV6_HTTP3_DIRECT_HOST/127.0.0.1" \
     --address="/$IPV6_HTTP3_PROXY_HOST/127.0.0.1" \
     --address="/$IPV6_HTTP3_BLOCKED_HOST/127.0.0.1" \
+    --address="/$LOCAL_ROUTING_IPV6_HTTP3_HOST/192.0.2.123" \
     --address="/$IPV6_UDP_ANSWER_HOST/192.0.2.123" \
     --log-queries \
     --log-facility=- >"$log_file" 2>&1 &
@@ -1168,11 +1212,10 @@ build_ipv6_lab_binaries() {
     no_proxy="$go_no_proxy" \
     OPENSURGE_MIHOMO_OUTPUT="$PATCHED_MIHOMO_BINARY" \
       "$ROOT/scripts/build-opensurge-mihomo.sh" 2>&1 | tee "$build_log"; then
-    if grep -F "$mod_cache" "$build_log" | grep -Eq 'no such file or directory|no matching files found'; then
-      echo "OpenSurge Mihomo module cache is incomplete; rebuilding the disposable Lab cache"
+    if grep -F "$mod_cache" "$build_log" | grep -Eq 'no such file or directory|no matching files found' ||
+      grep -Fq 'no required module provides package' "$build_log"; then
+      echo "OpenSurge Mihomo build caches are inconsistent; rebuilding the disposable Lab caches"
       GOMODCACHE="$mod_cache" go clean -modcache
-    elif grep -Fq 'no required module provides package' "$build_log"; then
-      echo "OpenSurge Mihomo build cache is inconsistent; rebuilding the disposable Lab cache"
       GOCACHE="$build_cache" go clean -cache
     else
       return 1
@@ -2092,7 +2135,7 @@ run_ipv6_userspace_test() {
     for client in $CLIENTS; do
       client_gateway="$LAN_IP"
       if [[ "$topology" == "same_wifi_dhcp" && "$client" == "$client_one" ]]; then
-        client_gateway=192.168.50.254
+        client_gateway="$SAME_WIFI_BYPASS_GATEWAY"
       fi
       limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$client_gateway"
       limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew6 "$LAN_IP"
@@ -2107,7 +2150,7 @@ run_ipv6_userspace_test() {
   assert_client_ipv4 "$client_one" "192.168.50.101"
   assert_client_ipv4 "$client_two" "192.168.50.102"
   if [[ "$topology" == "same_wifi_dhcp" ]]; then
-    limactl shell "$client_one" -- bash -lc "ip -4 route show default dev omg0 | grep -F 'via 192.168.50.254'"
+    limactl shell "$client_one" -- bash -lc "ip -4 route show default dev omg0 | grep -F 'via $SAME_WIFI_BYPASS_GATEWAY'"
     limactl shell "$client_two" -- bash -lc "ip -4 route show default dev omg0 | grep -F 'via $LAN_IP'"
   fi
   source_one="$(client_ipv6 "$client_one")"
@@ -2446,6 +2489,8 @@ run_local_routing_assertions() {
   wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
   wait_for_tun_policy_log_for_host TunEgress DIRECT "$host"
   assert_tun_egress_proxy_unused
+  run_local_routing_ipv6_tcp rule TunEgress
+  run_local_routing_ipv6_http3 rule 'TunEgress[DIRECT]'
 
   "$BINARY" local-routing-set --config "$CONFIG" --mode global --policy egress-proxy --format json >"$STATE_DIR/local-routing-global.json"
   grep -Fq '"mode": "global"' "$STATE_DIR/local-routing-global.json"
@@ -2455,8 +2500,11 @@ run_local_routing_assertions() {
   curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-global-host.out"
   wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
   assert_tun_egress_proxy_used
+  run_local_routing_ipv6_tcp global open-surge/mac-mode-tcp
+  run_local_routing_ipv6_http3 global 'open-surge/mac-mode-udp[REJECT]'
 
   : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
   wait_for_tun_action_log "$host" "TunEgress[DIRECT]" "$client_ip"
   assert_tun_egress_proxy_unused
@@ -2469,8 +2517,11 @@ run_local_routing_assertions() {
   curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-direct-host.out"
   wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
   assert_tun_egress_proxy_unused
+  run_local_routing_ipv6_tcp direct open-surge/mac-mode-tcp
+  run_local_routing_ipv6_http3 direct 'open-surge/mac-mode-udp[DIRECT]'
 
   : >"$STATE_DIR/egress/proxy.log"
+  limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
   limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client transparent "$LAN_IP" "$TEST_URL"
   wait_for_tun_action_log "$host" "TunEgress[egress-proxy]" "$client_ip"
   assert_tun_egress_proxy_used
@@ -2491,8 +2542,48 @@ run_local_routing_assertions() {
   echo "local Mac routing isolation test passed"
 }
 
+run_local_routing_ipv6_tcp() {
+  local mode=$1 action=$2 source_ip fake_ip first_line output
+  source_ip="fdfe:dcba:9876::1"
+  output="$STATE_DIR/local-routing-$mode-ipv6-tcp.out"
+  fake_ip="$(dig +time=5 +tries=1 +short @127.0.0.1 -p "$CONFIG_DNS_PORT" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
+  [[ -n "$fake_ip" ]] || { echo "local-routing Lab did not receive a fake-AAAA address" >&2; exit 1; }
+  first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
+  if curl --noproxy '*' --ipv6 --interface "$source_ip" \
+    --resolve "$LOCAL_ROUTING_IPV6_HTTP3_HOST:443:[$fake_ip]" \
+    --connect-timeout 3 --max-time 5 --fail --silent --show-error \
+    "https://$LOCAL_ROUTING_IPV6_HTTP3_HOST/" >"$output" 2>&1; then
+    echo "local IPv6 TCP unexpectedly reached the TEST-NET-1 fixture target in $mode mode" >&2
+    exit 1
+  fi
+  wait_for_local_ipv6_log_after TCP "$source_ip" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" 443 "$action" "$first_line"
+}
+
+run_local_routing_ipv6_http3() {
+  local mode=$1 action=$2 source_ip fake_ip first_line request_path origin_log output
+  source_ip="fdfe:dcba:9876::1"
+  request_path="/local-mac-$mode"
+  origin_log="$STATE_DIR/egress/http3-origin.log"
+  output="$STATE_DIR/local-routing-$mode-ipv6-http3.out"
+  fake_ip="$(dig +time=5 +tries=1 +short @127.0.0.1 -p "$CONFIG_DNS_PORT" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
+  [[ -n "$fake_ip" ]] || { echo "local-routing Lab did not receive a fake-AAAA address" >&2; exit 1; }
+  : >"$origin_log"
+  first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
+  # The fixture maps the host to TEST-NET-1 so the generated private-destination
+  # bypass rules cannot mask the local-mode action under test. The QUIC request
+  # is expected to fail after mihomo records the selected action.
+  if "$HTTP3_PROBE_BINARY" client \
+    --url "https://$LOCAL_ROUTING_IPV6_HTTP3_HOST:$IPV6_HTTP3_FIXTURE_PORT$request_path" \
+    --address "$fake_ip" --source "$source_ip" >"$output" 2>&1; then
+    echo "local IPv6 HTTP/3 unexpectedly reached the TEST-NET-1 fixture target in $mode mode" >&2
+    exit 1
+  fi
+  wait_for_local_ipv6_log_after UDP "$source_ip" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" "$IPV6_HTTP3_FIXTURE_PORT" "$action" "$first_line"
+  [[ ! -s "$origin_log" ]] || { echo "local IPv6 HTTP/3 unexpectedly reached the origin" >&2; cat "$origin_log" >&2; exit 1; }
+}
+
 run_test() {
-  local mode client gateway_started egress_probe_started
+  local mode client gateway_started egress_probe_started dns_fixture_started http3_probe_started
   mode="${1:-off}"
   require_installed_lab
   [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
@@ -2506,6 +2597,8 @@ run_test() {
 
   gateway_started=0
   egress_probe_started=0
+  dns_fixture_started=0
+  http3_probe_started=0
   cleanup_test() {
     status=$?
     collect_artifacts || true
@@ -2516,6 +2609,12 @@ run_test() {
     if [[ "$egress_probe_started" == 1 ]]; then
       stop_egress_probe || true
     fi
+    if [[ "$http3_probe_started" == 1 ]]; then
+      stop_http3_probe || true
+    fi
+    if [[ "$dns_fixture_started" == 1 ]]; then
+      stop_ipv6_dns_fixture || true
+    fi
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
@@ -2525,9 +2624,26 @@ run_test() {
     start_egress_probe
     egress_probe_started=1
   fi
+  if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
+    build_http3_lab_binaries
+    start_http3_probe
+    http3_probe_started=1
+    start_ipv6_dns_fixture
+    dns_fixture_started=1
+  fi
 
   sudo -n "$BINARY" start --config "$CONFIG"
   gateway_started=1
+
+  if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
+    grep -Fq 'fake-ip-range6: fdfe:dcba:9876::/64' "$STATE_DIR/mihomo.yaml"
+    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp' "$STATE_DIR/mihomo.yaml"
+    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp' "$STATE_DIR/mihomo.yaml"
+    if grep -F 'open-surge/mac-mode-' "$STATE_DIR/mihomo.yaml" | grep -Eq 'fdfe:dcba:9876::/64|fdfe:dcba:9878::/64|fc00::/7|IN-NAME,opensurge-ipv6'; then
+      echo "local Mac routing rules captured a broad or downstream IPv6 identity" >&2
+      exit 1
+    fi
+  fi
 
   for client in $CLIENTS; do
     limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
@@ -2584,6 +2700,14 @@ run_test() {
   if [[ "$egress_probe_started" == 1 ]]; then
     stop_egress_probe
     egress_probe_started=0
+  fi
+  if [[ "$http3_probe_started" == 1 ]]; then
+    stop_http3_probe
+    http3_probe_started=0
+  fi
+  if [[ "$dns_fixture_started" == 1 ]]; then
+    stop_ipv6_dns_fixture
+    dns_fixture_started=0
   fi
   [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
   trap - EXIT INT TERM
