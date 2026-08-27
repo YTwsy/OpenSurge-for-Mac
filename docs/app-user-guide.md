@@ -40,7 +40,9 @@ still detected when it becomes available.
 ### 1. Import a source
 
 Open **来源** (Sources) and import either an HTTPS subscription or a local
-mihomo YAML file:
+mihomo YAML file. Select the existing **选择或拖入 YAML** (Choose or drop YAML)
+area or drop a file directly onto it. This is the page's only complete YAML
+configuration-source entry point.
 
 1. Select **导入为草稿** (Import as draft).
 2. Confirm that structural validation succeeds.
@@ -51,15 +53,20 @@ Importing a draft does not change the current network. Applying a source while
 the gateway is running validates the full configuration before briefly
 restarting gateway services.
 
-Use **Global Extension** on the same page when your own rules, proxies, or
-providers should survive every subscription refresh. The guided editor covers
-rule prepend/tail placement, manual proxies, providers, proxy-group extensions,
-and common DNS resolver/filter fields; advanced users can edit the operation
-YAML directly. Saving only creates an overlay draft and rechecks each source for
-name collisions and dangling references. Compare the raw source, overlay,
-effective source, and final mihomo config in the preview before applying a
-source. Refreshing a subscription also creates a new draft and never changes the
-running gateway automatically.
+Expand **Advanced: Global Profile Overlay**, collapsed by default after the
+source list, when personal rules or proxies should survive every subscription
+refresh. The ordinary editor has only two operations: high-priority custom
+rules fixed before subscription rules, and custom proxies added from `ss://`,
+`vmess://`, `vless://`, `trojan://`, `hysteria2://`, HTTP, or SOCKS5 share
+links. A small manual form remains for HTTP/SOCKS5. Share links here add proxies
+only; they do not create a subscription or another complete YAML source.
+
+Low-priority tail rules, providers, proxy groups, and DNS operations remain
+available only in **Expert Overlay YAML**. Saving creates only an overlay draft
+and rechecks each source for name collisions and expert references. Compare the
+raw source, overlay, effective source, and final mihomo config in the preview
+before applying a source. Refreshing a subscription also creates a new draft
+and never changes the running gateway automatically.
 
 Each imported-source card shows the local snapshot managed by OpenSurge. You
 can copy its full path or select **Finder 中显示** (Show in Finder) to reveal

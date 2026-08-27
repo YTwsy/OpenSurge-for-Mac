@@ -67,9 +67,13 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
 
   const refresh = useCallback(async (discardDraft = false) => {
     try {
-      const [devices, config, sources, tailscale] = await Promise.all([api.devices(), api.config(), api.sources().catch(() => ({ revision: '', sources: [] })), api.tailscale().catch(() => null)])
+      const [devices, config, sources, tailscale, overlay] = await Promise.all([api.devices(), api.config(), api.sources().catch(() => ({ revision: '', sources: [] })), api.tailscale().catch(() => null), api.profileOverlay().catch(() => null)])
       const nextDocument = config.device_policy.enabled ? await api.devicePolicy() : null
-      const imported = sources.sources.filter(source => source.applied && source.valid).flatMap(source => [...source.inventory.proxies, ...source.inventory.proxy_groups])
+      const imported = sources.sources.filter(source => source.applied && source.valid).flatMap(source => {
+        // Effective inventory follows the current overlay draft, so expose it only when that draft is actually applied.
+        const inventory = overlay?.applied ? source.effective_inventory ?? source.inventory : source.inventory
+        return [...inventory.proxies, ...inventory.proxy_groups]
+      })
       setData(devices)
       setControlConfig(config)
       setImportedCandidates(imported)

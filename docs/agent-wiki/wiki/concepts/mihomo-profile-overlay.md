@@ -43,6 +43,17 @@ snapshot. Its schema is intentionally operation-based:
 - patch an existing proxy group by appending proxies/groups or proxy providers;
 - merge or append only retained DNS resolver/filter fields.
 
+This schema is broader than the ordinary user interface. The Sources page has
+one complete-profile import surface: the existing local YAML chooser/dropzone.
+The global overlay appears after the imported-source list and is collapsed by
+default. Its ordinary editor exposes only high-priority rules fixed before the
+subscription and proxy additions from share links (plus a small HTTP/SOCKS5
+form). Share links add proxy objects; they are not another subscription or YAML
+source. Tail rules, proxy/rule providers, group add/replace/patch, DNS fields,
+and proxy replacement remain visible only through Expert Overlay YAML. Existing
+documents keep all of those operations and the collapsed summary counts them,
+so the UI simplification does not discard compatible stored data.
+
 `add` fails on a name collision, `replace` fails when its target is absent, and
 group/rule references added by the overlay must resolve after composition.
 OpenSurge-owned namespaces and gateway-facing fields are rejected. In

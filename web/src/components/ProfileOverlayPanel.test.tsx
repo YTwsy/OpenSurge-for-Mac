@@ -80,7 +80,11 @@ describe('ProfileOverlayPanel', () => {
     vi.mocked(api.sourcePreview).mockResolvedValue(preview)
     render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
 
-    expect(screen.getByRole('heading', { name: 'Global Profile Overlay' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Advanced: Global Profile Overlay' })).toBeTruthy()
+    const panel = documentQuery('details.profile-overlay-panel')
+    expect(panel.open).toBe(false)
+    await userEvent.click(screen.getByRole('heading', { name: 'Advanced: Global Profile Overlay' }))
+    expect(panel.open).toBe(true)
     await userEvent.selectOptions(screen.getByLabelText('Select a source to preview'), 'home')
     await userEvent.click(screen.getByRole('button', { name: 'View composed result' }))
     const dialog = await screen.findByRole('dialog', { name: 'Final configuration preview' })
@@ -100,10 +104,11 @@ describe('ProfileOverlayPanel', () => {
 
     render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={onSaved} />)
 
-    expect(screen.getByRole('heading', { name: '全局附加配置' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '高级：全局附加配置' })).toBeTruthy()
     expect(screen.getByText('1/1')).toBeTruthy()
+    await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
     await userEvent.click(screen.getByRole('switch', { name: '已停用' }))
-    await userEvent.type(screen.getByLabelText('全局前置规则'), 'DOMAIN,first.example,DIRECT')
+    await userEvent.type(screen.getByLabelText('高优先级自定义规则'), 'DOMAIN,first.example,DIRECT')
     await userEvent.click(screen.getByRole('button', { name: '保存附加配置草稿' }))
 
     await waitFor(() => expect(api.saveProfileOverlayDocument).toHaveBeenCalled())
@@ -118,11 +123,12 @@ describe('ProfileOverlayPanel', () => {
     vi.mocked(api.sourcePreview).mockResolvedValue(preview)
     render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
 
+    await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
     await userEvent.selectOptions(screen.getByLabelText('选择要预览的来源'), 'home')
     await userEvent.click(screen.getByRole('button', { name: '查看组合结果' }))
 
     const dialog = await screen.findByRole('dialog', { name: '最终配置预览' })
-    expect(within(dialog).getByText(/附加前置规则.*订阅规则.*最终 MATCH/)).toBeTruthy()
+    expect(within(dialog).getByText(/高优先级自定义规则.*订阅规则.*专家低优先级规则.*最终 MATCH/)).toBeTruthy()
     await userEvent.click(within(dialog).getByRole('button', { name: '原始来源' }))
     expect(within(dialog).getByText(/rules:\s+- MATCH,DIRECT/)).toBeTruthy()
     await userEvent.click(within(dialog).getByRole('button', { name: '最终 mihomo' }))
@@ -130,4 +136,45 @@ describe('ProfileOverlayPanel', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: '完成' }))
     expect(screen.queryByRole('dialog', { name: '最终配置预览' })).toBeNull()
   })
+
+  it('adds proxies from share links without exposing another YAML import', async () => {
+    vi.mocked(api.saveProfileOverlayDocument).mockImplementation(async candidate => ({ ...overlay, document: candidate }))
+    const onSaved = vi.fn()
+    render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={onSaved} />)
+
+    await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
+    expect(screen.queryByText('代理 Provider')).toBeNull()
+    expect(screen.queryByText('策略组扩展')).toBeNull()
+    expect(screen.queryByLabelText(/YAML.*文件|文件.*YAML/)).toBeNull()
+
+    await userEvent.type(screen.getByLabelText('节点分享链接'), 'vless://user-id@proxy.example:443?security=tls&type=ws&path=%2Fedge#Personal')
+    await userEvent.click(screen.getByRole('button', { name: '解析并添加' }))
+    expect(screen.getByText('Personal')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '保存附加配置草稿' }))
+
+    await waitFor(() => expect(api.saveProfileOverlayDocument).toHaveBeenCalled())
+    expect(vi.mocked(api.saveProfileOverlayDocument).mock.calls[0][0].proxies.add).toEqual([
+      expect.objectContaining({ name: 'Personal', type: 'vless', server: 'proxy.example', port: 443, uuid: 'user-id', tls: true, network: 'ws' }),
+    ])
+  })
+
+  it('keeps existing provider and tail-rule operations in expert YAML', async () => {
+    const expertDocument: ProfileOverlayDocument = {
+      ...structuredClone(document),
+      rules: { prepend: [], append_before_match: ['DOMAIN,late.example,DIRECT'] },
+      proxy_providers: { add: { Airport: { type: 'http', url: 'https://example.com/proxies.yaml' } }, replace: {} },
+    }
+    render(<ProfileOverlayPanel overlay={{ ...overlay, document: expertDocument }} sources={[source]} onSaved={vi.fn()} />)
+
+    await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
+    expect(screen.getByText('2', { selector: '.overlay-summary strong' })).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: /专家 Overlay YAML/ }))
+    expect(screen.getByLabelText('附加配置 YAML')).toBeTruthy()
+  })
 })
+
+function documentQuery(selector: string) {
+  const element = globalThis.document.querySelector(selector)
+  if (!(element instanceof HTMLDetailsElement)) throw new Error(`missing ${selector}`)
+  return element
+}

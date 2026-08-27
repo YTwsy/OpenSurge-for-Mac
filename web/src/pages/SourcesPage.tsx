@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import type { OperationNotification } from '../components/OperationNotifications'
@@ -22,6 +22,8 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
   const [message, setMessage] = useState('')
   const [activeAction, setActiveAction] = useState<SourceAction>(null)
   const [pending, setPending] = useState<Source | null>(null)
+  const [fileDragActive, setFileDragActive] = useState(false)
+  const fileDragDepth = useRef(0)
   const running = overview?.status.gateway === 'running'
   const busy = activeAction !== null
 
@@ -105,6 +107,14 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
     }
   }
 
+  const importLocalFile = (file: File) => {
+    if (!/\.ya?ml$/i.test(file.name)) {
+      setError(t('只能导入 .yaml 或 .yml 文件。'))
+      return
+    }
+    void run({ kind: 'import-file' }, () => api.importFile(file), t('{{name}} 已导入为草稿并完成结构校验。', { name: file.name }))
+  }
+
   return <>
     <PageHeader eyebrow="SOURCES" title="代理与规则源" description="导入、校验、应用各自有明确状态；运行配置只会在完整校验成功后切换。" />
     <div className="source-feedback" aria-live="polite">
@@ -125,20 +135,51 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
         </article>
         <article className="source-import-card local">
           <div className="source-import-head"><span aria-hidden="true">⇧</span><div><small>LOCAL PROFILE</small><h3>{t('本地 mihomo YAML')}</h3></div></div>
-          <label className={`dropzone source-dropzone ${activeAction?.kind === 'import-file' ? 'busy' : ''}`}>
+          <label
+            className={`dropzone source-dropzone ${activeAction?.kind === 'import-file' ? 'busy' : ''} ${fileDragActive ? 'drag-active' : ''}`}
+            aria-disabled={busy}
+            onDragEnter={event => {
+              event.preventDefault()
+              if (busy) return
+              fileDragDepth.current += 1
+              setFileDragActive(true)
+            }}
+            onDragOver={event => {
+              event.preventDefault()
+              if (!busy) event.dataTransfer.dropEffect = 'copy'
+            }}
+            onDragLeave={event => {
+              event.preventDefault()
+              if (busy) return
+              fileDragDepth.current = Math.max(0, fileDragDepth.current - 1)
+              if (!fileDragDepth.current) setFileDragActive(false)
+            }}
+            onDrop={event => {
+              event.preventDefault()
+              fileDragDepth.current = 0
+              setFileDragActive(false)
+              if (busy) return
+              const files = Array.from(event.dataTransfer.files)
+              if (files.length !== 1) {
+                setError(t('一次只能拖入一个 YAML 文件。'))
+                return
+              }
+              importLocalFile(files[0])
+            }}
+          >
             <span className="dropzone-icon" aria-hidden="true">＋</span>
-            <strong>{t(activeAction?.kind === 'import-file' ? '正在读取并校验…' : '选择或拖入 YAML')}</strong>
+            <strong>{t(activeAction?.kind === 'import-file' ? '正在读取并校验…' : fileDragActive ? '松开即可导入' : '选择或拖入 YAML')}</strong>
             <small>{t('.yaml / .yml · 仅创建草稿')}</small>
             <input aria-label={t('本地 mihomo YAML')} type="file" accept=".yaml,.yml,text/yaml" disabled={busy} onChange={event => {
               const file = event.target.files?.[0]
-              if (file) void run({ kind: 'import-file' }, () => api.importFile(file), t('{{name}} 已导入为草稿并完成结构校验。', { name: file.name }))
+              if (file) importLocalFile(file)
+              event.currentTarget.value = ''
             }} />
           </label>
           <p className="source-guard-note"><span aria-hidden="true">⌁</span>{t('DNS、TUN、Controller 与 LAN binding 始终由 OpenSurge 管理。')}</p>
         </article>
       </div>
     </section>
-    <ProfileOverlayPanel overlay={overlay} sources={sources} onSaved={async saved => { setOverlay(saved); const response = await api.sources(); setSources(response.sources ?? []); setRevision(response.revision) }} />
     <section className="section source-library">
       <SectionTitle title="已导入快照" subtitle="刷新只产生新草稿；应用到运行中的网关需要再次完整校验。" />
       {sources.length ? <div className="source-grid">{sources.map(source => {
@@ -192,6 +233,7 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
         </article>
       })}</div> : <Empty text={t('尚未导入任何来源')} />}
     </section>
+    <ProfileOverlayPanel overlay={overlay} sources={sources} onSaved={async saved => { setOverlay(saved); const response = await api.sources(); setSources(response.sources ?? []); setRevision(response.revision) }} />
     {pending && <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="source-apply-title">
 	  <h2 id="source-apply-title">{t(running ? overlay?.document.enabled ? '应用来源与附加配置并重载网关？' : '应用订阅并重载网关？' : '设为下次启动版本？')}</h2>
 	  <p>{t(running ? overlay?.document.enabled ? 'OpenSurge 会组合订阅、全局附加配置和网关规则，验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : 'OpenSurge 会验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : overlay?.document.enabled ? '当前网关未运行。来源与全局附加配置的组合结果会保存为 desired 配置，并在下次启动成功后成为运行版本。' : '当前网关未运行。来源会保存为 desired 配置，并在下次启动成功后成为运行版本。')}</p>

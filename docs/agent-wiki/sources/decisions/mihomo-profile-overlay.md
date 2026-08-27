@@ -45,6 +45,16 @@ new effective preview; only source apply runs the authoritative mihomo
 validation and changes desired/running configuration. The desired config keeps
 the raw source and overlay digests as composition metadata.
 
+The Web GUI deliberately presents a narrower ordinary workflow. The existing
+local YAML chooser/dropzone remains the only complete-profile file import.
+Global Overlay is placed after the imported-source list and collapsed by
+default; its ordinary editor contains only prepended high-priority rules and
+proxy additions from share links, with a small HTTP/SOCKS5 form. Share links do
+not create profile sources. Tail rules, providers, group operations, DNS fields,
+and replacements are expert Overlay YAML operations. The full backend schema is
+retained so previously stored expert operations are neither hidden without a
+count nor discarded by the simplified editor.
+
 OpenSurge continues to render and own gateway-critical fields, including:
 
 - `mixed-port`

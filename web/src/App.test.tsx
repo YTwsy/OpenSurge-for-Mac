@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ControlConfig, GatewayPlan, Overview, ProfileOverlay, Source } from './types'
@@ -1224,6 +1224,43 @@ describe('OpenSurge app shell', () => {
     expect(await screen.findByRole('button', { name: '正在导入并校验…' })).toBeTruthy()
   })
 
+  it('imports one YAML file by dropping it onto the existing local source area', async () => {
+    vi.mocked(api.importFile).mockImplementationOnce(() => new Promise<Source>(() => {}))
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+
+    const input = screen.getByLabelText('本地 mihomo YAML')
+    const dropzone = input.closest('label')
+    if (!dropzone) throw new Error('missing local YAML dropzone')
+    const sourceLibrary = document.querySelector('.source-library')
+    const overlayPanel = document.querySelector('.profile-overlay-panel')
+    expect(sourceLibrary && overlayPanel && Boolean(sourceLibrary.compareDocumentPosition(overlayPanel) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+    const file = new File(['proxies: []\nrules:\n  - MATCH,DIRECT\n'], 'home.yaml', { type: 'text/yaml' })
+
+    fireEvent.dragEnter(dropzone, { dataTransfer: { files: [file] } })
+    expect(dropzone.classList.contains('drag-active')).toBe(true)
+    expect(screen.getByText('松开即可导入')).toBeTruthy()
+    fireEvent.drop(dropzone, { dataTransfer: { files: [file] } })
+
+    expect(dropzone.classList.contains('drag-active')).toBe(false)
+    expect(api.importFile).toHaveBeenCalledWith(file)
+    expect(await screen.findByText('正在读取并校验…')).toBeTruthy()
+  })
+
+  it('rejects a non-YAML file dropped onto the local source area', async () => {
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
+
+    const dropzone = screen.getByLabelText('本地 mihomo YAML').closest('label')
+    if (!dropzone) throw new Error('missing local YAML dropzone')
+    fireEvent.drop(dropzone, { dataTransfer: { files: [new File(['hello'], 'notes.txt', { type: 'text/plain' })] } })
+
+    expect(await screen.findByText('只能导入 .yaml 或 .yml 文件。')).toBeTruthy()
+    expect(api.importFile).not.toHaveBeenCalled()
+  })
+
   it('renders an invalid Base64 source draft when API collections are null', async () => {
     const source = {
       id: 'base64', name: 'Base64 nodes', kind: 'mihomo_profile', origin: 'https://example.com/subscription', digest: 'invalid', size: 24,
@@ -1345,6 +1382,32 @@ describe('OpenSurge app shell', () => {
     const applyButton = await screen.findByRole('button', { name: '保存附加配置到下次启动' })
     expect((applyButton as HTMLButtonElement).disabled).toBe(false)
     expect(screen.getByText('附加配置待应用')).toBeTruthy()
+  })
+
+  it('offers applied overlay proxies as device outlet candidates', async () => {
+    vi.mocked(api.config).mockResolvedValue({
+      ...configFor('same_wifi_dhcp'),
+      device_policy: { enabled: true, protected_ipv4: [] },
+    })
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
+    vi.mocked(api.profileOverlay).mockResolvedValue(overlayForApp({ applied: true, document: { ...overlayForApp().document, enabled: true } }))
+    vi.mocked(api.sources).mockResolvedValue({
+      revision: 'config-revision',
+      sources: [{
+        id: 'home', name: 'Home', kind: 'mihomo_profile', origin: 'file:home.yaml', digest: 'source', size: 100,
+        valid: true, validation: 'valid', desired: true, applied: true, versions: [], imported_at: '2026-08-24T00:00:00Z',
+        diff: { proxies_added: [], proxies_removed: [], groups_added: [], groups_removed: [], proxy_providers_added: [], proxy_providers_removed: [], rule_providers_added: [], rule_providers_removed: [], rule_count_delta: 0 },
+        inventory: { proxies: ['edge'], proxy_providers: [], proxy_groups: ['Main'], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
+        effective_inventory: { proxies: ['edge', 'Personal'], proxy_providers: [], proxy_groups: ['Main'], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
+      }],
+    })
+
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: '设备' }))
+    await userEvent.click(await screen.findByRole('radio', { name: /独立设备出口/ }))
+
+    await waitFor(() => expect(document.querySelector('datalist option[value="Personal"]')).toBeTruthy())
   })
 
   it('edits templates in the structured device policy editor', async () => {
