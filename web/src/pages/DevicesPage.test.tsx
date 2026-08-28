@@ -12,7 +12,7 @@ vi.mock('../api', () => {
     RequestError,
     waitForOperation: vi.fn(async () => ({ id: 'reload-1', kind: 'reload', state: 'succeeded' })),
     api: {
-      devices: vi.fn(), config: vi.fn(), sources: vi.fn(), tailscale: vi.fn(), profileOverlay: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
+      devices: vi.fn(), config: vi.fn(), sources: vi.fn(), tailscale: vi.fn(), tailscaleDiscovery: vi.fn(), profileOverlay: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
       selectPolicy: vi.fn(), selectDevicePolicy: vi.fn(), gateway: vi.fn(),
       localRouting: vi.fn(), setLocalRouting: vi.fn(),
       refreshLocalConnections: vi.fn(), refreshDeviceConnections: vi.fn(),

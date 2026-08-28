@@ -16,6 +16,23 @@ Auth Key 是 write-only secret，保存在配置目录下权限为 `0600` 的独
 注册后，mihomo 的 `state-dir` 由 OpenSurge 持久化；重启、reload 和暂时停用
 仍使用同一本地节点身份。
 
+GUI 的首次设置会通过固定本机路径执行 `tailscale status --json`，只读发现
+Tailscale App 当前可见的 Tailnet、MagicDNS、peer 精确 IP、在线状态、私网
+`AllowedIPs` 路由和 `ExitNodeOption`。这些结果只是建议：用户勾选后才写入 draft，
+MagicDNS 后缀不会默认开启，subnet route 与 Exit Node 也不会静默选择。发现调用
+有短超时和输出大小限制；未安装、daemon 未连接或解析失败都返回可降级状态，不能
+阻止高级手动配置。
+
+macOS 的 Tailscale App 会根据调用环境在 GUI 与 CLI 模式之间选择；OpenSurge
+Control API 由 LaunchAgent 启动，没有终端环境。因此执行 `status --json` 时必须为
+子进程显式设置 `TAILSCALE_BE_CLI=1`，否则 Tailscale 可能把 GUI 启动错误写入
+stdout，导致 JSON 解析失败。
+
+本机 App 的发现结果不是托管节点的授权证明。两者不共享 identity、Auth Key 或
+state，托管节点仍须用 write-only Auth Key 单独注册，并在应用后用实际访问验证
+ACL、设备审批和路由可用性。官方 Tailscale 控制平面可从 GUI 打开 Keys 页面；
+Headscale 的 preauth key 入口由各部署自行提供。
+
 停用不删除 key 或 state。“忘记本地身份”必须满足 Tailscale 已停用、
 网关已停止且 state 路径确实是 OpenSurge 托管路径；它只删除本地
 state，不声称已从 Tailscale / Headscale 后台注销设备。
@@ -32,8 +49,10 @@ Tailnet 规则在普通 CGNAT/RFC1918 `DIRECT` 保护规则之前，但只包含
 
 每条目标规则还必须同时命中被授权的来源：Mac 本机、所有有效登记设备，
 或明确的设备 ID 集合。未授权流量不会因为它使用 `100.64.0.0/10` 或
-RFC1918 地址就被 Tailscale 接管。命中后直接选择 Tailscale outbound；节点
-离线时 fail closed，不增加 `DIRECT` 回退。
+RFC1918 地址就被 Tailscale 接管。所有允许规则之后还会为这些明确目标生成
+`REJECT`，避免未授权来源落入普通 `DIRECT` 后被本机原生 Tailscale App 的系统
+路由接走。命中允许规则后直接选择 Tailscale outbound；节点离线时 fail closed，
+不增加 `DIRECT` 回退。
 
 `allow_mac` 必须复用本机 Rule/Global/Direct 编译器的同一组入口身份，
 不能另写一套宽泛的 IPv6 来源匹配。对系统 TUN 的 IPv6，规则同时

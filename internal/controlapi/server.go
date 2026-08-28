@@ -41,6 +41,7 @@ type Options struct {
 	DiscoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
+	DiscoverTailscale func(context.Context) (TailscaleDiscoveryResponse, error)
 	PingRouter        func(context.Context, string) error
 	Static            http.Handler
 	Credentials       SourceCredentialStore
@@ -58,6 +59,7 @@ type Server struct {
 	discoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	listInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
+	discoverTailscale func(context.Context) (TailscaleDiscoveryResponse, error)
 	pingRouter        func(context.Context, string) error
 	static            http.Handler
 	credentials       SourceCredentialStore
@@ -156,6 +158,9 @@ func New(options Options) (*Server, error) {
 	if options.DiscoverNeighbors == nil {
 		options.DiscoverNeighbors = macosnetwork.DiscoverNeighbors
 	}
+	if options.DiscoverTailscale == nil {
+		options.DiscoverTailscale = discoverLocalTailscale
+	}
 	if options.PingRouter == nil {
 		options.PingRouter = macosnetwork.PingRouter
 	}
@@ -185,6 +190,7 @@ func New(options Options) (*Server, error) {
 		discoverDefault:   options.DiscoverDefault,
 		listInterfaces:    options.ListInterfaces,
 		discoverNeighbors: options.DiscoverNeighbors,
+		discoverTailscale: options.DiscoverTailscale,
 		pingRouter:        options.PingRouter,
 		static:            options.Static,
 		credentials:       options.Credentials,
@@ -267,6 +273,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/sources/{id}/reveal", s.auth(http.HandlerFunc(s.handleSourceReveal)))
 	mux.Handle("POST /api/v1/sources/{id}/export", s.auth(http.HandlerFunc(s.handleSourceExport)))
 	mux.Handle("GET /api/v1/tailscale", s.auth(http.HandlerFunc(s.handleTailscale)))
+	mux.Handle("GET /api/v1/tailscale/discovery", s.auth(http.HandlerFunc(s.handleTailscaleDiscovery)))
 	mux.Handle("PUT /api/v1/tailscale", s.auth(http.HandlerFunc(s.handleTailscale)))
 	mux.Handle("POST /api/v1/tailscale/forget-identity", s.auth(http.HandlerFunc(s.handleTailscaleForgetIdentity)))
 	mux.Handle("GET /api/v1/profile-overlay", s.auth(http.HandlerFunc(s.handleProfileOverlay)))

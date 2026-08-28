@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -56,5 +57,25 @@ func TestTailscaleRulesReuseScopedLocalMacIPv6Identities(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestTailscaleTargetsRejectUnauthorizedSourcesBeforeDirectRules(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Enabled = true
+	cfg.Tailscale.AllowMac = false
+	cfg.Tailscale.MagicDNSSuffixes = []string{"lab.example.ts.net"}
+	cfg.Tailscale.PeerCIDRs = []string{"100.82.10.7/32", "fd7a:115c:a1e0::7/128"}
+	cfg.Tailscale.SubnetRoutes = []string{"10.203.77.0/24"}
+
+	rules := renderTailscaleRules(cfg, policySections{})
+	want := []string{
+		"DOMAIN-SUFFIX,lab.example.ts.net,REJECT",
+		"IP-CIDR,100.82.10.7/32,REJECT",
+		"IP-CIDR6,fd7a:115c:a1e0::7/128,REJECT",
+		"IP-CIDR,10.203.77.0/24,REJECT",
+	}
+	if !reflect.DeepEqual(rules, want) {
+		t.Fatalf("renderTailscaleRules() = %#v, want %#v", rules, want)
 	}
 }

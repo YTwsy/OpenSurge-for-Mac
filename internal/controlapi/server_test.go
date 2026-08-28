@@ -2307,7 +2307,9 @@ runtime:
 	}
 	server, err := New(Options{ConfigPath: configPath, Addr: "127.0.0.1:61767", StoreDir: filepath.Join(dir, "store"), Runner: fakeRunner{}, NetworkRunner: network, ConfigRunner: fakeConfigurationRunner{}, DiscoverNetwork: discover, ListInterfaces: func(context.Context) ([]macosnetwork.InterfaceOption, error) {
 		return []macosnetwork.InterfaceOption{{Interface: "en0", NetworkService: "Wi-Fi", IPv6LinkLocal: "fe80::100"}, {Interface: "en7", NetworkService: "USB LAN", IPv6LinkLocal: "fe80::700"}}, nil
-	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
+	}, DiscoverNeighbors: func(context.Context, string) ([]macosnetwork.Neighbor, error) { return []macosnetwork.Neighbor{}, nil }, DiscoverTailscale: func(context.Context) (TailscaleDiscoveryResponse, error) {
+		return TailscaleDiscoveryResponse{}, errors.New("Tailscale unavailable in test")
+	}, PingRouter: func(context.Context, string) error { return nil }, Static: http.NotFoundHandler(), Credentials: &memoryCredentialStore{}})
 	if err != nil {
 		t.Fatal(err)
 	}

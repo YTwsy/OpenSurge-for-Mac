@@ -81,6 +81,7 @@ vi.mock('./api', () => ({
       selectable_exit: false,
 		warnings: [],
 	})),
+	tailscaleDiscovery: vi.fn(async () => ({ schema_version: 1, available: false, magic_dns: false, peers: [] })),
 	saveTailscale: vi.fn(),
 	forgetTailscaleIdentity: vi.fn(),
 	profileOverlay: vi.fn(async () => ({

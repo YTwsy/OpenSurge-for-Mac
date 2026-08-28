@@ -150,13 +150,19 @@ outbound。Auth Key 只写入权限受限的独立文件，配置和 API 响应�
 身份”是单独动作，只能在 Tailscale 已停用且网关已停止时执行；它不会从
 Tailscale / Headscale 管理后台删除节点。
 
+配置弹窗会只读检测本机 Tailscale App，把当前 Tailnet 的 MagicDNS 后缀、peer
+精确地址、在线状态、已接受的私网路由和可用 Exit Node 显示为待确认建议；不会
+自动保存或扩大访问范围。首次注册仍需要单独的 Auth Key，界面可直接打开官方
+Keys 页面，并提示使用一次性、非 Ephemeral 的 key。本机 App 与 OpenSurge 托管
+节点不共享登录身份或 state；检测失败时仍可使用折叠的高级手动配置。
+
 Tailnet 访问和 Exit Node 是两种不同角色：
 
 - Tailnet-only 只在明确的 MagicDNS 后缀、peer IP/CIDR 或已接受的远端子网命中时
   选择 Tailscale，目标不可达时不回退 `DIRECT`；
 - 只有配置了明确 Exit Node 的 Tailscale outbound 才会出现在设备的公网出口
   候选中，并且可继续使用原有的每设备 Selector；
-- 远端 subnet route 必须逐条填写，与 OpenSurge LAN 重叠时会拒绝保存；
+- 远端 subnet route 必须逐条确认，与 OpenSurge LAN 重叠时会拒绝保存；
 - mihomo 按 outbound 首次请求启动 Tailscale 节点；OpenSurge 会在网关启动、
   重载和 mihomo 恢复后主动预热，但第一次业务访问仍可能需要重试。界面仍显示
   “按需连接”，且不会用公网 `generate_204` 误判 Tailnet-only 节点。

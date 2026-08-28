@@ -119,6 +119,29 @@ export type TailscaleResponse = {
   warnings: string[]
 }
 
+export type TailscaleDiscoveredNode = {
+  id: string
+  name: string
+  dns_name?: string
+  tailscale_ips: string[]
+  online: boolean
+  exit_node: boolean
+  exit_node_option: boolean
+  subnet_routes: string[]
+}
+
+export type TailscaleDiscoveryResponse = {
+  schema_version: number
+  available: boolean
+  backend_state?: string
+  tailnet_name?: string
+  magic_dns: boolean
+  magic_dns_suffix?: string
+  self?: TailscaleDiscoveredNode
+  peers: TailscaleDiscoveredNode[]
+  error?: string
+}
+
 export type Overview = {
   schema_version: number
   revision: string

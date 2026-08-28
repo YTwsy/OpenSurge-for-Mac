@@ -1,4 +1,4 @@
-import type { APIError, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
+import type { APIError, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -61,6 +61,7 @@ export const api = {
   revealSourceSnapshot: (id: string) => request<SourceSnapshotFile>(`/api/v1/sources/${encodeURIComponent(id)}/reveal`, { method: 'POST' }),
   exportSourceSnapshot: (id: string) => request<SourceSnapshotFile>(`/api/v1/sources/${encodeURIComponent(id)}/export`, { method: 'POST' }),
 	tailscale: () => request<TailscaleResponse>('/api/v1/tailscale'),
+	tailscaleDiscovery: () => request<TailscaleDiscoveryResponse>('/api/v1/tailscale/discovery'),
 	saveTailscale: (revision: string, settings: TailscaleUpdate) => request<TailscaleResponse>('/api/v1/tailscale', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(settings) }),
 	forgetTailscaleIdentity: (revision: string) => request<TailscaleResponse>('/api/v1/tailscale/forget-identity', { method: 'POST', headers: { 'If-Match': `"${revision}"` } }),
 	profileOverlay: () => request<ProfileOverlay>('/api/v1/profile-overlay'),

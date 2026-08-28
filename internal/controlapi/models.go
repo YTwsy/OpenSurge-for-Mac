@@ -268,6 +268,29 @@ type TailscaleResponse struct {
 	Warnings        []string          `json:"warnings"`
 }
 
+type TailscaleDiscoveredNode struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	DNSName        string   `json:"dns_name,omitempty"`
+	TailscaleIPs   []string `json:"tailscale_ips"`
+	Online         bool     `json:"online"`
+	ExitNode       bool     `json:"exit_node"`
+	ExitNodeOption bool     `json:"exit_node_option"`
+	SubnetRoutes   []string `json:"subnet_routes"`
+}
+
+type TailscaleDiscoveryResponse struct {
+	SchemaVersion  int                       `json:"schema_version"`
+	Available      bool                      `json:"available"`
+	BackendState   string                    `json:"backend_state,omitempty"`
+	TailnetName    string                    `json:"tailnet_name,omitempty"`
+	MagicDNS       bool                      `json:"magic_dns"`
+	MagicDNSSuffix string                    `json:"magic_dns_suffix,omitempty"`
+	Self           *TailscaleDiscoveredNode  `json:"self,omitempty"`
+	Peers          []TailscaleDiscoveredNode `json:"peers"`
+	Error          string                    `json:"error,omitempty"`
+}
+
 const (
 	RecoveryIdle                        = "idle"
 	RecoveryPrepared                    = "prepared"

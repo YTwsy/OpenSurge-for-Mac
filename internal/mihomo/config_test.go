@@ -153,6 +153,7 @@ func TestRenderConfigWithManagedTailscaleTargetsAndExitNode(t *testing.T) {
 	}
 	assertOrdered(t, rendered,
 		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,10.20.0.0/16)),open-surge/tailscale",
+		"IP-CIDR,10.20.0.0/16,REJECT",
 		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,10.0.0.0/8)),DIRECT",
 	)
 }

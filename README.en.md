@@ -168,9 +168,18 @@ and temporary disable/enable cycles. Forgetting that local identity is a
 separate action available only while Tailscale and the gateway are stopped,
 and does not remove the device from the Tailscale or Headscale admin console.
 
+The setup dialog reads the local Tailscale app in discovery-only mode and shows
+the current Tailnet's MagicDNS suffix, exact peer addresses, online state,
+accepted private routes, and eligible Exit Nodes as suggestions that require
+confirmation. It never saves or broadens access automatically. Initial
+registration still requires a separate Auth Key; the dialog links to the
+official Keys page and recommends a one-off, non-Ephemeral key. The local app
+and the OpenSurge-managed node do not share login identity or state, and the
+advanced manual configuration remains available when discovery is unavailable.
+
 Tailnet-only access is destination-scoped and fails closed. It never becomes a
 general device egress. Only an outbound with an explicit Exit Node appears in
-per-device outlet selectors. Remote subnet routes must be entered explicitly
+per-device outlet selectors. Remote subnet routes must be confirmed explicitly
 and are rejected when they overlap the OpenSurge LAN. Mihomo starts its
 Tailscale node lazily on the outbound's first request. OpenSurge sends a
 best-effort warm-up after gateway start, reload, and mihomo recovery, but the

@@ -100,10 +100,8 @@ func renderTailscaleRules(cfg config.Config, policy policySections) []string {
 		return nil
 	}
 	sources := tailscaleRuleSources(cfg, policy)
-	if len(sources) == 0 {
-		return nil
-	}
-	rules := make([]string, 0, len(sources)*(len(cfg.Tailscale.MagicDNSSuffixes)+len(cfg.Tailscale.PeerCIDRs)+len(cfg.Tailscale.SubnetRoutes)))
+	targetCount := len(cfg.Tailscale.MagicDNSSuffixes) + len(cfg.Tailscale.PeerCIDRs) + len(cfg.Tailscale.SubnetRoutes)
+	rules := make([]string, 0, (len(sources)+1)*targetCount)
 	for _, source := range sources {
 		for _, suffix := range cfg.Tailscale.MagicDNSSuffixes {
 			rules = append(rules, renderTailscaleAccessRule(source, "DOMAIN-SUFFIX,"+suffix))
@@ -116,6 +114,23 @@ func renderTailscaleRules(cfg config.Config, policy policySections) []string {
 			}
 			rules = append(rules, renderTailscaleAccessRule(source, typeName+","+cidr))
 		}
+	}
+	// The host can also run the native Tailscale App, which installs system
+	// routes for the same peers and subnets. Once all explicitly authorized
+	// sources have had a chance to select the managed tsnet outbound, reject
+	// every configured Tailnet target before ordinary CGNAT/RFC1918 DIRECT
+	// protection rules. Otherwise an unauthorized downstream source could fall
+	// through to DIRECT and be forwarded by the host's native Tailscale route.
+	for _, suffix := range cfg.Tailscale.MagicDNSSuffixes {
+		rules = append(rules, "DOMAIN-SUFFIX,"+suffix+",REJECT")
+	}
+	for _, cidr := range append(append([]string(nil), cfg.Tailscale.PeerCIDRs...), cfg.Tailscale.SubnetRoutes...) {
+		prefix, _ := netip.ParsePrefix(cidr)
+		typeName := "IP-CIDR"
+		if prefix.Addr().Is6() {
+			typeName = "IP-CIDR6"
+		}
+		rules = append(rules, typeName+","+cidr+",REJECT")
 	}
 	return rules
 }
