@@ -168,7 +168,7 @@ func tailscaleRuleSources(cfg config.Config, policy policySections) []tailscaleR
 	return sources
 }
 
-func renderTailscaleRouteAddresses(cfg config.Config) string {
+func renderTailscaleRouteAddresses(cfg config.Config, lanPrefix string) string {
 	if !cfg.Tailscale.Enabled || !cfg.Transparent.TUNEnabled() {
 		return ""
 	}
@@ -176,9 +176,84 @@ func renderTailscaleRouteAddresses(cfg config.Config) string {
 	if len(values) == 0 {
 		return ""
 	}
+	// route-address replaces Mihomo's normal Darwin auto-route defaults. Build
+	// the ordinary public ranges with the standard exclusions already removed,
+	// then append exact Tailnet routes. Keeping the explicit /32 or /128 as a
+	// separate route lets the OpenSurge TUN outrank the native Tailscale route;
+	// leaving route-exclude-address enabled would merge the overlapping ranges
+	// into an IP set and silently discard that more-specific route.
+	routes := []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}
+	for _, excluded := range []string{
+		"0.0.0.0/8",
+		lanPrefix,
+		"10.0.0.0/8",
+		"127.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"224.0.0.0/4",
+		"255.255.255.255/32",
+	} {
+		routes = excludeRoutePrefix(routes, netip.MustParsePrefix(excluded))
+	}
+	if cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
+		ipv6Routes := excludeRoutePrefix(
+			[]netip.Prefix{netip.MustParsePrefix("::/0")},
+			netip.MustParsePrefix("::/8"),
+		)
+		routes = append(routes, ipv6Routes...)
+	}
 	var out strings.Builder
+	for _, route := range routes {
+		out.WriteString("    - " + route.String() + "\n")
+	}
 	for _, value := range values {
 		out.WriteString("    - " + value + "\n")
 	}
 	return strings.TrimRight(out.String(), "\n")
+}
+
+func excludeRoutePrefix(routes []netip.Prefix, excluded netip.Prefix) []netip.Prefix {
+	excluded = excluded.Masked()
+	result := make([]netip.Prefix, 0, len(routes))
+	for _, route := range routes {
+		route = route.Masked()
+		if route.Addr().BitLen() != excluded.Addr().BitLen() {
+			result = append(result, route)
+			continue
+		}
+		if excluded.Bits() <= route.Bits() && excluded.Contains(route.Addr()) {
+			continue
+		}
+		if !route.Contains(excluded.Addr()) {
+			result = append(result, route)
+			continue
+		}
+		result = append(result, subtractContainedPrefix(route, excluded)...)
+	}
+	return result
+}
+
+func subtractContainedPrefix(route, excluded netip.Prefix) []netip.Prefix {
+	if excluded.Bits() <= route.Bits() {
+		return nil
+	}
+	left, right := splitRoutePrefix(route)
+	if left.Contains(excluded.Addr()) {
+		return append(subtractContainedPrefix(left, excluded), right)
+	}
+	return append([]netip.Prefix{left}, subtractContainedPrefix(right, excluded)...)
+}
+
+func splitRoutePrefix(prefix netip.Prefix) (netip.Prefix, netip.Prefix) {
+	nextBits := prefix.Bits() + 1
+	left := netip.PrefixFrom(prefix.Masked().Addr(), nextBits)
+	bit := prefix.Bits()
+	if prefix.Addr().Is4() {
+		value := prefix.Masked().Addr().As4()
+		value[bit/8] |= byte(1 << (7 - bit%8))
+		return left, netip.PrefixFrom(netip.AddrFrom4(value), nextBits)
+	}
+	value := prefix.Masked().Addr().As16()
+	value[bit/8] |= byte(1 << (7 - bit%8))
+	return left, netip.PrefixFrom(netip.AddrFrom16(value), nextBits)
 }

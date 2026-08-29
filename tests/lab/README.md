@@ -77,6 +77,10 @@ sudo -v && make lab-test-tun-imported-profile
 sudo -v && make lab-test-tun-imported-egress
 sudo -v && make lab-test-tun-local-routing
 sudo -v && make lab-test-tun-device-policy
+sudo -v && \
+  OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE=/private/path/peer.key \
+  OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE=/private/path/managed.key \
+  make lab-test-tailscale
 sudo -v && make lab-test-ipv6-userspace
 sudo -v && make lab-down
 ```
@@ -160,6 +164,73 @@ The passing artifact retains that applied snapshot, runtime state, generated
 dnsmasq/mihomo configuration, and the initial and post-reload device views so
 the boundary remains auditable.
 Rule/template/provider compilation stays in unit tests.
+
+### Tailscale outbound gate
+
+`lab-test-tailscale` adds a third, persistent Lima VM named
+`omg-lab-ts-peer`. It uses only Lima's built-in NAT/control NIC, never the
+`omg0` data plane, and runs an independent official `tailscaled` plus a TCP/UDP
+fixture bound only to `tailscale0`:
+
+```text
+omg-lab-client-1 (allowed) ─┐
+                            ├─ omg0 ─ OpenSurge TUN ─ managed tsnet ─┐
+omg-lab-client-2 (rejected) ┘                                       │
+                                                                     ├─ Tailnet
+Mac Tailscale app (discovery and baseline only) ─────────────────────┤
+                                                                     │
+Lima NAT/control ─ omg-lab-ts-peer's own tailscaled ─────────────────┘
+```
+
+The first setup performs two Tailscale registrations because the peer VM and
+OpenSurge-managed tsnet are independent nodes. Store auth keys outside the
+repository at absolute paths with mode `0600`; do not put a key in a command
+argument, an environment-variable value, Git, or an artifact. One-off keys
+require two files. A reusable, non-Ephemeral key may instead back both
+registrations, with both variables pointing to the same protected file. Run:
+
+```sh
+sudo -v && \
+  OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE=/private/path/peer.key \
+  OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE=/private/path/managed.key \
+  make lab-test-tailscale
+```
+
+Both identities persist locally: the peer identity is in its Lima disk and the
+managed identity is under `runtime/lab/tailscale`. “One-off” limits key use,
+not the number of Lab runs: later runs no longer need the corresponding key.
+If a variable remains set, the script only validates the file's safety.
+`make lab-tailscale-down` stops the peer while preserving it.
+`make lab-tailscale-destroy` deletes the local VM disk and identity. Neither
+command removes a device record from the Tailscale admin console; the operator
+must remove that record separately. A reusable key mainly makes this destructive
+rebuild path automatic until the key expires or is revoked.
+
+The gate verifies that the native Tailscale app is connected without an active
+Exit Node; the peer has no `omg0` and does not use Tailscale as its default
+route; the Control API discovers the peer and MagicDNS suffix; and, after only
+client 1 is authorized, TCP/UDP to the exact peer IP and TCP to the complete
+MagicDNS name really use `open-surge/tailscale`. Client 2 must hit `REJECT` for
+the same targets. The peer fixture also requires every successful request to
+come from one managed Tailnet address that differs from the native Mac app's
+address. Before OpenSurge starts, the gate also requires the peer's native
+`/32` route to select a `utun`; the distinct observed source then rules out a
+false positive through that existing route.
+
+The VM's real Internet underlay is still VM to Lima NAT to the Mac's current
+upstream, and it may cross the host TUN after OpenSurge starts. The gate rejects
+a native Mac Exit Node to avoid an unnecessary nested exit. An ordinary Mac
+underlay does not invalidate the result; the peer-observed Tailnet source and
+Mihomo action log jointly identify the application path under test.
+
+This bounded gate proves peer IP, MagicDNS, TCP/UDP, source authorization, and
+unauthorized fail-closed behavior only. It does not prove subnet routers, an
+Exit Node's public egress, Headscale, or a real remote LAN. Successful runs save
+only sanitized rules and boolean evidence; auth keys, full `mihomo.yaml`, raw
+logs, Tailnet addresses, and state are excluded from artifacts.
+The runtime `mihomo.yaml` that contains the auth key is pre-created as mode
+`0600` and checked again after gateway startup. Failed cleanup must not delete
+it merely to hide an incomplete gateway rollback.
 
 Use `lab-test-ipv6-userspace` for isolated downstream LAN,
 `lab-test-ipv6-same-wifi` for whole-LAN DHCP takeover, and
@@ -329,6 +400,10 @@ make lab-test-tun-imported-profile # run TUN with an imported profile fixture
 make lab-test-tun-imported-egress  # switch TUN egress through a controlled proxy
 make lab-test-tun-local-routing # prove local-Mac mode isolation
 make lab-test-tun-device-policy # prove independent per-device TUN policies
+make lab-tailscale-up # create/start the Tailnet peer (peer key needed once)
+make lab-test-tailscale # prove peer IP, MagicDNS, TCP/UDP, and source authorization
+make lab-tailscale-down # stop the Tailnet peer and preserve its identity
+make lab-tailscale-destroy # delete local peer identity, not the admin-console record
 make lab-test-ipv6-userspace # prove isolated-LAN IPv6 TCP/UDP takeover and withdrawal
 make lab-test-ipv6-same-wifi # prove whole-LAN DHCP IPv6 and Medium RA
 make lab-test-ipv6-same-lan # prove selective manual IPv6 without RA

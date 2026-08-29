@@ -603,6 +603,17 @@ egress paths, and enforce a device-level domain `REJECT`. Domain/protocol rule
 compilation, templates, and HTTP/MRS rule-provider configuration are covered by
 unit tests; they do not require one Lab run per operator-defined rule.
 
+Use `make lab-test-tailscale` when changing Tailscale destination/source rules,
+MagicDNS, managed-tsnet configuration, or native-app discovery. A dedicated
+Lima Tailnet peer verifies TCP/UDP to an exact peer IP, the complete MagicDNS
+name, Control API discovery, one-device authorization, and fail-closed behavior
+for the other device. The peer-observed source address also rules out a false
+positive through the Mac's native Tailscale route. The first run needs external
+mode-`0600` auth-key files for the peer and managed node: either two one-off keys
+or one reusable, non-Ephemeral key shared by both file variables. Persisted
+identities make ordinary reruns keyless. This bounded gate does not prove a
+subnet router, Exit Node, Headscale, or a real remote LAN.
+
 When changing downstream RA/SLAAC, the BPF broker, the patched Mihomo packet
 listener, IPv6 device identity, or withdrawal on stop, run the topology gates:
 `make lab-test-ipv6-userspace`, `make lab-test-ipv6-same-wifi`, and
@@ -666,6 +677,7 @@ make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
+make lab-test-tailscale
 make lab-test-ipv6-userspace
 make lab-test-ipv6-same-wifi
 make lab-test-ipv6-same-lan

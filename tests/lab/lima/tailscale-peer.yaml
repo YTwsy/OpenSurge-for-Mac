@@ -1,0 +1,212 @@
+minimumLimaVersion: 2.0.0
+
+images:
+  - location: "https://cloud-images.ubuntu.com/releases/noble/release-20260518/ubuntu-24.04-server-cloudimg-arm64.img"
+    arch: aarch64
+    digest: sha256:6a61b967ba4a27dd1966f835a67643073ed55c2860ce3dc1cb0517282e6b8bec
+
+vmType: vz
+arch: aarch64
+cpus: 1
+memory: 512MiB
+disk: 4GiB
+
+mounts: []
+
+containerd:
+  system: false
+  user: false
+
+ssh:
+  overVsock: true
+
+user:
+  name: lima
+  comment: OpenSurge Tailscale lab peer
+  shell: /bin/bash
+
+# Deliberately keep only Lima's built-in control/NAT NIC. This keeps the peer
+# off the socket_vmnet downstream data plane, so its application source cannot
+# masquerade as an OpenSurge LAN client. The VM underlay still uses normal Mac
+# networking and may cross the host TUN; the runtime test therefore also
+# rejects an active native Exit Node and proves the observed Tailnet source.
+
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+      __PROXY_EXPORTS__
+      export DEBIAN_FRONTEND=noninteractive
+      tailscale_version=1.102.3
+      tailscale_sha256=a0fa1b154af8c61f862a2259f559f7396d96c0225f4a863eae2333e1546bbe25
+
+      control_gateway="$(ip -4 route show default | awk 'NR == 1 { print $3 }')"
+      if [ -n "$control_gateway" ]; then
+        rm -f /etc/resolv.conf
+        printf 'nameserver %s\n' "$control_gateway" >/etc/resolv.conf
+      fi
+
+      guest_hostname="$(hostname)"
+      if ! grep -Eq "(^|[[:space:]])${guest_hostname}([[:space:]]|$)" /etc/hosts; then
+        printf '127.0.1.1 %s\n' "$guest_hostname" >>/etc/hosts
+      fi
+
+      if ! command -v curl >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y --no-install-recommends ca-certificates curl python3
+        rm -rf /var/lib/apt/lists/*
+      fi
+
+      installed_version=""
+      if [ -x /usr/local/bin/tailscale ]; then
+        installed_version="$(/usr/local/bin/tailscale version 2>/dev/null | head -1 || true)"
+      fi
+      if [ "$installed_version" != "$tailscale_version" ]; then
+        archive=/var/tmp/tailscale.tgz
+        extract_dir=/var/tmp/tailscale-extract
+        rm -rf "$extract_dir"
+        # The official pinned artifact remains reachable when an optional Lab
+        # proxy is stale or cannot be reached from Lima's NAT network.
+        curl --noproxy pkgs.tailscale.com --fail --location --silent --show-error \
+          --output "$archive" \
+          "https://pkgs.tailscale.com/stable/tailscale_${tailscale_version}_arm64.tgz"
+        printf '%s  %s\n' "$tailscale_sha256" "$archive" | sha256sum --check -
+        mkdir -p "$extract_dir"
+        tar -xzf "$archive" -C "$extract_dir"
+        install -m 0755 "$extract_dir/tailscale_${tailscale_version}_arm64/tailscale" /usr/local/bin/tailscale
+        install -m 0755 "$extract_dir/tailscale_${tailscale_version}_arm64/tailscaled" /usr/local/sbin/tailscaled
+        rm -rf "$archive" "$extract_dir"
+      fi
+
+      mkdir -p /var/lib/tailscale /run/tailscale /var/lib/opensurge-tailscale-lab
+      cat >/etc/systemd/system/tailscaled.service <<'EOF'
+      [Unit]
+      Description=Tailscale node agent
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      ExecStart=/usr/local/sbin/tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=0
+      Restart=on-failure
+      RuntimeDirectory=tailscale
+      RuntimeDirectoryMode=0755
+
+      [Install]
+      WantedBy=multi-user.target
+      EOF
+      systemctl daemon-reload
+      systemctl enable --now tailscaled
+
+  - mode: data
+    path: /usr/local/libexec/opensurge-tailscale-fixture.py
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env python3
+      import http.server
+      import json
+      import os
+      import socket
+      import subprocess
+      import threading
+      import time
+
+      PORT = int(os.environ.get("OPENSURGE_TS_FIXTURE_PORT", "18080"))
+      STATE_DIR = "/var/lib/opensurge-tailscale-lab"
+      TOKEN_FILE = os.path.join(STATE_DIR, "token")
+      LOG_FILE = os.path.join(STATE_DIR, "requests.jsonl")
+      SO_BINDTODEVICE = 25
+
+      os.makedirs(STATE_DIR, exist_ok=True)
+
+      def tailscale_ipv4():
+          for _ in range(120):
+              result = subprocess.run(
+                  ["/usr/local/bin/tailscale", "ip", "-4"],
+                  check=False,
+                  capture_output=True,
+                  text=True,
+              )
+              value = result.stdout.strip().splitlines()
+              if result.returncode == 0 and value:
+                  return value[0]
+              time.sleep(0.5)
+          raise RuntimeError("Tailscale IPv4 address did not become ready")
+
+      def token():
+          try:
+              with open(TOKEN_FILE, "r", encoding="utf-8") as handle:
+                  return handle.read().strip()
+          except FileNotFoundError:
+              return "fixture-not-initialized"
+
+      def record(kind, source, detail):
+          entry = {
+              "kind": kind,
+              "source": source,
+              "detail": detail,
+              "token": token(),
+              "time_unix": int(time.time()),
+          }
+          with open(LOG_FILE, "a", encoding="utf-8") as handle:
+              handle.write(json.dumps(entry, sort_keys=True) + "\n")
+
+      class FixtureHTTPServer(http.server.ThreadingHTTPServer):
+          allow_reuse_address = True
+
+          def server_bind(self):
+              self.socket.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE, b"tailscale0\0")
+              super().server_bind()
+
+      class Handler(http.server.BaseHTTPRequestHandler):
+          def do_GET(self):
+              record("http", self.client_address[0], self.path)
+              body = (token() + "\n").encode("utf-8")
+              self.send_response(200)
+              self.send_header("Content-Type", "text/plain; charset=utf-8")
+              self.send_header("Content-Length", str(len(body)))
+              self.end_headers()
+              self.wfile.write(body)
+
+          def log_message(self, _format, *_args):
+              return
+
+      def serve_udp(address):
+          sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+          sock.setsockopt(socket.SOL_SOCKET, SO_BINDTODEVICE, b"tailscale0\0")
+          sock.bind((address, PORT))
+          while True:
+              data, peer = sock.recvfrom(65535)
+              detail = data.decode("utf-8", errors="replace")[:256]
+              record("udp", peer[0], detail)
+              sock.sendto((token() + "\n").encode("utf-8"), peer)
+
+      address = tailscale_ipv4()
+      threading.Thread(target=serve_udp, args=(address,), daemon=True).start()
+      FixtureHTTPServer((address, PORT), Handler).serve_forever()
+
+  - mode: data
+    path: /etc/systemd/system/opensurge-tailscale-fixture.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=OpenSurge Tailscale Lab TCP and UDP fixture
+      After=tailscaled.service
+      Requires=tailscaled.service
+
+      [Service]
+      EnvironmentFile=-/var/lib/opensurge-tailscale-lab/fixture.env
+      ExecStart=/usr/local/libexec/opensurge-tailscale-fixture.py
+      Restart=on-failure
+      RestartSec=1
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - mode: system
+    script: |
+      #!/bin/sh
+      set -eux
+      systemctl daemon-reload

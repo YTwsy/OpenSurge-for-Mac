@@ -61,8 +61,12 @@ RFC1918 地址就被 Tailscale 接管。所有允许规则之后还会为这些�
 `fdfe:dcba:9877::1/128`。不得扩大为 fake-IP `/64`、下游 `/64`、`fc00::/7`，
 也不得把 `opensurge-ipv6` packet listener 的下游设备流量当成 Mac 本机。
 
-TUN `route-address` 只增加 peer CIDR 和 subnet route 这些明确的网段，以覆盖
-原有私网 route exclusion。不删除对整个 RFC1918 和 CGNAT 空间的保护。
+Mihomo 一旦配置 `route-address`，就会替换 Darwin TUN 的默认自动路由集合。编译器
+因此先重建普通公网捕获范围并预先扣除 LAN、RFC1918、loopback、multicast 等默认
+排除范围，再追加精确 peer CIDR 和 subnet route；custom route 模式不再同时生成
+`route-exclude-address`，避免 IP set 合并时吞掉用于覆盖原生 Tailscale route 的精确
+`/32` 或 `/128`。这只改变系统 TUN 捕获，实际进入 Tailscale outbound 的流量仍必须
+同时命中明确目标与授权来源规则；不得把整个 `100.64.0.0/10` 配置为 peer 目标。
 远端 subnet route 必须是 private IPv4 或 ULA，必须启用 `accept-routes`，并且
 不得与 OpenSurge 当前 LAN 重叠。
 
@@ -90,5 +94,28 @@ device policy 校验器和 GUI 加入候选。Exit Node 不覆盖全局网关模
 
 单元测试覆盖配置 round-trip、密钥不回显、路由冲突、规则顺序、imported/
 managed 编译与 rollback。使用项目补丁构建的 mihomo 运行 `-t` 只能证明
-最终 YAML 被当前内核接受。真实 TUN、DNS、UDP/QUIC、subnet router 与
-Exit Node 路径必须等待专门 Virtual Lab 或真机门槛，不能从单元测试外推。
+最终 YAML 被当前内核接受。
+
+`make lab-test-tailscale` 是当前专门的真实 Tailnet Virtual Lab 门槛。它使用一台不
+连接 `omg0` 的持久 Lima peer、Mac 原生 Tailscale App 和两个 socket_vmnet 下游客户端，
+验证本机发现、精确 peer IPv4、完整 MagicDNS 名称、TCP/UDP request-response、单设备
+授权与其他设备 `REJECT`。peer fixture 还要求成功流量来自 managed tsnet 的同一地址，
+并且不同于 Mac 原生 App 身份；Mihomo log 必须同时记录对应
+`open-surge/tailscale`/`REJECT` action，因此不能用 Mac 已有的 `/32` 原生路由制造
+假阳性。网关启动前还要求该 peer 的原生 route 确实指向一个 `utun`，让负向边界
+建立在可观察的现成旁路上，而不是只假设旁路存在。
+
+peer VM 的 underlay 仍通过 Lima NAT 和 Mac 当前上游，启动网关后也可能经过系统 TUN。
+门槛会拒绝 Mac 正在使用原生 Exit Node 的环境，避免不必要的嵌套出口；普通 host
+underlay 不作为应用路径证据。Auth Key 只从仓库外 `0600` 文件读取，临时 guest key、
+生成的含密钥 YAML 和原始 topology log 在退出时清理，artifact 只保留脱敏规则与布尔
+证据。Lab 会在 root 网关写入前把 `mihomo.yaml` 预创建为 `0600`，写入后再次断言，
+避免临时 Auth Key 因默认 `0640` 运行文件权限暴露给组用户。
+
+首次设置需要两个节点注册动作，不强制使用两枚长期不同的 key：one-off key 各自只能
+注册一次；reusable、非 Ephemeral key 可以让两个文件变量指向同一个受保护文件。
+peer 的 Lima 磁盘和 managed tsnet state 都会持久化，所以普通复跑无需 key；reusable
+key 主要用于删除本地身份后的自动重建。
+
+当前门槛不覆盖 subnet router、Exit Node 公网出口、Headscale 或真实远端 LAN。这些
+路径仍必须增加各自受控 fixture 或真机证据，不能从 peer/MagicDNS 门槛外推。

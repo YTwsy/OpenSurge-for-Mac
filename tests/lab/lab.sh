@@ -15,10 +15,12 @@ NETWORK_HELPER=/opt/open-mihomo-gateway/bin/omg-lab-network
 SOCKET=/private/var/run/open-mihomo-gateway-lab.sock
 INTERFACE_FILE=/private/var/run/open-mihomo-gateway-lab.interface
 TEMPLATE="$ROOT/tests/lab/lima/client.yaml"
+TAILSCALE_PEER_TEMPLATE="$ROOT/tests/lab/lima/tailscale-peer.yaml"
 CONFIG_TEMPLATE="$ROOT/tests/lab/config.yaml.tmpl"
 STATE_DIR="$ROOT/runtime/lab"
 CONFIG="$STATE_DIR/config.yaml"
 CLIENT_CONFIG="$STATE_DIR/client.yaml"
+TAILSCALE_PEER_CONFIG="$STATE_DIR/tailscale-peer.yaml"
 BINARY="$ROOT/bin/omg-lab"
 EGRESS_PROBE_BINARY="$STATE_DIR/egress-probe"
 CONTROL_API_BINARY="$STATE_DIR/opensurge-control"
@@ -36,6 +38,14 @@ IPV6_HTTP3_FIXTURE_PORT="${OMG_LAB_IPV6_HTTP3_FIXTURE_PORT:-19096}"
 IPV6_UDP_PROXY_PORT="${OMG_LAB_IPV6_UDP_PROXY_PORT:-19097}"
 IPV6_UDP_PROXY_DNS_PORT="${OMG_LAB_IPV6_UDP_PROXY_DNS_PORT:-19098}"
 CONTROL_API_PORT="${OMG_LAB_CONTROL_API_PORT:-19099}"
+TAILSCALE_FIXTURE_PORT="${OMG_LAB_TAILSCALE_FIXTURE_PORT:-18080}"
+TAILSCALE_CONTROL_URL="${OMG_LAB_TAILSCALE_CONTROL_URL:-https://controlplane.tailscale.com}"
+TAILSCALE_PEER="${OMG_LAB_TAILSCALE_PEER:-omg-lab-ts-peer}"
+TAILSCALE_PEER_HOSTNAME="${OMG_LAB_TAILSCALE_PEER_HOSTNAME:-opensurge-lab-ts-peer}"
+TAILSCALE_MANAGED_HOSTNAME="${OMG_LAB_TAILSCALE_MANAGED_HOSTNAME:-opensurge-lab-managed}"
+TAILSCALE_STATE_DIR="$STATE_DIR/tailscale"
+TAILSCALE_DEVICE_POLICY_FILE="$STATE_DIR/tailscale-device-policy.json"
+TAILSCALE_SAFE_EVIDENCE="$STATE_DIR/tailscale-evidence.json"
 CONFIG_DNS_PORT=1053
 CONNECTION_REFRESH_TEST_HOST="connection-refresh.opensurge.test"
 IPV6_TCP_TEST_HOST="ipv6-tcp.opensurge.test"
@@ -78,6 +88,12 @@ REAL_PROXY_TYPE=""
 REAL_PROXY_INDEX=""
 REAL_PROXY_EXIT_FAMILY=""
 SUDO_KEEPALIVE_PID=""
+TAILSCALE_PEER_IP=""
+TAILSCALE_PEER_DNS=""
+TAILSCALE_MAGIC_DNS_SUFFIX=""
+TAILSCALE_TEST_TOKEN=""
+TAILSCALE_NATIVE_IP=""
+TAILSCALE_NATIVE_ROUTE_INTERFACE=""
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -367,6 +383,283 @@ write_client_config() {
   done <"$TEMPLATE" >"$CLIENT_CONFIG"
 }
 
+write_tailscale_peer_config() {
+  local line
+  mkdir -p "$STATE_DIR"
+  : >"$TAILSCALE_PEER_CONFIG"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      *__PROXY_EXPORTS__*)
+        write_proxy_exports "      "
+        ;;
+      *)
+        printf '%s\n' "$line"
+        ;;
+    esac
+  done <"$TAILSCALE_PEER_TEMPLATE" >"$TAILSCALE_PEER_CONFIG"
+}
+
+require_tailscale_auth_key_file() {
+  local label=$1 candidate=$2 mode
+  [[ -n "$candidate" ]] || {
+    echo "$label is required for the first registration" >&2
+    return 1
+  }
+  [[ "$candidate" == /* && -f "$candidate" && -r "$candidate" ]] || {
+    echo "$label must name an absolute readable regular file" >&2
+    return 1
+  }
+  mode="$(stat -f '%Lp' "$candidate")"
+  if (( (8#$mode & 077) != 0 )); then
+    echo "$label must not be readable or writable by group/others (mode=$mode)" >&2
+    return 1
+  fi
+  if [[ "$(wc -c <"$candidate" | tr -d ' ')" -gt 4096 ]]; then
+    echo "$label exceeds the 4 KiB safety limit" >&2
+    return 1
+  fi
+  if ! LC_ALL=C tr -d '\r\n' <"$candidate" | grep -Eq '^tskey-auth-[^[:space:]]+$'; then
+    echo "$label does not contain one Tailscale auth key" >&2
+    return 1
+  fi
+}
+
+tailscale_managed_identity_present() {
+  [[ -d "$TAILSCALE_STATE_DIR" ]] || return 1
+  if [[ -r "$TAILSCALE_STATE_DIR" && -x "$TAILSCALE_STATE_DIR" ]]; then
+    find "$TAILSCALE_STATE_DIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .
+    return
+  fi
+  sudo -n find "$TAILSCALE_STATE_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .
+}
+
+require_tailscale_first_registration_inputs() {
+  if [[ ! -d "$(instance_dir "$TAILSCALE_PEER")" ]]; then
+    require_tailscale_auth_key_file \
+      OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE \
+      "${OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE:-}"
+  fi
+  if ! tailscale_managed_identity_present; then
+    require_tailscale_auth_key_file \
+      OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE \
+      "${OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE:-}"
+  fi
+}
+
+host_tailscale_binary() {
+  local candidate
+  for candidate in \
+    /Applications/Tailscale.app/Contents/MacOS/Tailscale \
+    /opt/homebrew/bin/tailscale \
+    /usr/local/bin/tailscale \
+    "$HOME/Applications/Tailscale.app/Contents/MacOS/Tailscale"; do
+    if [[ -x "$candidate" && -f "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  echo "local Tailscale CLI was not found" >&2
+  return 1
+}
+
+assert_native_tailscale_preflight() {
+  local binary status_file
+  mkdir -p "$STATE_DIR"
+  binary="$(host_tailscale_binary)"
+  status_file="$STATE_DIR/tailscale-native-status.raw.json"
+  if ! TAILSCALE_BE_CLI=1 "$binary" status --json >"$status_file"; then
+    rm -f "$status_file"
+    echo "native Tailscale App is not connected" >&2
+    return 1
+  fi
+  if ! TAILSCALE_NATIVE_IP="$(/usr/bin/ruby -rjson -e '
+    value = JSON.parse(File.read(ARGV.fetch(0)))
+    abort "native Tailscale backend is not Running" unless value["BackendState"] == "Running"
+    abort "disable the native Mac Tailscale Exit Node before this Lab to avoid a nested underlay" if value["ExitNodeStatus"]
+    address = Array(value.dig("Self", "TailscaleIPs")).find { |item| item.start_with?("100.") }
+    abort "native Tailscale IPv4 identity is missing" unless address
+    puts address
+  ' "$status_file")"; then
+    rm -f "$status_file"
+    return 1
+  fi
+  rm -f "$status_file"
+  echo "Native Tailscale preflight passed: connected=yes exit-node=off identity=present"
+}
+
+assert_native_route_to_tailscale_peer() {
+  local route_output
+  route_output="$(/sbin/route -n get "$TAILSCALE_PEER_IP")"
+  TAILSCALE_NATIVE_ROUTE_INTERFACE="$(awk '/interface:/ { print $2; exit }' <<<"$route_output")"
+  [[ "$TAILSCALE_NATIVE_ROUTE_INTERFACE" == utun* ]] || {
+    echo "native Tailscale peer route did not select a utun interface" >&2
+    return 1
+  }
+  echo "Native peer-route baseline passed: interface=utun identity=native-app"
+}
+
+assert_managed_tun_routes() {
+  local peer_interface fake_interface public_interface
+  peer_interface="$(/sbin/route -n get "$TAILSCALE_PEER_IP" | awk '/interface:/ { print $2; exit }')"
+  fake_interface="$(/sbin/route -n get 198.18.0.4 | awk '/interface:/ { print $2; exit }')"
+  public_interface="$(/sbin/route -n get 1.1.1.1 | awk '/interface:/ { print $2; exit }')"
+  [[ "$peer_interface" == utun* && "$peer_interface" != "$TAILSCALE_NATIVE_ROUTE_INTERFACE" ]] || {
+    echo "managed TUN did not replace the native peer route" >&2
+    return 1
+  }
+  [[ "$fake_interface" == "$peer_interface" ]] || {
+    echo "Mihomo fake-IP route does not use the managed TUN" >&2
+    return 1
+  }
+  [[ "$public_interface" == "$peer_interface" ]] || {
+    echo "ordinary public traffic no longer uses the managed TUN" >&2
+    return 1
+  }
+  echo "Managed TUN routes passed: peer=fake-ip=public interface=utun identity=opensurge"
+}
+
+tailscale_peer_backend_state() {
+  limactl shell "$TAILSCALE_PEER" -- sudo /usr/local/bin/tailscale status --json 2>/dev/null \
+    | /usr/bin/ruby -rjson -e 'value = JSON.parse(STDIN.read); puts value.fetch("BackendState", "")' 2>/dev/null \
+    || true
+}
+
+tailscale_peer_status_value() {
+  local field=$1
+  limactl shell "$TAILSCALE_PEER" -- sudo /usr/local/bin/tailscale status --json \
+    | /usr/bin/ruby -rjson -e '
+      field = ARGV.fetch(0)
+      value = JSON.parse(STDIN.read)
+      case field
+      when "dns_name"
+        puts value.dig("Self", "DNSName").to_s.sub(/\.$/, "")
+      when "suffix"
+        puts(value.dig("CurrentTailnet", "MagicDNSSuffix").to_s.sub(/\.$/, ""))
+      else
+        abort "unsupported field"
+      end
+    ' "$field"
+}
+
+start_tailscale_peer() {
+  local instance_yaml state key_source guest_key
+  require_command limactl
+  require_command openssl
+  if [[ ! -d "$(instance_dir "$TAILSCALE_PEER")" ]]; then
+    require_tailscale_auth_key_file \
+      OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE \
+      "${OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE:-}"
+  fi
+  assert_native_tailscale_preflight
+  write_tailscale_peer_config
+  instance_yaml="$(instance_dir "$TAILSCALE_PEER")/lima.yaml"
+  if [[ -f "$instance_yaml" ]] && ! cmp -s "$instance_yaml" "$TAILSCALE_PEER_CONFIG"; then
+    echo "Tailscale peer VM configuration changed; run 'make lab-tailscale-destroy' explicitly before recreating its persistent identity" >&2
+    return 1
+  fi
+  if [[ ! -d "$(instance_dir "$TAILSCALE_PEER")" ]]; then
+    limactl create -y --name "$TAILSCALE_PEER" "$TAILSCALE_PEER_CONFIG"
+  fi
+  state="$(limactl list --format '{{.Status}}' "$TAILSCALE_PEER" 2>/dev/null || true)"
+  if [[ "$state" != "Running" ]]; then
+    limactl start "$TAILSCALE_PEER"
+  fi
+  limactl shell "$TAILSCALE_PEER" -- true
+  if ! limactl shell "$TAILSCALE_PEER" -- bash -lc \
+    '[[ -x /usr/local/bin/tailscale && -x /usr/local/sbin/tailscaled ]] && systemctl is-active --quiet tailscaled'; then
+    echo "Tailscale peer provisioning did not install and start tailscaled" >&2
+    limactl shell "$TAILSCALE_PEER" -- sudo tail -80 /var/log/cloud-init-output.log >&2 || true
+    return 1
+  fi
+  if limactl shell "$TAILSCALE_PEER" -- ip link show omg0 >/dev/null 2>&1; then
+    echo "Tailscale peer unexpectedly has the OpenSurge socket_vmnet data interface" >&2
+    return 1
+  fi
+  limactl shell "$TAILSCALE_PEER" -- bash -lc \
+    'default_iface="$(ip -4 route show default | awk '\''NR == 1 { print $5 }'\'')"; [[ -n "$default_iface" && "$default_iface" != "tailscale0" && "$default_iface" != "omg0" ]]'
+
+  if [[ "$(tailscale_peer_backend_state)" != "Running" ]]; then
+    key_source="${OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE:-}"
+    require_tailscale_auth_key_file OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE "$key_source"
+    guest_key=/tmp/opensurge-tailscale-peer-auth-key
+    if ! limactl copy --backend=scp "$key_source" "$TAILSCALE_PEER:$guest_key" ||
+      ! limactl shell "$TAILSCALE_PEER" -- sudo install -m 0600 "$guest_key" /var/lib/tailscale/lab-auth-key; then
+      clear_tailscale_peer_auth_key
+      echo "could not stage the Tailscale peer Auth Key" >&2
+      return 1
+    fi
+    limactl shell "$TAILSCALE_PEER" -- rm -f "$guest_key"
+    if ! limactl shell "$TAILSCALE_PEER" -- sudo /usr/local/bin/tailscale up \
+      --auth-key=file:/var/lib/tailscale/lab-auth-key \
+      --hostname="$TAILSCALE_PEER_HOSTNAME" \
+      --login-server="$TAILSCALE_CONTROL_URL" \
+      --accept-dns=false \
+      --accept-routes=false \
+      --reset; then
+      clear_tailscale_peer_auth_key
+      echo "Tailscale peer registration failed" >&2
+      return 1
+    fi
+    clear_tailscale_peer_auth_key
+  fi
+  [[ "$(tailscale_peer_backend_state)" == "Running" ]] || {
+    echo "Tailscale peer did not reach BackendState=Running" >&2
+    return 1
+  }
+
+  TAILSCALE_PEER_IP="$(limactl shell "$TAILSCALE_PEER" -- sudo /usr/local/bin/tailscale ip -4 | tr -d '\r\n')"
+  TAILSCALE_PEER_DNS="$(tailscale_peer_status_value dns_name | tr -d '\r\n')"
+  TAILSCALE_MAGIC_DNS_SUFFIX="$(tailscale_peer_status_value suffix | tr -d '\r\n')"
+  [[ "$TAILSCALE_PEER_IP" =~ ^100\. ]] || { echo "unexpected Tailscale peer IPv4 address" >&2; return 1; }
+  [[ -n "$TAILSCALE_PEER_DNS" && -n "$TAILSCALE_MAGIC_DNS_SUFFIX" ]] || {
+    echo "Tailscale peer did not report a MagicDNS identity" >&2
+    return 1
+  }
+  assert_native_route_to_tailscale_peer
+
+  TAILSCALE_TEST_TOKEN="opensurge-ts-$(date +%s)-$(openssl rand -hex 8)"
+  printf '%s\n' "$TAILSCALE_TEST_TOKEN" \
+    | limactl shell "$TAILSCALE_PEER" -- sudo tee /var/lib/opensurge-tailscale-lab/token >/dev/null
+  printf 'OPENSURGE_TS_FIXTURE_PORT=%s\n' "$TAILSCALE_FIXTURE_PORT" \
+    | limactl shell "$TAILSCALE_PEER" -- sudo tee /var/lib/opensurge-tailscale-lab/fixture.env >/dev/null
+  limactl shell "$TAILSCALE_PEER" -- sudo truncate -s 0 /var/lib/opensurge-tailscale-lab/requests.jsonl
+  limactl shell "$TAILSCALE_PEER" -- sudo systemctl enable --now opensurge-tailscale-fixture.service
+  limactl shell "$TAILSCALE_PEER" -- sudo systemctl restart opensurge-tailscale-fixture.service
+  for _ in {1..60}; do
+    if curl --noproxy '*' --fail --silent --show-error --max-time 2 \
+      "http://$TAILSCALE_PEER_IP:$TAILSCALE_FIXTURE_PORT/native-baseline" \
+      | grep -Fxq "$TAILSCALE_TEST_TOKEN"; then
+      limactl shell "$TAILSCALE_PEER" -- sudo truncate -s 0 /var/lib/opensurge-tailscale-lab/requests.jsonl
+      echo "Tailscale peer ready: name=$TAILSCALE_PEER_HOSTNAME path=verified"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "native Tailscale baseline could not reach the dedicated peer fixture" >&2
+  limactl shell "$TAILSCALE_PEER" -- sudo systemctl status --no-pager opensurge-tailscale-fixture.service >&2 || true
+  return 1
+}
+
+clear_tailscale_peer_auth_key() {
+  if [[ -d "$(instance_dir "$TAILSCALE_PEER")" ]]; then
+    limactl shell "$TAILSCALE_PEER" -- rm -f /tmp/opensurge-tailscale-peer-auth-key >/dev/null 2>&1 || true
+    limactl shell "$TAILSCALE_PEER" -- sudo rm -f /var/lib/tailscale/lab-auth-key >/dev/null 2>&1 || true
+  fi
+}
+
+stop_tailscale_peer() {
+  if [[ -d "$(instance_dir "$TAILSCALE_PEER")" ]]; then
+    limactl stop "$TAILSCALE_PEER" || true
+  fi
+}
+
+destroy_tailscale_peer() {
+  if [[ -d "$(instance_dir "$TAILSCALE_PEER")" ]]; then
+    limactl stop "$TAILSCALE_PEER" || true
+    limactl delete "$TAILSCALE_PEER"
+  fi
+}
+
 start_clients() {
   local client instance_yaml pid failed cold_start
   local -a start_pids
@@ -496,6 +789,108 @@ collect_ipv6_real_artifacts() {
   echo "Secret-safe IPv6 real-egress artifacts: $artifact_dir"
 }
 
+assert_tailscale_fixture_evidence() {
+  local raw_log
+  raw_log="$STATE_DIR/tailscale-fixture.raw.jsonl"
+  [[ -n "$TAILSCALE_NATIVE_IP" ]] || { echo "native Tailscale identity was not captured" >&2; return 1; }
+  limactl shell "$TAILSCALE_PEER" -- sudo cat /var/lib/opensurge-tailscale-lab/requests.jsonl >"$raw_log"
+  /usr/bin/ruby -rjson -e '
+    raw_log, native_ip, evidence_path = ARGV
+    entries = File.readlines(raw_log, chomp: true).reject(&:empty?).map { |line| JSON.parse(line) }
+    peer = entries.select { |entry| entry["kind"] == "http" && entry["detail"] == "/peer-ip" }
+    magic = entries.select { |entry| entry["kind"] == "http" && entry["detail"] == "/magic-dns" }
+    udp = entries.select { |entry| entry["kind"] == "udp" && entry["detail"] == "udp-authorized" }
+    unauthorized = entries.select { |entry| entry["detail"].to_s.include?("unauthorized") }
+    sources = (peer + magic + udp).map { |entry| entry["source"] }.uniq
+    abort "peer fixture did not observe both authorized paths" if peer.empty? || magic.empty?
+    abort "peer fixture did not observe the authorized UDP path" if udp.empty?
+    abort "peer fixture observed an unauthorized request" unless unauthorized.empty?
+    abort "authorized requests did not share one managed Tailnet source" unless sources.length == 1
+    abort "authorized requests bypassed through the native Mac Tailscale identity" if sources.first == native_ip
+    evidence = JSON.parse(File.read(evidence_path))
+    evidence.merge!(
+      "peer_ip_authorized" => true,
+      "magic_dns_authorized" => true,
+      "peer_udp_authorized" => true,
+      "unauthorized_peer_blocked" => true,
+      "unauthorized_magic_dns_blocked" => true,
+      "fixture_authorized_path_count" => peer.length + magic.length + udp.length,
+      "fixture_unauthorized_path_count" => unauthorized.length,
+      "managed_identity_distinct_from_native_app" => true,
+      "native_peer_route_present" => true,
+      "mihomo_config_private" => true
+    )
+    File.write(evidence_path, JSON.generate(evidence) + "\n")
+  ' "$raw_log" "$TAILSCALE_NATIVE_IP" "$TAILSCALE_SAFE_EVIDENCE"
+  rm -f "$raw_log"
+}
+
+collect_tailscale_artifacts() {
+  local artifact_dir client
+  artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)-tailscale"
+  mkdir -p "$artifact_dir"
+  cp "$TAILSCALE_SAFE_EVIDENCE" "$artifact_dir/tailscale-evidence.json"
+  if [[ -f "$STATE_DIR/mihomo.yaml" ]]; then
+    grep -E 'open-surge/tailscale|DOMAIN-SUFFIX,.*REJECT|IP-CIDR6?,.*REJECT' "$STATE_DIR/mihomo.yaml" \
+      | sed \
+        -e "s|$TAILSCALE_PEER_IP|<tailscale-peer-ip>|g" \
+        -e "s|$TAILSCALE_MAGIC_DNS_SUFFIX|<tailnet-suffix>|g" \
+      >"$artifact_dir/tailscale-rules.sanitized.txt"
+  fi
+  "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
+  for client in $CLIENTS; do
+    limactl shell "$client" -- sudo /usr/local/bin/omg-lab-client status \
+      >"$artifact_dir/$client.txt" 2>&1 || true
+  done
+  if rg -l 'tskey-auth-' "$artifact_dir" | grep -q .; then
+    echo "Tailscale auth key marker found in supposedly secret-safe artifacts" >&2
+    return 1
+  fi
+  for forbidden in config.yaml mihomo.yaml cache.db mihomo.log control-token tailscaled.state; do
+    if find "$artifact_dir" -name "$forbidden" -print -quit | grep -q .; then
+      echo "secret-bearing file was copied into Tailscale artifacts: $forbidden" >&2
+      return 1
+    fi
+  done
+  LAST_LAB_ARTIFACT_DIR="$artifact_dir"
+  echo "Secret-safe Tailscale Lab artifacts: $artifact_dir"
+}
+
+cleanup_tailscale_generated_secrets() {
+  rm -f "$STATE_DIR/mihomo.yaml" \
+    "$STATE_DIR/cache.db" \
+    "$STATE_DIR/cache.db-journal" \
+    "$STATE_DIR/tailscale-discovery.raw.json" \
+    "$STATE_DIR/tailscale-native-status.raw.json" \
+    "$STATE_DIR/tailscale-fixture.raw.jsonl" \
+    "$STATE_DIR/tailscale-peer-ip.out" \
+    "$STATE_DIR/tailscale-magic-dns.out" \
+    "$STATE_DIR/tailscale-peer-udp.out" \
+    "$STATE_DIR/tailscale-unauthorized-peer.out" \
+    "$STATE_DIR/tailscale-unauthorized-magic-dns.out" \
+    "$STATE_DIR/tailscale-unauthorized-udp.out" \
+    "$STATE_DIR/tailscale-gateway-running.txt" \
+    "$STATE_DIR/logs/mihomo.log"
+  rm -rf "$STATE_DIR/control-api"
+}
+
+prepare_private_tailscale_mihomo_config() {
+  install -m 0600 /dev/null "$STATE_DIR/mihomo.yaml"
+  [[ "$(stat -f '%Lp' "$STATE_DIR/mihomo.yaml")" == "600" ]] || {
+    echo "could not pre-create the Tailscale Mihomo config with mode 0600" >&2
+    return 1
+  }
+}
+
+assert_private_tailscale_mihomo_config() {
+  local mode
+  mode="$(stat -f '%Lp' "$STATE_DIR/mihomo.yaml")"
+  [[ "$mode" == "600" ]] || {
+    echo "Tailscale Mihomo config must remain mode 0600; got $mode" >&2
+    return 1
+  }
+}
+
 assert_ipv6_real_artifacts_safe() {
   local artifact_dir=$1 profile=$2
   case "$artifact_dir" in
@@ -561,6 +956,120 @@ wait_for_transparent_log() {
   echo "mihomo did not log transparent TUN traffic for $host:443" >&2
   tail -80 "$log_file" >&2 || true
   exit 1
+}
+
+wait_for_tailscale_action_log() {
+  local target=$1 source_ip=$2 action=$3 network=${4:-} i log_file
+  log_file="$STATE_DIR/logs/mihomo.log"
+  for i in {1..30}; do
+    if [[ -f "$log_file" ]] && grep -F -- "$source_ip" "$log_file" \
+      | grep -F -- "$target:$TAILSCALE_FIXTURE_PORT" \
+      | grep -F -- "[$network]" \
+      | grep -Fq -- "using $action"; then
+      echo "Tailscale action log observed: network=$network source=$source_ip target=$target action=$action"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "mihomo did not log Tailscale $network traffic for source=$source_ip target=$target using $action" >&2
+  tail -120 "$log_file" >&2 || true
+  return 1
+}
+
+run_tailscale_http_request() {
+  local client=$1 target=$2 path_name=$3 output=$4 i
+  for i in {1..4}; do
+    if limactl shell "$client" -- curl --noproxy '*' --fail --silent --show-error \
+      --connect-timeout 5 --max-time 15 \
+      "http://$target:$TAILSCALE_FIXTURE_PORT/$path_name" >"$output" 2>&1 &&
+      grep -Fxq "$TAILSCALE_TEST_TOKEN" "$output"; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "authorized Tailscale request failed: client=$client target=$target path=$path_name" >&2
+  cat "$output" >&2 || true
+  return 1
+}
+
+assert_tailscale_http_rejected() {
+  local client=$1 target=$2 path_name=$3 output=$4
+  if limactl shell "$client" -- curl --noproxy '*' --fail --silent --show-error \
+    --connect-timeout 3 --max-time 6 \
+    "http://$target:$TAILSCALE_FIXTURE_PORT/$path_name" >"$output" 2>&1; then
+    echo "unauthorized Tailscale request unexpectedly succeeded: client=$client target=$target" >&2
+    return 1
+  fi
+}
+
+run_tailscale_udp_request() {
+  local client=$1 target=$2 detail=$3 output=$4
+  limactl shell "$client" -- python3 -c '
+import socket, sys
+target, port, detail, token = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.settimeout(10)
+sock.sendto(detail.encode(), (target, port))
+data, _ = sock.recvfrom(4096)
+assert data.decode().strip() == token
+print(token)
+' "$target" "$TAILSCALE_FIXTURE_PORT" "$detail" "$TAILSCALE_TEST_TOKEN" >"$output" 2>&1
+}
+
+assert_tailscale_udp_rejected() {
+  local client=$1 target=$2 detail=$3 output=$4
+  if limactl shell "$client" -- python3 -c '
+import socket, sys
+target, port, detail = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.settimeout(4)
+sock.sendto(detail.encode(), (target, port))
+sock.recvfrom(4096)
+' "$target" "$TAILSCALE_FIXTURE_PORT" "$detail" >"$output" 2>&1; then
+    echo "unauthorized Tailscale UDP request unexpectedly received a reply: client=$client target=$target" >&2
+    return 1
+  fi
+}
+
+assert_tailscale_discovery() {
+  local api response i
+  api="http://127.0.0.1:$CONTROL_API_PORT"
+  response="$STATE_DIR/tailscale-discovery.raw.json"
+  for i in {1..20}; do
+    if /usr/bin/curl --fail --silent --show-error \
+      --header "Authorization: Bearer $CONTROL_API_TOKEN" \
+      "$api/api/v1/tailscale/discovery" >"$response" &&
+      /usr/bin/ruby -rjson -e '
+        expected_ip, expected_name, expected_suffix = ARGV
+        value = JSON.parse(File.read(ARGV.fetch(3)))
+        evidence_path = ARGV.fetch(4)
+        peers = Array(value["peers"])
+        match = peers.find do |peer|
+          Array(peer["tailscale_ips"]).include?(expected_ip) && peer["name"] == expected_name
+        end
+        exit 1 unless value["available"] == true
+        exit 1 unless value["backend_state"] == "Running"
+        exit 1 unless value["magic_dns_suffix"] == expected_suffix
+        exit 1 unless match && [true, false].include?(match["online"])
+        evidence = {
+          "available" => true,
+          "backend_running" => true,
+          "peer_found" => true,
+          "peer_online_reported" => match["online"],
+          "magic_dns_suffix_found" => true
+        }
+        File.write(evidence_path, JSON.generate(evidence) + "\n")
+      ' "$TAILSCALE_PEER_IP" "$TAILSCALE_PEER_HOSTNAME" "$TAILSCALE_MAGIC_DNS_SUFFIX" "$response" "$TAILSCALE_SAFE_EVIDENCE"; then
+      rm -f "$response"
+      echo "Control API discovered the dedicated Tailscale peer and reported its advisory online state"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Control API did not discover the dedicated Tailscale peer" >&2
+  cat "$response" >&2 || true
+  rm -f "$response"
+  return 1
 }
 
 wait_for_tun_policy_log() {
@@ -1774,6 +2283,95 @@ EOF
 EOF
 }
 
+write_tailscale_device_policy_fixture() {
+  local client_one client_two mac_one mac_two
+  set -- $CLIENTS
+  if [[ "$#" -ne 2 ]]; then
+    echo "Tailscale Lab requires exactly two downstream clients" >&2
+    exit 1
+  fi
+  client_one="$1"
+  client_two="$2"
+  mac_one="$(client_mac "$client_one")"
+  mac_two="$(client_mac "$client_two")"
+  [[ -n "$mac_one" && -n "$mac_two" && "$mac_one" != "$mac_two" ]] || {
+    echo "Tailscale Lab could not resolve two distinct client MAC addresses" >&2
+    exit 1
+  }
+  LAB_DEVICE_POLICY_FILE="$TAILSCALE_DEVICE_POLICY_FILE"
+  cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
+{
+  "profiles": [
+    {
+      "id": "tailscale-lab-direct",
+      "default_policies": ["DIRECT"]
+    }
+  ],
+  "devices": [
+    {
+      "id": "$client_one",
+      "mac": "$mac_one",
+      "ipv4": "192.168.50.101",
+      "profile": "tailscale-lab-direct",
+      "egress_mode": "dedicated"
+    },
+    {
+      "id": "$client_two",
+      "mac": "$mac_two",
+      "ipv4": "192.168.51.102",
+      "profile": "tailscale-lab-direct",
+      "egress_mode": "dedicated"
+    }
+  ]
+}
+EOF
+}
+
+tailscale_managed_auth_key_file() {
+  local candidate
+  candidate="${OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE:-}"
+  if tailscale_managed_identity_present; then
+    if [[ -n "$candidate" ]]; then
+      require_tailscale_auth_key_file OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE "$candidate"
+      printf '%s\n' "$candidate"
+    else
+      printf '%s\n' "$STATE_DIR/tailscale-auth-key-not-required-after-registration"
+    fi
+    return 0
+  fi
+  require_tailscale_auth_key_file OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE "$candidate"
+  printf '%s\n' "$candidate"
+}
+
+write_tailscale_config() {
+  local client_one auth_key_file
+  set -- $CLIENTS
+  client_one="$1"
+  write_tailscale_device_policy_fixture
+  LAB_MIHOMO_PROFILE=""
+  write_config tun
+  auth_key_file="$(tailscale_managed_auth_key_file)"
+  cat >>"$CONFIG" <<EOF
+
+tailscale:
+  enabled: true
+  display_name: "Tailscale Virtual Lab"
+  hostname: "$TAILSCALE_MANAGED_HOSTNAME"
+  control_url: "$TAILSCALE_CONTROL_URL"
+  auth_key_file: "$auth_key_file"
+  state_dir: "$TAILSCALE_STATE_DIR"
+  accept_routes: false
+  magic_dns_suffixes: "$TAILSCALE_MAGIC_DNS_SUFFIX"
+  peer_cidrs: "$TAILSCALE_PEER_IP/32"
+  subnet_routes: ""
+  allow_mac: true
+  allow_all_devices: false
+  allowed_devices: "$client_one"
+  exit_node: ""
+  exit_node_allow_lan_access: false
+EOF
+}
+
 write_device_block_rule() {
   local client_one=$1 client_two=$2 mac_one mac_two
   mac_one="$(client_mac "$client_one")"
@@ -2582,6 +3180,138 @@ run_local_routing_ipv6_http3() {
   [[ ! -s "$origin_log" ]] || { echo "local IPv6 HTTP/3 unexpectedly reached the origin" >&2; cat "$origin_log" >&2; exit 1; }
 }
 
+run_tailscale_test() {
+  local client_one client_two client_one_ip client_two_ip gateway_started control_api_started cleanup_safe tailscale_config_written
+  local allow_peer deny_peer allow_dns deny_dns first_line second_line
+  require_installed_lab
+  require_command openssl
+  require_command rg
+  [[ -r "$INTERFACE_FILE" ]] || { echo "lab is not up; run: make lab-up" >&2; exit 1; }
+  require_cached_sudo
+  require_tailscale_first_registration_inputs
+  set -- $CLIENTS
+  if [[ "$#" -ne 2 ]]; then
+    echo "Tailscale Lab requires exactly two downstream clients" >&2
+    exit 1
+  fi
+  client_one="$1"
+  client_two="$2"
+  gateway_started=0
+  control_api_started=0
+  cleanup_safe=1
+  tailscale_config_written=0
+  cleanup_tailscale_test() {
+    local status=$? stop_failed=0
+    restore_client_control_dns || true
+    if [[ "$gateway_started" == 1 ]]; then
+      if ! sudo -n "$BINARY" stop --config "$CONFIG"; then
+        stop_failed=1
+        cleanup_safe=0
+      fi
+    fi
+    if [[ "$control_api_started" == 1 ]]; then
+      stop_control_api || true
+    fi
+    clear_tailscale_peer_auth_key
+    stop_sudo_keepalive
+    if [[ "$cleanup_safe" == 1 ]]; then
+      if [[ "$tailscale_config_written" == 1 ]]; then
+        LAB_DEVICE_POLICY_FILE=""
+        LAB_MIHOMO_PROFILE=""
+        write_config off || true
+      fi
+      cleanup_tailscale_generated_secrets
+    else
+      echo "Tailscale Lab preserved mode-0600 runtime configuration because gateway cleanup failed" >&2
+    fi
+    if [[ "$stop_failed" == 1 && "$status" == 0 ]]; then
+      status=1
+    fi
+    exit "$status"
+  }
+  trap cleanup_tailscale_test EXIT INT TERM
+
+  start_sudo_keepalive
+  ensure_lab_state_writable
+  start_tailscale_peer
+  write_tailscale_config
+  tailscale_config_written=1
+
+  mkdir -p "$ROOT/bin"
+  GOCACHE="${GOCACHE:-/private/tmp/open-mihomo-gateway-go-cache}" \
+    go build -o "$BINARY" ./cmd/omg
+  build_control_api
+
+  start_control_api
+  control_api_started=1
+  assert_tailscale_discovery
+
+  prepare_private_tailscale_mihomo_config
+  sudo -n "$BINARY" start --config "$CONFIG"
+  gateway_started=1
+  assert_private_tailscale_mihomo_config
+  assert_managed_tun_routes
+
+  allow_peer="AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,$TAILSCALE_PEER_IP/32)),open-surge/tailscale"
+  deny_peer="IP-CIDR,$TAILSCALE_PEER_IP/32,REJECT"
+  allow_dns="AND,((SRC-IP-CIDR,192.168.50.101/32),(DOMAIN-SUFFIX,$TAILSCALE_MAGIC_DNS_SUFFIX)),open-surge/tailscale"
+  deny_dns="DOMAIN-SUFFIX,$TAILSCALE_MAGIC_DNS_SUFFIX,REJECT"
+  for expected in "$allow_peer" "$deny_peer" "$allow_dns" "$deny_dns"; do
+    grep -Fq "$expected" "$STATE_DIR/mihomo.yaml" || {
+      echo "generated mihomo config is missing Tailscale rule: $expected" >&2
+      exit 1
+    }
+  done
+  first_line="$(grep -Fn "$allow_peer" "$STATE_DIR/mihomo.yaml" | head -1 | cut -d: -f1)"
+  second_line="$(grep -Fn "$deny_peer" "$STATE_DIR/mihomo.yaml" | head -1 | cut -d: -f1)"
+  (( first_line < second_line )) || { echo "Tailscale peer REJECT must follow authorized source rules" >&2; exit 1; }
+  first_line="$(grep -Fn "$allow_dns" "$STATE_DIR/mihomo.yaml" | head -1 | cut -d: -f1)"
+  second_line="$(grep -Fn "$deny_dns" "$STATE_DIR/mihomo.yaml" | head -1 | cut -d: -f1)"
+  (( first_line < second_line )) || { echo "MagicDNS REJECT must follow authorized source rules" >&2; exit 1; }
+
+  limactl shell "$client_one" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+  limactl shell "$client_two" -- sudo /usr/local/bin/omg-lab-client renew "$LAN_IP"
+  assert_client_ipv4 "$client_one" 192.168.50.101
+  assert_client_ipv4 "$client_two" 192.168.51.102
+  client_one_ip="$(client_ipv4 "$client_one")"
+  client_two_ip="$(client_ipv4 "$client_two")"
+
+  run_tailscale_http_request "$client_one" "$TAILSCALE_PEER_IP" peer-ip "$STATE_DIR/tailscale-peer-ip.out"
+  wait_for_tailscale_action_log "$TAILSCALE_PEER_IP" "$client_one_ip" open-surge/tailscale TCP
+  run_tailscale_udp_request "$client_one" "$TAILSCALE_PEER_IP" udp-authorized "$STATE_DIR/tailscale-peer-udp.out"
+  wait_for_tailscale_action_log "$TAILSCALE_PEER_IP" "$client_one_ip" open-surge/tailscale UDP
+  run_tailscale_http_request "$client_one" "$TAILSCALE_PEER_DNS" magic-dns "$STATE_DIR/tailscale-magic-dns.out"
+  wait_for_tailscale_action_log "$TAILSCALE_PEER_DNS" "$client_one_ip" open-surge/tailscale TCP
+
+  assert_tailscale_http_rejected "$client_two" "$TAILSCALE_PEER_IP" unauthorized-peer "$STATE_DIR/tailscale-unauthorized-peer.out"
+  wait_for_tailscale_action_log "$TAILSCALE_PEER_IP" "$client_two_ip" REJECT TCP
+  assert_tailscale_http_rejected "$client_two" "$TAILSCALE_PEER_DNS" unauthorized-magic-dns "$STATE_DIR/tailscale-unauthorized-magic-dns.out"
+  wait_for_tailscale_action_log "$TAILSCALE_PEER_DNS" "$client_two_ip" REJECT TCP
+  assert_tailscale_udp_rejected "$client_two" "$TAILSCALE_PEER_IP" udp-unauthorized "$STATE_DIR/tailscale-unauthorized-udp.out"
+  wait_for_tailscale_action_log "$TAILSCALE_PEER_IP" "$client_two_ip" REJECT UDP
+
+  sleep 1
+  assert_tailscale_fixture_evidence
+  "$BINARY" status --config "$CONFIG" >"$STATE_DIR/tailscale-gateway-running.txt"
+
+  restore_client_control_dns
+  sudo -n "$BINARY" stop --config "$CONFIG"
+  gateway_started=0
+  [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
+  stop_control_api
+  control_api_started=0
+  stop_sudo_keepalive
+  collect_tailscale_artifacts
+
+  LAB_DEVICE_POLICY_FILE=""
+  LAB_MIHOMO_PROFILE=""
+  write_config off
+  cleanup_tailscale_generated_secrets
+  clear_tailscale_peer_auth_key
+  trap - EXIT INT TERM
+  echo "Tailscale peer TCP/UDP, MagicDNS, source authorization, and native-App bypass Lab passed"
+}
+
 run_test() {
   local mode client gateway_started egress_probe_started dns_fixture_started http3_probe_started
   mode="${1:-off}"
@@ -2752,6 +3482,13 @@ case "${1:-}" in
         fi
       fi
     done
+    if [[ -d "$(instance_dir "$TAILSCALE_PEER")" ]]; then
+      peer_state="$(limactl list --format '{{.Status}}' "$TAILSCALE_PEER" 2>/dev/null || true)"
+      echo "$TAILSCALE_PEER: ${peer_state:-unknown}"
+      if [[ "$peer_state" == "Running" ]]; then
+        echo "  backend=$(tailscale_peer_backend_state)"
+      fi
+    fi
     ;;
   test)
     run_test off
@@ -2761,6 +3498,18 @@ case "${1:-}" in
     ;;
   test-tun-device-policy)
     run_device_policy_test
+    ;;
+  tailscale-up)
+    start_tailscale_peer
+    ;;
+  test-tailscale)
+    run_tailscale_test
+    ;;
+  tailscale-down)
+    stop_tailscale_peer
+    ;;
+  tailscale-destroy)
+    destroy_tailscale_peer
     ;;
   test-ipv6-userspace)
     run_ipv6_userspace_test isolated_lan
@@ -2776,18 +3525,20 @@ case "${1:-}" in
     ;;
   down)
     stop_clients
+    stop_tailscale_peer
     if [[ -x "$NETWORK_HELPER" ]]; then
       sudo -n "$NETWORK_HELPER" stop
     fi
     ;;
   destroy)
     destroy_clients
+    destroy_tailscale_peer
     if [[ -x "$NETWORK_HELPER" ]]; then
       sudo -n "$NETWORK_HELPER" stop
     fi
     ;;
   *)
-    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|test-ipv6-userspace|test-ipv6-same-wifi|test-ipv6-same-lan|test-ipv6-imported-egress|down|destroy>" >&2
+    echo "usage: $0 <check|up|status|test|test-tun|test-tun-device-policy|tailscale-up|test-tailscale|tailscale-down|tailscale-destroy|test-ipv6-userspace|test-ipv6-same-wifi|test-ipv6-same-lan|test-ipv6-imported-egress|down|destroy>" >&2
     exit 2
     ;;
 esac

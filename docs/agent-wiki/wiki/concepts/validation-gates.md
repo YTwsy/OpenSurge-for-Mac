@@ -473,6 +473,43 @@ make same-wifi-dhcp-verify-device-policy-recovery
 截至本实现落地时该 gate 尚未在本轮真机运行；因此 same-WiFi per-device 只能标记为
 Experimental / cooperative IPv4，不能借用 virtual lab 的通过记录宣称已验收。
 
+## Tailscale 出站门槛
+
+运行：
+
+```sh
+OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE=/private/path/peer.key \
+OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE=/private/path/managed.key \
+make lab-test-tailscale
+```
+
+首次设置包含 peer VM 与 managed tsnet 两次独立注册：one-off key 需要两个仓库外、
+mode `0600` 的文件；reusable、非 Ephemeral key 可以让两个变量指向同一个文件。
+身份持久化后，后续运行不再需要相应 key；reusable key 主要服务于销毁状态后的自动
+重建。这个门槛只在 Mac 原生 Tailscale App
+`BackendState=Running` 且没有启用 Exit Node 时继续，并要求：
+
+- 独立 `omg-lab-ts-peer` 只有 Lima NAT/control NIC，没有 `omg0`，默认路由不经过
+  `tailscale0`；
+- Control API 从本机 App 自动发现该 peer、布尔型在线提示和 MagicDNS 后缀；在线字段
+  只作为 advisory 元数据，实际可达性由后续 TCP/UDP fixture 判定；
+- 第一台下游 VM 对 peer 精确 IPv4 的 TCP/UDP request-response，以及完整 MagicDNS
+  名称的 TCP，都命中 `open-surge/tailscale`；
+- 第二台下游 VM 对相同 peer IP/MagicDNS 的 TCP/UDP 都命中 `REJECT`，不能 fall
+  through 到 `DIRECT` 后借用 Mac 原生 Tailscale route；
+- peer fixture 只观察到授权请求，且这些请求来自同一个 managed Tailnet 地址，不能
+  等于 Mac 原生 App 的 Tailnet IPv4；
+- 网关启动前 peer 的现有 route 必须选择 `utun`，含 Auth Key 的 `mihomo.yaml` 在
+  root 写入前后都必须保持 mode `0600`；
+- 停止网关后清除 runtime state；artifact 不包含 Auth Key、完整 Mihomo 配置、原始
+  Mihomo/fixture log、Tailnet 地址或 tsnet state。
+
+这条门槛允许宣称 peer IPv4、MagicDNS、TCP/UDP、来源授权和未授权 fail-closed 已在
+真实 Tailnet + macOS TUN 路径验证。它不允许宣称 subnet router、Exit Node 公网出口、
+Headscale、真实远端 LAN 或全部 NAT traversal/DERP 组合已验证。Lima peer underlay
+通过 Mac 当前普通上游是允许的；判定应用路径依赖 peer 观察到的 managed source 与
+Mihomo action log，不依赖 underlay 出口 IP。
+
 ## same-WiFi 上游断链恢复门槛
 
 Mac 与下游客户端共用同一个 Wi-Fi 接口时，普通连通性 smoke 不足以证明上游断链恢复。

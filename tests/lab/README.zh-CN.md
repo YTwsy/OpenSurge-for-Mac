@@ -71,6 +71,10 @@ sudo -v && make lab-test-tun-imported-profile
 sudo -v && make lab-test-tun-imported-egress
 sudo -v && make lab-test-tun-local-routing
 sudo -v && make lab-test-tun-device-policy
+sudo -v && \
+  OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE=/private/path/peer.key \
+  OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE=/private/path/managed.key \
+  make lab-test-tailscale
 sudo -v && make lab-test-ipv6-userspace
 sudo -v && make lab-down
 ```
@@ -130,6 +134,61 @@ Control API“刷新连接”：第一台设备的旧连接必须消失，第二
 设备随后建立的新连接必须命中切换后的出口。通过时的 applied snapshot、runtime state、dnsmasq/mihomo 生成配置和
 初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
 编译仍由单元测试覆盖。
+
+### Tailscale 出站门槛
+
+`lab-test-tailscale` 在普通两个下游客户端之外创建第三台、持久化的 Lima VM
+`omg-lab-ts-peer`。它只使用 Lima 内置 NAT/control 网卡，不连接 `omg0` 数据平面，
+并运行独立的官方 `tailscaled` 与只绑定 `tailscale0` 的 TCP/UDP fixture：
+
+```text
+omg-lab-client-1（允许）─┐
+                         ├─ omg0 ─ OpenSurge TUN ─ managed tsnet ─┐
+omg-lab-client-2（拒绝）─┘                                       │
+                                                                  ├─ Tailnet
+Mac Tailscale App（只用于发现和基线）──────────────────────────────┤
+                                                                  │
+Lima NAT/control ─ omg-lab-ts-peer 自己的 tailscaled ─────────────┘
+```
+
+首次设置会执行两次 Tailscale 注册，因为 peer VM 和 OpenSurge managed tsnet 是两个
+独立节点。把 Auth Key 保存在仓库外的绝对路径中，文件权限必须为 `0600`；不要把 key
+放进命令行参数、环境变量值、Git 或 artifact。一次性 key 必须各用一个文件；也可以
+使用同一枚 reusable、非 Ephemeral key，让两个变量指向同一个受保护文件。运行：
+
+```sh
+sudo -v && \
+  OMG_LAB_TAILSCALE_PEER_AUTH_KEY_FILE=/private/path/peer.key \
+  OMG_LAB_TAILSCALE_OPEN_SURGE_AUTH_KEY_FILE=/private/path/managed.key \
+  make lab-test-tailscale
+```
+
+两份本地身份都持久化：peer 身份在 Lima 磁盘中，managed 身份在
+`runtime/lab/tailscale`。“一次性”限制的是 key 的注册次数，不是 Lab 的运行次数；
+后续运行不再需要对应 key，仍提供变量时只会校验文件安全性。
+`make lab-tailscale-down` 只停止 peer，`make lab-tailscale-destroy` 删除它的本地磁盘
+与身份；两者都不会删除 Tailscale 管理后台中的设备记录，需要操作者在后台单独清理。
+reusable key 的主要用途，是在其到期或被撤销前自动完成这类破坏性重建。
+
+门槛会自动验证：本机 Tailscale 已连接且没有正在使用 Exit Node；peer 没有 `omg0`
+且默认路由不经过 Tailscale；Control API 能自动发现 peer 和 MagicDNS 后缀；只授权
+第一台客户端后，精确 peer IP 的 TCP/UDP 与完整 MagicDNS 名称都实际命中
+`open-surge/tailscale`；第二台客户端的同一目标必须命中 `REJECT`。peer fixture
+还要求所有成功请求来自同一个 managed Tailnet 地址，并且该地址不同于 Mac 原生
+Tailscale App 的地址。启动 OpenSurge 前还会要求 peer 的原生 `/32` 路由确实选择
+`utun`，再用上述来源差异排除这条现成路径造成的假阳性。
+
+VM 的真实互联网 underlay 仍是“VM → Lima NAT → Mac 当前上游”，启动 OpenSurge TUN
+后也可能经过 Mac 的主机 TUN。因此门槛主动拒绝 Mac 正在使用原生 Exit Node 的环境，
+以免形成不必要的嵌套出口；underlay 经 Mac 普通网络并不会否定结果，最终以 peer 观察
+到的 Tailnet source 与 Mihomo action log 共同判定应用流量路径。
+
+此门槛目前只证明 peer IP、MagicDNS、TCP/UDP、来源授权与未授权 fail-closed。它不
+证明 subnet router、Exit Node 公网出口、Headscale 或真实远端 LAN；这些能力仍需各自
+增加受控 fixture 和对应验收，不能从本门槛外推。成功时只保存脱敏规则和布尔证据；
+Auth Key、完整 `mihomo.yaml`、原始日志、Tailnet 地址和 state 不进入 artifact。
+含 Auth Key 的运行期 `mihomo.yaml` 会在启动前预创建为 `0600`，网关启动后再次断言
+权限没有放宽；失败清理也不得用删除文件掩盖未完成的网关回滚。
 
 IPv6 接管按拓扑使用 `lab-test-ipv6-userspace`（独立下游 LAN）、
 `lab-test-ipv6-same-wifi`（同 LAN DHCP 全屋接管）和 `lab-test-ipv6-same-lan`
@@ -266,6 +325,10 @@ make lab-test-tun-imported-profile # 使用 imported profile fixture 跑 TUN
 make lab-test-tun-imported-egress  # 通过受控代理切换 TUN 出口
 make lab-test-tun-local-routing # 验证 Mac 本机模式与下游隔离
 make lab-test-tun-device-policy # 验证独立的每设备 TUN 策略
+make lab-tailscale-up # 创建/启动独立 Tailnet peer（首次需要 peer key 文件）
+make lab-test-tailscale # 验证 peer IP、MagicDNS、TCP/UDP 与来源授权
+make lab-tailscale-down # 只停止独立 Tailnet peer，保留身份
+make lab-tailscale-destroy # 删除 peer VM 本地身份，不删除后台设备记录
 make lab-test-ipv6-userspace # 验证独立下游 LAN 的 IPv6 TCP/UDP 接管与撤销
 make lab-test-ipv6-same-wifi # 验证同 LAN DHCP 全屋 IPv6、Medium RA 与撤销
 make lab-test-ipv6-same-lan # 验证旁路由手工 IPv6、无 RA 与清理

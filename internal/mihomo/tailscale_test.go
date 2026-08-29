@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
@@ -77,5 +78,51 @@ func TestTailscaleTargetsRejectUnauthorizedSourcesBeforeDirectRules(t *testing.T
 	}
 	if !reflect.DeepEqual(rules, want) {
 		t.Fatalf("renderTailscaleRules() = %#v, want %#v", rules, want)
+	}
+}
+
+func TestTailscaleRouteAddressesPreserveDefaultTUNCapture(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Tailscale.Enabled = true
+	cfg.Tailscale.PeerCIDRs = []string{"100.82.10.7/32"}
+	cfg.Tailscale.SubnetRoutes = []string{"10.203.77.0/24"}
+
+	got := renderTailscaleRouteAddresses(cfg, "192.168.48.0/22")
+	assertRenderedRouteCoverage(t, got, "1.1.1.1", true)
+	assertRenderedRouteCoverage(t, got, "198.18.0.4", true)
+	assertRenderedRouteCoverage(t, got, "10.1.2.3", false)
+	assertRenderedRouteCoverage(t, got, "172.16.2.3", false)
+	assertRenderedRouteCoverage(t, got, "192.168.1.2", false)
+	assertRenderedRouteCoverage(t, got, "192.168.50.2", false)
+	for _, expected := range []string{"    - 100.82.10.7/32", "    - 10.203.77.0/24"} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("route-address output missing %q:\n%s", expected, got)
+		}
+	}
+	if strings.Count(got, "100.82.10.7/32") != 1 {
+		t.Fatalf("exact peer route must remain distinct:\n%s", got)
+	}
+
+	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
+	got = renderTailscaleRouteAddresses(cfg, "192.168.48.0/22")
+	assertRenderedRouteCoverage(t, got, "2606:4700:4700::1111", true)
+	assertRenderedRouteCoverage(t, got, "::1", false)
+}
+
+func assertRenderedRouteCoverage(t *testing.T, rendered, address string, want bool) {
+	t.Helper()
+	ip := netip.MustParseAddr(address)
+	matched := false
+	for _, line := range strings.Split(rendered, "\n") {
+		value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
+		prefix, err := netip.ParsePrefix(value)
+		if err == nil && prefix.Contains(ip) {
+			matched = true
+			break
+		}
+	}
+	if matched != want {
+		t.Fatalf("route coverage for %s = %t, want %t:\n%s", address, matched, want, rendered)
 	}
 }

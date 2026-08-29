@@ -143,13 +143,17 @@ func TestRenderConfigWithManagedTailscaleTargetsAndExitNode(t *testing.T) {
 		`state-dir: "` + cfg.Tailscale.StateDir + `"`,
 		`exit-node: "100.90.3.4"`,
 		"exit-node-allow-lan-access: true",
-		"route-address:\n    - 100.82.10.7/32\n    - 10.20.0.0/16",
+		"route-address:",
+		"    - 100.82.10.7/32\n    - 10.20.0.0/16",
 		"AND,((IN-TYPE,TUN),(SRC-IP-CIDR,198.18.0.1/32),(DOMAIN-SUFFIX,home.example.ts.net)),open-surge/tailscale",
 		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,10.20.0.0/16)),open-surge/tailscale",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered Tailscale config missing %q:\n%s", want, rendered)
 		}
+	}
+	if strings.Contains(rendered, "route-exclude-address:") {
+		t.Fatalf("custom Tailscale routes must pre-apply exclusions so exact peer routes stay distinct:\n%s", rendered)
 	}
 	assertOrdered(t, rendered,
 		"AND,((SRC-IP-CIDR,192.168.50.101/32),(IP-CIDR,10.20.0.0/16)),open-surge/tailscale",

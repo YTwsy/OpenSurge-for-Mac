@@ -527,6 +527,15 @@ CONNECT proxy，证明 `policy-select` 可以把 TUN 出口路径在 `DIRECT` �
 选择不同的 TUN 出口，并验证设备级域名 `REJECT` 生效。域名/协议规则编译、模板和
 HTTP/MRS rule-provider 配置由单元测试覆盖；不需要为每条操作者规则运行 Lab。
 
+修改 Tailscale 目标/来源规则、MagicDNS、managed tsnet 配置或本机 Tailscale 发现时，
+使用 `make lab-test-tailscale`。它用独立 Lima Tailnet peer 验证精确 peer IP 的
+TCP/UDP、完整 MagicDNS 名称、Control API 自动发现、单设备允许和其他设备
+fail-closed，并从 peer 观察到的来源地址排除 Mac 原生 Tailscale 路由造成的假阳性。
+首次运行需要为 peer 与 OpenSurge managed 节点提供仓库外、权限为 `0600` 的 Auth Key
+文件；两枚 one-off key 或由两个变量共用的一枚 reusable、非 Ephemeral key 都可以。
+身份持久化后的普通复跑不再需要 key。该门槛不证明 subnet router、Exit Node、
+Headscale 或真实远端 LAN。
+
 修改下游 IPv6 RA/SLAAC、BPF broker、patched Mihomo packet listener、IPv6 设备身份
 或停止撤销时，按拓扑使用 `make lab-test-ipv6-userspace`、
 `make lab-test-ipv6-same-wifi` 和 `make lab-test-ipv6-same-lan`。自动 RA 门槛要求两台
@@ -581,6 +590,7 @@ make lab-test-tun
 make lab-test-tun-imported-profile
 make lab-test-tun-imported-egress
 make lab-test-tun-device-policy
+make lab-test-tailscale
 make lab-test-ipv6-userspace
 make lab-test-ipv6-same-wifi
 make lab-test-ipv6-same-lan
