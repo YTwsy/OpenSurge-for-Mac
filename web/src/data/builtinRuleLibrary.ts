@@ -70,3 +70,15 @@ export const CLAUDE_CODE_TEMPLATE: PolicyTemplate = {
   id: 'claude-code',
   rule_sets: CLAUDE_CODE_RULE_SETS.map(ruleSet => ruleSet.id),
 }
+
+export function isBuiltinRuleSetID(id: string): boolean {
+  return Object.hasOwn(CLAUDE_CODE_RULE_SET_NAMES, id)
+}
+
+export function visibleRuleSets(ruleSets: PolicyRuleSet[]): PolicyRuleSet[] {
+  const byID = new Map(ruleSets.map(item => [item.id, item]))
+  return [
+    ...CLAUDE_CODE_RULE_SETS.map(item => byID.get(item.id) ?? item),
+    ...ruleSets.filter(item => !isBuiltinRuleSetID(item.id)),
+  ]
+}

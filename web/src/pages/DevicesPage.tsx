@@ -4,7 +4,7 @@ import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import { DeviceOutletSummary } from '../components/DeviceOutletSummary'
 import { ConnectionRefreshControl } from '../components/ConnectionRefreshControl'
 import { LocalRoutingCard } from '../components/LocalRoutingCard'
-import { CLAUDE_CODE_RULE_SET_NAMES, CLAUDE_CODE_RULE_SETS, CLAUDE_CODE_SOURCE, CLAUDE_CODE_TEMPLATE } from '../data/builtinRuleLibrary'
+import { CLAUDE_CODE_RULE_SET_NAMES, CLAUDE_CODE_RULE_SETS, CLAUDE_CODE_SOURCE, CLAUDE_CODE_TEMPLATE, isBuiltinRuleSetID, visibleRuleSets } from '../data/builtinRuleLibrary'
 import type { OperationNotification } from '../components/OperationNotifications'
 import { useProxyHealth } from '../hooks/useProxyHealth'
 import { policyDisplayName, TAILSCALE_POLICY } from '../policyDisplay'
@@ -609,7 +609,7 @@ function RuleLibrary({ libraryRef, activeTab, onTabChange, selectedDeviceID, onS
     onTabChange('device_routes')
   }
   const tabs: Array<{ id: RuleLibraryTab; label: string; count: number }> = [
-    { id: 'rule_sets', label: '规则集', count: policy.rule_sets.length },
+    { id: 'rule_sets', label: '规则集', count: visibleRuleSets(policy.rule_sets).length },
     { id: 'templates', label: '分流模版', count: policy.templates.filter(template => template.rule_sets?.length).length + (policy.templates.some(template => template.id === CLAUDE_CODE_TEMPLATE.id) ? 0 : 1) },
     { id: 'device_routes', label: '设备分流', count: policy.devices.length },
   ]
@@ -626,6 +626,9 @@ function RuleLibrary({ libraryRef, activeTab, onTabChange, selectedDeviceID, onS
 
 function RuleSetLibrary({ policy, onPolicyChange }: { policy: PolicySet; onPolicyChange: (policy: PolicySet) => void }) {
   const [editingID, setEditingID] = useState<string | 'new' | null>(null)
+  const [previewID, setPreviewID] = useState<string | null>(null)
+  const items = visibleRuleSets(policy.rule_sets)
+  const persisted = new Set(policy.rule_sets.map(item => item.id))
   const refs = (id: string) => {
     const templates = policy.templates.filter(template => template.rule_sets?.includes(id)).map(template => template.id)
     const rules = policy.profiles.filter(profile => profile.rules?.some(rule => rule.match.rule_sets?.includes(id))).map(profile => profile.id)
@@ -635,12 +638,25 @@ function RuleSetLibrary({ policy, onPolicyChange }: { policy: PolicySet; onPolic
     const exists = policy.rule_sets.some(item => item.id === ruleSet.id)
     onPolicyChange({ ...policy, rule_sets: exists ? policy.rule_sets.map(item => item.id === ruleSet.id ? ruleSet : item) : [...policy.rule_sets, ruleSet] })
     setEditingID(null)
+    setPreviewID(null)
   }
   return <div className="library-pane">
-    <div className="library-pane-heading"><div><h3>{t('规则集')}</h3><p>{t('维护不带出口的域名、IP CIDR 或经典规则列表。')}</p></div>{editingID === null && <button type="button" onClick={() => setEditingID('new')}>＋ {t('新建规则集')}</button>}</div>
-    {editingID === 'new' && <RuleSetEditor existing={policy.rule_sets} onCancel={() => setEditingID(null)} onSave={save} />}
-    <div className="library-list">{policy.rule_sets.map(ruleSet => { const usedBy = refs(ruleSet.id); return <div className="library-item" key={ruleSet.id}><div><strong>{CLAUDE_CODE_RULE_SET_NAMES[ruleSet.id] ?? ruleSet.id}</strong><small>{ruleSet.type ?? 'inline'} · {ruleSet.behavior} · {ruleSet.payload?.length ?? (ruleSet.url ? t('远程') : 0)} {t('项')}{usedBy.length ? ` · ${t('被 {{names}} 使用', { names: usedBy.join('、') })}` : ''}</small></div><div className="library-item-actions"><button type="button" onClick={() => setEditingID(editingID === ruleSet.id ? null : ruleSet.id)}>{t(editingID === ruleSet.id ? '收起' : '编辑')}</button><button className="danger-link" type="button" disabled={usedBy.length > 0} title={usedBy.length ? t('被 {{names}} 使用', { names: usedBy.join('、') }) : undefined} onClick={() => onPolicyChange({ ...policy, rule_sets: policy.rule_sets.filter(item => item.id !== ruleSet.id) })}>{t('移除')}</button></div>{editingID === ruleSet.id && <RuleSetEditor initial={ruleSet} existing={policy.rule_sets} onCancel={() => setEditingID(null)} onSave={save} />}</div> })}</div>
-    {!policy.rule_sets.length && editingID !== 'new' && <Empty text={t('尚未添加规则集；也可以先从“分流模版”查看 Claude Code 内置示例。')} />}
+    <div className="library-pane-heading"><div><h3>{t('规则集')}</h3><p>{t('维护不带出口的域名、IP CIDR 或经典规则列表。Claude Code 内置规则集始终可见，查看不会写入配置。')}</p></div>{editingID === null && <button type="button" onClick={() => setEditingID('new')}>＋ {t('新建规则集')}</button>}</div>
+    {editingID === 'new' && <RuleSetEditor existing={items} onCancel={() => setEditingID(null)} onSave={save} />}
+    <div className="library-list">{items.map(ruleSet => {
+      const usedBy = refs(ruleSet.id)
+      const catalog = isBuiltinRuleSetID(ruleSet.id) && !persisted.has(ruleSet.id)
+      return <div className={`library-item${catalog ? ' is-catalog' : ''}`} key={ruleSet.id}>
+        <div><strong>{ruleSetDisplayName(ruleSet.id)}</strong><small>{ruleSet.type ?? 'inline'} · {ruleSet.behavior} · {ruleSet.payload?.length ?? (ruleSet.url ? t('远程') : 0)} {t('项')}{catalog ? ` · ${t('内置示例')} · ${t('未启用')}` : ''}{usedBy.length ? ` · ${t('被 {{names}} 使用', { names: usedBy.join('、') })}` : ''}</small></div>
+        <div className="library-item-actions">
+          {catalog && <button type="button" onClick={() => { setEditingID(null); setPreviewID(previewID === ruleSet.id ? null : ruleSet.id) }}>{t(previewID === ruleSet.id ? '收起规则' : '查看规则')}</button>}
+          <button type="button" onClick={() => { setPreviewID(null); setEditingID(editingID === ruleSet.id ? null : ruleSet.id) }}>{t(editingID === ruleSet.id ? '收起' : '编辑')}</button>
+          {!catalog && <button className="danger-link" type="button" disabled={usedBy.length > 0} title={usedBy.length ? t('被 {{names}} 使用', { names: usedBy.join('、') }) : undefined} onClick={() => onPolicyChange({ ...policy, rule_sets: policy.rule_sets.filter(item => item.id !== ruleSet.id) })}>{t('移除')}</button>}
+        </div>
+        {previewID === ruleSet.id && editingID !== ruleSet.id && <pre className="catalog-rule-preview">{ruleSet.payload?.join('\n')}</pre>}
+        {editingID === ruleSet.id && <RuleSetEditor initial={ruleSet} existing={items} onCancel={() => setEditingID(null)} onSave={save} />}
+      </div>
+    })}</div>
   </div>
 }
 
@@ -671,16 +687,17 @@ function TemplateLibrary({ policy, onPolicyChange, onUseTemplate }: { policy: Po
   const [exampleOpen, setExampleOpen] = useState(false)
   const routeRefs = (id: string) => policy.devices.filter(device => resolveProfile(policy, device.profile).rules?.some(rule => rule.match.template === id)).map(displayDeviceName)
   const save = (template: PolicyTemplate) => {
-    const exists = policy.templates.some(item => item.id === template.id)
-    onPolicyChange({ ...policy, templates: exists ? policy.templates.map(item => item.id === template.id ? template : item) : [...policy.templates, template] })
+    const withSets = persistBuiltinRuleSets(policy, template.rule_sets ?? [])
+    const exists = withSets.templates.some(item => item.id === template.id)
+    onPolicyChange({ ...withSets, templates: exists ? withSets.templates.map(item => item.id === template.id ? template : item) : [...withSets.templates, template] })
     setEditingID(null)
   }
   const claudeRefs = routeRefs(CLAUDE_CODE_TEMPLATE.id)
   return <div className="library-pane">
     <div className="library-pane-heading"><div><h3>{t('分流模版')}</h3><p>{t('把多个规则集组合为可复用的匹配对象；出口由设备分流决定。')}</p></div>{editingID === null && <button type="button" onClick={() => setEditingID('new')}>＋ {t('新建分流模版')}</button>}</div>
-    <article className="builtin-template"><div className="builtin-template-heading"><div><span className="pill">{t('内置示例')} · {claudeRefs.length ? t('已用于 {{count}} 台设备', { count: claudeRefs.length }) : t('未启用')}</span><h4>Claude Code</h4><p>{t('包含核心域名、扩展服务、IP / ASN 兜底与 NTP 通用规则；不默认应用到任何设备。')}</p></div><div className="library-item-actions"><button type="button" onClick={() => setExampleOpen(value => !value)}>{t(exampleOpen ? '收起规则' : '查看规则')}</button><button className="primary" type="button" disabled={!policy.devices.length} title={!policy.devices.length ? t('请先登记设备') : undefined} onClick={() => onUseTemplate(CLAUDE_CODE_TEMPLATE.id)}>{t('用于设备')}</button></div></div><small className="builtin-source">{t('社区示例，不是 Anthropic 官方规则 · 来源：')}<a href={CLAUDE_CODE_SOURCE.url} target="_blank" rel="noreferrer">{CLAUDE_CODE_SOURCE.label}</a> · {t('固定快照')} {CLAUDE_CODE_SOURCE.snapshot}</small>{exampleOpen && <div className="builtin-rule-grid">{CLAUDE_CODE_RULE_SETS.map(ruleSet => <details key={ruleSet.id}><summary>{CLAUDE_CODE_RULE_SET_NAMES[ruleSet.id]} <span>{ruleSet.payload?.length ?? 0} {t('项')}</span></summary><pre>{ruleSet.payload?.join('\n')}</pre></details>)}</div>}</article>
-    {editingID === 'new' && <TemplateEditor ruleSets={policy.rule_sets} existing={policy.templates} onCancel={() => setEditingID(null)} onSave={save} />}
-    <div className="library-list">{policy.templates.filter(template => template.rule_sets?.length && template.id !== CLAUDE_CODE_TEMPLATE.id).map(template => { const usedBy = routeRefs(template.id); return <div className="library-item" key={template.id}><div><strong>{template.id}</strong><small>{template.rule_sets?.length ?? 0} {t('个规则集')}{usedBy.length ? ` · ${t('设备：{{names}}', { names: usedBy.join('、') })}` : ''}</small></div><div className="library-item-actions"><button type="button" onClick={() => setEditingID(editingID === template.id ? null : template.id)}>{t(editingID === template.id ? '收起' : '编辑')}</button><button className="danger-link" type="button" disabled={usedBy.length > 0} title={usedBy.length ? t('被 {{names}} 使用', { names: usedBy.join('、') }) : undefined} onClick={() => onPolicyChange({ ...policy, templates: policy.templates.filter(item => item.id !== template.id) })}>{t('移除')}</button></div>{editingID === template.id && <TemplateEditor initial={template} ruleSets={policy.rule_sets} existing={policy.templates} onCancel={() => setEditingID(null)} onSave={save} />}</div> })}</div>
+    <article className="builtin-template"><div className="builtin-template-heading"><div><span className="pill">{t('内置示例')} · {claudeRefs.length ? t('已用于 {{count}} 台设备', { count: claudeRefs.length }) : t('未启用')}</span><h4>Claude Code</h4><p>{t('包含核心域名、扩展服务、IP / ASN 兜底与 NTP 通用规则；不默认应用到任何设备。')}</p></div><div className="library-item-actions"><button type="button" onClick={() => setExampleOpen(value => !value)}>{t(exampleOpen ? '收起规则' : '查看规则')}</button><button className="primary" type="button" disabled={!policy.devices.length} title={!policy.devices.length ? t('请先登记设备') : undefined} onClick={() => onUseTemplate(CLAUDE_CODE_TEMPLATE.id)}>{t('用于设备')}</button></div></div><small className="builtin-source">{t('社区示例，不是 Anthropic 官方规则 · 来源：')}<a href={CLAUDE_CODE_SOURCE.url} target="_blank" rel="noreferrer">{t(CLAUDE_CODE_SOURCE.label)}</a> · {t('固定快照')} {CLAUDE_CODE_SOURCE.snapshot}</small>{exampleOpen && <div className="builtin-rule-grid">{CLAUDE_CODE_RULE_SETS.map(ruleSet => <details key={ruleSet.id}><summary>{ruleSetDisplayName(ruleSet.id)} <span>{ruleSet.payload?.length ?? 0} {t('项')}</span></summary><pre>{ruleSet.payload?.join('\n')}</pre></details>)}</div>}</article>
+    {editingID === 'new' && <TemplateEditor ruleSets={visibleRuleSets(policy.rule_sets)} existing={policy.templates} onCancel={() => setEditingID(null)} onSave={save} />}
+    <div className="library-list">{policy.templates.filter(template => template.rule_sets?.length && template.id !== CLAUDE_CODE_TEMPLATE.id).map(template => { const usedBy = routeRefs(template.id); return <div className="library-item" key={template.id}><div><strong>{template.id}</strong><small>{template.rule_sets?.length ?? 0} {t('个规则集')}{usedBy.length ? ` · ${t('设备：{{names}}', { names: usedBy.join('、') })}` : ''}</small></div><div className="library-item-actions"><button type="button" onClick={() => setEditingID(editingID === template.id ? null : template.id)}>{t(editingID === template.id ? '收起' : '编辑')}</button><button className="danger-link" type="button" disabled={usedBy.length > 0} title={usedBy.length ? t('被 {{names}} 使用', { names: usedBy.join('、') }) : undefined} onClick={() => onPolicyChange({ ...policy, templates: policy.templates.filter(item => item.id !== template.id) })}>{t('移除')}</button></div>{editingID === template.id && <TemplateEditor initial={template} ruleSets={visibleRuleSets(policy.rule_sets)} existing={policy.templates} onCancel={() => setEditingID(null)} onSave={save} />}</div> })}</div>
   </div>
 }
 
@@ -695,7 +712,7 @@ function TemplateEditor({ initial, ruleSets, existing, onCancel, onSave }: { ini
     if (!selected.length) { setError(t('至少选择一个规则集。')); return }
     onSave({ id: nextID, rule_sets: selected })
   }
-  return <div className="library-editor template-editor"><label>{t('名称')}<input aria-label={t('分流模版名称')} disabled={Boolean(initial)} placeholder={t('例如 Claude Code')} value={id} onChange={event => setID(event.target.value)} /></label><fieldset><legend>{t('包含的规则集')}</legend><div className="template-rule-set-options">{ruleSets.map(ruleSet => <label key={ruleSet.id}><input type="checkbox" checked={selected.includes(ruleSet.id)} onChange={event => setSelected(event.target.checked ? [...selected, ruleSet.id] : selected.filter(id => id !== ruleSet.id))} /> <span>{CLAUDE_CODE_RULE_SET_NAMES[ruleSet.id] ?? ruleSet.id}<small>{ruleSet.behavior}</small></span></label>)}</div></fieldset>{!ruleSets.length && <Empty text={t('请先在“规则集”中创建匹配列表。')} />}{error && <small className="field-error" role="alert">{error}</small>}<div className="editor-actions"><button type="button" onClick={onCancel}>{t('取消')}</button><button className="primary" type="button" onClick={save}>{t('保存到草稿')}</button></div></div>
+  return <div className="library-editor template-editor"><label>{t('名称')}<input aria-label={t('分流模版名称')} disabled={Boolean(initial)} placeholder={t('例如 Claude Code')} value={id} onChange={event => setID(event.target.value)} /></label><fieldset><legend>{t('包含的规则集')}</legend><div className="template-rule-set-options">{ruleSets.map(ruleSet => <label key={ruleSet.id}><input type="checkbox" checked={selected.includes(ruleSet.id)} onChange={event => setSelected(event.target.checked ? [...selected, ruleSet.id] : selected.filter(id => id !== ruleSet.id))} /> <span>{ruleSetDisplayName(ruleSet.id)}<small>{ruleSet.behavior}</small></span></label>)}</div></fieldset>{!ruleSets.length && <Empty text={t('请先在“规则集”中创建匹配列表。')} />}{error && <small className="field-error" role="alert">{error}</small>}<div className="editor-actions"><button type="button" onClick={onCancel}>{t('取消')}</button><button className="primary" type="button" onClick={save}>{t('保存到草稿')}</button></div></div>
 }
 
 function DeviceRoutesLibrary({ policy, selectedDeviceID, onSelectedDeviceChange, candidates, displayCandidate, presetTemplate, onPresetConsumed, onPolicyChange }: { policy: PolicySet; selectedDeviceID: string; onSelectedDeviceChange: (id: string) => void; candidates: string[]; displayCandidate: (name: string) => string; presetTemplate: string; onPresetConsumed: () => void; onPolicyChange: (policy: PolicySet) => void }) {
@@ -712,7 +729,7 @@ function DeviceRoutesLibrary({ policy, selectedDeviceID, onSelectedDeviceChange,
     onPolicyChange(next)
   }
   const saveRoute = (rule: PolicyRule, index?: number) => {
-    const base = rule.match.template === CLAUDE_CODE_TEMPLATE.id ? installClaudeCodeExample(policy) : policy
+    const base = rule.match.template === CLAUDE_CODE_TEMPLATE.id ? installClaudeCodeExample(policy) : persistBuiltinRuleSets(policy, rule.match.rule_sets ?? [])
     changeProfile(profile => ({ ...profile, rules: index === undefined ? [...(profile.rules ?? []), rule] : (profile.rules ?? []).map((item, current) => current === index ? rule : item) }), base)
     setEditing(null)
     onPresetConsumed()
@@ -754,15 +771,32 @@ function DeviceRouteEditor({ initial, presetTemplate = '', existing, policy, can
     const id = initial?.id ?? nextRuleID(existing)
     onSave(mode === 'selector' ? { id, match, policies, on_unsupported: 'reject' } : { id, match, action, on_unsupported: 'reject' })
   }
-  const sources = kind === 'template' ? templates : policy.rule_sets
-  return <div className="library-editor device-route-editor"><fieldset className="route-source-kind"><legend>{t('匹配对象')}</legend><label><input type="radio" checked={kind === 'template'} onChange={() => { setKind('template'); setSourceID('') }} /> {t('分流模版')}</label><label><input type="radio" checked={kind === 'rule_set'} onChange={() => { setKind('rule_set'); setSourceID('') }} /> {t('单个规则集')}</label></fieldset><label>{t(kind === 'template' ? '分流模版' : '规则集')}<select aria-label={t('设备分流匹配对象')} value={sourceID} onChange={event => setSourceID(event.target.value)}><option value="">{t('请选择')}</option>{sources.map(item => <option key={item.id} value={item.id}>{item.id === CLAUDE_CODE_TEMPLATE.id ? t('Claude Code（内置示例）') : CLAUDE_CODE_RULE_SET_NAMES[item.id] ?? item.id}</option>)}</select></label><fieldset className="egress-mode"><legend>{t('命中后的出口')}</legend><label><input type="radio" checked={mode === 'action'} onChange={() => setMode('action')} /> {t('固定出口')}</label><label><input type="radio" checked={mode === 'selector'} onChange={() => setMode('selector')} /> {t('独立即时切换')}</label>{mode === 'action' ? <select aria-label={t('设备分流出口')} value={action} onChange={event => setAction(event.target.value)}>{candidates.map(candidate => <option key={candidate} value={candidate}>{displayCandidate(candidate)}</option>)}</select> : <CandidatePicker label={t('设备分流出口候选')} values={policies} candidates={candidates} displayName={displayCandidate} onChange={setPolicies} />}</fieldset>{error && <small className="field-error" role="alert">{error}</small>}<div className="editor-actions"><button type="button" onClick={onCancel}>{t('取消')}</button><button className="primary" type="button" onClick={save}>{t('添加到草稿')}</button></div></div>
+  const sources = kind === 'template' ? templates : visibleRuleSets(policy.rule_sets)
+  return <div className="library-editor device-route-editor"><fieldset className="route-source-kind"><legend>{t('匹配对象')}</legend><label><input type="radio" checked={kind === 'template'} onChange={() => { setKind('template'); setSourceID('') }} /> {t('分流模版')}</label><label><input type="radio" checked={kind === 'rule_set'} onChange={() => { setKind('rule_set'); setSourceID('') }} /> {t('单个规则集')}</label></fieldset><label>{t(kind === 'template' ? '分流模版' : '规则集')}<select aria-label={t('设备分流匹配对象')} value={sourceID} onChange={event => setSourceID(event.target.value)}><option value="">{t('请选择')}</option>{sources.map(item => <option key={item.id} value={item.id}>{item.id === CLAUDE_CODE_TEMPLATE.id ? t('Claude Code（内置示例）') : ruleSetDisplayName(item.id)}</option>)}</select></label><fieldset className="egress-mode"><legend>{t('命中后的出口')}</legend><label><input type="radio" checked={mode === 'action'} onChange={() => setMode('action')} /> {t('固定出口')}</label><label><input type="radio" checked={mode === 'selector'} onChange={() => setMode('selector')} /> {t('独立即时切换')}</label>{mode === 'action' ? <select aria-label={t('设备分流出口')} value={action} onChange={event => setAction(event.target.value)}>{candidates.map(candidate => <option key={candidate} value={candidate}>{displayCandidate(candidate)}</option>)}</select> : <CandidatePicker label={t('设备分流出口候选')} values={policies} candidates={candidates} displayName={displayCandidate} onChange={setPolicies} />}</fieldset>{error && <small className="field-error" role="alert">{error}</small>}<div className="editor-actions"><button type="button" onClick={onCancel}>{t('取消')}</button><button className="primary" type="button" onClick={save}>{t('添加到草稿')}</button></div></div>
+}
+
+function ruleSetDisplayName(id: string) {
+  return t(CLAUDE_CODE_RULE_SET_NAMES[id] ?? id)
+}
+
+function persistBuiltinRuleSets(policy: PolicySet, ids: Iterable<string>): PolicySet {
+  const existing = new Set(policy.rule_sets.map(item => item.id))
+  const additions = [...ids]
+    .filter(id => !existing.has(id))
+    .map(id => CLAUDE_CODE_RULE_SETS.find(item => item.id === id))
+    .filter((item): item is PolicyRuleSet => Boolean(item))
+    .map(item => structuredClone(item))
+  if (!additions.length) return policy
+  const next = copyPolicy(policy)
+  next.rule_sets.push(...additions)
+  return next
 }
 
 function installClaudeCodeExample(policy: PolicySet): PolicySet {
-  const next = copyPolicy(policy)
-  const existingRuleSets = new Set(next.rule_sets.map(ruleSet => ruleSet.id))
-  next.rule_sets.push(...CLAUDE_CODE_RULE_SETS.filter(ruleSet => !existingRuleSets.has(ruleSet.id)).map(ruleSet => structuredClone(ruleSet)))
-  if (!next.templates.some(template => template.id === CLAUDE_CODE_TEMPLATE.id)) next.templates.push(structuredClone(CLAUDE_CODE_TEMPLATE))
+  const withSets = persistBuiltinRuleSets(policy, CLAUDE_CODE_RULE_SETS.map(item => item.id))
+  if (withSets.templates.some(template => template.id === CLAUDE_CODE_TEMPLATE.id)) return withSets
+  const next = withSets === policy ? copyPolicy(policy) : withSets
+  next.templates.push(structuredClone(CLAUDE_CODE_TEMPLATE))
   return next
 }
 
@@ -771,7 +805,7 @@ function routeMatchChips(rule: PolicyRule, policy: PolicySet) {
     const template = policy.templates.find(item => item.id === rule.match.template) ?? (rule.match.template === CLAUDE_CODE_TEMPLATE.id ? CLAUDE_CODE_TEMPLATE : undefined)
     return [t('模版 {{name}}', { name: rule.match.template }), t('{{count}} 个规则集', { count: template?.rule_sets?.length ?? 0 })]
   }
-  if (rule.match.rule_sets?.length) return rule.match.rule_sets.map(id => t('规则集 {{name}}', { name: CLAUDE_CODE_RULE_SET_NAMES[id] ?? id }))
+  if (rule.match.rule_sets?.length) return rule.match.rule_sets.map(id => t('规则集 {{name}}', { name: ruleSetDisplayName(id) }))
   return matchChips(rule)
 }
 

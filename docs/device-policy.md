@@ -44,8 +44,9 @@ evidence remain required.
 
 ## Model
 
-The Web GUI rule library includes an inspectable community Claude Code example,
-but does not write it to the configuration or apply it to a device by default.
+The Web GUI rule library includes an inspectable community Claude Code example.
+The Rule Sets and Routing Templates tabs always show that catalog, but do not
+write it to the configuration or apply it to a device by default.
 Operators own all other policy content. The JSON model has four collections:
 
 - `devices`: stable identity (`id`, MAC, reserved IPv4, profile id), an optional
@@ -214,9 +215,10 @@ sets; it contains no outlet and does not clone a full mihomo profile.
 
 The built-in Claude Code example in the Web GUI is based on the
 [Net.Coffee community rule page](https://ip.net.coffee/claude/site.html) and is
-explicitly labeled as non-official. Users can inspect it first. Its four rule
-sets and template are added to the configuration only after the user chooses
-"Use for device" and adds that route to the draft.
+explicitly labeled as non-official. Users can inspect it first from Rule Sets
+or Routing Templates. Its rule sets and template are added to the configuration
+only after the user edits and saves a draft, includes a rule set in a custom
+template, or chooses "Use for device" and adds that route to the draft.
 
 ## Operations
 

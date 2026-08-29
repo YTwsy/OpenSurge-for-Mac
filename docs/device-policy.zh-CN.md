@@ -36,7 +36,7 @@ reservation 可位于动态 DHCP 池内，`devices --format json` 会显式标�
 
 ## 模型
 
-Web GUI 的规则库内置一份可查看的 Claude Code 社区示例，但不会默认写入配置或应用到设备。
+Web GUI 的规则库内置一份可查看的 Claude Code 社区示例；规则集与分流模版页始终展示，但不会默认写入配置或应用到设备。
 其他规则内容由操作者提供。JSON 中有：
 
 - `devices`：稳定 `id`、可选显示名称 `name`、MAC、固定 IPv4、profile、
@@ -155,8 +155,8 @@ provider 可用 `yaml`、`text`、`mrs`；MRS 只适用于 `domain` 和 `ipcidr`
 
 Web GUI 的 Claude Code 内置示例来自
 [Net.Coffee 的社区规则页](https://ip.net.coffee/claude/site.html)，并明确标记为非 Anthropic
-官方规则。用户可先展开阅读；只有选择“用于设备”并将分流添加到草稿时，
-对应的四份规则集和模版才会加入配置。
+官方规则。用户可先在规则集或分流模版中展开阅读；只有编辑并保存到草稿、把规则集加入
+自建模版，或选择“用于设备”并将分流添加到草稿时，对应的规则集和模版才会加入配置。
 
 ## 操作与验证
 

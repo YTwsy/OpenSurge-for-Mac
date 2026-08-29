@@ -21,6 +21,7 @@ vi.mock('../api', () => {
   }
 })
 
+import { activateLanguage, prepareLanguage } from '../i18n'
 import { api, RequestError, waitForOperation } from '../api'
 import { DevicesPage } from './DevicesPage'
 
@@ -94,7 +95,7 @@ describe('DevicesPage', () => {
     vi.mocked(api.saveDevicePolicy).mockImplementation(async (policy, revision) => documentFor(policy, `${revision}-next`))
   })
 
-  afterEach(() => { cleanup(); vi.clearAllMocks() })
+  afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans') })
 
   it('refreshes only Mac-local connections from the Mac card', async () => {
     const { onChanged } = renderPage()
@@ -702,6 +703,11 @@ describe('DevicesPage', () => {
     }
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
     renderPage()
+    expect(await screen.findByText('Claude Code 核心域名')).toBeTruthy()
+    expect(screen.getByText('Claude Code 扩展服务')).toBeTruthy()
+    expect(screen.getByText('Claude Code IP / ASN 兜底')).toBeTruthy()
+    expect(screen.getByText('NTP 通用规则')).toBeTruthy()
+    expect((document.querySelector('.sticky-save') as HTMLElement).classList.contains('is-saved')).toBe(true)
     await userEvent.click(await screen.findByRole('tab', { name: /分流模版/ }))
     expect(screen.getByText('内置示例 · 未启用')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Claude Code' })).toBeTruthy()
@@ -759,12 +765,86 @@ describe('DevicesPage', () => {
     renderPage()
     expect(await screen.findByRole('tablist', { name: '规则库' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: /规则集/ }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByText('Claude Code 核心域名')).toBeTruthy()
     expect(screen.queryByText('高级 / 复用机制')).toBeNull()
     await userEvent.click(screen.getByRole('tab', { name: /分流模版/ }))
     await userEvent.click(screen.getByRole('button', { name: '查看规则' }))
     expect(screen.getByText(/DOMAIN-SUFFIX,anthropic\.com/)).toBeTruthy()
     expect(screen.getByText(/IP-ASN,399358,no-resolve/)).toBeTruthy()
     expect(screen.getByText(/DST-PORT,123/)).toBeTruthy()
+  })
+
+  it('lets the operator inspect catalog rule sets without writing desired state', async () => {
+    renderPage()
+    const item = (await screen.findByText('Claude Code 核心域名')).closest('.library-item') as HTMLElement
+    expect(within(item).getByText(/内置示例 · 未启用/)).toBeTruthy()
+    expect(within(item).queryByRole('button', { name: '移除' })).toBeNull()
+    await userEvent.click(within(item).getByRole('button', { name: '查看规则' }))
+    expect(within(item).getByText(/DOMAIN-SUFFIX,anthropic\.com/)).toBeTruthy()
+    expect((document.querySelector('.sticky-save') as HTMLElement).classList.contains('is-saved')).toBe(true)
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
+  })
+
+  it('writes a catalog rule set only after the operator saves an edit to the draft', async () => {
+    renderPage()
+    const item = (await screen.findByText('Claude Code 核心域名')).closest('.library-item') as HTMLElement
+    await userEvent.click(within(item).getByRole('button', { name: '编辑' }))
+    expect((document.querySelector('.sticky-save') as HTMLElement).classList.contains('is-saved')).toBe(true)
+    await userEvent.click(within(item).getByRole('button', { name: '保存到草稿' }))
+    expect((document.querySelector('.sticky-save') as HTMLElement).classList.contains('has-changes')).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
+    expect(saved.rule_sets.map(ruleSet => ruleSet.id)).toEqual(['claude-code-domains'])
+    expect(saved.templates).toEqual([])
+  })
+
+  it('installs a catalog rule set when a device route selects it', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'alice-policy', egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'alice-policy', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    renderPage()
+    await userEvent.click(await screen.findByRole('tab', { name: /设备分流/ }))
+    await userEvent.click(screen.getByRole('button', { name: '＋ 添加设备分流' }))
+    await userEvent.click(screen.getByRole('radio', { name: '单个规则集' }))
+    await userEvent.selectOptions(screen.getByLabelText('设备分流匹配对象'), 'claude-code-domains')
+    await userEvent.click(screen.getByRole('button', { name: '添加到草稿' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
+    expect(saved.rule_sets.map(ruleSet => ruleSet.id)).toEqual(['claude-code-domains'])
+    expect(saved.templates).toEqual([])
+    expect(saved.profiles.find(profile => profile.id === 'alice-policy')?.rules).toContainEqual(expect.objectContaining({ match: { rule_sets: ['claude-code-domains'] }, action: 'DIRECT' }))
+  })
+
+  it('persists selected catalog rule sets when saving a custom template', async () => {
+    renderPage()
+    await userEvent.click(await screen.findByRole('tab', { name: /分流模版/ }))
+    await userEvent.click(screen.getByRole('button', { name: '＋ 新建分流模版' }))
+    await userEvent.type(screen.getByLabelText('分流模版名称'), 'core-only')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Claude Code 核心域名/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存到草稿' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
+    expect(saved.templates.find(template => template.id === 'core-only')?.rule_sets).toEqual(['claude-code-domains'])
+    expect(saved.rule_sets.map(ruleSet => ruleSet.id)).toEqual(['claude-code-domains'])
+  })
+
+  it('renders the catalog rule library in English without leftover CJK', async () => {
+    await prepareLanguage('en')
+    activateLanguage('en')
+    renderPage()
+    expect(await screen.findByText('Claude Code core domains')).toBeTruthy()
+    expect(screen.getByText('Claude Code extended services')).toBeTruthy()
+    const library = document.querySelector('.rule-library') as HTMLElement
+    const item = within(library).getByText('Claude Code core domains').closest('.library-item') as HTMLElement
+    await userEvent.click(within(item).getByRole('button', { name: 'View rules' }))
+    expect(within(item).getByText(/DOMAIN-SUFFIX,anthropic\.com/)).toBeTruthy()
+    expect(library.textContent).not.toMatch(/[\u3400-\u9fff]/)
   })
 
   it('uses a custom interruption warning before reload and waits for the operation', async () => {
