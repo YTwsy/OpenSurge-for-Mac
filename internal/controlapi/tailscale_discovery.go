@@ -14,6 +14,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/runtime"
 )
 
 const (
@@ -48,9 +51,10 @@ func (s *Server) handleTailscaleDiscovery(w http.ResponseWriter, r *http.Request
 	result, err := s.discoverTailscale(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusOK, TailscaleDiscoveryResponse{
-			SchemaVersion: SchemaVersion,
-			Peers:         []TailscaleDiscoveredNode{},
-			Error:         compactTailscaleDiscoveryError(err),
+			SchemaVersion:        SchemaVersion,
+			Peers:                []TailscaleDiscoveredNode{},
+			SubnetRouteConflicts: []TailscaleSubnetRouteConflict{},
+			Error:                compactTailscaleDiscoveryError(err),
 		})
 		return
 	}
@@ -58,7 +62,76 @@ func (s *Server) handleTailscaleDiscovery(w http.ResponseWriter, r *http.Request
 	if result.Peers == nil {
 		result.Peers = []TailscaleDiscoveredNode{}
 	}
+	result.SubnetRouteConflicts = s.discoveredTailscaleSubnetRouteConflicts(r.Context(), result)
 	writeJSON(w, http.StatusOK, result)
+}
+
+type tailscaleSubnetRouteCandidate struct {
+	Route    string
+	PeerID   string
+	PeerName string
+}
+
+func (s *Server) discoveredTailscaleSubnetRouteConflicts(ctx context.Context, discovery TailscaleDiscoveryResponse) []TailscaleSubnetRouteConflict {
+	candidates := []tailscaleSubnetRouteCandidate{}
+	for _, peer := range discovery.Peers {
+		for _, route := range peer.SubnetRoutes {
+			candidates = append(candidates, tailscaleSubnetRouteCandidate{Route: route, PeerID: peer.ID, PeerName: peer.Name})
+		}
+	}
+	return s.tailscaleSubnetRouteConflicts(ctx, candidates)
+}
+
+func (s *Server) tailscaleSubnetRouteConflicts(ctx context.Context, candidates []tailscaleSubnetRouteCandidate) []TailscaleSubnetRouteConflict {
+	conflicts := []TailscaleSubnetRouteConflict{}
+	cfg, err := config.Load(s.configPath)
+	if err != nil {
+		return conflicts
+	}
+	_, gatewayActive, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
+	if stateErr != nil {
+		return conflicts
+	}
+	ownTUN := ""
+	if state, fetchErr := s.fetchTUNRuntime(ctx, cfg); fetchErr == nil && state.Enabled && state.Device != "" {
+		ownTUN = state.Device
+	} else if gatewayActive {
+		// Without the active OpenSurge TUN identity an existing exact utun route
+		// cannot safely be attributed to another app. Let the normal reload and
+		// rollback path handle this rare degraded-control-plane case.
+		return conflicts
+	}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(candidate.Route))
+		if err != nil {
+			continue
+		}
+		prefix = prefix.Masked()
+		selection, err := s.lookupRoute(ctx, prefix.Addr().String())
+		if err != nil || !strings.HasPrefix(selection.Interface, "utun") || selection.Interface == ownTUN || selection.Prefix != prefix.String() {
+			continue
+		}
+		key := prefix.String() + "\x00" + selection.Interface
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		conflicts = append(conflicts, TailscaleSubnetRouteConflict{Route: prefix.String(), Interface: selection.Interface, PeerID: candidate.PeerID, PeerName: candidate.PeerName})
+	}
+	return conflicts
+}
+
+func manualTailscaleSubnetRouteCandidates(routes []string) []tailscaleSubnetRouteCandidate {
+	candidates := make([]tailscaleSubnetRouteCandidate, 0, len(routes))
+	for _, route := range routes {
+		candidates = append(candidates, tailscaleSubnetRouteCandidate{Route: route})
+	}
+	return candidates
+}
+
+func tailscaleRouteConflictMessage(conflict TailscaleSubnetRouteConflict) string {
+	return fmt.Sprintf("subnet route %s is already managed by the local Tailscale app on %s; turn off accepting subnet routes in the Tailscale app or disconnect it before applying OpenSurge", conflict.Route, conflict.Interface)
 }
 
 func discoverLocalTailscale(ctx context.Context) (TailscaleDiscoveryResponse, error) {

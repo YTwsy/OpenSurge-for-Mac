@@ -376,6 +376,10 @@ func fetchProxyHealthWithClient(ctx context.Context, cfg config.Config, client *
 				health.Status = "available_on_demand"
 			}
 		}
+		if health.Name == config.TailscaleExitGroupName && cfg.Tailscale.Enabled && cfg.Tailscale.ExitNode != "" {
+			health.DisplayName = cfg.Tailscale.DisplayName + " · Exit Node"
+			health.Role = "exit_node"
+		}
 		if !health.Probeable && health.Role != "tailnet" {
 			health.Status = "not_applicable"
 		}

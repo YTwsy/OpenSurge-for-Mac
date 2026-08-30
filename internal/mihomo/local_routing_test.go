@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -127,6 +128,38 @@ func TestBuildLocalRoutingPolicyAddsOnlyEffectiveSystemTUNIPv6Identities(t *test
 				if strings.Contains(rules, forbidden) {
 					t.Fatalf("local routing rules broadened into downstream or fake IPv6 space with %q:\n%s", forbidden, rules)
 				}
+			}
+		})
+	}
+}
+
+func TestBuildLocalRoutingPolicyOffersTailscaleExitNodeOnlyToAllowedMac(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		enabled  bool
+		exitNode string
+		allowMac bool
+		want     bool
+	}{
+		{name: "available", enabled: true, exitNode: "100.90.3.4", allowMac: true, want: true},
+		{name: "Mac not allowed", enabled: true, exitNode: "100.90.3.4", allowMac: false},
+		{name: "Tailnet only", enabled: true, allowMac: true},
+		{name: "disabled", exitNode: "100.90.3.4", allowMac: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Tailscale.Enabled = test.enabled
+			cfg.Tailscale.ExitNode = test.exitNode
+			cfg.Tailscale.AllowMac = test.allowMac
+			policy := buildLocalRoutingPolicy(cfg, nil)
+			present := false
+			for _, group := range policy.Groups {
+				if group.Name == LocalRoutingGlobalGroup && slices.Contains(group.Policies, config.TailscaleExitGroupName) {
+					present = true
+				}
+			}
+			if present != test.want {
+				t.Fatalf("Tailscale Exit Node candidate present = %t, want %t: %#v", present, test.want, policy.Groups)
 			}
 		})
 	}

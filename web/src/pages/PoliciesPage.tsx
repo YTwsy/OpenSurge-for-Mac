@@ -5,6 +5,7 @@ import { OutletSummary } from '../components/OutletSummary'
 import { PolicyGroupHealthCard } from '../components/PolicyGroupHealthCard'
 import { PolicyGroupNav } from '../components/PolicyGroupNav'
 import { useProxyHealth } from '../hooks/useProxyHealth'
+import { policyDisplayName } from '../policyDisplay'
 import type { LocalRouting, Overview, ProxyHealthEntry } from '../types'
 import { t } from '../i18n'
 
@@ -42,8 +43,8 @@ export function PoliciesPage({ overview, onChanged, viewState, onViewStateChange
     if (scope === 'global' && device) return false
     if (scope === 'device' && !device) return false
     const query = search.trim().toLowerCase()
-    return !query || group.name.toLowerCase().includes(query) || group.options.some(option => option.toLowerCase().includes(query))
-  }), [groups, scope, search])
+    return !query || group.name.toLowerCase().includes(query) || policyDisplayName(group.name, byName.get(group.name)).toLowerCase().includes(query) || group.options.some(option => option.toLowerCase().includes(query))
+  }), [groups, scope, search, byName])
   const groupNames = useMemo(() => filteredGroups.map(group => group.name), [filteredGroups])
   const visibleNames = useMemo(() => [...new Set(filteredGroups.flatMap(group => group.options))], [filteredGroups])
   const testableNames = useMemo(() => visibleNames.filter(name => byName.get(name)?.probeable), [visibleNames, byName])
@@ -162,7 +163,7 @@ export function PoliciesPage({ overview, onChanged, viewState, onViewStateChange
     <section className="policy-health-overview" aria-label={t('节点健康概览')}><div><small>{t('当前视图')}</small><strong>{filteredGroups.length}</strong><span>{t('个策略组')}</span></div><div><small>{t('已检测')}</small><strong>{tested}</strong><span>{t('个出口')}</span></div><div><small>{t('当前可达')}</small><strong>{reachable}</strong><span>{t('个出口')}</span></div><div className="health-legend"><span><i className="legend-dot excellent" />{t('快速')}</span><span><i className="legend-dot good" />{t('可用')}</span><span><i className="legend-dot slow" />{t('较慢')}</span><span><i className="legend-dot unreachable" />{t('不可达')}</span></div></section>
     <div className="policy-controls-sticky" ref={controlsRef}>
       <section className="policy-toolbar"><label className="policy-search"><span className="sr-only">{t('搜索策略组或节点')}</span><input type="search" value={search} placeholder={t('搜索策略组或节点')} onChange={event => onViewStateChange({ search: event.target.value })} /></label><div className="segmented" role="group" aria-label={t('策略组范围')}>{([['global', '全局策略'], ['device', '设备策略'], ['all', '全部']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={scope === value} onClick={() => onViewStateChange({ scope: value })}>{t(label)}</button>)}</div></section>
-      <PolicyGroupNav groups={groupNames} activeGroup={activeGroup} onNavigate={navigateToGroup} />
+      <PolicyGroupNav groups={groupNames} activeGroup={activeGroup} onNavigate={navigateToGroup} displayName={name => policyDisplayName(name, byName.get(name))} />
     </div>
     {error && <div className="notice warn" role="alert">{t('节点健康暂不可用：{{error}}', { error })}</div>}
     <section className="policy-health-list">{filteredGroups.map(group => <PolicyGroupHealthCard key={group.name} group={group} search={search.trim()} healthByName={byName} testing={testing} onTest={test} onSelect={policy => select(group.name, policy)} articleRef={registerGroup(group.name)} navigationActive={group.name === activeGroup} />)}</section>

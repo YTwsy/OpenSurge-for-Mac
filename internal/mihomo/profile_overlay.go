@@ -366,7 +366,7 @@ func validateOverlayTargetName(section, name string) error {
 	if strings.TrimSpace(name) != name || name == "" {
 		return fmt.Errorf("%s target name must be a non-empty trimmed string", section)
 	}
-	if IsLocalRoutingGroup(name) || name == config.TailscaleProxyName || strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") {
+	if IsLocalRoutingGroup(name) || name == config.TailscaleProxyName || name == config.TailscaleExitGroupName || strings.HasPrefix(name, "device/") || strings.HasPrefix(name, "open-surge-ruleset-") {
 		return fmt.Errorf("%s target %q uses a reserved OpenSurge namespace", section, name)
 	}
 	return nil

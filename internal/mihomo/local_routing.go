@@ -282,6 +282,9 @@ func buildLocalRoutingPolicy(cfg config.Config, imported *importedProfile) local
 	} else if cfg.UpstreamProxy.Enabled {
 		globalPolicies = append(globalPolicies, "open-surge-egress")
 	}
+	if cfg.Tailscale.Enabled && cfg.Tailscale.ExitNode != "" && cfg.Tailscale.AllowMac {
+		globalPolicies = append(globalPolicies, config.TailscaleExitGroupName)
+	}
 
 	groups := []localRoutingGeneratedGroup{}
 	tcpPolicies := []string{"PASS", "DIRECT"}

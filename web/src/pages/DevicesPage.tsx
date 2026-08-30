@@ -7,7 +7,7 @@ import { LocalRoutingCard } from '../components/LocalRoutingCard'
 import { CLAUDE_CODE_RULE_SET_NAMES, CLAUDE_CODE_RULE_SETS, CLAUDE_CODE_SOURCE, CLAUDE_CODE_TEMPLATE, isBuiltinRuleSetID, visibleRuleSets } from '../data/builtinRuleLibrary'
 import type { OperationNotification } from '../components/OperationNotifications'
 import { useProxyHealth } from '../hooks/useProxyHealth'
-import { policyDisplayName, TAILSCALE_POLICY } from '../policyDisplay'
+import { policyDisplayName, TAILSCALE_EXIT_POLICY } from '../policyDisplay'
 import type { AppliedDeviceEgressMode, CompiledDevice, ControlConfig, DeviceEgressMode, DeviceGatewayTarget, DevicePolicyDocument, DevicesResponse, Lease, ObservedDevice, Overview, PolicyDevice, PolicyProfile, PolicyRule, PolicyRuleSet, PolicySet, PolicyTemplate, ProxyGroup, ProxyHealthEntry } from '../types'
 import { t } from '../i18n'
 
@@ -54,7 +54,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
 
   const groups = overview?.policies ?? []
   const globalGroups = useMemo(() => groups.filter(group => !group.name.startsWith('device/')), [groups])
-  const candidates = useMemo(() => [...new Set(['DIRECT', 'REJECT', ...globalGroups.map(group => group.name), ...importedCandidates, ...(tailscaleExitAvailable ? [TAILSCALE_POLICY] : [])])], [globalGroups, importedCandidates, tailscaleExitAvailable])
+  const candidates = useMemo(() => [...new Set(['DIRECT', 'REJECT', ...globalGroups.map(group => group.name), ...importedCandidates, ...(tailscaleExitAvailable ? [TAILSCALE_EXIT_POLICY] : [])])], [globalGroups, importedCandidates, tailscaleExitAvailable])
   const displayCandidate = useCallback((name: string) => policyDisplayName(name, undefined, tailscaleDisplayName), [tailscaleDisplayName])
   const routerBypass = {
     gateway: controlConfig?.dhcp.bypass_gateway.trim() ?? '',

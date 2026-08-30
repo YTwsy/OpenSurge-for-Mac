@@ -868,6 +868,44 @@ func TestTailscaleEndpointNeverReturnsStoredAuthKey(t *testing.T) {
 	}
 }
 
+func TestTailscaleUpdateRejectsNativeSubnetRouteConflictBeforeReload(t *testing.T) {
+	server := newTestServer(t)
+	cfg, err := config.Load(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := runtime.NewPaths(cfg)
+	if err := os.MkdirAll(filepath.Dir(paths.StateFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.SaveState(paths.StateFile, runtime.State{PIDMihomo: os.Getpid(), StartedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	server.fetchTUNRuntime = func(context.Context, config.Config) (mihomo.TUNRuntimeState, error) {
+		return mihomo.TUNRuntimeState{Enabled: true, Device: "utun123"}, nil
+	}
+	server.lookupRoute = func(context.Context, string) (macosnetwork.RouteSelection, error) {
+		return macosnetwork.RouteSelection{Interface: "utun5", Prefix: "192.168.64.0/24"}, nil
+	}
+	runner := &recordingTailscaleConfigurationRunner{}
+	server.configRunner = runner
+	payload, _ := json.Marshal(TailscaleUpdateRequest{TailscaleSettings: TailscaleSettings{
+		Enabled: true, AcceptRoutes: true, SubnetRoutes: []string{"192.168.64.0/24"},
+	}})
+	request := httptest.NewRequest(http.MethodPut, "http://127.0.0.1:61767/api/v1/tailscale", bytes.NewReader(payload))
+	request.Host = "127.0.0.1:61767"
+	request.Header.Set("Authorization", "Bearer "+server.token)
+	request.Header.Set("If-Match", `"`+fileDigest(server.configPath)+`"`)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !containsAll(response.Body.String(), `"code":"tailscale_route_conflict"`, "192.168.64.0/24", "utun5") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if runner.called {
+		t.Fatal("Tailscale configuration runner was called after route conflict preflight")
+	}
+}
+
 func TestSafeDialRejectsLoopback(t *testing.T) {
 	ctx := t.Context()
 	_, err := safeDialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", "443"))
@@ -2382,6 +2420,16 @@ type recordingConfigurationRunner struct {
 	profilePayload []byte
 	sourceDigest   string
 	overlayDigest  string
+}
+
+type recordingTailscaleConfigurationRunner struct {
+	fakeConfigurationRunner
+	called bool
+}
+
+func (f *recordingTailscaleConfigurationRunner) ApplyTailscale(_ context.Context, _, revision string, _ []byte) (ProfileApplyResult, error) {
+	f.called = true
+	return ProfileApplyResult{Revision: revision + "-tailscale", Reloaded: true}, nil
 }
 
 func (f *recordingConfigurationRunner) ApplyProfile(_ context.Context, _, revision string, payload []byte, sourceDigest, overlayDigest string) (ProfileApplyResult, error) {

@@ -178,6 +178,7 @@ func TestParseProfileOverlayRejectsGatewayOwnedAndAmbiguousFields(t *testing.T) 
 		{name: "unknown top-level", body: "schema-version: 1\nenabled: true\ntun:\n  enable: false\n", wantErr: "field tun not found"},
 		{name: "reserved target", body: "schema-version: 1\nenabled: true\nproxy-groups:\n  add:\n    - name: open-surge/mac-user\n      type: select\n", wantErr: "reserved OpenSurge namespace"},
 		{name: "managed Tailscale target", body: "schema-version: 1\nenabled: true\nproxies:\n  add:\n    - name: open-surge/tailscale\n      type: direct\n", wantErr: "reserved OpenSurge namespace"},
+		{name: "managed Tailscale Exit group", body: "schema-version: 1\nenabled: true\nproxy-groups:\n  add:\n    - name: open-surge/tailscale-exit\n      type: select\n      proxies: [DIRECT]\n", wantErr: "reserved OpenSurge namespace"},
 		{name: "unsupported DNS field", body: "schema-version: 1\nenabled: true\ndns:\n  merge:\n    arbitrary-option: true\n", wantErr: "not a supported resolver or filtering field"},
 		{name: "untrimmed patch target", body: "schema-version: 1\nenabled: true\nproxy-groups:\n  patch:\n    - name: ' Proxy '\n      append-proxies: [DIRECT]\n", wantErr: "trimmed string"},
 	}

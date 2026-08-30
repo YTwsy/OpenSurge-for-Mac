@@ -76,6 +76,7 @@ func loadPolicySections(bundle *device.PolicyBundle, path string, scope lan.Scop
 
 func composeManagedPolicySections(cfg config.Config, policy policySections, localRouting localRoutingGeneratedPolicy) (string, error) {
 	var out strings.Builder
+	tailscaleExitGroups := tailscaleExitSelectorGroups(cfg)
 	if cfg.UpstreamProxy.Enabled || cfg.Tailscale.Enabled {
 		out.WriteString("proxies:\n")
 		if cfg.UpstreamProxy.Enabled {
@@ -103,10 +104,14 @@ func composeManagedPolicySections(cfg config.Config, policy policySections, loca
 		out.WriteString("proxies: []\n\n")
 	}
 
-	if cfg.UpstreamProxy.Enabled || len(localRouting.Groups) > 0 || len(policy.groups) > 0 {
+	if cfg.UpstreamProxy.Enabled || len(tailscaleExitGroups) > 0 || len(localRouting.Groups) > 0 || len(policy.groups) > 0 {
 		out.WriteString("proxy-groups:\n")
 		if cfg.UpstreamProxy.Enabled {
 			out.WriteString(renderSelectorGroupItems([]device.SelectorGroup{{Name: "open-surge-egress", Policies: []string{cfg.UpstreamProxy.Name}}}))
+			out.WriteString("\n")
+		}
+		if len(tailscaleExitGroups) > 0 {
+			out.WriteString(renderSelectorGroupItems(tailscaleExitGroups))
 			out.WriteString("\n")
 		}
 		out.WriteString(renderLocalRoutingGroupItems(localRouting.Groups))
@@ -139,6 +144,7 @@ func composeImportedPolicySections(cfg config.Config, imported *importedProfile,
 	if err := appendImportedTailscaleProxy(imported, cfg); err != nil {
 		return "", err
 	}
+	appendImportedSelectorGroups(imported, tailscaleExitSelectorGroups(cfg))
 	appendImportedLocalRoutingGroups(imported, localRouting.Groups)
 	if len(policy.groups) > 0 {
 		appendImportedSelectorGroups(imported, policy.groups)
@@ -370,7 +376,7 @@ func addIPv6IdentityRules(rules []string, devices []device.CompiledDevice) []str
 
 func validateImportedPolicySections(cfg config.Config, inventory importedProfileInventory, policy policySections) error {
 	for name := range inventory.targets {
-		if name == config.TailscaleProxyName {
+		if name == config.TailscaleProxyName || name == config.TailscaleExitGroupName {
 			return fmt.Errorf("imported mihomo profile target %q occupies reserved OpenSurge Tailscale target", name)
 		}
 		if IsLocalRoutingGroup(name) {
@@ -402,7 +408,7 @@ func validateImportedPolicySections(cfg config.Config, inventory importedProfile
 		if builtinPolicyTarget(target) {
 			continue
 		}
-		if target == config.TailscaleProxyName {
+		if target == config.TailscaleProxyName || target == config.TailscaleExitGroupName {
 			if cfg.Tailscale.Enabled && cfg.Tailscale.ExitNode != "" {
 				continue
 			}
@@ -426,12 +432,13 @@ func validateManagedPolicySections(cfg config.Config, policy policySections) err
 	}
 	if cfg.Tailscale.Enabled && cfg.Tailscale.ExitNode != "" {
 		available[config.TailscaleProxyName] = true
+		available[config.TailscaleExitGroupName] = true
 	}
 	for _, target := range append(append([]string(nil), policy.bundle.Compiled.SelectorTargets...), policy.bundle.Compiled.ActionTargets...) {
 		if builtinPolicyTarget(target) || available[target] {
 			continue
 		}
-		if target == config.TailscaleProxyName {
+		if target == config.TailscaleProxyName || target == config.TailscaleExitGroupName {
 			return tailscaleExitNodeStillSelectedError()
 		}
 		return fmt.Errorf("device policy references unknown managed proxy or group %q", target)

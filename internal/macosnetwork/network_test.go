@@ -223,8 +223,11 @@ func TestDiscoverDefaultUsesDefaultRouteNetworkService(t *testing.T) {
 }
 
 func TestParseRouteGet(t *testing.T) {
-	got := parseRouteGet("   route to: 1.1.1.1\n    gateway: 198.18.0.1\n  interface: utun123\n")
-	if got.Interface != "utun123" || got.Gateway != "198.18.0.1" {
+	got := parseRouteGet("   route to: 192.168.64.0\ndestination: 192.168.64.0\n       mask: 255.255.255.0\n    gateway: 198.18.0.1\n  interface: utun123\n")
+	if got.Interface != "utun123" || got.Gateway != "198.18.0.1" || routePrefix(got.Destination, got.Mask) != "192.168.64.0/24" {
 		t.Fatalf("parseRouteGet() = %#v", got)
+	}
+	if prefix := routePrefix("192.168.64.0", "255.0.255.0"); prefix != "" {
+		t.Fatalf("non-contiguous route mask produced %q", prefix)
 	}
 }

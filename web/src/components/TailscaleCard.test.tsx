@@ -133,4 +133,29 @@ describe('TailscaleCard', () => {
     expect((forget as HTMLButtonElement).disabled).toBe(true)
     expect(forget.getAttribute('title')).toBe('请先停止网关')
   })
+
+  it('blocks a running-gateway reload when the native Tailscale app owns the selected subnet route', async () => {
+    vi.mocked(api.tailscale).mockResolvedValue({
+      ...base,
+      settings: { ...base.settings, enabled: true, accept_routes: true, subnet_routes: ['10.20.0.0/16'] },
+      auth_key_present: true,
+      identity_present: true,
+      gateway_active: true,
+      runtime_state: 'available_on_demand',
+    })
+    vi.mocked(api.tailscaleDiscovery).mockResolvedValue({
+      ...discovery,
+      subnet_route_conflicts: [{ route: '10.20.0.0/16', interface: 'utun5', peer_id: 'router', peer_name: 'Home Router' }],
+    })
+    render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '配置' }))
+    const dialog = screen.getByRole('dialog', { name: '配置 Tailscale 出站' })
+    expect(within(dialog).getByText('本机 Tailscale App 正在接管所选子网')).toBeTruthy()
+    expect(within(dialog).getByText('10.20.0.0/16 → utun5')).toBeTruthy()
+    const apply = within(dialog).getByRole('button', { name: '应用并重载' }) as HTMLButtonElement
+    expect(apply.disabled).toBe(true)
+    expect(apply.title).toBe('请先解除本机 Tailscale 子网路由冲突')
+    expect(api.saveTailscale).not.toHaveBeenCalled()
+  })
 })

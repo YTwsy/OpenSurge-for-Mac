@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/device"
 )
 
 func renderManagedTailscaleProxy(cfg config.Config) (string, error) {
@@ -70,6 +71,16 @@ func appendImportedTailscaleProxy(imported *importedProfile, cfg config.Config) 
 	section.Style &^= yaml.FlowStyle
 	section.Content = append(section.Content, body)
 	return nil
+}
+
+func tailscaleExitSelectorGroups(cfg config.Config) []device.SelectorGroup {
+	if !cfg.Tailscale.Enabled || cfg.Tailscale.ExitNode == "" {
+		return nil
+	}
+	return []device.SelectorGroup{{
+		Name:     config.TailscaleExitGroupName,
+		Policies: []string{config.TailscaleProxyName},
+	}}
 }
 
 func tailscaleAuthKey(cfg config.TailscaleConfig) (string, error) {

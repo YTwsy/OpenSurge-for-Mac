@@ -44,6 +44,12 @@ func (s *Server) handleTailscale(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer s.lifecycleMu.Unlock()
+		if input.Enabled && input.AcceptRoutes {
+			if conflicts := s.tailscaleSubnetRouteConflicts(r.Context(), manualTailscaleSubnetRouteCandidates(input.SubnetRoutes)); len(conflicts) > 0 {
+				writeError(w, http.StatusConflict, "tailscale_route_conflict", tailscaleRouteConflictMessage(conflicts[0]))
+				return
+			}
+		}
 	}
 	payload, _ := json.Marshal(input)
 	result, err := s.configRunner.ApplyTailscale(r.Context(), s.configPath, match, payload)

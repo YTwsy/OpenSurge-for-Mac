@@ -42,6 +42,8 @@ type Options struct {
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	DiscoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	DiscoverTailscale func(context.Context) (TailscaleDiscoveryResponse, error)
+	LookupRoute       func(context.Context, string) (macosnetwork.RouteSelection, error)
+	FetchTUNRuntime   func(context.Context, config.Config) (mihomo.TUNRuntimeState, error)
 	PingRouter        func(context.Context, string) error
 	Static            http.Handler
 	Credentials       SourceCredentialStore
@@ -60,6 +62,8 @@ type Server struct {
 	listInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
 	discoverNeighbors func(context.Context, string) ([]macosnetwork.Neighbor, error)
 	discoverTailscale func(context.Context) (TailscaleDiscoveryResponse, error)
+	lookupRoute       func(context.Context, string) (macosnetwork.RouteSelection, error)
+	fetchTUNRuntime   func(context.Context, config.Config) (mihomo.TUNRuntimeState, error)
 	pingRouter        func(context.Context, string) error
 	static            http.Handler
 	credentials       SourceCredentialStore
@@ -161,6 +165,12 @@ func New(options Options) (*Server, error) {
 	if options.DiscoverTailscale == nil {
 		options.DiscoverTailscale = discoverLocalTailscale
 	}
+	if options.LookupRoute == nil {
+		options.LookupRoute = macosnetwork.LookupRoute
+	}
+	if options.FetchTUNRuntime == nil {
+		options.FetchTUNRuntime = mihomo.FetchTUNRuntimeState
+	}
 	if options.PingRouter == nil {
 		options.PingRouter = macosnetwork.PingRouter
 	}
@@ -191,6 +201,8 @@ func New(options Options) (*Server, error) {
 		listInterfaces:    options.ListInterfaces,
 		discoverNeighbors: options.DiscoverNeighbors,
 		discoverTailscale: options.DiscoverTailscale,
+		lookupRoute:       options.LookupRoute,
+		fetchTUNRuntime:   options.FetchTUNRuntime,
 		pingRouter:        options.PingRouter,
 		static:            options.Static,
 		credentials:       options.Credentials,

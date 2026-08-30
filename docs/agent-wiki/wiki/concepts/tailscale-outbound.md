@@ -7,9 +7,11 @@ NAT traversal 和 Tailnet DNS；OpenSurge 负责身份生命周期、目标与�
 
 ## 稳定名称与身份
 
-托管代理内部名称固定为 `open-surge/tailscale`。这是 device policy 和
-mihomo selector 使用的稳定编译目标；GUI 应显示用户的 `display_name`，不应
-把内部名称当成产品文案。导入 profile 不得占用这个保留名称。
+托管代理内部名称固定为 `open-surge/tailscale`，明确配置 Exit Node 时另生成
+单成员 selector `open-surge/tailscale-exit`，其唯一成员是前者。Tailnet 目标规则
+仍直接指向原始 outbound；面向用户的公网出口选择使用独立 selector。GUI 应显示
+用户的 `display_name`，不应把内部名称当成产品文案。导入 profile 与 overlay
+不得占用这两个保留名称。
 
 Auth Key 是 write-only secret，保存在配置目录下权限为 `0600` 的独立文件。
 `config.yaml` 只记录该文件路径，Control API 只返回是否已有 key。第一次
@@ -70,6 +72,13 @@ Mihomo 一旦配置 `route-address`，就会替换 Darwin TUN 的默认自动路
 远端 subnet route 必须是 private IPv4 或 ULA，必须启用 `accept-routes`，并且
 不得与 OpenSurge 当前 LAN 重叠。
 
+发现结果还要对每条已发布子网执行系统路由查询。只有当前选中路由的前缀与待安装
+CIDR 完全一致、接口为 `utun*`，且接口不是 OpenSurge 当前系统 TUN 时，才报告
+原生 Tailscale App 冲突；不能把原生 Exit Node 的宽泛默认路由误报为精确子网冲突。
+运行中的网关在调用 helper 前以 `tailscale_route_conflict` 拒绝应用，GUI 显示路由、
+接口和解除方法。网关停止时允许保存目标值，但必须提示在下次启动前解除冲突。
+OpenSurge 不得自动改写原生 Tailscale App 的 `accept-routes` 状态。
+
 ## Tailnet 与 Exit Node 角色
 
 Tailnet-only outbound 只为上述明确目标服务，不得成为 device policy 的
@@ -78,10 +87,12 @@ Tailnet-only outbound 只为上述明确目标服务，不得成为 device polic
 Tailscale 节点；OpenSurge 在网关启动、重载和 mihomo 恢复后发送一次最佳努力
 预热请求，把大部分 lazy-start 成本提前，但产品文案仍须说明首次业务访问可能重试。
 
-配置明确的 `exit-node` 后，同一 outbound 可以作为公网出口，才会被
-device policy 校验器和 GUI 加入候选。Exit Node 不覆盖全局网关模式；它是
-设备 selector 中的普通成员。Exit Node 使用公网延迟探测，但离线时不
-自动回退到 `DIRECT`。
+配置明确的 `exit-node` 后，编译器生成可见的
+`open-surge/tailscale-exit -> open-surge/tailscale` selector。该组会加入 device
+policy 候选；当 `allow_mac` 为真时也会加入 `open-surge/mac-global`，供用户在
+Mac 本机全局出口中显式选择。创建该组不会自动切换 Mac 或任何设备，也不修改
+任意导入订阅的策略组。原始 `open-surge/tailscale` 仍作为兼容目标被校验器接受。
+Exit Node 使用公网延迟探测，但离线时不自动回退到 `DIRECT`。
 
 ## 当前能力边界
 

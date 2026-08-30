@@ -324,10 +324,10 @@ describe('DevicesPage', () => {
 
     await userEvent.click(await screen.findByRole('tab', { name: /设备分流/ }))
     const input = screen.getByLabelText('独立设备出口候选')
-    await userEvent.type(input, 'open-surge/tailscale')
+    await userEvent.type(input, 'open-surge/tailscale-exit')
     await userEvent.click(screen.getByRole('button', { name: '添加' }))
 
-    expect(screen.getByText('Home Tailnet')).toBeTruthy()
+    expect(screen.getByText('Home Tailnet · Exit Node')).toBeTruthy()
   })
 
   it('keeps legacy routing readable and requires an explicit migration choice', async () => {

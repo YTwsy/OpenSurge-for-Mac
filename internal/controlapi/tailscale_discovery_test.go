@@ -6,6 +6,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"open-mihomo-gateway/internal/config"
+	"open-mihomo-gateway/internal/macosnetwork"
+	"open-mihomo-gateway/internal/mihomo"
 )
 
 func TestParseLocalTailscaleStatusBuildsSafeSuggestions(t *testing.T) {
@@ -68,6 +72,53 @@ func TestTailscaleDiscoveryEndpointReturnsSuggestionsAndGracefulFailure(t *testi
 	response = performAuthorized(server, http.MethodGet, "/api/v1/tailscale/discovery", nil)
 	if response.Code != http.StatusOK || !containsAll(response.Body.String(), `"available":false`, `"peers":[]`, `daemon unavailable retry later`) {
 		t.Fatalf("graceful failure status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTailscaleSubnetRouteConflictsRequireExactForeignTUNRoute(t *testing.T) {
+	server := newTestServer(t)
+	server.fetchTUNRuntime = func(context.Context, config.Config) (mihomo.TUNRuntimeState, error) {
+		return mihomo.TUNRuntimeState{Enabled: true, Device: "utun123"}, nil
+	}
+	server.lookupRoute = func(_ context.Context, destination string) (macosnetwork.RouteSelection, error) {
+		switch destination {
+		case "10.20.0.0":
+			return macosnetwork.RouteSelection{Interface: "utun5", Prefix: "10.20.0.0/16"}, nil
+		case "10.30.0.0":
+			return macosnetwork.RouteSelection{Interface: "utun123", Prefix: "10.30.0.0/16"}, nil
+		case "10.40.0.0":
+			return macosnetwork.RouteSelection{Interface: "en0", Prefix: "10.40.0.0/16"}, nil
+		case "10.50.0.0":
+			return macosnetwork.RouteSelection{Interface: "utun5", Prefix: "0.0.0.0/0"}, nil
+		default:
+			return macosnetwork.RouteSelection{}, errors.New("not found")
+		}
+	}
+	conflicts := server.tailscaleSubnetRouteConflicts(t.Context(), []tailscaleSubnetRouteCandidate{
+		{Route: "10.20.0.0/16", PeerID: "router", PeerName: "Home Router"},
+		{Route: "10.30.0.0/16"},
+		{Route: "10.40.0.0/16"},
+		{Route: "10.50.0.0/16"},
+	})
+	if len(conflicts) != 1 || conflicts[0].Route != "10.20.0.0/16" || conflicts[0].Interface != "utun5" || conflicts[0].PeerName != "Home Router" {
+		t.Fatalf("route conflicts = %#v", conflicts)
+	}
+}
+
+func TestTailscaleDiscoveryEndpointReportsNativeRouteConflict(t *testing.T) {
+	server := newTestServer(t)
+	server.discoverTailscale = func(context.Context) (TailscaleDiscoveryResponse, error) {
+		return TailscaleDiscoveryResponse{Available: true, Peers: []TailscaleDiscoveredNode{{ID: "router", Name: "Home Router", SubnetRoutes: []string{"192.168.64.0/24"}}}}, nil
+	}
+	server.fetchTUNRuntime = func(context.Context, config.Config) (mihomo.TUNRuntimeState, error) {
+		return mihomo.TUNRuntimeState{Enabled: true, Device: "utun123"}, nil
+	}
+	server.lookupRoute = func(context.Context, string) (macosnetwork.RouteSelection, error) {
+		return macosnetwork.RouteSelection{Interface: "utun5", Prefix: "192.168.64.0/24"}, nil
+	}
+	response := performAuthorized(server, http.MethodGet, "/api/v1/tailscale/discovery", nil)
+	if response.Code != http.StatusOK || !containsAll(response.Body.String(), `"subnet_route_conflicts":[`, `"route":"192.168.64.0/24"`, `"interface":"utun5"`, `"peer_name":"Home Router"`) {
+		t.Fatalf("conflict discovery status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

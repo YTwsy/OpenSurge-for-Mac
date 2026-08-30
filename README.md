@@ -95,7 +95,7 @@ macOS BPF packet broker 和本项目补丁构建的 mihomo 用户态数据面共
 - 通过 mihomo TUN 提供 macOS 透明代理；
 - 把 Tailscale / Headscale 作为 mihomo 的按需出站：可按 MagicDNS 后缀、Tailnet
   peer 或明确的 subnet route 限定 Mac/下游设备访问，也可把指定 Exit Node
-  加入设备出口候选；
+  作为独立策略组加入 Mac 全局出口和设备出口候选；
 - 在实验性的下游 IPv6 模式中，独立下游 LAN 与局域网 DHCP 接管通过 dnsmasq
   RA/SLAAC/RDNSS 自动接入，旁路由模式则使用手工 ULA；IPv6 流量不经过 macOS 系统
   TUN，而由 BPF packet broker 送入本项目补丁构建的 mihomo gVisor 数据面，覆盖 TCP、
@@ -152,16 +152,19 @@ Tailscale / Headscale 管理后台删除节点。
 
 配置弹窗会只读检测本机 Tailscale App，把当前 Tailnet 的 MagicDNS 后缀、peer
 精确地址、在线状态、已接受的私网路由和可用 Exit Node 显示为待确认建议；不会
-自动保存或扩大访问范围。首次注册仍需要单独的 Auth Key，界面可直接打开官方
-Keys 页面，并提示使用一次性、非 Ephemeral 的 key。本机 App 与 OpenSurge 托管
+自动保存或扩大访问范围。若本机 Tailscale App 已通过自己的 `utun` 接管同一条
+子网路由，界面会在运行中网关重载前指出具体路由和接口，并要求先关闭 App 的
+“接受子网路由”或断开连接；OpenSurge 不会自动修改另一个 App。首次注册仍需要
+单独的 Auth Key，界面可直接打开官方 Keys 页面，并提示使用一次性、非 Ephemeral
+的 key。本机 App 与 OpenSurge 托管
 节点不共享登录身份或 state；检测失败时仍可使用折叠的高级手动配置。
 
 Tailnet 访问和 Exit Node 是两种不同角色：
 
 - Tailnet-only 只在明确的 MagicDNS 后缀、peer IP/CIDR 或已接受的远端子网命中时
   选择 Tailscale，目标不可达时不回退 `DIRECT`；
-- 只有配置了明确 Exit Node 的 Tailscale outbound 才会出现在设备的公网出口
-  候选中，并且可继续使用原有的每设备 Selector；
+- 只有配置了明确 Exit Node 才会生成 `open-surge/tailscale-exit` 独立策略组；
+  它可以在 Mac 全局出口和每设备 Selector 中显式选择，但不会自动切换现有流量；
 - 远端 subnet route 必须逐条确认，与 OpenSurge LAN 重叠时会拒绝保存；
 - mihomo 按 outbound 首次请求启动 Tailscale 节点；OpenSurge 会在网关启动、
   重载和 mihomo 恢复后主动预热，但第一次业务访问仍可能需要重试。界面仍显示

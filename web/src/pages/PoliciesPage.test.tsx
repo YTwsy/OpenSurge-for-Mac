@@ -109,6 +109,25 @@ describe('PoliciesPage', () => {
     await waitFor(() => expect(api.testProxyHealth).toHaveBeenCalledWith(['Proxy-A', 'Proxy-B']))
   })
 
+  it('shows the dedicated Tailscale Exit Node group with a friendly name', async () => {
+    vi.mocked(api.proxyHealth).mockResolvedValue({
+      ...health,
+      proxies: [...health.proxies,
+        { name: 'open-surge/tailscale-exit', display_name: 'Home Tailnet · Exit Node', type: 'Selector', selected: 'open-surge/tailscale', provider: '', udp: true, role: 'exit_node', status: 'reachable', probeable: true },
+        { name: 'open-surge/tailscale', display_name: 'Home Tailnet', type: 'Tailscale', selected: '', provider: '', udp: true, role: 'exit_node', status: 'reachable', probeable: true },
+      ],
+    })
+    const data = {
+      ...overview,
+      policies: [...overview.policies, { name: 'open-surge/tailscale-exit', type: 'Selector', selected: 'open-surge/tailscale', options: ['open-surge/tailscale'] }],
+    } as Overview
+    render(<PoliciesPageHarness data={data} />)
+
+    expect(await screen.findByRole('heading', { name: 'Home Tailnet · Exit Node' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Home Tailnet · Exit Node' })).toBeTruthy()
+    expect(screen.getAllByText('Home Tailnet').length).toBeGreaterThan(0)
+  })
+
   it('keeps the Mac global policy group first and switches it through the local-routing API', async () => {
     const onChanged = vi.fn(async () => {})
     render(<PoliciesPageHarness onChanged={onChanged} />)

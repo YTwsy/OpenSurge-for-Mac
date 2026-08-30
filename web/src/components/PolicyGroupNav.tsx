@@ -5,13 +5,16 @@ type PolicyGroupNavProps = {
   groups: string[]
   activeGroup: string | null
   onNavigate: (group: string) => void
+  displayName?: (group: string) => string
 }
 
 function prefersReducedMotion() {
   return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-export function PolicyGroupNav({ groups, activeGroup, onNavigate }: PolicyGroupNavProps) {
+const identityGroupName = (group: string) => group
+
+export function PolicyGroupNav({ groups, activeGroup, onNavigate, displayName = identityGroupName }: PolicyGroupNavProps) {
   const scrollerRef = useRef<HTMLElement | null>(null)
   const buttonRefs = useRef(new Map<string, HTMLButtonElement>())
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -102,12 +105,12 @@ export function PolicyGroupNav({ groups, activeGroup, onNavigate }: PolicyGroupN
           type="button"
           key={group}
           ref={node => { if (node) buttonRefs.current.set(group, node); else buttonRefs.current.delete(group) }}
-          title={group}
+          title={displayName(group) === group ? group : `${displayName(group)} · ${group}`}
           aria-current={group === activeGroup ? 'location' : undefined}
           tabIndex={group === activeGroup || (!activeGroup && index === 0) ? 0 : -1}
           onClick={() => onNavigate(group)}
           onKeyDown={event => handleKeyDown(event, index)}
-        >{group}</button>)}
+        >{displayName(group)}</button>)}
       </nav>
     </div>
     <button className="policy-group-nav-step" type="button" aria-label={t('向右浏览策略组')} disabled={!canScrollRight} onClick={() => scrollNavigation(1)}><span aria-hidden="true">›</span></button>

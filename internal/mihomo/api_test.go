@@ -202,6 +202,28 @@ func TestFetchProxyHealthUsesRoleSpecificTailscaleStatus(t *testing.T) {
 	}
 }
 
+func TestFetchProxyHealthLabelsTailscaleExitGroup(t *testing.T) {
+	cfg := config.Default()
+	cfg.Tailscale.Enabled = true
+	cfg.Tailscale.DisplayName = "Home Tailnet"
+	cfg.Tailscale.ExitNode = "100.90.3.4"
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"proxies":{"open-surge/tailscale-exit":{"name":"open-surge/tailscale-exit","type":"Selector","now":"open-surge/tailscale","all":["open-surge/tailscale"]}}}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	snapshot, err := fetchProxyHealthWithClient(context.Background(), cfg, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Proxies) != 1 || snapshot.Proxies[0].DisplayName != "Home Tailnet · Exit Node" || snapshot.Proxies[0].Role != "exit_node" || snapshot.Proxies[0].Selected != config.TailscaleProxyName {
+		t.Fatalf("Tailscale Exit group health = %#v", snapshot.Proxies)
+	}
+}
+
 func TestTailscaleWarmupUsesRoleSpecificTarget(t *testing.T) {
 	for _, tt := range []struct {
 		name     string

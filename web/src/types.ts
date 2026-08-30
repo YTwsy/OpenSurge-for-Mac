@@ -139,6 +139,7 @@ export type TailscaleDiscoveryResponse = {
   magic_dns_suffix?: string
   self?: TailscaleDiscoveredNode
   peers: TailscaleDiscoveredNode[]
+  subnet_route_conflicts?: Array<{ route: string; interface: string; peer_id?: string; peer_name?: string }>
   error?: string
 }
 

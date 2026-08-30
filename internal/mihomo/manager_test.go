@@ -219,17 +219,19 @@ func TestPatchedMihomoAcceptsManagedTailscaleOutboundConfig(t *testing.T) {
 	cfg.Mihomo.Config = filepath.Join(dir, "mihomo.yaml")
 	cfg.Transparent.Mode = config.TransparentModeTUN
 	cfg.Tailscale = config.TailscaleConfig{
-		Enabled:          true,
-		DisplayName:      "Test Tailnet",
-		Hostname:         "opensurge-test",
-		ControlURL:       "https://controlplane.tailscale.com",
-		AuthKeyFile:      authKey,
-		StateDir:         filepath.Join(dir, "tailscale-state"),
-		AcceptRoutes:     true,
-		MagicDNSSuffixes: []string{"example.ts.net"},
-		PeerCIDRs:        []string{"100.82.10.7/32"},
-		SubnetRoutes:     []string{"10.20.0.0/16"},
-		AllowMac:         true,
+		Enabled:                true,
+		DisplayName:            "Test Tailnet",
+		Hostname:               "opensurge-test",
+		ControlURL:             "https://controlplane.tailscale.com",
+		AuthKeyFile:            authKey,
+		StateDir:               filepath.Join(dir, "tailscale-state"),
+		AcceptRoutes:           true,
+		MagicDNSSuffixes:       []string{"example.ts.net"},
+		PeerCIDRs:              []string{"100.82.10.7/32"},
+		SubnetRoutes:           []string{"10.20.0.0/16"},
+		AllowMac:               true,
+		ExitNode:               "100.90.3.4",
+		ExitNodeAllowLANAccess: true,
 	}
 	manager := New(cfg, runtime.NewPaths(cfg))
 	if err := manager.ValidateConfig(); err != nil {

@@ -280,15 +280,23 @@ type TailscaleDiscoveredNode struct {
 }
 
 type TailscaleDiscoveryResponse struct {
-	SchemaVersion  int                       `json:"schema_version"`
-	Available      bool                      `json:"available"`
-	BackendState   string                    `json:"backend_state,omitempty"`
-	TailnetName    string                    `json:"tailnet_name,omitempty"`
-	MagicDNS       bool                      `json:"magic_dns"`
-	MagicDNSSuffix string                    `json:"magic_dns_suffix,omitempty"`
-	Self           *TailscaleDiscoveredNode  `json:"self,omitempty"`
-	Peers          []TailscaleDiscoveredNode `json:"peers"`
-	Error          string                    `json:"error,omitempty"`
+	SchemaVersion        int                            `json:"schema_version"`
+	Available            bool                           `json:"available"`
+	BackendState         string                         `json:"backend_state,omitempty"`
+	TailnetName          string                         `json:"tailnet_name,omitempty"`
+	MagicDNS             bool                           `json:"magic_dns"`
+	MagicDNSSuffix       string                         `json:"magic_dns_suffix,omitempty"`
+	Self                 *TailscaleDiscoveredNode       `json:"self,omitempty"`
+	Peers                []TailscaleDiscoveredNode      `json:"peers"`
+	SubnetRouteConflicts []TailscaleSubnetRouteConflict `json:"subnet_route_conflicts"`
+	Error                string                         `json:"error,omitempty"`
+}
+
+type TailscaleSubnetRouteConflict struct {
+	Route     string `json:"route"`
+	Interface string `json:"interface"`
+	PeerID    string `json:"peer_id,omitempty"`
+	PeerName  string `json:"peer_name,omitempty"`
 }
 
 const (

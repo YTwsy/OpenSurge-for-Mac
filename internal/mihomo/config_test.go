@@ -138,6 +138,9 @@ func TestRenderConfigWithManagedTailscaleTargetsAndExitNode(t *testing.T) {
 	}
 	for _, want := range []string{
 		`name: "open-surge/tailscale"`,
+		`name: open-surge/tailscale-exit`,
+		`- "open-surge/tailscale"`,
+		`- "open-surge/tailscale-exit"`,
 		"type: tailscale",
 		`auth-key: "tskey-auth-secret"`,
 		`state-dir: "` + cfg.Tailscale.StateDir + `"`,
@@ -176,6 +179,30 @@ func TestRenderConfigExplainsTailscaleExitNodeStillSelected(t *testing.T) {
 	_, err = RenderConfig(cfg)
 	if err == nil || !strings.Contains(err.Error(), "device route still selects the Tailscale Exit Node") {
 		t.Fatalf("RenderConfig() error = %v", err)
+	}
+}
+
+func TestRenderConfigAcceptsFirstClassTailscaleExitGroup(t *testing.T) {
+	bundle, err := device.CompilePolicyBundle(device.PolicySet{
+		Devices:  []device.ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home", EgressMode: device.EgressModeDedicated}},
+		Profiles: []device.Profile{{ID: "home", DefaultPolicies: []string{config.TailscaleExitGroupName}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	authKeyPath := filepath.Join(dir, "tailscale-auth-key")
+	if err := os.WriteFile(authKeyPath, []byte("tskey-auth-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.DevicePolicy.Bundle = &bundle
+	cfg.Tailscale.Enabled = true
+	cfg.Tailscale.ExitNode = "100.90.3.4"
+	cfg.Tailscale.AuthKeyFile = authKeyPath
+	cfg.Tailscale.StateDir = filepath.Join(dir, "tailscale-state")
+	if _, err := RenderConfig(cfg); err != nil {
+		t.Fatalf("RenderConfig() rejected the Tailscale Exit Node group: %v", err)
 	}
 }
 
@@ -341,6 +368,24 @@ func TestRenderConfigAddsManagedTailscaleToImportedProfile(t *testing.T) {
 		"AND,((IN-TYPE,TUN),(SRC-IP-CIDR,198.18.0.1/32),(DOMAIN-SUFFIX,home.example.ts.net)),open-surge/tailscale",
 		"MATCH,DIRECT",
 	)
+	if strings.Contains(rendered, config.TailscaleExitGroupName) {
+		t.Fatalf("Tailnet-only imported profile unexpectedly contains an Exit Node group:\n%s", rendered)
+	}
+
+	cfg.Tailscale.ExitNode = "100.90.3.4"
+	rendered, err = RenderConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"name: " + config.TailscaleExitGroupName,
+		`- "` + config.TailscaleProxyName + `"`,
+		`- "` + config.TailscaleExitGroupName + `"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("imported Tailscale Exit Node config missing %q:\n%s", want, rendered)
+		}
+	}
 }
 
 func TestRenderConfigRejectsMalformedImportedDNS(t *testing.T) {

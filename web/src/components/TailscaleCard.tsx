@@ -148,7 +148,7 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
       <TailscaleFact label="节点身份" value={data?.identity_present ? data.settings.hostname : t(data?.auth_key_present ? '等待首次注册' : '尚未配置')} note={t(data?.identity_present ? '重启与重载后保持' : data?.auth_key_present ? '网关启动后预热并创建' : '需要 Auth Key')} />
       <TailscaleFact label="访问目标" value={t('{{count}} 项', { count: targetCount })} note={data?.settings.accept_routes ? t('{{count}} 个远端子网已批准', { count: data.settings.subnet_routes.length }) : t('未接受远端子网')} />
       <TailscaleFact label="Tailnet 使用者" value={access} note={t(data?.settings.allow_all_devices ? '仅已注册设备' : '显式授权，不向未知设备开放')} />
-      <TailscaleFact label="出站角色" value={data?.selectable_exit ? 'Tailnet + Exit Node' : t('仅 Tailnet')} note={data?.selectable_exit ? t('可在设备出口中选择 {{name}}', { name: data.settings.display_name }) : t('不会作为公网出口出现')} />
+      <TailscaleFact label="出站角色" value={data?.selectable_exit ? 'Tailnet + Exit Node' : t('仅 Tailnet')} note={data?.selectable_exit ? t('可在 Mac 全局出口和设备出口中选择 {{name}}', { name: data.settings.display_name }) : t('不会作为公网出口出现')} />
     </div>
 
     <div className="tailscale-foot">
@@ -176,6 +176,8 @@ function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDis
     setDraft(current => ({ ...current, allow_all_devices: scope === 'all', allowed_devices: scope === 'selected' ? current.allowed_devices : [] }))
   }
   const subnetOptions = discoveredSubnetOptions(discovery)
+  const selectedRouteConflicts = (discovery?.subnet_route_conflicts ?? []).filter(conflict => draft.subnet_routes.includes(conflict.route))
+  const routeConflictBlocksApply = gatewayActive && draft.enabled && draft.accept_routes && selectedRouteConflicts.length > 0
   const exitCandidates = discovery?.peers.filter(peer => peer.exit_node_option) ?? []
   const selectedPeerNames = discovery?.peers.filter(peer => peerCIDRs(peer).some(value => draft.peer_cidrs.includes(value))).map(peer => peer.name) ?? []
   const magicSuffix = normalizedSuffix(discovery?.magic_dns_suffix)
@@ -230,6 +232,7 @@ function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDis
         </label>}
 
         <div className="tailscale-subnet-box"><div><strong>{t('远端子网')}</strong><small>{t(subnetOptions.length ? '只选择确实需要访问的 subnet router 路由。' : '本机 Tailnet 当前未发现已接受的私网路由。')}</small></div>{subnetOptions.length ? <div className="tailscale-subnet-options">{subnetOptions.map(option => <label key={`${option.peer.id}-${option.route}`}><input type="checkbox" checked={draft.subnet_routes.includes(option.route)} onChange={event => setSubnet(option.route, event.target.checked)} /><span><strong>{option.route}</strong><small>{option.peer.name}</small></span></label>)}</div> : <span className="tailscale-resource-state">{t('无需配置')}</span>}</div>
+        {selectedRouteConflicts.length > 0 && <div className="tailscale-route-conflict" role="alert"><strong>{t('本机 Tailscale App 正在接管所选子网')}</strong><span>{selectedRouteConflicts.map(conflict => `${conflict.route} → ${conflict.interface}`).join(' · ')}</span><small>{t(gatewayActive ? '应用前请在 Tailscale 设置中关闭“接受子网路由”，或断开本机 Tailscale。OpenSurge 不会自动修改另一个 App。' : '可以先保存，但请在下次启动网关前关闭 Tailscale 的“接受子网路由”或断开本机 Tailscale。')}</small></div>}
       </section>
 
       <section className="tailscale-form-section"><div className="tailscale-section-copy"><span>03</span><div><h3>{t('允许谁使用')}</h3><p>{t('先用这台 Mac 验证，再按需开放给已登记的下游设备。')}</p></div></div>
@@ -260,7 +263,7 @@ function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDis
         <label className="tailscale-check"><input type="checkbox" checked={draft.accept_routes} disabled={draft.subnet_routes.length > 0} onChange={event => update('accept_routes', event.target.checked)} /><span><strong>{t('接受 Tailnet 公布的子网路由')}</strong><small>{t('OpenSurge 仍只捕获上方明确批准的子网，并会拒绝与本地 LAN 重叠的配置。')}</small></span></label>
       </div></details>
     </div>
-    <div className="tailscale-dialog-footer"><label className="tailscale-enable"><input type="checkbox" checked={draft.enabled} onChange={event => update('enabled', event.target.checked)} /><span><strong>{t('保存后启用')}</strong><small>{t(draft.enabled ? gatewayActive ? '验证通过后立即重载运行中的网关' : '保存并在下次启动网关时载入' : '保存配置但不载入 Tailscale 节点')}</small></span></label><div className="tailscale-save-summary"><span><strong>{guidedSummary(draft, selectedPeerNames)}</strong><small>{t(draft.exit_node ? 'Exit Node 只加入设备出口候选，不会自动切换现有设备。' : '普通公网出口保持不变。')}</small></span><div><button type="button" disabled={busy} onClick={onCancel}>{t('取消')}</button><button className="primary" type="button" disabled={busy || !draft.display_name.trim() || !draft.hostname.trim() || !draft.control_url.trim()} onClick={onSave}>{t(busy ? '正在验证并应用…' : !draft.enabled ? '仅保存配置' : gatewayActive ? '应用并重载' : '保存，随网关启动')}</button></div></div></div>
+    <div className="tailscale-dialog-footer"><label className="tailscale-enable"><input type="checkbox" checked={draft.enabled} onChange={event => update('enabled', event.target.checked)} /><span><strong>{t('保存后启用')}</strong><small>{t(draft.enabled ? gatewayActive ? '验证通过后立即重载运行中的网关' : '保存并在下次启动网关时载入' : '保存配置但不载入 Tailscale 节点')}</small></span></label><div className="tailscale-save-summary"><span><strong>{guidedSummary(draft, selectedPeerNames)}</strong><small>{t(draft.exit_node ? '将创建独立的 Exit Node 策略组；不会自动切换 Mac 或现有设备。' : '普通公网出口保持不变。')}</small></span><div><button type="button" disabled={busy} onClick={onCancel}>{t('取消')}</button><button className="primary" type="button" disabled={busy || routeConflictBlocksApply || !draft.display_name.trim() || !draft.hostname.trim() || !draft.control_url.trim()} title={routeConflictBlocksApply ? t('请先解除本机 Tailscale 子网路由冲突') : undefined} onClick={onSave}>{t(busy ? '正在验证并应用…' : !draft.enabled ? '仅保存配置' : gatewayActive ? '应用并重载' : '保存，随网关启动')}</button></div></div></div>
     {error && <div className="tailscale-dialog-error" role="alert">{error}</div>}
   </dialog>
 }

@@ -95,7 +95,10 @@ type TailscaleConfig struct {
 	ExitNodeAllowLANAccess bool
 }
 
-const TailscaleProxyName = "open-surge/tailscale"
+const (
+	TailscaleProxyName     = "open-surge/tailscale"
+	TailscaleExitGroupName = "open-surge/tailscale-exit"
+)
 
 type PFConfig struct {
 	AnchorName    string
