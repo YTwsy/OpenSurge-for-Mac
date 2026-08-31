@@ -25,6 +25,14 @@ MagicDNS 后缀不会默认开启，subnet route 与 Exit Node 也不会静默�
 有短超时和输出大小限制；未安装、daemon 未连接或解析失败都返回可降级状态，不能
 阻止高级手动配置。
 
+一次成功且 backend 为 `Running` 的发现结果会以 `0600` 缓存在 Control Store，内容
+只包含 Tailnet 名称、MagicDNS 后缀、peer 地址/能力和子网建议，不包含 Auth Key 或
+托管节点 state。之后本机 Tailscale App 断开或 `status --json` 失败时，GUI 可以继续
+使用该快照配置 OpenSurge，但必须明确标记“上次发现”，把在线状态显示为历史状态，
+并重新按当前系统路由计算冲突；缓存不能被描述为当前连通性证据。这样推荐工作流是
+先连接原生 App 完成一次发现，再断开原生 App 或关闭其 `accept-routes`，最后启动或
+重载 OpenSurge，而不是要求两个独立 Tailscale 数据面同时接管相同精确路由。
+
 macOS 的 Tailscale App 会根据调用环境在 GUI 与 CLI 模式之间选择；OpenSurge
 Control API 由 LaunchAgent 启动，没有终端环境。因此执行 `status --json` 时必须为
 子进程显式设置 `TAILSCALE_BE_CLI=1`，否则 Tailscale 可能把 GUI 启动错误写入
@@ -92,7 +100,16 @@ Tailscale 节点；OpenSurge 在网关启动、重载和 mihomo 恢复后发送�
 policy 候选；当 `allow_mac` 为真时也会加入 `open-surge/mac-global`，供用户在
 Mac 本机全局出口中显式选择。创建该组不会自动切换 Mac 或任何设备，也不修改
 任意导入订阅的策略组。原始 `open-surge/tailscale` 仍作为兼容目标被校验器接受。
-Exit Node 使用公网延迟探测，但离线时不自动回退到 `DIRECT`。
+Exit Node 使用不依赖 DNS 的公网固定 IP 探测；自动预热和 GUI 手动检测会给移动网络/
+DERP 慢链路更宽的探测预算，但这只改变检测，不改 mihomo 普通 TCP 连接的全局拨号
+超时。公网探测只证明该 Exit Node 到一个检测目标的单次可达性，不能把 GFW、目标站点
+限制或 Android 用户态 Exit Node 的波动误报成 Tailnet 节点离线。离线时不自动回退到
+`DIRECT`。
+自动发现的 Exit Node 保存值应优先使用 peer 的 Tailscale IPv4，其次才是 IPv6、
+MagicDNS 完整名称或主机名；这避免嵌入节点启动阶段额外依赖名称匹配。手动名称仍受
+支持，编辑已保存配置时若能在当前或缓存发现结果中唯一匹配 peer，则 GUI 会把它
+规范化为该 peer 的稳定 Tailscale IP。IP 规范化不代表 Exit Node 已获后台批准，
+也不替代 `autogroup:internet`/ACL、远端转发能力和真实公网探测。
 
 ## 当前能力边界
 

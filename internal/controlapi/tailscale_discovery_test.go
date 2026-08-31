@@ -2,8 +2,11 @@ package controlapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -53,7 +56,7 @@ func TestParseLocalTailscaleStatusBuildsSafeSuggestions(t *testing.T) {
 	}
 }
 
-func TestTailscaleDiscoveryEndpointReturnsSuggestionsAndGracefulFailure(t *testing.T) {
+func TestTailscaleDiscoveryEndpointCachesSuggestionsForDisconnectedApp(t *testing.T) {
 	server := newTestServer(t)
 	server.discoverTailscale = func(context.Context) (TailscaleDiscoveryResponse, error) {
 		return TailscaleDiscoveryResponse{Available: true, BackendState: "Running", MagicDNS: true, MagicDNSSuffix: "example.ts.net", Peers: []TailscaleDiscoveredNode{{ID: "phone", Name: "Phone", TailscaleIPs: []string{"100.82.10.7"}}}}, nil
@@ -70,6 +73,31 @@ func TestTailscaleDiscoveryEndpointReturnsSuggestionsAndGracefulFailure(t *testi
 		return TailscaleDiscoveryResponse{}, errors.New("daemon unavailable\nretry later")
 	}
 	response = performAuthorized(server, http.MethodGet, "/api/v1/tailscale/discovery", nil)
+	if response.Code != http.StatusOK || !containsAll(response.Body.String(), `"available":true`, `"cached":true`, `"backend_state":"Unavailable"`, `"magic_dns_suffix":"example.ts.net"`, `"name":"Phone"`, `daemon unavailable retry later`) {
+		t.Fatalf("cached failure status=%d body=%s", response.Code, response.Body.String())
+	}
+	var cached TailscaleDiscoveryResponse
+	if err := json.NewDecoder(response.Body).Decode(&cached); err != nil {
+		t.Fatal(err)
+	}
+	if cached.CachedAt == nil || cached.CachedAt.IsZero() {
+		t.Fatalf("cached_at = %#v", cached.CachedAt)
+	}
+	info, err := os.Stat(filepath.Join(server.store.Dir(), "tailscale-discovery.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("cache mode = %v", info.Mode().Perm())
+	}
+}
+
+func TestTailscaleDiscoveryEndpointKeepsGracefulFailureWithoutCache(t *testing.T) {
+	server := newTestServer(t)
+	server.discoverTailscale = func(context.Context) (TailscaleDiscoveryResponse, error) {
+		return TailscaleDiscoveryResponse{}, errors.New("daemon unavailable\nretry later")
+	}
+	response := performAuthorized(server, http.MethodGet, "/api/v1/tailscale/discovery", nil)
 	if response.Code != http.StatusOK || !containsAll(response.Body.String(), `"available":false`, `"peers":[]`, `daemon unavailable retry later`) {
 		t.Fatalf("graceful failure status=%d body=%s", response.Code, response.Body.String())
 	}

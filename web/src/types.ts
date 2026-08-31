@@ -133,6 +133,8 @@ export type TailscaleDiscoveredNode = {
 export type TailscaleDiscoveryResponse = {
   schema_version: number
   available: boolean
+  cached?: boolean
+  cached_at?: string
   backend_state?: string
   tailnet_name?: string
   magic_dns: boolean

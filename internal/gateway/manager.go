@@ -279,6 +279,13 @@ func trackedProcessRunning(deps gatewayDeps, pid int, fingerprint string, runnin
 }
 
 func (m Manager) Start(ctx context.Context) error {
+	if m.gatewayDeps().geteuid() != 0 {
+		return fmt.Errorf("start requires sudo/root privileges")
+	}
+	return m.withLifecycleLock(func() error { return m.start(ctx) })
+}
+
+func (m Manager) start(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("start requires sudo/root privileges")
@@ -491,6 +498,13 @@ func (m Manager) Start(ctx context.Context) error {
 // commands. The Manager owns an immutable Config value, so the configuration
 // that passed validation is also the configuration applied after stop.
 func (m Manager) Reload(ctx context.Context) error {
+	if m.gatewayDeps().geteuid() != 0 {
+		return fmt.Errorf("reload requires sudo/root privileges")
+	}
+	return m.withLifecycleLock(func() error { return m.reload(ctx) })
+}
+
+func (m Manager) reload(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("reload requires sudo/root privileges")
@@ -524,10 +538,10 @@ func (m Manager) Reload(ctx context.Context) error {
 	if err := m.validateReloadCandidate(); err != nil {
 		return fmt.Errorf("reload candidate validation failed: %w", err)
 	}
-	if err := m.Stop(ctx); err != nil {
+	if err := m.stop(ctx); err != nil {
 		return fmt.Errorf("reload stop failed: %w", err)
 	}
-	if err := m.Start(ctx); err != nil {
+	if err := m.start(ctx); err != nil {
 		return fmt.Errorf("reload start failed after gateway stop: %w", err)
 	}
 	return nil
@@ -539,6 +553,13 @@ func (m Manager) Reload(ctx context.Context) error {
 // transition. The existing rendered configuration is validated before the
 // live process is stopped, and the previous log is archived for diagnosis.
 func (m Manager) RestartMihomo(ctx context.Context) error {
+	if m.gatewayDeps().geteuid() != 0 {
+		return fmt.Errorf("restart-mihomo requires sudo/root privileges")
+	}
+	return m.withLifecycleLock(func() error { return m.restartMihomo(ctx) })
+}
+
+func (m Manager) restartMihomo(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("restart-mihomo requires sudo/root privileges")
@@ -630,7 +651,7 @@ func (m Manager) warmManagedTailscale(ctx context.Context, deps gatewayDeps) {
 	if !m.cfg.Tailscale.Enabled || deps.warmTailscale == nil {
 		return
 	}
-	warmCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	warmCtx, cancel := context.WithTimeout(ctx, managedTailscaleWarmupTimeout(m.cfg))
 	defer cancel()
 	result := deps.warmTailscale(warmCtx, m.cfg)
 	if result.Status == "reachable" {
@@ -638,6 +659,15 @@ func (m Manager) warmManagedTailscale(ctx context.Context, deps gatewayDeps) {
 		return
 	}
 	fmt.Printf("Tailscale outbound warm-up initiated; the first Tailnet request may still need a retry: %s\n", result.Status)
+}
+
+func managedTailscaleWarmupTimeout(cfg config.Config) time.Duration {
+	if cfg.Tailscale.ExitNode != "" {
+		// Leave the HTTP client enough time to report its own role-specific
+		// result instead of canceling the outer gateway warm-up first.
+		return mihomo.DefaultTailscaleExitNodeTestTimeout + 2*time.Second
+	}
+	return 6 * time.Second
 }
 
 func archiveMihomoLog(path string, now time.Time) (string, error) {
@@ -707,6 +737,13 @@ func (m Manager) validateReloadCandidate() error {
 }
 
 func (m Manager) Stop(ctx context.Context) error {
+	if m.gatewayDeps().geteuid() != 0 {
+		return fmt.Errorf("stop requires sudo/root privileges")
+	}
+	return m.withLifecycleLock(func() error { return m.stop(ctx) })
+}
+
+func (m Manager) stop(ctx context.Context) error {
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("stop requires sudo/root privileges")

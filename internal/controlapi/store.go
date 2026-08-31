@@ -99,6 +99,37 @@ func (s *Store) SaveUIPreferences(preferences UIPreferences) error {
 	return writeAtomic(filepath.Join(s.dir, "preferences.json"), append(data, '\n'), 0o600)
 }
 
+type tailscaleDiscoveryCache struct {
+	SavedAt   time.Time                  `json:"saved_at"`
+	Discovery TailscaleDiscoveryResponse `json:"discovery"`
+}
+
+func (s *Store) TailscaleDiscovery() (TailscaleDiscoveryResponse, time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var cache tailscaleDiscoveryCache
+	if err := readJSON(filepath.Join(s.dir, "tailscale-discovery.json"), &cache); err != nil {
+		return TailscaleDiscoveryResponse{}, time.Time{}, err
+	}
+	return cache.Discovery, cache.SavedAt, nil
+}
+
+func (s *Store) SaveTailscaleDiscovery(discovery TailscaleDiscoveryResponse, savedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	discovery.SchemaVersion = SchemaVersion
+	discovery.Cached = false
+	discovery.CachedAt = nil
+	discovery.Error = ""
+	discovery.SubnetRouteConflicts = []TailscaleSubnetRouteConflict{}
+	cache := tailscaleDiscoveryCache{SavedAt: savedAt.UTC(), Discovery: discovery}
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(filepath.Join(s.dir, "tailscale-discovery.json"), append(data, '\n'), 0o600)
+}
+
 func (s *Store) Recovery() (RecoveryState, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

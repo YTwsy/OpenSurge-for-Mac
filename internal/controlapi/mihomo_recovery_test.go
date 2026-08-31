@@ -3,7 +3,10 @@ package controlapi
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -183,6 +186,43 @@ func TestAutoMihomoRecoveryWaitsForLifecycleOperation(t *testing.T) {
 	server.lifecycleMu.Unlock()
 	server.evaluateMihomoRecovery(t.Context())
 	waitForRunnerCount(t, runner, 1)
+}
+
+func TestAutoMihomoRecoveryWaitsForExternalLifecycleOperation(t *testing.T) {
+	server := newTestServer(t)
+	if err := server.store.SaveRecovery(RecoveryState{Stage: RecoveryGatewayActive, Required: true}); err != nil {
+		t.Fatal(err)
+	}
+	server.gatewayStatus = func(context.Context, config.Config) (gateway.Status, error) {
+		return gateway.Status{Gateway: "degraded", RuntimeState: "active", Mihomo: "stopped"}, nil
+	}
+	runner := &countingActionRunner{}
+	server.runner = runner
+
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cfg.Runtime.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lockFile, err := os.OpenFile(filepath.Join(cfg.Runtime.Dir, ".gateway-lifecycle.lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lockFile.Close()
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
+	server.evaluateMihomoRecovery(t.Context())
+	if got := runner.Count(); got != 0 {
+		t.Fatalf("external lifecycle operation triggered %d automatic restarts", got)
+	}
+	if got := server.mihomoRecovery.snapshot(); got.State != mihomoRecoveryIdle {
+		t.Fatalf("external lifecycle operation changed recovery state=%#v", got)
+	}
 }
 
 type countingActionRunner struct {

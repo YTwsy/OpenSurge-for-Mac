@@ -66,7 +66,8 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
   useEffect(() => { void refresh() }, [refresh])
 
   const openEditor = () => {
-    setDraft({ ...(data?.settings ?? defaultSettings), auth_key: '' })
+    const settings = data?.settings ?? defaultSettings
+    setDraft({ ...settings, exit_node: canonicalExitNodeValue(settings.exit_node, discovery), auth_key: '' })
     setError('')
     setMessage('')
     setEditing(true)
@@ -220,7 +221,7 @@ function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDis
               <input type="checkbox" checked={checked} onChange={event => setPeer(peer, event.target.checked)} aria-label={t('允许访问 {{name}}', { name: peer.name })} />
               <span className="tailscale-peer-symbol" aria-hidden="true">{peer.name.slice(0, 1).toUpperCase()}</span>
               <span className="tailscale-resource-copy"><strong>{peer.name}</strong><small>{peer.dns_name || peer.tailscale_ips.join(' · ')}</small><code>{peer.tailscale_ips.join(' · ') || t('未报告 Tailscale IP')}</code></span>
-              <span className={`tailscale-resource-state ${peer.online ? 'online' : ''}`}>{t(peer.online ? '在线' : '离线')}</span>
+              <span className={`tailscale-resource-state ${peer.online ? 'online' : ''}`}>{t(discovery.cached ? peer.online ? '上次在线' : '上次离线' : peer.online ? '在线' : '离线')}</span>
             </label>
           }) : <div className="tailscale-resource-empty"><strong>{t(discovering ? '正在读取本机 Tailnet…' : '没有可供选择的 Tailnet 节点')}</strong><small>{t('你仍可在下方“高级手动配置”中填写 IP 或 CIDR。')}</small></div>}
         </div>
@@ -271,10 +272,11 @@ function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDis
 function DiscoveryBanner({ discovery, discovering, onRefresh }: { discovery: TailscaleDiscoveryResponse | null; discovering: boolean; onRefresh: () => void }) {
   const peerCount = discovery?.peers.length ?? 0
   const onlineCount = discovery?.peers.filter(peer => peer.online).length ?? 0
-  const ready = discovery?.available && discovery.backend_state === 'Running'
+  const cached = Boolean(discovery?.cached)
+  const ready = discovery?.available && !cached && discovery.backend_state === 'Running'
   return <div className={`tailscale-discovery ${ready ? 'ready' : discovery?.available ? 'warning' : ''}`}>
     <span className="tailscale-discovery-dot" aria-hidden="true" />
-    <span><strong>{t(discovering ? '正在读取本机 Tailscale…' : ready ? '已发现本机 Tailscale' : discovery?.available ? '本机 Tailscale 当前未连接' : '未发现可读取的本机 Tailscale')}</strong><small>{ready ? t('{{suffix}} · {{online}}/{{count}} 台 peer 在线', { suffix: discovery.magic_dns_suffix || discovery.tailnet_name || 'Tailnet', online: onlineCount, count: peerCount }) : t('自动发现只提供建议；你仍可继续手动配置。')}</small></span>
+    <span><strong>{t(discovering ? '正在读取本机 Tailscale…' : ready ? '已发现本机 Tailscale' : cached ? '正在使用上次发现的 Tailnet' : discovery?.available ? '本机 Tailscale 当前未连接' : '未发现可读取的本机 Tailscale')}</strong><small>{ready ? t('{{suffix}} · {{online}}/{{count}} 台 peer 在线', { suffix: discovery.magic_dns_suffix || discovery.tailnet_name || 'Tailnet', online: onlineCount, count: peerCount }) : cached ? t('{{suffix}} · 已缓存 {{count}} 台 peer；在线状态可能已变化', { suffix: discovery?.magic_dns_suffix || discovery?.tailnet_name || 'Tailnet', count: peerCount }) : t('自动发现只提供建议；你仍可继续手动配置。')}</small></span>
     <button type="button" disabled={discovering} onClick={onRefresh}>{t(discovering ? '检测中…' : '重新检测')}</button>
   </div>
 }
@@ -307,7 +309,14 @@ function discoveredSubnetOptions(discovery: TailscaleDiscoveryResponse | null): 
 }
 
 function exitNodeValue(peer: TailscaleDiscoveredNode): string {
-  return peer.dns_name || peer.tailscale_ips.find(value => !value.includes(':')) || peer.tailscale_ips[0] || peer.name
+  return peer.tailscale_ips.find(value => !value.includes(':')) || peer.tailscale_ips[0] || peer.dns_name || peer.name
+}
+
+function canonicalExitNodeValue(value: string, discovery: TailscaleDiscoveryResponse | null): string {
+  const current = value.trim().replace(/\.$/, '').toLowerCase()
+  if (!current) return ''
+  const peer = discovery?.peers.find(candidate => [candidate.name, candidate.dns_name, ...candidate.tailscale_ips].some(alias => alias?.trim().replace(/\.$/, '').toLowerCase() === current))
+  return peer ? exitNodeValue(peer) : value.trim()
 }
 
 function unique(values: string[]): string[] {

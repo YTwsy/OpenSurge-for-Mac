@@ -164,7 +164,11 @@ status 读取失败、runtime 非 active、以及不允许恢复的 DHCP 接管�
 interrupted runtime 同样不会触发。
 
 start、stop、reload、手动/自动 `restart-mihomo` 和运行中 source apply 共享 Control
-Service 生命周期互斥锁，避免两个 helper 动作同时修改 runtime。这个自动化只实现了窄的
+Service 生命周期互斥锁，避免两个 helper 动作同时修改 runtime。Manager 还在 runtime
+目录持有跨进程 advisory lock，使直接运行的 `sudo omg` 与 Helper 动作也不能并发；
+Control Service 发现这个锁正在被外部生命周期命令持有时，把 Mihomo 缺失视为受控停机
+窗口，不触发自动恢复。锁文件不保存状态，进程退出后以内核释放的文件锁为准，不能根据
+文件是否存在判断忙闲。这个自动化只实现了窄的
 Mihomo-only 重启边界；在真实 same-WiFi 断开/重连门槛完成前，不得把单元测试描述成物理
 链路恢复已经验收。
 

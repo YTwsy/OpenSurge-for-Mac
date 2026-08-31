@@ -50,6 +50,21 @@ type localTailscalePeer struct {
 func (s *Server) handleTailscaleDiscovery(w http.ResponseWriter, r *http.Request) {
 	result, err := s.discoverTailscale(r.Context())
 	if err != nil {
+		cached, cachedAt, cacheErr := s.store.TailscaleDiscovery()
+		if cacheErr == nil {
+			cached.SchemaVersion = SchemaVersion
+			cached.Available = true
+			cached.Cached = true
+			cached.CachedAt = &cachedAt
+			cached.BackendState = "Unavailable"
+			cached.Error = compactTailscaleDiscoveryError(err)
+			if cached.Peers == nil {
+				cached.Peers = []TailscaleDiscoveredNode{}
+			}
+			cached.SubnetRouteConflicts = s.discoveredTailscaleSubnetRouteConflicts(r.Context(), cached)
+			writeJSON(w, http.StatusOK, cached)
+			return
+		}
 		writeJSON(w, http.StatusOK, TailscaleDiscoveryResponse{
 			SchemaVersion:        SchemaVersion,
 			Peers:                []TailscaleDiscoveredNode{},
@@ -62,8 +77,18 @@ func (s *Server) handleTailscaleDiscovery(w http.ResponseWriter, r *http.Request
 	if result.Peers == nil {
 		result.Peers = []TailscaleDiscoveredNode{}
 	}
+	if tailscaleDiscoveryCacheable(result) {
+		_ = s.store.SaveTailscaleDiscovery(result, time.Now())
+	}
 	result.SubnetRouteConflicts = s.discoveredTailscaleSubnetRouteConflicts(r.Context(), result)
 	writeJSON(w, http.StatusOK, result)
+}
+
+func tailscaleDiscoveryCacheable(result TailscaleDiscoveryResponse) bool {
+	if !result.Available || result.BackendState != "Running" {
+		return false
+	}
+	return result.Self != nil || len(result.Peers) > 0 || result.TailnetName != "" || result.MagicDNSSuffix != ""
 }
 
 type tailscaleSubnetRouteCandidate struct {

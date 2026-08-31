@@ -187,6 +187,10 @@ func (s *Server) evaluateMihomoRecovery(ctx context.Context) {
 		s.mihomoRecovery.observeUnknown()
 		return
 	}
+	if busy, err := gateway.LifecycleOperationInProgress(cfg); err != nil || busy {
+		s.mihomoRecovery.observeUnknown()
+		return
+	}
 	status, err := s.gatewayStatus(ctx, cfg)
 	if err != nil || status.RuntimeState != "active" {
 		s.mihomoRecovery.observeUnknown()
@@ -196,6 +200,13 @@ func (s *Server) evaluateMihomoRecovery(ctx context.Context) {
 	reason := mihomoFailureReason(status)
 	if reason == "" {
 		s.mihomoRecovery.observeHealthy()
+		return
+	}
+	// Close the observation-to-action race with an external omg lifecycle
+	// command. The Manager lock remains the final guard if another operation
+	// starts after this advisory check.
+	if busy, err := gateway.LifecycleOperationInProgress(cfg); err != nil || busy {
+		s.mihomoRecovery.observeUnknown()
 		return
 	}
 

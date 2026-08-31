@@ -59,3 +59,26 @@ func TestProxyHealthTestsRejectUnknownAndNonProbeableNames(t *testing.T) {
 		}
 	}
 }
+
+func TestProxyHealthTestsUseExitNodeTargetAndSlowPathBudget(t *testing.T) {
+	server := newTestServer(t)
+	server.fetchProxyHealth = func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error) {
+		return mihomo.ProxyHealthSnapshot{TestURL: mihomo.DefaultProxyDelayTestURL, Proxies: []mihomo.ProxyHealth{
+			{Name: config.TailscaleProxyName, Type: "Tailscale", Role: "exit_node", Status: "untested", Probeable: true},
+		}}, nil
+	}
+	var gotURL string
+	var gotTimeout time.Duration
+	server.measureProxyDelay = func(_ context.Context, _ config.Config, name, testURL string, timeout time.Duration) mihomo.ProxyDelayResult {
+		gotURL, gotTimeout = testURL, timeout
+		return mihomo.ProxyDelayResult{Name: name, Status: "reachable", DelayMS: 9200, TestURL: testURL}
+	}
+
+	response := performAuthorized(server, http.MethodPost, "/api/v1/proxy-health/tests", []byte(`{"names":["open-surge/tailscale"]}`))
+	if response.Code != http.StatusOK {
+		t.Fatalf("POST status=%d body=%s", response.Code, response.Body.String())
+	}
+	if gotURL != mihomo.DefaultTailscaleExitNodeTestURL || gotTimeout != mihomo.DefaultTailscaleExitNodeTestTimeout {
+		t.Fatalf("testURL=%q timeout=%s", gotURL, gotTimeout)
+	}
+}

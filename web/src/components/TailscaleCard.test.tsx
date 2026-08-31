@@ -106,7 +106,7 @@ describe('TailscaleCard', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: '指定设备' }))
     await waitFor(() => expect(within(dialog).getByRole('button', { name: '指定设备' }).getAttribute('aria-pressed')).toBe('true'))
     await userEvent.click(await within(dialog).findByText('apple-tv'))
-    await userEvent.selectOptions(within(dialog).getByLabelText('Tailscale Exit Node'), 'home-router.example.ts.net')
+    await userEvent.selectOptions(within(dialog).getByLabelText('Tailscale Exit Node'), '100.90.3.4')
     await userEvent.click(within(dialog).getByText('保存后启用'))
     await userEvent.click(within(dialog).getByRole('button', { name: '保存，随网关启动' }))
 
@@ -119,7 +119,7 @@ describe('TailscaleCard', () => {
       subnet_routes: ['10.20.0.0/16'],
       accept_routes: true,
       allowed_devices: ['apple-tv'],
-      exit_node: 'home-router.example.ts.net',
+      exit_node: '100.90.3.4',
     }))
     expect(screen.queryByDisplayValue('tskey-auth-secret')).toBeNull()
     expect(await screen.findByText('Tailnet + Exit Node')).toBeTruthy()
@@ -132,6 +132,38 @@ describe('TailscaleCard', () => {
     const forget = await screen.findByRole('button', { name: '忘记本地身份' })
     expect((forget as HTMLButtonElement).disabled).toBe(true)
     expect(forget.getAttribute('title')).toBe('请先停止网关')
+  })
+
+  it('reuses cached Tailnet suggestions while the native app is disconnected', async () => {
+    vi.mocked(api.tailscaleDiscovery).mockResolvedValue({
+      ...discovery,
+      cached: true,
+      cached_at: '2026-08-30T20:00:00Z',
+      backend_state: 'Unavailable',
+      error: 'Tailscale is stopped',
+    })
+    render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '开始设置' }))
+    const dialog = screen.getByRole('dialog', { name: '配置 Tailscale 出站' })
+    expect(within(dialog).getByText('正在使用上次发现的 Tailnet')).toBeTruthy()
+    expect(within(dialog).getByText('example.ts.net · 已缓存 2 台 peer；在线状态可能已变化')).toBeTruthy()
+    expect(within(dialog).getByText('上次在线')).toBeTruthy()
+    expect(within(dialog).getByLabelText('Tailscale Exit Node').querySelector('option[value="100.90.3.4"]')).toBeTruthy()
+  })
+
+  it('migrates a discovered Exit Node name to its stable Tailscale IPv4', async () => {
+    vi.mocked(api.tailscale).mockResolvedValue({
+      ...base,
+      settings: { ...base.settings, exit_node: 'home-router.example.ts.net' },
+      auth_key_present: true,
+      selectable_exit: true,
+    })
+    render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '开始设置' }))
+    const select = within(screen.getByRole('dialog', { name: '配置 Tailscale 出站' })).getByLabelText('Tailscale Exit Node') as HTMLSelectElement
+    expect(select.value).toBe('100.90.3.4')
   })
 
   it('blocks a running-gateway reload when the native Tailscale app owns the selected subnet route', async () => {

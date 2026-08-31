@@ -41,8 +41,11 @@ type ProxyGroup struct {
 }
 
 const (
-	DefaultProxyDelayTestURL  = "https://www.gstatic.com/generate_204"
-	DefaultTailscaleWarmupURL = "http://100.100.100.100/"
+	DefaultProxyDelayTestURL             = "https://www.gstatic.com/generate_204"
+	DefaultTailscaleWarmupURL            = "http://100.100.100.100/"
+	DefaultTailscaleExitNodeTestURL      = "http://1.1.1.1/cdn-cgi/trace"
+	DefaultTailscaleExitNodeTestTimeout  = 15 * time.Second
+	defaultTailscaleTailnetWarmupTimeout = 4 * time.Second
 )
 
 type ProxyHealthSnapshot struct {
@@ -230,16 +233,23 @@ func MeasureProxyDelay(ctx context.Context, cfg config.Config, proxyName, testUR
 // outbound initialization path and must not make the gateway lifecycle fail.
 func WarmTailscale(ctx context.Context, cfg config.Config) ProxyDelayResult {
 	testURL := tailscaleWarmupURL(cfg)
-	timeout := 4 * time.Second
+	timeout := tailscaleWarmupTimeout(cfg)
 	client := &http.Client{Timeout: timeout + time.Second}
 	return measureProxyDelayWithClient(ctx, cfg, client, config.TailscaleProxyName, testURL, timeout)
 }
 
 func tailscaleWarmupURL(cfg config.Config) string {
 	if cfg.Tailscale.ExitNode != "" {
-		return DefaultProxyDelayTestURL
+		return DefaultTailscaleExitNodeTestURL
 	}
 	return DefaultTailscaleWarmupURL
+}
+
+func tailscaleWarmupTimeout(cfg config.Config) time.Duration {
+	if cfg.Tailscale.ExitNode != "" {
+		return DefaultTailscaleExitNodeTestTimeout
+	}
+	return defaultTailscaleTailnetWarmupTimeout
 }
 
 func SelectProxyGroup(ctx context.Context, cfg config.Config, groupName, selected string) error {

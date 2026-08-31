@@ -36,6 +36,18 @@ func TestWarmManagedTailscaleOnlyWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestManagedTailscaleWarmupTimeoutAllowsSlowExitNode(t *testing.T) {
+	cfg := config.Default()
+	if got := managedTailscaleWarmupTimeout(cfg); got != 6*time.Second {
+		t.Fatalf("Tailnet warm-up timeout = %s", got)
+	}
+	cfg.Tailscale.ExitNode = "100.90.3.4"
+	want := mihomo.DefaultTailscaleExitNodeTestTimeout + 2*time.Second
+	if got := managedTailscaleWarmupTimeout(cfg); got != want {
+		t.Fatalf("Exit Node warm-up timeout = %s, want %s", got, want)
+	}
+}
+
 func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 	cfg := config.Default()
 	cfg.Gateway.Interface = "lan0"

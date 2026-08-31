@@ -282,6 +282,8 @@ type TailscaleDiscoveredNode struct {
 type TailscaleDiscoveryResponse struct {
 	SchemaVersion        int                            `json:"schema_version"`
 	Available            bool                           `json:"available"`
+	Cached               bool                           `json:"cached,omitempty"`
+	CachedAt             *time.Time                     `json:"cached_at,omitempty"`
 	BackendState         string                         `json:"backend_state,omitempty"`
 	TailnetName          string                         `json:"tailnet_name,omitempty"`
 	MagicDNS             bool                           `json:"magic_dns"`

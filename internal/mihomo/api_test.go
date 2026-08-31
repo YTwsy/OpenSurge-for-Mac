@@ -226,12 +226,13 @@ func TestFetchProxyHealthLabelsTailscaleExitGroup(t *testing.T) {
 
 func TestTailscaleWarmupUsesRoleSpecificTarget(t *testing.T) {
 	for _, tt := range []struct {
-		name     string
-		exitNode string
-		wantURL  string
+		name        string
+		exitNode    string
+		wantURL     string
+		wantTimeout time.Duration
 	}{
-		{name: "tailnet", wantURL: DefaultTailscaleWarmupURL},
-		{name: "exit node", exitNode: "100.90.3.4", wantURL: DefaultProxyDelayTestURL},
+		{name: "tailnet", wantURL: DefaultTailscaleWarmupURL, wantTimeout: defaultTailscaleTailnetWarmupTimeout},
+		{name: "exit node", exitNode: "100.90.3.4", wantURL: DefaultTailscaleExitNodeTestURL, wantTimeout: DefaultTailscaleExitNodeTestTimeout},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.Default()
@@ -239,6 +240,9 @@ func TestTailscaleWarmupUsesRoleSpecificTarget(t *testing.T) {
 			cfg.Tailscale.ExitNode = tt.exitNode
 			if got := tailscaleWarmupURL(cfg); got != tt.wantURL {
 				t.Fatalf("warm-up URL = %q, want %q", got, tt.wantURL)
+			}
+			if got := tailscaleWarmupTimeout(cfg); got != tt.wantTimeout {
+				t.Fatalf("warm-up timeout = %s, want %s", got, tt.wantTimeout)
 			}
 		})
 	}
