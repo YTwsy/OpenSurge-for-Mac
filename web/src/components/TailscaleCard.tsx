@@ -23,12 +23,15 @@ const defaultSettings: TailscaleSettings = {
 }
 
 type Draft = TailscaleUpdate
+type DeviceScope = 'none' | 'selected' | 'all'
 
 export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void | Promise<void>; onNotify: (notification: OperationNotification) => void }) {
   const [data, setData] = useState<TailscaleResponse | null>(null)
   const [discovery, setDiscovery] = useState<TailscaleDiscoveryResponse | null>(null)
+  const [discoveryCheckedAt, setDiscoveryCheckedAt] = useState('')
   const [devices, setDevices] = useState<CompiledDevice[]>([])
   const [draft, setDraft] = useState<Draft>({ ...defaultSettings })
+  const [draftRevision, setDraftRevision] = useState('')
   const [editing, setEditing] = useState(false)
   const [forgetting, setForgetting] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -40,8 +43,10 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
     setDiscovering(true)
     try {
       setDiscovery(await api.tailscaleDiscovery())
+      setDiscoveryCheckedAt(new Date().toISOString())
     } catch (cause) {
       setDiscovery({ schema_version: 1, available: false, magic_dns: false, peers: [], error: cause instanceof Error ? cause.message : String(cause) })
+      setDiscoveryCheckedAt(new Date().toISOString())
     } finally {
       setDiscovering(false)
     }
@@ -57,6 +62,7 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
       setData(tailscale)
       setDevices(deviceResult?.desired_devices ?? deviceResult?.devices ?? [])
       setDiscovery(discoveryResult)
+      setDiscoveryCheckedAt(new Date().toISOString())
       setError('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -66,11 +72,30 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
   useEffect(() => { void refresh() }, [refresh])
 
   const openEditor = () => {
-    const settings = data?.settings ?? defaultSettings
-    setDraft({ ...settings, exit_node: canonicalExitNodeValue(settings.exit_node, discovery), auth_key: '' })
+    if (!data) return
+    if (draftRevision !== data.revision) {
+      setDraft(draftFromSettings(data.settings, discovery))
+      setDraftRevision(data.revision)
+    }
     setError('')
     setMessage('')
     setEditing(true)
+    void refreshDiscovery()
+  }
+
+  const toggleEditor = () => {
+    if (editing) {
+      setEditing(false)
+      return
+    }
+    openEditor()
+  }
+
+  const resetDraft = () => {
+    if (!data) return
+    setDraft(draftFromSettings(data.settings, discovery))
+    setDraftRevision(data.revision)
+    setError('')
   }
 
   const save = async (candidate: Draft = draft) => {
@@ -85,7 +110,8 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
     try {
       const saved = await api.saveTailscale(data.revision, candidate)
       setData(saved)
-      setDraft({ ...saved.settings, auth_key: '' })
+      setDraft(draftFromSettings(saved.settings, discovery))
+      setDraftRevision(saved.revision)
       setEditing(false)
       const confirmation = t(saved.gateway_active ? '配置已验证并重载；OpenSurge 已触发 Tailscale 预热。' : '配置已保存，将在下次启动网关时载入并预热。')
       setMessage(confirmation)
@@ -130,6 +156,7 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
   const status = tailscaleStatus(data)
   const targetCount = (data?.settings.magic_dns_suffixes.length ?? 0) + (data?.settings.peer_cidrs.length ?? 0) + (data?.settings.subnet_routes.length ?? 0)
   const access = accessSummary(data?.settings)
+  const draftDirty = data ? tailscaleDraftChanged(draft, data.settings) : false
 
   return <section className="section tailscale-section" aria-busy={busy}>
     <div className="tailscale-hero">
@@ -140,7 +167,7 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
         <p>{t('把 Tailnet 当作一个可按域名、地址或设备选择的出站。未命中的普通流量继续使用现有代理策略。')}</p>
       </div>
       <div className="tailscale-actions">
-        <button type="button" disabled={!data || busy} onClick={openEditor}>{t(data?.settings.enabled ? '配置' : '开始设置')}</button>
+        <button type="button" aria-expanded={editing} aria-controls="tailscale-editor" disabled={!data || busy} onClick={toggleEditor}>{t(editing ? '收起设置' : data?.settings.enabled || data?.auth_key_present || data?.identity_present ? '展开设置' : '开始设置')}</button>
         <button className={data?.settings.enabled ? 'danger-soft' : 'primary'} type="button" disabled={!data || busy} onClick={toggle}>{t(busy ? '正在应用…' : data?.settings.enabled ? '停用' : '启用')}</button>
       </div>
     </div>
@@ -156,9 +183,9 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
       <div className="tailscale-runtime"><span className={`status-dot ${data?.settings.enabled ? 'running' : 'stopped'}`} /><span><strong>{runtimeLabel(data)}</strong><small>{t(data?.settings.enabled ? 'OpenSurge 会主动预热；目标不可达时不会回退 DIRECT' : data?.identity_present ? '本地身份与密钥仍保留' : '不会加入 Tailnet 或接管流量')}</small></span></div>
       <button className="text-button" type="button" disabled={!data?.identity_present || data.settings.enabled || data.gateway_active || busy} title={data?.gateway_active ? t('请先停止网关') : data?.settings.enabled ? t('请先停用 Tailscale') : undefined} onClick={() => setForgetting(true)}>{t('忘记本地身份')}</button>
     </div>
-    {(error || message) && <div className={`tailscale-feedback ${error ? 'error' : 'success'}`} role={error ? 'alert' : 'status'}>{error || message}</div>}
+    {(message || (error && !editing)) && <div className={`tailscale-feedback ${error ? 'error' : 'success'}`} role={error ? 'alert' : 'status'}>{error || message}</div>}
 
-    {editing && data && <TailscaleDialog draft={draft} setDraft={setDraft} discovery={discovery} discovering={discovering} onRefreshDiscovery={() => void refreshDiscovery()} devices={devices} authKeyPresent={data.auth_key_present} identityPresent={data.identity_present} gatewayActive={data.gateway_active} busy={busy} error={error} onCancel={() => { setEditing(false); setError('') }} onSave={() => void save()} />}
+    {editing && data && <TailscaleEditor draft={draft} setDraft={setDraft} savedDeviceScope={deviceScopeFromSettings(data.settings)} discovery={discovery} discoveryCheckedAt={discoveryCheckedAt} discovering={discovering} onRefreshDiscovery={() => void refreshDiscovery()} devices={devices} authKeyPresent={data.auth_key_present} identityPresent={data.identity_present} gatewayActive={data.gateway_active} busy={busy} dirty={draftDirty} error={error} onCollapse={() => setEditing(false)} onReset={resetDraft} onSave={() => void save()} />}
     {forgetting && <dialog className="reload-dialog tailscale-forget-dialog" open aria-modal="true" aria-labelledby="tailscale-forget-title">
       <h2 id="tailscale-forget-title">{t('忘记这台 Mac 的本地 Tailscale 身份？')}</h2>
       <p>{t('这会删除 OpenSurge 保存的 tsnet 状态。下次启用时会重新注册一个节点。')}</p>
@@ -168,13 +195,17 @@ export function TailscaleCard({ onChanged, onNotify }: { onChanged: () => void |
   </section>
 }
 
-function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDiscovery, devices, authKeyPresent, identityPresent, gatewayActive, busy, error, onCancel, onSave }: { draft: Draft; setDraft: (value: Draft | ((current: Draft) => Draft)) => void; discovery: TailscaleDiscoveryResponse | null; discovering: boolean; onRefreshDiscovery: () => void; devices: CompiledDevice[]; authKeyPresent: boolean; identityPresent: boolean; gatewayActive: boolean; busy: boolean; error: string; onCancel: () => void; onSave: () => void }) {
+function TailscaleEditor({ draft, setDraft, savedDeviceScope, discovery, discoveryCheckedAt, discovering, onRefreshDiscovery, devices, authKeyPresent, identityPresent, gatewayActive, busy, dirty, error, onCollapse, onReset, onSave }: { draft: Draft; setDraft: (value: Draft | ((current: Draft) => Draft)) => void; savedDeviceScope: DeviceScope; discovery: TailscaleDiscoveryResponse | null; discoveryCheckedAt: string; discovering: boolean; onRefreshDiscovery: () => void; devices: CompiledDevice[]; authKeyPresent: boolean; identityPresent: boolean; gatewayActive: boolean; busy: boolean; dirty: boolean; error: string; onCollapse: () => void; onReset: () => void; onSave: () => void }) {
   const controlKind = draft.control_url.includes('controlplane.tailscale.com') ? 'tailscale' : 'headscale'
-  const [deviceScope, setDeviceScope] = useState<'none' | 'selected' | 'all'>(draft.allow_all_devices ? 'all' : draft.allowed_devices.length ? 'selected' : 'none')
+  const [deviceScope, setDeviceScope] = useState<DeviceScope>(deviceScopeFromSettings(draft))
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft(current => ({ ...current, [key]: value }))
-  const setScope = (scope: 'none' | 'selected' | 'all') => {
+  const setScope = (scope: DeviceScope) => {
     setDeviceScope(scope)
     setDraft(current => ({ ...current, allow_all_devices: scope === 'all', allowed_devices: scope === 'selected' ? current.allowed_devices : [] }))
+  }
+  const reset = () => {
+    setDeviceScope(savedDeviceScope)
+    onReset()
   }
   const subnetOptions = discoveredSubnetOptions(discovery)
   const selectedRouteConflicts = (discovery?.subnet_route_conflicts ?? []).filter(conflict => draft.subnet_routes.includes(conflict.route))
@@ -199,10 +230,10 @@ function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDis
     setDraft(current => ({ ...current, exit_node: value, exit_node_allow_lan_access: value ? current.exit_node_allow_lan_access : false }))
   }
 
-  return <dialog className="tailscale-dialog" open aria-modal="true" aria-labelledby="tailscale-dialog-title">
-    <div className="tailscale-dialog-head"><div><small>MANAGED TAILNET NODE</small><h2 id="tailscale-dialog-title">{t('配置 Tailscale 出站')}</h2><p>{t('从本机发现建议，确认后再应用到 OpenSurge。')}</p></div><button type="button" aria-label={t('关闭 Tailscale 配置')} disabled={busy} onClick={onCancel}>×</button></div>
-    <div className="tailscale-dialog-body">
-      <DiscoveryBanner discovery={discovery} discovering={discovering} onRefresh={onRefreshDiscovery} />
+  return <div id="tailscale-editor" className="tailscale-editor" role="region" aria-labelledby="tailscale-editor-title">
+    <div className="tailscale-editor-head"><div><small>MANAGED TAILNET NODE</small><h2 id="tailscale-editor-title">{t('配置 Tailscale 出站')}</h2><p>{t('从本机发现建议，确认后再应用到 OpenSurge。')}</p></div><div className="tailscale-editor-head-actions">{dirty && <span>{t('有未保存修改')}</span>}<button type="button" disabled={busy} onClick={onCollapse}>{t('收起设置')}</button></div></div>
+    <div className="tailscale-editor-body">
+      <DiscoveryStatus discovery={discovery} checkedAt={discoveryCheckedAt} discovering={discovering} gatewayActive={gatewayActive} selectedRouteConflicts={selectedRouteConflicts} onRefresh={onRefreshDiscovery} />
 
       <section className="tailscale-form-section identity"><div className="tailscale-section-copy"><span>01</span><div><h3>{t('连接身份')}</h3><p>{t('本机 Tailscale App 只提供配置建议；OpenSurge 会注册并持久化独立节点身份。')}</p></div></div>
         <form className="tailscale-auth-card" onSubmit={event => event.preventDefault()}>
@@ -264,21 +295,69 @@ function TailscaleDialog({ draft, setDraft, discovery, discovering, onRefreshDis
         <label className="tailscale-check"><input type="checkbox" checked={draft.accept_routes} disabled={draft.subnet_routes.length > 0} onChange={event => update('accept_routes', event.target.checked)} /><span><strong>{t('接受 Tailnet 公布的子网路由')}</strong><small>{t('OpenSurge 仍只捕获上方明确批准的子网，并会拒绝与本地 LAN 重叠的配置。')}</small></span></label>
       </div></details>
     </div>
-    <div className="tailscale-dialog-footer"><label className="tailscale-enable"><input type="checkbox" checked={draft.enabled} onChange={event => update('enabled', event.target.checked)} /><span><strong>{t('保存后启用')}</strong><small>{t(draft.enabled ? gatewayActive ? '验证通过后立即重载运行中的网关' : '保存并在下次启动网关时载入' : '保存配置但不载入 Tailscale 节点')}</small></span></label><div className="tailscale-save-summary"><span><strong>{guidedSummary(draft, selectedPeerNames)}</strong><small>{t(draft.exit_node ? '将创建独立的 Exit Node 策略组；不会自动切换 Mac 或现有设备。' : '普通公网出口保持不变。')}</small></span><div><button type="button" disabled={busy} onClick={onCancel}>{t('取消')}</button><button className="primary" type="button" disabled={busy || routeConflictBlocksApply || !draft.display_name.trim() || !draft.hostname.trim() || !draft.control_url.trim()} title={routeConflictBlocksApply ? t('请先解除本机 Tailscale 子网路由冲突') : undefined} onClick={onSave}>{t(busy ? '正在验证并应用…' : !draft.enabled ? '仅保存配置' : gatewayActive ? '应用并重载' : '保存，随网关启动')}</button></div></div></div>
-    {error && <div className="tailscale-dialog-error" role="alert">{error}</div>}
-  </dialog>
+    <div className="tailscale-editor-footer"><label className="tailscale-enable"><input type="checkbox" checked={draft.enabled} onChange={event => update('enabled', event.target.checked)} /><span><strong>{t('保存后启用')}</strong><small>{t(draft.enabled ? gatewayActive ? '验证通过后立即重载运行中的网关' : '保存并在下次启动网关时载入' : '保存配置但不载入 Tailscale 节点')}</small></span></label><div className="tailscale-save-summary"><span><strong>{guidedSummary(draft, selectedPeerNames)}</strong><small>{t(draft.exit_node ? '将创建独立的 Exit Node 策略组；不会自动切换 Mac 或现有设备。' : '普通公网出口保持不变。')}</small></span><div><button type="button" disabled={busy || !dirty} onClick={reset}>{t('撤销修改')}</button><button className="primary" type="button" disabled={busy || routeConflictBlocksApply || !dirty || !draft.display_name.trim() || !draft.hostname.trim() || !draft.control_url.trim()} title={routeConflictBlocksApply ? t('请先解除本机 Tailscale 子网路由冲突') : undefined} onClick={onSave}>{t(busy ? '正在验证并应用…' : !draft.enabled ? '仅保存配置' : gatewayActive ? '应用并重载' : '保存，随网关启动')}</button></div></div></div>
+    {error && <div className="tailscale-editor-error" role="alert">{error}</div>}
+  </div>
 }
 
-function DiscoveryBanner({ discovery, discovering, onRefresh }: { discovery: TailscaleDiscoveryResponse | null; discovering: boolean; onRefresh: () => void }) {
-  const peerCount = discovery?.peers.length ?? 0
-  const onlineCount = discovery?.peers.filter(peer => peer.online).length ?? 0
+function DiscoveryStatus({ discovery, checkedAt, discovering, gatewayActive, selectedRouteConflicts, onRefresh }: { discovery: TailscaleDiscoveryResponse | null; checkedAt: string; discovering: boolean; gatewayActive: boolean; selectedRouteConflicts: Array<{ route: string; interface: string }>; onRefresh: () => void }) {
   const cached = Boolean(discovery?.cached)
-  const ready = discovery?.available && !cached && discovery.backend_state === 'Running'
-  return <div className={`tailscale-discovery ${ready ? 'ready' : discovery?.available ? 'warning' : ''}`}>
-    <span className="tailscale-discovery-dot" aria-hidden="true" />
-    <span><strong>{t(discovering ? '正在读取本机 Tailscale…' : ready ? '已发现本机 Tailscale' : cached ? '正在使用上次发现的 Tailnet' : discovery?.available ? '本机 Tailscale 当前未连接' : '未发现可读取的本机 Tailscale')}</strong><small>{ready ? t('{{suffix}} · {{online}}/{{count}} 台 peer 在线', { suffix: discovery.magic_dns_suffix || discovery.tailnet_name || 'Tailnet', online: onlineCount, count: peerCount }) : cached ? t('{{suffix}} · 已缓存 {{count}} 台 peer；在线状态可能已变化', { suffix: discovery?.magic_dns_suffix || discovery?.tailnet_name || 'Tailnet', count: peerCount }) : t('自动发现只提供建议；你仍可继续手动配置。')}</small></span>
+  const live = Boolean(discovery?.available && !cached && discovery.backend_state === 'Running')
+  const conflicted = selectedRouteConflicts.length > 0
+  const source = live ? t('本机 App') : cached ? t('缓存') : t('未发现')
+  const sourceTime = cached ? discovery?.cached_at : checkedAt
+  const timeLabel = formatDiscoveryTime(sourceTime)
+  const risk = conflicted ? t('存在路由冲突') : live ? t('建议断开本机 App') : discovery?.available ? t('未发现已知冲突') : t('尚未检查')
+  const message = conflicted
+    ? t('所选子网当前由本机 Tailscale App 接管，应用前需要断开 App 或关闭“接受子网路由”。')
+    : live
+      ? t(gatewayActive ? '本次检测发现本机 Tailscale App 与 OpenSurge 同时连接。普通 Tailnet 访问不一定冲突，但 Exit Node、DNS 或子网路由可能被分别接管，建议断开本机 App。' : '已从本机 App 更新 Tailnet 信息和缓存。准备启动 OpenSurge 时，建议断开本机 Tailscale App。')
+      : cached
+        ? t('当前使用上次发现的信息，运行 OpenSurge 不需要连接本机 App。Tailnet 内容发生变化时，再临时连接并重新检测。')
+        : t('如需自动填入节点、Exit Node 和子网，请临时连接本机 Tailscale App 后重新检测；也可以继续手动配置。')
+  return <div className={`tailscale-discovery ${conflicted ? 'danger' : live ? 'warning' : cached ? 'ready' : ''}`}>
+    <div className="tailscale-discovery-meta"><span>{t('信息来源')} <strong>{source}</strong></span>{timeLabel && <time dateTime={sourceTime}>{t(cached ? '缓存于 {{time}}' : '检测于 {{time}}', { time: timeLabel })}</time>}<em className={conflicted ? 'danger' : live ? 'warning' : discovery?.available ? 'ready' : ''}>{risk}</em></div>
+    <div className="tailscale-discovery-copy"><strong>{t('Tailnet 信息')}</strong><p>{message}</p></div>
     <button type="button" disabled={discovering} onClick={onRefresh}>{t(discovering ? '检测中…' : '重新检测')}</button>
   </div>
+}
+
+function draftFromSettings(settings: TailscaleSettings, discovery: TailscaleDiscoveryResponse | null): Draft {
+  return { ...settings, exit_node: canonicalExitNodeValue(settings.exit_node, discovery), auth_key: '' }
+}
+
+function deviceScopeFromSettings(settings: TailscaleSettings): DeviceScope {
+  return settings.allow_all_devices ? 'all' : settings.allowed_devices.length ? 'selected' : 'none'
+}
+
+function tailscaleDraftChanged(draft: Draft, settings: TailscaleSettings): boolean {
+  if (draft.auth_key?.trim()) return true
+  return JSON.stringify(comparableSettings(draft)) !== JSON.stringify(comparableSettings(settings))
+}
+
+function comparableSettings(settings: TailscaleSettings): unknown[] {
+  return [
+    settings.enabled,
+    settings.display_name,
+    settings.hostname,
+    settings.control_url,
+    settings.accept_routes,
+    settings.magic_dns_suffixes,
+    settings.peer_cidrs,
+    settings.subnet_routes,
+    settings.allow_mac,
+    settings.allow_all_devices,
+    settings.allowed_devices,
+    settings.exit_node,
+    settings.exit_node_allow_lan_access,
+  ]
+}
+
+function formatDiscoveryTime(value?: string): string {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
 function ListEditor({ label, hint, placeholder, values, onChange }: { label: string; hint: string; placeholder: string; values: string[]; onChange: (values: string[]) => void }) {

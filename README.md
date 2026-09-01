@@ -150,9 +150,11 @@ outbound。Auth Key 只写入权限受限的独立文件，配置和 API 响应�
 身份”是单独动作，只能在 Tailscale 已停用且网关已停止时执行；它不会从
 Tailscale / Headscale 管理后台删除节点。
 
-配置弹窗会只读检测本机 Tailscale App，把当前 Tailnet 的 MagicDNS 后缀、peer
+卡片内的折叠设置会只读检测本机 Tailscale App，把当前 Tailnet 的 MagicDNS 后缀、peer
 精确地址、在线状态、已接受的私网路由和可用 Exit Node 显示为待确认建议；不会
-自动保存或扩大访问范围。若本机 Tailscale App 已通过自己的 `utun` 接管同一条
+自动保存或扩大访问范围。成功发现会保存不含密钥的受限缓存；本机 App 断开后仍可
+继续配置，界面会标明信息来源和检测/缓存时间，不把快照描述成实时状态。若本机
+Tailscale App 已通过自己的 `utun` 接管同一条
 子网路由，界面会在运行中网关重载前指出具体路由和接口，并要求先关闭 App 的
 “接受子网路由”或断开连接；OpenSurge 不会自动修改另一个 App。首次注册仍需要
 单独的 Auth Key，界面可直接打开官方 Keys 页面，并提示使用一次性、非 Ephemeral

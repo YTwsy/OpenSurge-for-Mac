@@ -168,11 +168,15 @@ and temporary disable/enable cycles. Forgetting that local identity is a
 separate action available only while Tailscale and the gateway are stopped,
 and does not remove the device from the Tailscale or Headscale admin console.
 
-The setup dialog reads the local Tailscale app in discovery-only mode and shows
+The inline, collapsible setup panel reads the local Tailscale app in
+discovery-only mode and shows
 the current Tailnet's MagicDNS suffix, exact peer addresses, online state,
 accepted private routes, and eligible Exit Nodes as suggestions that require
-confirmation. It never saves or broadens access automatically. Initial
-registration still requires a separate Auth Key; the dialog links to the
+confirmation. It never saves or broadens access automatically. A successful
+discovery stores a restricted cache without credentials, so configuration can
+continue after the local app disconnects. The panel labels the information
+source and check/cache time instead of presenting a snapshot as live state. Initial
+registration still requires a separate Auth Key; the panel links to the
 official Keys page and recommends a one-off, non-Ephemeral key. The local app
 and the OpenSurge-managed node do not share login identity or state, and the
 advanced manual configuration remains available when discovery is unavailable.

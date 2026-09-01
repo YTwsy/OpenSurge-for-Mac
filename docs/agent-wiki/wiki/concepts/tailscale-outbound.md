@@ -33,6 +33,12 @@ MagicDNS 后缀不会默认开启，subnet route 与 Exit Node 也不会静默�
 先连接原生 App 完成一次发现，再断开原生 App 或关闭其 `accept-routes`，最后启动或
 重载 OpenSurge，而不是要求两个独立 Tailscale 数据面同时接管相同精确路由。
 
+GUI 使用卡片内的折叠设置，不把发现过程表现成必须依次完成的向导。面板显示信息来源
+（本机 App、缓存或未发现）、本次检测/缓存时间和当前已知路由风险；展开时检测一次，
+也允许操作者随时重复检测。这里不是持续监听，文案不得使用“实时”暗示。普通双客户端
+连接只给建议，只有所选子网命中当前系统中的精确 foreign `utun` 路由时才阻止运行中
+应用。PUT 应用端仍在 lifecycle lock 内重新检查系统路由，浏览器快照不能成为最终门禁。
+
 macOS 的 Tailscale App 会根据调用环境在 GUI 与 CLI 模式之间选择；OpenSurge
 Control API 由 LaunchAgent 启动，没有终端环境。因此执行 `status --json` 时必须为
 子进程显式设置 `TAILSCALE_BE_CLI=1`，否则 Tailscale 可能把 GUI 启动错误写入

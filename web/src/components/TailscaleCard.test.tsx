@@ -76,9 +76,10 @@ describe('TailscaleCard', () => {
     render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Set up' }))
-    const dialog = screen.getByRole('dialog', { name: 'Configure Tailscale outbound' })
+    const editor = screen.getByRole('region', { name: 'Configure Tailscale outbound' })
     expect(document.body.textContent).toContain('Use the Tailnet as an outbound')
-    expect(dialog.textContent).toContain('Who can use it')
+    expect(editor.textContent).toContain('Who can use it')
+    expect(screen.queryByRole('dialog', { name: 'Configure Tailscale outbound' })).toBeNull()
     expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
   })
 
@@ -95,20 +96,20 @@ describe('TailscaleCard', () => {
     render(<TailscaleCard onChanged={vi.fn()} onNotify={notify} />)
 
     await userEvent.click(await screen.findByRole('button', { name: '开始设置' }))
-    const dialog = screen.getByRole('dialog', { name: '配置 Tailscale 出站' })
-    const keyLink = within(dialog).getByRole('link', { name: /创建 Auth Key/ })
+    const editor = screen.getByRole('region', { name: '配置 Tailscale 出站' })
+    const keyLink = within(editor).getByRole('link', { name: /创建 Auth Key/ })
     expect(keyLink.getAttribute('href')).toBe('https://console.tailscale.com/admin/settings/keys')
     expect(keyLink.getAttribute('target')).toBe('_blank')
-    await userEvent.type(within(dialog).getByLabelText('Tailscale Auth Key'), 'tskey-auth-secret')
-    await userEvent.click(within(dialog).getByLabelText('允许访问 Pixel'))
-    await userEvent.click(within(dialog).getByText('允许所有 MagicDNS 名称'))
-    await userEvent.click(within(dialog).getByText('10.20.0.0/16'))
-    await userEvent.click(within(dialog).getByRole('button', { name: '指定设备' }))
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: '指定设备' }).getAttribute('aria-pressed')).toBe('true'))
-    await userEvent.click(await within(dialog).findByText('apple-tv'))
-    await userEvent.selectOptions(within(dialog).getByLabelText('Tailscale Exit Node'), '100.90.3.4')
-    await userEvent.click(within(dialog).getByText('保存后启用'))
-    await userEvent.click(within(dialog).getByRole('button', { name: '保存，随网关启动' }))
+    await userEvent.type(within(editor).getByLabelText('Tailscale Auth Key'), 'tskey-auth-secret')
+    await userEvent.click(within(editor).getByLabelText('允许访问 Pixel'))
+    await userEvent.click(within(editor).getByText('允许所有 MagicDNS 名称'))
+    await userEvent.click(within(editor).getByText('10.20.0.0/16'))
+    await userEvent.click(within(editor).getByRole('button', { name: '指定设备' }))
+    await waitFor(() => expect(within(editor).getByRole('button', { name: '指定设备' }).getAttribute('aria-pressed')).toBe('true'))
+    await userEvent.click(await within(editor).findByText('apple-tv'))
+    await userEvent.selectOptions(within(editor).getByLabelText('Tailscale Exit Node'), '100.90.3.4')
+    await userEvent.click(within(editor).getByText('保存后启用'))
+    await userEvent.click(within(editor).getByRole('button', { name: '保存，随网关启动' }))
 
     await waitFor(() => expect(api.saveTailscale).toHaveBeenCalledTimes(1))
     expect(api.saveTailscale).toHaveBeenCalledWith('rev-1', expect.objectContaining({
@@ -145,11 +146,12 @@ describe('TailscaleCard', () => {
     render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
 
     await userEvent.click(await screen.findByRole('button', { name: '开始设置' }))
-    const dialog = screen.getByRole('dialog', { name: '配置 Tailscale 出站' })
-    expect(within(dialog).getByText('正在使用上次发现的 Tailnet')).toBeTruthy()
-    expect(within(dialog).getByText('example.ts.net · 已缓存 2 台 peer；在线状态可能已变化')).toBeTruthy()
-    expect(within(dialog).getByText('上次在线')).toBeTruthy()
-    expect(within(dialog).getByLabelText('Tailscale Exit Node').querySelector('option[value="100.90.3.4"]')).toBeTruthy()
+    const editor = screen.getByRole('region', { name: '配置 Tailscale 出站' })
+    expect(within(editor).getByText('缓存', { exact: true })).toBeTruthy()
+    expect(within(editor).getByText('未发现已知冲突')).toBeTruthy()
+    expect(within(editor).getByText('当前使用上次发现的信息，运行 OpenSurge 不需要连接本机 App。Tailnet 内容发生变化时，再临时连接并重新检测。')).toBeTruthy()
+    expect(within(editor).getByText('上次在线')).toBeTruthy()
+    expect(within(editor).getByLabelText('Tailscale Exit Node').querySelector('option[value="100.90.3.4"]')).toBeTruthy()
   })
 
   it('migrates a discovered Exit Node name to its stable Tailscale IPv4', async () => {
@@ -162,7 +164,7 @@ describe('TailscaleCard', () => {
     render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
 
     await userEvent.click(await screen.findByRole('button', { name: '开始设置' }))
-    const select = within(screen.getByRole('dialog', { name: '配置 Tailscale 出站' })).getByLabelText('Tailscale Exit Node') as HTMLSelectElement
+    const select = within(screen.getByRole('region', { name: '配置 Tailscale 出站' })).getByLabelText('Tailscale Exit Node') as HTMLSelectElement
     expect(select.value).toBe('100.90.3.4')
   })
 
@@ -181,13 +183,37 @@ describe('TailscaleCard', () => {
     })
     render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
 
-    await userEvent.click(await screen.findByRole('button', { name: '配置' }))
-    const dialog = screen.getByRole('dialog', { name: '配置 Tailscale 出站' })
-    expect(within(dialog).getByText('本机 Tailscale App 正在接管所选子网')).toBeTruthy()
-    expect(within(dialog).getByText('10.20.0.0/16 → utun5')).toBeTruthy()
-    const apply = within(dialog).getByRole('button', { name: '应用并重载' }) as HTMLButtonElement
+    await userEvent.click(await screen.findByRole('button', { name: '展开设置' }))
+    const editor = screen.getByRole('region', { name: '配置 Tailscale 出站' })
+    expect(within(editor).getByText('存在路由冲突')).toBeTruthy()
+    expect(within(editor).getByText('本机 Tailscale App 正在接管所选子网')).toBeTruthy()
+    expect(within(editor).getByText('10.20.0.0/16 → utun5')).toBeTruthy()
+    const apply = within(editor).getByRole('button', { name: '应用并重载' }) as HTMLButtonElement
     expect(apply.disabled).toBe(true)
     expect(apply.title).toBe('请先解除本机 Tailscale 子网路由冲突')
     expect(api.saveTailscale).not.toHaveBeenCalled()
+  })
+
+  it('refreshes when expanded and keeps an unsaved draft while collapsed', async () => {
+    render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '开始设置' }))
+    const editor = screen.getByRole('region', { name: '配置 Tailscale 出站' })
+    await waitFor(() => expect(api.tailscaleDiscovery).toHaveBeenCalledTimes(2))
+    expect(within(editor).getByText('本机 App', { exact: true })).toBeTruthy()
+    expect(within(editor).getByText('建议断开本机 App')).toBeTruthy()
+
+    await userEvent.type(within(editor).getByLabelText('Tailscale Auth Key'), 'tskey-auth-draft')
+    expect(within(editor).getByText('有未保存修改')).toBeTruthy()
+    await userEvent.click(within(editor).getByRole('button', { name: '收起设置' }))
+    expect(screen.queryByRole('region', { name: '配置 Tailscale 出站' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '开始设置' }))
+    const reopened = screen.getByRole('region', { name: '配置 Tailscale 出站' })
+    expect((within(reopened).getByLabelText('Tailscale Auth Key') as HTMLInputElement).value).toBe('tskey-auth-draft')
+    await userEvent.click(within(reopened).getByRole('button', { name: '全部已注册' }))
+    await userEvent.click(within(reopened).getByRole('button', { name: '撤销修改' }))
+    expect((within(reopened).getByLabelText('Tailscale Auth Key') as HTMLInputElement).value).toBe('')
+    expect(within(reopened).getByRole('button', { name: '不允许' }).getAttribute('aria-pressed')).toBe('true')
   })
 })
