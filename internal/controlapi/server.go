@@ -777,7 +777,15 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.Header.Get("Idempotency-Key")
 	if id != "" {
+		if !validOperationID(id) {
+			writeError(w, http.StatusBadRequest, "invalid_operation_id", "invalid operation id")
+			return
+		}
 		if existing, err := s.store.Operation(id); err == nil {
+			if existing.Kind != action {
+				writeError(w, http.StatusConflict, "operation_id_conflict", "operation id belongs to a different action")
+				return
+			}
 			writeJSON(w, http.StatusAccepted, existing)
 			return
 		}
@@ -846,9 +854,8 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		id = randomToken(12)
 	}
-	now := time.Now().UTC()
-	op := Operation{SchemaVersion: SchemaVersion, ID: id, Kind: action, State: "running", CreatedAt: now, UpdatedAt: now}
-	if err := s.store.SaveOperation(op); err != nil {
+	op := newOperation(id, action)
+	if err := s.store.CreateOperation(op); err != nil {
 		writeError(w, http.StatusInternalServerError, "operation_failed", err.Error())
 		return
 	}
@@ -864,6 +871,7 @@ func (s *Server) runOperationLocked(op Operation, topology string, recoveryBefor
 	defer s.lifecycleMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
+	ctx = s.observeOperation(ctx, &op)
 	err := s.runner.Run(ctx, op.Kind, s.configPath)
 	op.UpdatedAt = time.Now().UTC()
 	if err != nil {
@@ -1626,30 +1634,19 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 	// geodata cache. Validating here as the UI user would download the same
 	// assets into every source snapshot directory, then validate a second time
 	// in the helper before applying.
-	var operation *Operation
+	kind := "apply-profile"
 	if gatewayActive {
-		now := time.Now().UTC()
-		op := Operation{SchemaVersion: SchemaVersion, ID: randomToken(12), Kind: "reload", State: "running", CreatedAt: now, UpdatedAt: now}
-		if err := s.store.SaveOperation(op); err != nil {
-			writeError(w, http.StatusInternalServerError, "operation_failed", err.Error())
-			return
-		}
-		operation = &op
+		kind = "reload"
 	}
-	result, err := s.configRunner.ApplyProfile(r.Context(), s.configPath, match, payload, source.Digest, effectiveOverlayRevision)
+	ctx, operation, ok := s.beginRequestOperation(w, r, kind)
+	if !ok {
+		return
+	}
+	result, err := s.configRunner.ApplyProfile(ctx, s.configPath, match, payload, source.Digest, effectiveOverlayRevision)
 	if err == nil && gatewayActive && !result.Reloaded {
 		err = fmt.Errorf("running gateway did not reload the selected profile")
 	}
-	if operation != nil {
-		operation.UpdatedAt = time.Now().UTC()
-		if err != nil {
-			operation.State = "failed"
-			operation.Error = err.Error()
-		} else {
-			operation.State = "succeeded"
-		}
-		_ = s.store.SaveOperation(*operation)
-	}
+	s.finishOperation(operation, err)
 	if err != nil {
 		if gatewayActive {
 			s.recordReloadRecoveryFailure(cfg.Gateway.Mode, recovery, err)
@@ -1719,7 +1716,12 @@ func (s *Server) handleDevicePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data, _ := json.Marshal(policy)
-	newRevision, err := s.configRunner.ApplyDevicePolicy(r.Context(), s.configPath, match, data)
+	ctx, operation, ok := s.beginRequestOperation(w, r, "save-device-policy")
+	if !ok {
+		return
+	}
+	newRevision, err := s.configRunner.ApplyDevicePolicy(ctx, s.configPath, match, data)
+	s.finishOperation(operation, err)
 	if err != nil {
 		status := http.StatusInternalServerError
 		code := "device_policy_write_failed"

@@ -331,13 +331,16 @@ type ClientAcceptanceRequest struct {
 }
 
 type Operation struct {
-	SchemaVersion int       `json:"schema_version"`
-	ID            string    `json:"id"`
-	Kind          string    `json:"kind"`
-	State         string    `json:"state"`
-	Error         string    `json:"error,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	SchemaVersion  int       `json:"schema_version"`
+	ID             string    `json:"id"`
+	Kind           string    `json:"kind"`
+	State          string    `json:"state"`
+	Error          string    `json:"error,omitempty"`
+	Phase          string    `json:"phase,omitempty"`
+	PhaseStartedAt time.Time `json:"phase_started_at,omitempty"`
+	Notices        []string  `json:"notices,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Source struct {

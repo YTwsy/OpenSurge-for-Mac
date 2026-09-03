@@ -52,10 +52,15 @@ func (s *Server) handleTailscale(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	payload, _ := json.Marshal(input)
-	result, err := s.configRunner.ApplyTailscale(r.Context(), s.configPath, match, payload)
+	ctx, operation, ok := s.beginRequestOperation(w, r, "apply-tailscale")
+	if !ok {
+		return
+	}
+	result, err := s.configRunner.ApplyTailscale(ctx, s.configPath, match, payload)
 	if err == nil && gatewayActive && !result.Reloaded {
 		err = fmt.Errorf("running gateway did not reload the Tailscale configuration")
 	}
+	s.finishOperation(operation, err)
 	if err != nil {
 		status, code := http.StatusUnprocessableEntity, "tailscale_validation_failed"
 		switch {

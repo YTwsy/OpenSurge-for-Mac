@@ -224,6 +224,27 @@ func (s *Store) DiscardPreparedRecovery(topology string) error {
 func (s *Store) SaveOperation(op Operation) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveOperationLocked(op)
+}
+
+func (s *Store) CreateOperation(op Operation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !validOperationID(op.ID) {
+		return fmt.Errorf("invalid operation id")
+	}
+	if _, err := os.Stat(filepath.Join(s.dir, "operations", op.ID+".json")); err == nil {
+		return errOperationExists
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return s.saveOperationLocked(op)
+}
+
+func (s *Store) saveOperationLocked(op Operation) error {
+	if !validOperationID(op.ID) {
+		return fmt.Errorf("invalid operation id")
+	}
 	data, err := json.MarshalIndent(op, "", "  ")
 	if err != nil {
 		return err
@@ -233,7 +254,7 @@ func (s *Store) SaveOperation(op Operation) error {
 
 func (s *Store) Operation(id string) (Operation, error) {
 	var op Operation
-	if id == "" || filepath.Base(id) != id {
+	if !validOperationID(id) {
 		return op, fmt.Errorf("invalid operation id")
 	}
 	err := readJSON(filepath.Join(s.dir, "operations", id+".json"), &op)

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -113,14 +114,16 @@ type HelperRequest struct {
 	Payload        []byte                     `json:"payload,omitempty"`
 	SourceDigest   string                     `json:"source_digest,omitempty"`
 	OverlayDigest  string                     `json:"overlay_digest,omitempty"`
+	WatchProgress  bool                       `json:"watch_progress,omitempty"`
 }
 
 type HelperResponse struct {
-	OK          bool     `json:"ok"`
-	Error       string   `json:"error,omitempty"`
-	DHCPServers []string `json:"dhcp_servers,omitempty"`
-	Revision    string   `json:"revision,omitempty"`
-	Reloaded    bool     `json:"reloaded,omitempty"`
+	OK          bool              `json:"ok"`
+	Error       string            `json:"error,omitempty"`
+	DHCPServers []string          `json:"dhcp_servers,omitempty"`
+	Revision    string            `json:"revision,omitempty"`
+	Reloaded    bool              `json:"reloaded,omitempty"`
+	Progress    *gateway.Progress `json:"progress,omitempty"`
 }
 
 func (c HelperClient) Run(ctx context.Context, action, configPath string) error {
@@ -176,17 +179,28 @@ func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperRe
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(2 * time.Minute))
+	report := gateway.ProgressReporter(ctx)
+	request.WatchProgress = report != nil
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return HelperResponse{}, err
 	}
-	var response HelperResponse
-	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&response); err != nil {
-		return HelperResponse{}, err
+	decoder := json.NewDecoder(bufio.NewReader(conn))
+	for {
+		var response HelperResponse
+		if err := decoder.Decode(&response); err != nil {
+			return HelperResponse{}, err
+		}
+		if response.Progress != nil {
+			if report != nil {
+				report(*response.Progress)
+			}
+			continue
+		}
+		if !response.OK {
+			return HelperResponse{}, fmt.Errorf("%s", response.Error)
+		}
+		return response, nil
 	}
-	if !response.OK {
-		return HelperResponse{}, fmt.Errorf("%s", response.Error)
-	}
-	return response, nil
 }
 
 func ServeHelper(ctx context.Context, socketPath, allowedRoot, socketGroup string) error {
@@ -331,6 +345,9 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 	}
 	response := HelperResponse{}
 	if err == nil {
+		if request.WatchProgress {
+			ctx = withHelperProgress(ctx, conn)
+		}
 		runner := DirectRunner{}
 		switch request.Action {
 		case "start", "stop", "reload", "restart-mihomo":
@@ -374,6 +391,26 @@ func handleHelperConnWithSleep(ctx context.Context, conn net.Conn, allowedRoot s
 		response.Error = err.Error()
 	}
 	_ = json.NewEncoder(conn).Encode(response)
+}
+
+// Progress frames are opt-in so old clients still receive exactly one final
+// response. A disconnected/slow observer must not stall host-network cleanup.
+func withHelperProgress(ctx context.Context, conn net.Conn) context.Context {
+	var mu sync.Mutex
+	watching := true
+	deadline := time.Now().Add(2 * time.Minute)
+	return gateway.WithProgress(ctx, func(progress gateway.Progress) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !watching {
+			return
+		}
+		_ = conn.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
+		if err := json.NewEncoder(conn).Encode(HelperResponse{Progress: &progress}); err != nil {
+			watching = false
+		}
+		_ = conn.SetWriteDeadline(deadline)
+	})
 }
 
 func retrySystemSleepRelease(ctx context.Context, manager *systemSleepLeaseManager, releaseErr error) {

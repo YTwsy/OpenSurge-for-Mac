@@ -41,6 +41,7 @@ type PolicyMigration = {
 
 export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void; onNotify: (notification: OperationNotification) => void }) {
   const [busy, setBusy] = useState(false)
+  const [configSaving, setConfigSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [plan, setPlan] = useState<GatewayPlan | null>(null)
@@ -181,7 +182,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
   }
 
   const persistConfig = async (target: ControlConfig, migration?: PolicyMigration) => {
-    setBusy(true); setError(''); setMessage('')
+    setBusy(true); setConfigSaving(true); setError(''); setMessage('')
     let policySaved = false
     try {
       if (migration?.resolved.length) {
@@ -202,7 +203,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
       const failure = cause instanceof Error ? cause.message : String(cause)
       setError(policySaved ? t('设备 MAC 已保存，但网络配置切换失败：{{error}}', { error: failure }) : failure)
     }
-    finally { setBusy(false) }
+    finally { setBusy(false); setConfigSaving(false) }
   }
 
   const save = async () => {
@@ -536,7 +537,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
           </ConfigField>
           </div>
         </fieldset>
-        <div className="network-save-bar" aria-live="polite"><span className={configDirty ? 'dirty' : ''}><i aria-hidden="true">{configDirty ? '•' : '✓'}</i>{t(configDirty ? '有未保存的修改' : '当前配置已保存')}</span><button className="primary" disabled={!configurationEditable} onClick={() => void save()}>{busy ? <><span className="button-spinner" aria-hidden="true" />{t('正在保存…')}</> : t('保存网络配置')}</button></div>
+        <div className="network-save-bar" aria-live="polite"><span className={configDirty ? 'dirty' : ''}><i aria-hidden="true">{configDirty ? '•' : '✓'}</i>{t(configDirty ? '有未保存的修改' : '当前配置已保存')}</span><button className="primary" disabled={!configurationEditable} onClick={() => void save()}>{configSaving ? <><span className="button-spinner" aria-hidden="true" />{t('正在保存…')}</> : t('保存网络配置')}</button></div>
       </section>
     </>}
     {config && gatewayInterrupted && <section className="section gateway-lifecycle-control interrupted-runtime-control">

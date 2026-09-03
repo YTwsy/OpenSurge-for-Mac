@@ -107,7 +107,7 @@ type gatewayDeps struct {
 	currentBoot         func() (runtime.BootSession, error)
 	processFingerprint  func(int) (string, error)
 	processMatches      func(int, string) (bool, error)
-	warmTailscale       func(context.Context, config.Config) mihomo.ProxyDelayResult
+	warmTailscale       func(context.Context, config.Config) error
 	now                 func() time.Time
 }
 
@@ -150,7 +150,7 @@ func defaultGatewayDeps() gatewayDeps {
 		currentBoot:        runtime.CurrentBootSession,
 		processFingerprint: process.Fingerprint,
 		processMatches:     process.MatchesFingerprint,
-		warmTailscale:      mihomo.WarmTailscale,
+		warmTailscale:      mihomo.InitiateTailscaleWarmup,
 		now:                time.Now,
 	}
 }
@@ -286,6 +286,7 @@ func (m Manager) Start(ctx context.Context) error {
 }
 
 func (m Manager) start(ctx context.Context) error {
+	ReportProgress(ctx, "checking_runtime")
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("start requires sudo/root privileges")
@@ -301,6 +302,7 @@ func (m Manager) start(ctx context.Context) error {
 	if err := config.Validate(m.cfg); err != nil {
 		return err
 	}
+	ReportProgress(ctx, "validating_network")
 	ipv6Resolution := m.resolveIPv6(deps)
 	if err := deps.ensure(m.paths); err != nil {
 		return err
@@ -325,6 +327,7 @@ func (m Manager) start(ctx context.Context) error {
 	if err := m.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
 		return err
 	}
+	ReportProgress(ctx, "checking_reservations")
 	if err := m.checkReservationConflicts(deps); err != nil {
 		return err
 	}
@@ -336,6 +339,7 @@ func (m Manager) start(ctx context.Context) error {
 		}
 		systemProxySnapshot = &snapshot
 	}
+	ReportProgress(ctx, "preparing_config")
 	if err := mihomoManager.WriteConfig(); err != nil {
 		return err
 	}
@@ -345,9 +349,11 @@ func (m Manager) start(ctx context.Context) error {
 	if err := pfManager.WriteAnchor(); err != nil {
 		return err
 	}
+	ReportProgress(ctx, "validating_config")
 	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
 		return err
 	}
+	ReportProgress(ctx, "saving_runtime")
 	ipForwardingBefore, err := sysctlManager.Current()
 	if err != nil {
 		return err
@@ -391,10 +397,12 @@ func (m Manager) start(ctx context.Context) error {
 		return err
 	}
 
+	ReportProgress(ctx, "enabling_forwarding")
 	if err := sysctlManager.Enable(); err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 
+	ReportProgress(ctx, "starting_mihomo")
 	mihomoPID, err := mihomoManager.Start()
 	if err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
@@ -411,6 +419,7 @@ func (m Manager) start(ctx context.Context) error {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	if ipv6Resolution.Effective {
+		ReportProgress(ctx, "starting_ipv6")
 		ipv6PacketPID, startErr := ipv6PacketManager.Start()
 		if startErr != nil {
 			return m.rollback(ctx, startErr, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
@@ -442,6 +451,7 @@ func (m Manager) start(ctx context.Context) error {
 		}
 	}
 
+	ReportProgress(ctx, "starting_dns")
 	pid, err := dhcpManager.Start()
 	if err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
@@ -458,6 +468,7 @@ func (m Manager) start(ctx context.Context) error {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 
+	ReportProgress(ctx, "applying_firewall")
 	if err := pfManager.Load(!pfEnabledBefore); err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
@@ -473,6 +484,7 @@ func (m Manager) start(ctx context.Context) error {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	if state.LocalSystemProxy != nil {
+		ReportProgress(ctx, "enabling_system_proxy")
 		if err := systemProxyManager.Enable(ctx, *state.LocalSystemProxy, m.cfg.Mihomo.MixedPort); err != nil {
 			return m.rollback(ctx, fmt.Errorf("enable local system proxy coordination: %w", err), state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, true)
 		}
@@ -505,6 +517,7 @@ func (m Manager) Reload(ctx context.Context) error {
 }
 
 func (m Manager) reload(ctx context.Context) error {
+	ReportProgress(ctx, "checking_runtime")
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("reload requires sudo/root privileges")
@@ -535,7 +548,7 @@ func (m Manager) reload(ctx context.Context) error {
 			return fmt.Errorf("gateway is degraded; reload requires the IPv6 packet broker to be running")
 		}
 	}
-	if err := m.validateReloadCandidate(); err != nil {
+	if err := m.validateReloadCandidate(ctx); err != nil {
 		return fmt.Errorf("reload candidate validation failed: %w", err)
 	}
 	if err := m.stop(ctx); err != nil {
@@ -560,6 +573,7 @@ func (m Manager) RestartMihomo(ctx context.Context) error {
 }
 
 func (m Manager) restartMihomo(ctx context.Context) error {
+	ReportProgress(ctx, "checking_runtime")
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("restart-mihomo requires sudo/root privileges")
@@ -593,8 +607,10 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 		if state.LocalSystemProxy == nil {
 			return nil
 		}
+		ReportProgress(ctx, "restoring_system_proxy")
 		return systemProxyManager.Restore(ctx, *state.LocalSystemProxy)
 	}
+	ReportProgress(ctx, "validating_config")
 	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
 		return fmt.Errorf("prepared mihomo config validation failed: %w", err)
 	}
@@ -606,6 +622,7 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return fmt.Errorf("mark mihomo restart in runtime state: %w", err)
 	}
+	ReportProgress(ctx, "stopping_mihomo")
 	if err := stopTrackedProcess(deps, "mihomo", previousPID, previousFingerprint, mihomoManager.Stop); err != nil {
 		if trackedProcessRunning(deps, previousPID, previousFingerprint, mihomoManager.Running) {
 			state.PIDMihomo = previousPID
@@ -619,6 +636,7 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 	if err != nil {
 		return errors.Join(fmt.Errorf("archive mihomo log before restart: %w", err), restoreSystemProxy())
 	}
+	ReportProgress(ctx, "starting_mihomo")
 	newPID, err := mihomoManager.Start()
 	if err != nil {
 		return errors.Join(fmt.Errorf("start replacement mihomo process: %w", err), restoreSystemProxy())
@@ -651,23 +669,14 @@ func (m Manager) warmManagedTailscale(ctx context.Context, deps gatewayDeps) {
 	if !m.cfg.Tailscale.Enabled || deps.warmTailscale == nil {
 		return
 	}
-	warmCtx, cancel := context.WithTimeout(ctx, managedTailscaleWarmupTimeout(m.cfg))
-	defer cancel()
-	result := deps.warmTailscale(warmCtx, m.cfg)
-	if result.Status == "reachable" {
-		fmt.Printf("Tailscale outbound warm-up completed in %d ms\n", result.DelayMS)
+	ReportProgress(ctx, "initiating_tailscale")
+	if err := deps.warmTailscale(ctx, m.cfg); err != nil {
+		reportNotice(ctx, "tailscale_warmup_unavailable")
+		fmt.Printf("Tailscale outbound warm-up could not be dispatched (best effort): %v\n", err)
 		return
 	}
-	fmt.Printf("Tailscale outbound warm-up initiated; the first Tailnet request may still need a retry: %s\n", result.Status)
-}
-
-func managedTailscaleWarmupTimeout(cfg config.Config) time.Duration {
-	if cfg.Tailscale.ExitNode != "" {
-		// Leave the HTTP client enough time to report its own role-specific
-		// result instead of canceling the outer gateway warm-up first.
-		return mihomo.DefaultTailscaleExitNodeTestTimeout + 2*time.Second
-	}
-	return 6 * time.Second
+	reportNotice(ctx, "tailscale_warmup_started")
+	fmt.Println("Tailscale outbound warm-up dispatched; connection readiness is not a gateway lifecycle requirement and the first request may still need a retry.")
 }
 
 func archiveMihomoLog(path string, now time.Time) (string, error) {
@@ -688,7 +697,8 @@ func archiveMihomoLog(path string, now time.Time) (string, error) {
 // validateReloadCandidate renders every generated artifact into an isolated
 // temporary runtime and runs the real mihomo validator. It deliberately does
 // not write applied policy state or alter host networking.
-func (m Manager) validateReloadCandidate() error {
+func (m Manager) validateReloadCandidate(ctx context.Context) error {
+	ReportProgress(ctx, "validating_network")
 	parent := filepath.Dir(m.paths.Dir)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return err
@@ -721,9 +731,11 @@ func (m Manager) validateReloadCandidate() error {
 	if err := candidate.preflight(dhcpManager, mihomoManager, pfManager, sysctlManager, deps); err != nil {
 		return err
 	}
+	ReportProgress(ctx, "checking_reservations")
 	if err := candidate.checkReservationConflicts(deps); err != nil {
 		return err
 	}
+	ReportProgress(ctx, "preparing_config")
 	if err := mihomoManager.WriteConfig(); err != nil {
 		return err
 	}
@@ -733,6 +745,7 @@ func (m Manager) validateReloadCandidate() error {
 	if err := pfManager.WriteAnchor(); err != nil {
 		return err
 	}
+	ReportProgress(ctx, "validating_config")
 	return mihomoManager.ValidateWrittenConfig()
 }
 
@@ -744,6 +757,7 @@ func (m Manager) Stop(ctx context.Context) error {
 }
 
 func (m Manager) stop(ctx context.Context) error {
+	ReportProgress(ctx, "checking_runtime")
 	deps := m.gatewayDeps()
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("stop requires sudo/root privileges")
@@ -766,15 +780,20 @@ func (m Manager) stop(ctx context.Context) error {
 	sysctlManager := deps.newSysctl()
 	if exists {
 		if state.LocalSystemProxy != nil {
+			ReportProgress(ctx, "restoring_system_proxy")
 			if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
 				return fmt.Errorf("restore local system proxy before stopping gateway services: %w", err)
 			}
 		}
+		ReportProgress(ctx, "stopping_dns")
 		dhcpManager := deps.newDHCP(m.cfg, m.paths)
 		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "dnsmasq", state.PIDDNSMasq, state.DNSMasqProcessFingerprint, dhcpManager.Stop))
+		ReportProgress(ctx, "stopping_ipv6")
 		cleanupErr = errors.Join(cleanupErr, m.cleanupIPv6(ctx, deps, state))
+		ReportProgress(ctx, "stopping_mihomo")
 		mihomoManager := deps.newMihomo(appliedConfigFromState(m.cfg, state), m.paths)
 		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "mihomo", state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Stop))
+		ReportProgress(ctx, "restoring_network")
 		if state.PFAnchorLoaded {
 			cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
 		}
@@ -783,6 +802,7 @@ func (m Manager) stop(ctx context.Context) error {
 	if cleanupErr != nil {
 		return cleanupErr
 	}
+	ReportProgress(ctx, "clearing_runtime")
 	cleanupErr = errors.Join(cleanupErr, deps.removeState(m.paths.StateFile))
 	cleanupErr = errors.Join(cleanupErr, device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied))
 	if cleanupErr != nil {
@@ -819,10 +839,12 @@ func (m Manager) cleanupIPv6(ctx context.Context, deps gatewayDeps, state runtim
 
 func (m Manager) cleanupInterruptedRuntime(ctx context.Context, deps gatewayDeps, state runtime.State) error {
 	if state.LocalSystemProxy != nil {
+		ReportProgress(ctx, "restoring_system_proxy")
 		if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
 			return fmt.Errorf("restore local system proxy snapshot after reboot: %w", err)
 		}
 	}
+	ReportProgress(ctx, "clearing_runtime")
 	cleanupErr := errors.Join(
 		deps.removeState(m.paths.StateFile),
 		device.RemovePolicyBundleSnapshot(m.paths.DevicePolicyApplied),
@@ -933,6 +955,7 @@ func addrHasIPv4(addr net.Addr, target net.IP) bool {
 }
 
 func (m Manager) rollback(ctx context.Context, cause error, state runtime.State, dhcpManager dhcpService, mihomoManager mihomoService, pfManager pfService, sysctlManager sysctlService, systemProxyManager localSystemProxyService, restoreSystemProxy bool) error {
+	ReportProgress(ctx, "rolling_back")
 	deps := m.gatewayDeps()
 	var cleanupErr error
 	if restoreSystemProxy && state.LocalSystemProxy != nil {

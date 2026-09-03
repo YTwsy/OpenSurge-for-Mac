@@ -226,16 +226,8 @@ func (s *Server) evaluateMihomoRecovery(ctx context.Context) {
 		return
 	}
 
-	now := time.Now().UTC()
-	op := Operation{
-		SchemaVersion: SchemaVersion,
-		ID:            "auto-restart-mihomo-" + randomToken(8),
-		Kind:          "restart-mihomo",
-		State:         "running",
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
-	if err := s.store.SaveOperation(op); err != nil {
+	op := newOperation("auto-restart-mihomo-"+randomToken(8), "restart-mihomo")
+	if err := s.store.CreateOperation(op); err != nil {
 		s.lifecycleMu.Unlock()
 		s.mihomoRecovery.finishAutomatic(err)
 		return

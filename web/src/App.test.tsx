@@ -10,6 +10,7 @@ vi.mock('./api', () => ({
     constructor(public status: number, public code: string, message: string) { super(message) }
   },
   waitForOperation: vi.fn(async () => ({ id: 'gateway-operation', kind: 'start', state: 'succeeded' })),
+  watchOperations: vi.fn(() => () => {}),
   api: {
     overview: vi.fn(),
     config: vi.fn(async () => ({
@@ -469,6 +470,8 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
     vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
     vi.mocked(api.gateway).mockResolvedValue({ id: 'start-same-lan', kind: 'start', state: 'running' })
+    let completeStart!: () => void
+    vi.mocked(waitForOperation).mockImplementationOnce(() => new Promise(resolve => { completeStart = () => resolve({ id: 'start-same-lan', kind: 'start', state: 'succeeded' }) }))
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<App />)
 
@@ -487,6 +490,9 @@ describe('OpenSurge app shell', () => {
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('路由器 DHCP 不会被关闭'))
     expect(api.gateway).toHaveBeenCalledWith('start')
     expect(waitForOperation).toHaveBeenCalledWith('start-same-lan')
+    expect((screen.getByRole('button', { name: '保存网络配置' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: '正在保存…' })).toBeNull()
+    await act(async () => completeStart())
     expect(await screen.findByText('旁路由模式已启动。')).toBeTruthy()
     expect(screen.getByText('启动网关成功')).toBeTruthy()
   })

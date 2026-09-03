@@ -118,11 +118,20 @@ boot session 和子进程启动指纹写进 state。Status 发现 state 来自�
 同时保存进程启动指纹；status、stop 与 restart 只有在 PID 和启动指纹都匹配时才把它当作
 OpenSurge 子进程。指纹不匹配表示原子进程已经消失，清理不得终止占用该 PID 的其他进程。
 
+Helper 是长驻父进程，`StartDetached` 成功后必须由唯一后台 `cmd.Wait()` 回收子进程。
+`Process.Release()` 只丢弃 Go 句柄，不会回收 Unix zombie；zombie 仍会通过 signal(0)
+存活检查，导致正常 stop 也耗完整个 TERM 宽限期。后台 Wait 不把子进程寿命绑定到某次
+HTTP/Helper 请求；boot session、PID 指纹、TERM/KILL 顺序和网络恢复契约均不因此改变。
+
 ## Reload 顺序
 
 `reload` 只接受正在健康运行的网关。它先在同级临时 runtime 中使用同一份 desired 配置
 渲染 mihomo、dnsmasq 与 PF artifacts，执行静态检查、接口/LAN IP、protected/reservation
 冲突检查和真实 `mihomo -t`。这一步不写 applied snapshot，也不改变 host network。
+
+共享 L2 的 reservation 检查保留每个地址的一次 ICMP/ARP 检查，最多四个并发，避免
+离线设备逐个消耗探测等待。错误仍按配置顺序报告；无回应不代表地址空闲。重载前候选
+校验和 stop 后正常 start 的最终检查都必须保留，不能把并发优化变成跳过安全检查。
 
 全部通过后才调用完整 `stop`，再用已经通过校验的同一份 immutable config 调用完整
 `start`。成功会自然写入新的 applied device-policy snapshot/digest；若使用 imported
@@ -136,6 +145,18 @@ desired config，再调用上述 reload。失败时恢复旧 config；如果 rel
 runtime state 不存在，则尝试用旧 config 重新 start。只有新 start 成功、runtime state
 记录新 profile digest 且 `runtime/mihomo.yaml` 已重新生成后，控制面才可把来源标记为
 applied。网关停止时应用 profile 只更新 desired，留待下次正常 start。
+
+## 过程反馈与完成边界
+
+生命周期通过 context 中的 `gateway.Progress` 回调报告真实阶段，包括校验、停止、启动、
+恢复和 rollback；观察者不得决定动作是否继续，也不得在动作返回后继续更新已结束的
+operation。全局 Web 进度不使用估算百分比，初次 start 和 reload 走同一条反馈链。
+网关启动成功仍不等于局域网客户端验收通过；原有 DHCP/DNS/TUN 客户端验收阶段保留。
+
+Tailscale 只发起原有的一次 best-effort 预热。生命周期最多等待两秒让请求写出，不等待
+4 秒 Tailnet / 15 秒 Exit Node 探测结果；预热请求使用独立、有界的 context，避免 HTTP
+生命周期结束时顺带取消。该边界只改变等待时间，不增加出口就绪门禁、周期探测、重试、
+自动切换或内核恢复逻辑，详见 [Tailscale 出站](tailscale-outbound.md)。
 
 ## Mihomo 独立恢复
 

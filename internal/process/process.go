@@ -37,9 +37,11 @@ func startDetached(cmd *exec.Cmd) (int, error) {
 		return 0, err
 	}
 	pid := cmd.Process.Pid
-	if err := cmd.Process.Release(); err != nil {
-		return 0, err
-	}
+	// The privileged Helper is long-lived. Release only discards the Go handle;
+	// it does not reap an exited Unix child, which leaves zombies that signal(0)
+	// still considers alive and makes every stop consume its full grace period.
+	// Keep exactly one waiter without tying the child to the request's lifetime.
+	go func() { _ = cmd.Wait() }()
 	return pid, nil
 }
 

@@ -158,6 +158,23 @@ OFFER 探测不可用，认证后的 Web GUI 提供带断网警告和显式人�
 如果用户明确选择长期保持静态 IPv4，网关成功停止后也可跳过路由器 DHCP 探测与 Mac
 自动 DHCP 恢复，直接进入 `complete_static`。该动作不调用 `ProbeDHCP` 或 `SetDHCP`，必须
 保留持久化说明，并提示其他客户端需要有效静态配置或另一个 DHCP 服务器。
+
+初次启动、停止、重载、Mihomo 恢复，以及设备策略/来源/Tailscale 配置应用，复用全局
+operation 进度卡。客户端提交即显示等待状态，后续 `phase`、`phase_started_at`、
+`notices` 来自 Go 生命周期实际边界；只显示阶段与耗时，不模拟百分比。进度卡在页面
+切换后继续显示，刷新时只恢复未完成操作，不重新弹出旧成功记录。网络页的 DHCP 接管
+client acceptance 不会被“启动完成”替代。
+
+Helper 请求可选 `watch_progress`：新 Helper 先发送带 `progress` 的 JSON 帧，最后仍
+返回原有结果；旧客户端不请求该字段时只收到最终帧，新客户端也兼容旧 Helper 的单帧
+响应。进度写入超时后停止观察，不能因为 UI 断开而阻塞网络清理。同步配置 API 仍保持
+原请求/响应契约，可用 `X-OpenSurge-Operation-ID` 关联进行中的记录；该字段不是重放
+授权，重复 ID 拒绝，ID 仅允许 1–128 个字母、数字、连字符或下划线。
+
+同一操作共享状态轮询；读取失败可重试 GET，但不得自动重试原 POST/PUT。浏览器断连
+或等待超时应显示“结果尚未确认”，保留原 ID 供重新查询和诊断，不将其当作网关已停止、
+已失败或应该重新启动。认证失效继续遵守停止轮询与 SSE 的既有边界。
+
 订阅完整 URL 存在用户应用支持目录的独立 `credentials/sources.json`，目录权限为 `0700`、
 文件权限为 `0600`；公开 sources JSON 只保留脱敏 origin，API、日志和诊断不得返回刷新
 凭据。升级只尝试一次从旧 `com.opensurge.sources` Keychain 项迁移，并无论成功或失败都

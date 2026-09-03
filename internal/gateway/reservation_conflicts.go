@@ -4,6 +4,7 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"open-mihomo-gateway/internal/config"
 )
@@ -20,8 +21,32 @@ func (m Manager) checkReservationConflicts(deps gatewayDeps) error {
 	if probe == nil {
 		probe = probeReservationIPConflict
 	}
-	for _, reservation := range m.cfg.DevicePolicy.Bundle.Compiled.Reservations {
-		if err := probe(reservation.IPv4, reservation.MAC); err != nil {
+	// Each offline address consumes the ICMP timeout. Bound the number of
+	// concurrent probes instead of paying that timeout serially for every
+	// reservation. Keep both reload prevalidation and the final start check.
+	reservations := m.cfg.DevicePolicy.Bundle.Compiled.Reservations
+	errs := make([]error, len(reservations))
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	for range min(4, len(reservations)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				reservation := reservations[index]
+				errs[index] = probe(reservation.IPv4, reservation.MAC)
+			}
+		}()
+	}
+	for index := range reservations {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
+	// Report the first configured conflict deterministically, regardless of
+	// which probe completed first. No negative probe is treated as readiness.
+	for _, err := range errs {
+		if err != nil {
 			return err
 		}
 	}

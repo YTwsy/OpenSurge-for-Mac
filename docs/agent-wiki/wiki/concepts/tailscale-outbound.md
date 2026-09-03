@@ -101,6 +101,17 @@ Tailnet-only outbound 只为上述明确目标服务，不得成为 device polic
 Tailscale 节点；OpenSurge 在网关启动、重载和 mihomo 恢复后发送一次最佳努力
 预热请求，把大部分 lazy-start 成本提前，但产品文案仍须说明首次业务访问可能重试。
 
+这次预热只等待 delay API 请求写出（最多两秒），不再等待完整健康响应。长驻 Helper
+在后台读取并关闭响应，使用独立且有超时的 context，不能随着网关操作返回而取消。
+短生命周期 CLI 也必须先写出请求才返回，不能只启动 goroutine 后立即退出。此实现依赖
+锁定的 mihomo delay handler 用 `context.Background()` 派生检查上下文，以及 tsnet
+自身的 lazy-start 生命周期；升级内核时需重新核对这两个边界。
+
+Tailnet 仍使用原来的 4 秒预热预算，Exit Node 仍使用原来的 15 秒预算，手动出口检测不
+缩短。操作通知只说明“预热已发起”或“未能发起”，不冒充出口已联网。连接过程中允许
+用户选择出口，正常 selector 持久化保留的是选择，不是探测失败；本次优化不改选择、
+拨号、内核重试或故障恢复语义，也不新增探测通过才能选择的限制。
+
 配置明确的 `exit-node` 后，编译器生成可见的
 `open-surge/tailscale-exit -> open-surge/tailscale` selector。该组会加入 device
 policy 候选；当 `allow_mac` 为真时也会加入 `open-surge/mac-global`，供用户在

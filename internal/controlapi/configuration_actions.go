@@ -57,6 +57,7 @@ func (DirectRunner) ApplyProfile(ctx context.Context, configPath, revision strin
 }
 
 func applyProfile(ctx context.Context, configPath, revision string, payload []byte, sourceDigest, overlayDigest string, deps profileApplyDeps) (ProfileApplyResult, error) {
+	gateway.ReportProgress(ctx, "preparing_config")
 	if deps.geteuid() != 0 {
 		return ProfileApplyResult{}, fmt.Errorf("privileged helper is required")
 	}
@@ -107,10 +108,12 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 	cfg.Mihomo.Profile = profilePath
 	cfg.Mihomo.ProfileSourceDigest = sourceDigest
 	cfg.Mihomo.ProfileOverlayDigest = overlayDigest
+	gateway.ReportProgress(ctx, "validating_config")
 	if err := deps.validate(cfg); err != nil {
 		cleanupProfile()
 		return ProfileApplyResult{}, err
 	}
+	gateway.ReportProgress(ctx, "saving_config")
 	if err := writeAtomic(configPath, []byte(config.Render(cfg)), 0o640); err != nil {
 		cleanupProfile()
 		return ProfileApplyResult{}, err
@@ -120,6 +123,7 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 		return result, nil
 	}
 	if err := deps.reload(ctx, cfg); err != nil {
+		gateway.ReportProgress(ctx, "restoring_config")
 		rollbackErr := writeAtomic(configPath, original, 0o640)
 		var restartErr error
 		if rollbackErr == nil {
@@ -142,6 +146,7 @@ func (DirectRunner) ApplyTailscale(ctx context.Context, configPath, revision str
 }
 
 func applyTailscale(ctx context.Context, configPath, revision string, payload []byte, deps profileApplyDeps) (ProfileApplyResult, error) {
+	gateway.ReportProgress(ctx, "preparing_config")
 	if deps.geteuid() != 0 {
 		return ProfileApplyResult{}, fmt.Errorf("privileged helper is required")
 	}
@@ -216,10 +221,12 @@ func applyTailscale(ctx context.Context, configPath, revision string, payload []
 		rollbackKey()
 		return ProfileApplyResult{}, err
 	}
+	gateway.ReportProgress(ctx, "validating_config")
 	if err := deps.validate(cfg); err != nil {
 		rollbackKey()
 		return ProfileApplyResult{}, err
 	}
+	gateway.ReportProgress(ctx, "saving_config")
 	if err := writeAtomic(configPath, []byte(config.Render(cfg)), 0o640); err != nil {
 		rollbackKey()
 		return ProfileApplyResult{}, err
@@ -229,6 +236,7 @@ func applyTailscale(ctx context.Context, configPath, revision string, payload []
 		return result, nil
 	}
 	if err := deps.reload(ctx, cfg); err != nil {
+		gateway.ReportProgress(ctx, "restoring_config")
 		rollbackErr := writeAtomic(configPath, original, 0o640)
 		rollbackKey()
 		var restartErr error
@@ -448,7 +456,8 @@ func profileApplyRollbackError(reloadErr, rollbackErr, restartErr error) error {
 	return fmt.Errorf("%s", message)
 }
 
-func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision string, payload []byte) (string, error) {
+func (DirectRunner) ApplyDevicePolicy(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
+	gateway.ReportProgress(ctx, "validating_device_policy")
 	if os.Geteuid() != 0 {
 		return "", fmt.Errorf("privileged helper is required")
 	}
@@ -504,9 +513,11 @@ func (DirectRunner) ApplyDevicePolicy(_ context.Context, configPath, revision st
 	validation.DevicePolicy.Bundle = &bundle
 	validation.Runtime.Dir = temp
 	validation.Mihomo.Config = filepath.Join(temp, "mihomo.yaml")
+	gateway.ReportProgress(ctx, "validating_config")
 	if err := mihomo.New(validation, runtime.NewPaths(validation)).ValidateConfig(); err != nil {
 		return "", err
 	}
+	gateway.ReportProgress(ctx, "saving_config")
 	if err := writeAtomic(cfg.DevicePolicy.File, append(formatted, '\n'), 0o640); err != nil {
 		return "", err
 	}

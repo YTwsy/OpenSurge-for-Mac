@@ -14,15 +14,14 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
-	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
 
 func TestWarmManagedTailscaleOnlyWhenEnabled(t *testing.T) {
 	calls := 0
-	deps := gatewayDeps{warmTailscale: func(context.Context, config.Config) mihomo.ProxyDelayResult {
+	deps := gatewayDeps{warmTailscale: func(context.Context, config.Config) error {
 		calls++
-		return mihomo.ProxyDelayResult{Status: "reachable", DelayMS: 12}
+		return nil
 	}}
 	manager := Manager{cfg: config.Default()}
 	manager.warmManagedTailscale(context.Background(), deps)
@@ -36,15 +35,21 @@ func TestWarmManagedTailscaleOnlyWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestManagedTailscaleWarmupTimeoutAllowsSlowExitNode(t *testing.T) {
-	cfg := config.Default()
-	if got := managedTailscaleWarmupTimeout(cfg); got != 6*time.Second {
-		t.Fatalf("Tailnet warm-up timeout = %s", got)
-	}
-	cfg.Tailscale.ExitNode = "100.90.3.4"
-	want := mihomo.DefaultTailscaleExitNodeTestTimeout + 2*time.Second
-	if got := managedTailscaleWarmupTimeout(cfg); got != want {
-		t.Fatalf("Exit Node warm-up timeout = %s, want %s", got, want)
+func TestManagedTailscaleWarmupReportsDispatchNotReachability(t *testing.T) {
+	for _, dispatchErr := range []error{nil, errors.New("controller unavailable")} {
+		cfg := config.Default()
+		cfg.Tailscale.Enabled = true
+		cfg.Tailscale.ExitNode = "100.90.3.4"
+		var progress []Progress
+		ctx := WithProgress(context.Background(), func(p Progress) { progress = append(progress, p) })
+		Manager{cfg: cfg}.warmManagedTailscale(ctx, gatewayDeps{warmTailscale: func(context.Context, config.Config) error { return dispatchErr }})
+		wantNotice := "tailscale_warmup_started"
+		if dispatchErr != nil {
+			wantNotice = "tailscale_warmup_unavailable"
+		}
+		if !slices.Equal(progress, []Progress{{Phase: "initiating_tailscale"}, {Notice: wantNotice}}) {
+			t.Fatalf("warm-up progress = %+v", progress)
+		}
 	}
 }
 
@@ -99,7 +104,11 @@ func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 		},
 	}
 
-	err := manager.Start(context.Background())
+	var phases []string
+	err := manager.Start(WithProgress(context.Background(), func(p Progress) { phases = append(phases, p.Phase) }))
+	if !slices.Equal(phases, []string{"checking_runtime", "validating_network", "checking_reservations", "preparing_config", "validating_config", "saving_runtime", "enabling_forwarding", "starting_mihomo", "rolling_back"}) {
+		t.Fatalf("start/rollback phases = %v", phases)
+	}
 	if err == nil {
 		t.Fatalf("Start() succeeded")
 	}

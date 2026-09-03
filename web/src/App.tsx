@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './components/OperationNotifications'
+import { OperationProgress } from './components/OperationProgress'
 import { LanguageSelector } from './components/LanguageSelector'
 import { RecoveryBanner, StatusDot } from './components/Common'
 import { DashboardPage } from './pages/DashboardPage'
@@ -12,6 +13,7 @@ import { NetworkPage } from './pages/NetworkPage'
 import { PoliciesPage, type PoliciesViewState } from './pages/PoliciesPage'
 import { SourcesPage } from './pages/SourcesPage'
 import { needsNetworkRecoveryWarning, statusLabel } from './status'
+import { operationStatusUnknownMessage } from './operations'
 import type { Overview } from './types'
 import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, t, type RequestedLanguage } from './i18n'
 
@@ -203,7 +205,8 @@ export function App() {
   }
 
   const notify = useCallback((notification: OperationNotification) => {
-    const item = { ...notification, id: ++notificationID.current }
+    const uncertain = notification.message.includes(operationStatusUnknownMessage) || notification.message.includes(t(operationStatusUnknownMessage))
+    const item = { ...notification, title: uncertain ? t('结果尚未确认') : notification.title, id: ++notificationID.current }
     setNotifications(current => [...current, item].slice(-3))
   }, [])
 
@@ -251,6 +254,7 @@ export function App() {
         </PageErrorBoundary>
       </>}
     </main>
+    {!authenticationRequired && <OperationProgress onOpenDiagnostics={() => go('diagnostics')} />}
     <OperationNotifications notifications={notifications} onDismiss={dismissNotification} />
   </div>
 }

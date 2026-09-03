@@ -75,7 +75,11 @@ export type NetworkInterfacesResponse = { schema_version: number; interfaces: Ne
 export type NetworkDefaults = { schema_version: number; mode: 'same_lan' | 'same_wifi_dhcp'; snapshot: NetworkSnapshot; gateway_ipv4: string; lan_prefix_len?: number; dhcp_range_start?: string; dhcp_range_end?: string; bypass_gateway?: string; bypass_dns: string[]; warnings: string[]; blockers: string[] }
 export type Recovery = { stage: string; topology?: string; required: boolean; updated_at?: string; recovery_notes?: string; network_snapshot?: NetworkSnapshot; client_validation_skipped?: boolean }
 export type GatewayPlan = { schema_version: number; revision: string; topology: string; snapshot: NetworkSnapshot; protected_ipv4: string[]; dhcp_servers: string[]; warnings: string[]; blockers: string[] }
-export type Operation = { id: string; kind: string; state: string; error?: string }
+export type Operation = {
+  id: string; kind: string; state: string; error?: string
+  phase?: string; phase_started_at?: string; notices?: string[]
+  created_at?: string; updated_at?: string
+}
 export type MihomoRecoveryStatus = { state: 'idle' | 'observing' | 'recovering' | 'failed'; reason?: 'process_missing' | 'controller_refused'; error?: string }
 export type SleepPreventionStatus = { enabled: boolean; active: boolean; error?: string }
 export type ControlConfig = {
