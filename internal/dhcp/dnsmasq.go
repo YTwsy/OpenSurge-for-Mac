@@ -46,7 +46,7 @@ func (m Manager) Start() (int, error) {
 	if err := os.WriteFile(m.paths.DNSMasqLog, nil, 0o640); err != nil {
 		return 0, err
 	}
-	pid, err := process.StartDetachedWithLog(m.paths.DNSMasqLog, binary, "--no-daemon", "--log-facility=-", "--conf-file="+m.paths.DNSMasqConf)
+	pid, err := process.StartDetachedWithLog(m.paths.DNSMasqLog, binary, dnsmasqArgs(m.paths.DNSMasqConf)...)
 	if err != nil {
 		return 0, err
 	}
@@ -55,6 +55,10 @@ func (m Manager) Start() (int, error) {
 		return 0, err
 	}
 	return pid, nil
+}
+
+func dnsmasqArgs(configPath string) []string {
+	return []string{"--keep-in-foreground", "--log-facility=-", "--conf-file=" + configPath}
 }
 
 func (m Manager) Check() error {

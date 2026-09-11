@@ -15,6 +15,10 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。当前 runtime pat
 - 启用下游 IPv6 接管时，BPF broker 和 IPv6 gateway alias 纳入同一个
   runtime/rollback 所有权；自动拓扑还拥有 dnsmasq RA/SLAAC，手工旁路由不发布 RA。
 
+dnsmasq 由 OpenSurge 直接监管，必须使用 `--keep-in-foreground` 运行。不要使用
+`--no-daemon`：后者是 dnsmasq 的调试模式，并会禁用为 TCP DNS 查询 fork 子进程；
+局域网客户端的并发或长连接 TCP/53 查询因此可能阻塞整个 DNS 前端。
+
 ## 下游 LAN 网段
 
 下游网段由 `gateway.lan_ip` 与 `gateway.lan_prefix_len` 共同决定，`internal/lan`
