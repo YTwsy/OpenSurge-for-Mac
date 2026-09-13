@@ -18,6 +18,7 @@ func Render(cfg Config) string {
   lan_ip: %s
   lan_prefix_len: %d
   upstream_interface: %s
+  upstream_gateway: %s
 
 dhcp:
   binary: %s
@@ -103,7 +104,7 @@ upstream_proxy:
 runtime:
   dir: %s
 `,
-		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen), q(cfg.Gateway.UpstreamInterface),
+		q(cfg.Gateway.Mode), q(cfg.Gateway.Interface), q(cfg.Gateway.LANIP), lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen), q(cfg.Gateway.UpstreamInterface), q(cfg.Gateway.UpstreamGateway),
 		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain), q(cfg.DHCP.BypassGateway), q(strings.Join(cfg.DHCP.BypassDNS, ",")),
 		q(cfg.DevicePolicy.File), q(strings.Join(cfg.DevicePolicy.ProtectedIPv4, ",")),
 		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream), cfg.DNS.IPv6,
