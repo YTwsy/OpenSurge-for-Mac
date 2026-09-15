@@ -109,6 +109,14 @@ export type ControlConfig = {
   device_policy: { enabled: boolean; protected_ipv4: string[] }
 }
 
+export type ConfigFile = {
+  schema_version: number
+  path: string
+  revision: string
+  content: string
+  protected_fields: string[]
+}
+
 export type TailscaleSettings = {
   enabled: boolean
   display_name: string

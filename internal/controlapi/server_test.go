@@ -992,6 +992,9 @@ func TestHelperAllowlistIncludesNamedLifecycleActions(t *testing.T) {
 	if !helperActionAllowed("sleep-prevention-hold") {
 		t.Fatal("sleep-prevention-hold is not available to the privileged helper")
 	}
+	if !helperActionAllowed("config-apply-file") {
+		t.Fatal("config-apply-file is not available to the privileged helper")
+	}
 	for _, action := range []string{"hot-reload", "restart", "shell"} {
 		if helperActionAllowed(action) {
 			t.Fatalf("unexpected helper action %q", action)
@@ -2770,6 +2773,10 @@ func (fakeConfigurationRunner) ApplyDevicePolicy(_ context.Context, _, _ string,
 
 func (fakeConfigurationRunner) ApplyControlConfig(_ context.Context, path, revision string, payload []byte) (string, error) {
 	return applyControlConfig(path, revision, payload)
+}
+
+func (fakeConfigurationRunner) ApplyConfigFile(ctx context.Context, path, revision string, payload []byte) (string, error) {
+	return applyConfigFile(ctx, path, revision, payload)
 }
 
 func (fakeConfigurationRunner) ApplyTailscale(_ context.Context, _, revision string, _ []byte) (ProfileApplyResult, error) {

@@ -1,4 +1,4 @@
-import type { APIError, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
+import type { APIError, ConfigFile, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
 import { getOperation, markOperationConnection, operationStatusUnknownMessage, recordOperation } from './operations'
 
 export class RequestError extends Error {
@@ -55,9 +55,11 @@ async function operationStatusRequest<T>(path: string): Promise<T> {
 export const api = {
   overview: () => request<Overview>('/api/v1/overview'),
   config: () => request<ControlConfig>('/api/v1/config'),
+  configFile: () => request<ConfigFile>('/api/v1/config/file'),
   networkInterfaces: () => request<NetworkInterfacesResponse>('/api/v1/network/interfaces'),
   networkDefaults: (mode: NetworkDefaults['mode']) => request<NetworkDefaults>(`/api/v1/network/defaults?mode=${encodeURIComponent(mode)}`),
   saveConfig: (config: ControlConfig) => request<ControlConfig>('/api/v1/config', { method: 'PUT', headers: { 'If-Match': `"${config.revision}"` }, body: JSON.stringify(config) }),
+  saveConfigFile: (content: string, revision: string) => request<ConfigFile>('/api/v1/config/file', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify({ content }) }),
   gateway: (action: 'start' | 'stop' | 'reload' | 'restart-mihomo') => trackedRequest<Operation>(action, `/api/v1/gateway/${action}`, { method: 'POST' }, true),
   setSleepPrevention: (enabled: boolean) => request<SleepPreventionStatus>('/api/v1/sleep-prevention', { method: 'PUT', body: JSON.stringify({ enabled }) }),
   setUIPreferences: (preferences: Pick<UIPreferences, 'language'>) => request<UIPreferences>('/api/v1/ui-preferences', { method: 'PUT', body: JSON.stringify(preferences) }),

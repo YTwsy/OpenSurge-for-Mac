@@ -259,6 +259,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/overview", s.auth(http.HandlerFunc(s.handleOverview)))
 	mux.Handle("GET /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
 	mux.Handle("PUT /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
+	mux.Handle("GET /api/v1/config/file", s.auth(http.HandlerFunc(s.handleConfigFile)))
+	mux.Handle("PUT /api/v1/config/file", s.auth(http.HandlerFunc(s.handleConfigFile)))
 	mux.Handle("GET /api/v1/menubar", s.auth(http.HandlerFunc(s.handleMenuBar)))
 	mux.Handle("GET /api/v1/ui-preferences", s.auth(http.HandlerFunc(s.handleUIPreferences)))
 	mux.Handle("PUT /api/v1/ui-preferences", s.auth(http.HandlerFunc(s.handleUIPreferences)))

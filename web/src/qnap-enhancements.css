@@ -370,3 +370,81 @@ html[data-product-target="qnap"] .remote-token-row input {
     justify-self: start;
   }
 }
+
+html[data-product-target="qnap"] .qnap-config-file-section {
+  overflow: hidden;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px 0 15px;
+  color: #71877e;
+  font-size: 10px;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-meta code {
+  min-width: 0;
+  overflow: hidden;
+  color: #9bbeb0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-meta span {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-editor {
+  display: grid;
+  gap: 7px;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-editor > span {
+  color: #738a81;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-editor textarea {
+  width: 100%;
+  min-height: 520px;
+  resize: vertical;
+  border: 1px solid #29463b;
+  border-radius: 11px;
+  background: #050d0b;
+  color: #cce1d7;
+  padding: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.65;
+  tab-size: 2;
+  white-space: pre;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-editor textarea:focus {
+  border-color: #5cb78f;
+  outline: 3px solid #72e1b033;
+  outline-offset: 1px;
+}
+
+html[data-product-target="qnap"] .qnap-config-file-editor textarea:disabled {
+  cursor: wait;
+  opacity: .68;
+}
+
+@media (max-width: 620px) {
+  html[data-product-target="qnap"] .qnap-config-file-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  html[data-product-target="qnap"] .qnap-config-file-editor textarea {
+    min-height: 420px;
+    font-size: 10px;
+  }
+}

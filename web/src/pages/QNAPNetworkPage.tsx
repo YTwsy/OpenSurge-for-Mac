@@ -3,7 +3,7 @@ import { api, request, waitForOperation } from '../api'
 import { PageHeader, SectionTitle } from '../components/Common'
 import type { OperationNotification } from '../components/OperationNotifications'
 import { RemoteManagementCard } from '../components/RemoteManagementCard'
-import type { ControlConfig, NetworkDefaults, Overview } from '../types'
+import type { ConfigFile, ControlConfig, NetworkDefaults, Overview } from '../types'
 import { t } from '../i18n'
 
 type QNAPHostRoutingStatus = {
@@ -32,14 +32,19 @@ export function QNAPNetworkPage({
   onNotify: (notification: OperationNotification) => void
 }) {
   const [draft, setDraft] = useState<ControlConfig | null>(null)
+  const [configFile, setConfigFile] = useState<ConfigFile | null>(null)
+  const [configFileDraft, setConfigFileDraft] = useState('')
   const [actual, setActual] = useState<NetworkDefaults | null>(null)
   const [hostRouting, setHostRouting] = useState<QNAPHostRoutingStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [lifecycleBusy, setLifecycleBusy] = useState(false)
   const [hostRoutingBusy, setHostRoutingBusy] = useState(false)
+  const [configFileSaving, setConfigFileSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [configFileError, setConfigFileError] = useState('')
+  const [configFileMessage, setConfigFileMessage] = useState('')
 
   const running = overview?.status.gateway === 'running' || overview?.status.gateway === 'degraded'
   const interrupted = overview?.status.runtime_state === 'interrupted'
@@ -48,13 +53,20 @@ export function QNAPNetworkPage({
   const load = async () => {
     setLoading(true)
     setError('')
+    setConfigFileError('')
     try {
-      const [config, network, host] = await Promise.all([
+      const [config, network, host, file] = await Promise.all([
         api.config(),
         api.networkDefaults('same_lan').catch(() => null),
         request<QNAPHostRoutingStatus>('/api/v1/qnap-host-routing').catch(() => null),
+        api.configFile().catch(cause => {
+          setConfigFileError(cause instanceof Error ? cause.message : String(cause))
+          return null
+        }),
       ])
       setDraft(config)
+      setConfigFile(file)
+      setConfigFileDraft(file?.content ?? '')
       setActual(network)
       setHostRouting(host)
     } catch (cause) {
@@ -71,7 +83,7 @@ export function QNAPNetworkPage({
   }
 
   const runLifecycle = async () => {
-    if (lifecycleBusy || saving || (!running && !stopped && !interrupted)) return
+    if (lifecycleBusy || saving || configFileSaving || (!running && !stopped && !interrupted)) return
     setLifecycleBusy(true)
     setError('')
     setMessage('')
@@ -119,7 +131,7 @@ export function QNAPNetworkPage({
   }
 
   const saveRuntime = async () => {
-    if (!draft || saving || lifecycleBusy) return
+    if (!draft || saving || configFileSaving || lifecycleBusy) return
     setSaving(true)
     setError('')
     setMessage('')
@@ -163,6 +175,61 @@ export function QNAPNetworkPage({
     }
   }
 
+  const saveConfigFile = async () => {
+    if (!configFile || configFileSaving || saving || lifecycleBusy || configFileDraft === configFile.content) return
+    if (running && !window.confirm(t('保存配置文件会短暂停止并重新启动网关；保存前会先做完整校验。继续吗？'))) return
+    setConfigFileSaving(true)
+    setConfigFileError('')
+    setConfigFileMessage('')
+    let gatewayNeedsRestore = false
+    let restartedGateway = false
+    try {
+      if (running) {
+        const stop = await api.gateway('stop')
+        await waitForOperation(stop.id)
+        gatewayNeedsRestore = true
+      }
+
+      const saved = await api.saveConfigFile(configFileDraft, configFile.revision)
+      const reread = await api.configFile()
+      if (saved.revision !== reread.revision) throw new Error(t('配置文件保存后的版本校验失败，请重新读取后再试。'))
+      setConfigFile(reread)
+      setConfigFileDraft(reread.content)
+
+      if (gatewayNeedsRestore) {
+        const start = await api.gateway('start')
+        await waitForOperation(start.id)
+        gatewayNeedsRestore = false
+        restartedGateway = true
+      }
+      setConfigFileMessage(t(restartedGateway ? '配置文件已保存并重新启动网关。' : '配置文件已保存；敏感字段保持不变。'))
+      onNotify({ tone: 'success', title: t('配置文件已保存'), message: t(restartedGateway ? '网关已使用保存后的配置重新启动。' : '已重新读取并确认配置文件版本。') })
+      await Promise.all([load(), Promise.resolve(onChanged())])
+    } catch (cause) {
+      const failure = cause instanceof Error ? cause.message : String(cause)
+      // Restore the gateway after every confirmed stop unless the restart has
+      // already completed. This covers validation failures as well as a
+      // transient post-save read/confirmation failure; the saved candidate is
+      // never replaced by an automatic retry with stale content.
+      if (gatewayNeedsRestore) {
+        try {
+          const start = await api.gateway('start')
+          await waitForOperation(start.id)
+          gatewayNeedsRestore = false
+        } catch (restoreCause) {
+          const restoreFailure = restoreCause instanceof Error ? restoreCause.message : String(restoreCause)
+          setConfigFileError(`${failure}；恢复原网关失败：${restoreFailure}`)
+          onNotify({ tone: 'error', title: t('配置文件保存失败且网关恢复失败'), message: `${failure}；${restoreFailure}` })
+          return
+        }
+      }
+      setConfigFileError(failure)
+      onNotify({ tone: 'error', title: t('保存配置文件失败'), message: failure })
+    } finally {
+      setConfigFileSaving(false)
+    }
+  }
+
   const networkInterface = actual?.snapshot.interface || draft?.gateway.interface || overview?.status.interface || 'eth0'
   const networkIPv4 = actual?.snapshot.ipv4 || draft?.gateway.lan_ip || overview?.status.lan_ip || '—'
   const networkCIDR = actual?.snapshot.ipv4
@@ -175,7 +242,7 @@ export function QNAPNetworkPage({
       eyebrow="QNAP NETWORK"
       title="QNAP 网关网络"
       description="物理网卡、QNET、静态 IP、CIDR 与主路由在创建容器时确定；宿主机接管使用独立策略路由，不修改 QTS 保存的默认网关。"
-      action={<button id="gateway-control" className={running ? 'danger' : 'primary'} type="button" disabled={lifecycleBusy || saving || (!running && !stopped && !interrupted)} onClick={() => void runLifecycle()}>{t(lifecycleBusy ? '正在执行…' : interrupted ? '安全清理旧状态' : running ? '停止网关' : '启动网关')}</button>}
+      action={<button id="gateway-control" className={running ? 'danger' : 'primary'} type="button" disabled={lifecycleBusy || saving || configFileSaving || (!running && !stopped && !interrupted)} onClick={() => void runLifecycle()}>{t(lifecycleBusy ? '正在执行…' : interrupted ? '安全清理旧状态' : running ? '停止网关' : '启动网关')}</button>}
     />
 
     {interrupted && <div className="notice warn" role="status"><strong>{t('检测到上一次容器或 NAS 重启留下的运行状态。')}</strong><p>{t('先执行安全清理；QNAP 版不会触碰宿主 QTS 保存的默认网关。')}</p></div>}
@@ -256,10 +323,32 @@ export function QNAPNetworkPage({
       </div>
 
       <div className="source-actions">
-        <button type="button" onClick={() => void load()} disabled={saving || lifecycleBusy}>{t('重新读取')}</button>
-        <button className="primary" type="button" onClick={() => void saveRuntime()} disabled={saving || lifecycleBusy}>{saving ? t('正在保存…') : t(running ? '保存并重启网关' : '保存运行参数')}</button>
+        <button type="button" onClick={() => void load()} disabled={saving || configFileSaving || lifecycleBusy}>{t('重新读取')}</button>
+        <button className="primary" type="button" onClick={() => void saveRuntime()} disabled={saving || configFileSaving || lifecycleBusy}>{saving ? t('正在保存…') : t(running ? '保存并重启网关' : '保存运行参数')}</button>
       </div>
     </section>}
+
+    <section className="section qnap-config-file-section">
+      <SectionTitle title="配置文件编辑器" subtitle="编辑 OpenSurge 自己管理的 /data/config/opensurge.yaml；保存前执行完整配置校验。" />
+      {configFile ? <>
+        <div className="qnap-config-file-meta"><code>{configFile.path}</code><span>{t('版本')} {configFile.revision.slice(0, 12)}</span></div>
+        <div className="notice warn">
+          <strong>{t('高级功能：请确认后再保存')}</strong>
+          <p>{t('编辑器只接受 OpenSurge 配置格式。mihomo.secret 与 upstream_proxy.password 只显示为 <redacted>，保存时保留原值；二进制、运行目录、订阅文件和设备策略文件路径不能通过此处更换。')}</p>
+        </div>
+        {configFileError && <div className="notice warn" role="alert"><strong>{t('配置文件操作未完成')}</strong><p>{configFileError}</p></div>}
+        {configFileMessage && <div className="ok-notice" role="status"><strong>{t('配置文件操作完成')}</strong><p>{configFileMessage}</p></div>}
+        <label className="qnap-config-file-editor">
+          <span>{t('OpenSurge 配置文件内容')}</span>
+          <textarea aria-label={t('OpenSurge 配置文件内容')} spellCheck={false} rows={28} value={configFileDraft} disabled={configFileSaving || saving || lifecycleBusy} onChange={event => setConfigFileDraft(event.target.value)} />
+        </label>
+        <p className="muted">{t('当前文件版本：{{revision}}。如果其他页面或进程先修改了它，保存会被拒绝并要求重新读取。', { revision: configFile.revision })}</p>
+        <div className="source-actions">
+          <button type="button" disabled={configFileSaving || saving || lifecycleBusy} onClick={() => void load()}>{t('重新读取文件')}</button>
+          <button className="primary" type="button" disabled={configFileSaving || saving || lifecycleBusy || configFileDraft === configFile.content} onClick={() => void saveConfigFile()}>{configFileSaving ? t('正在保存配置文件…') : t(running ? '保存配置文件并重启' : '保存配置文件')}</button>
+        </div>
+      </> : <div className="empty">{configFileError || t('配置文件编辑器暂不可用')}</div>}
+    </section>
 
     <RemoteManagementCard />
 

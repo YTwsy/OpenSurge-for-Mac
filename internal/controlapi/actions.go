@@ -40,6 +40,7 @@ type ConfigurationRunner interface {
 	ApplyProfile(context.Context, string, string, []byte, string, string) (ProfileApplyResult, error)
 	ApplyDevicePolicy(context.Context, string, string, []byte) (string, error)
 	ApplyControlConfig(context.Context, string, string, []byte) (string, error)
+	ApplyConfigFile(context.Context, string, string, []byte) (string, error)
 	ApplyTailscale(context.Context, string, string, []byte) (ProfileApplyResult, error)
 	ForgetTailscaleIdentity(context.Context, string, string) (string, error)
 }
@@ -175,6 +176,11 @@ func (c HelperClient) ApplyDevicePolicy(ctx context.Context, configPath, revisio
 
 func (c HelperClient) ApplyControlConfig(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
 	response, err := c.call(ctx, HelperRequest{Action: "config-apply-control", ConfigPath: configPath, Revision: revision, Payload: payload})
+	return response.Revision, err
+}
+
+func (c HelperClient) ApplyConfigFile(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "config-apply-file", ConfigPath: configPath, Revision: revision, Payload: payload})
 	return response.Revision, err
 }
 
@@ -322,7 +328,7 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 	if err == nil {
 		err = requireTrustedRuntime(cfg, allowedRoot)
 	}
-	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile" || request.Action == "config-apply-tailscale") {
+	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile" || request.Action == "config-apply-file" || request.Action == "config-apply-tailscale") {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
 	if err == nil && request.Action == "policy-workspace" {
@@ -333,7 +339,7 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 			err = requireTrustedPreparedInputs(cfg, allowedRoot)
 		}
 	}
-	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control" || request.Action == "config-apply-tailscale" || request.Action == "config-forget-tailscale-identity" || policyWorkspacePrepared || (request.Action == "start" && request.Workspace != nil)) {
+	if err == nil && (request.Action == "config-apply-profile" || request.Action == "config-apply-control" || request.Action == "config-apply-file" || request.Action == "config-apply-tailscale" || request.Action == "config-forget-tailscale-identity" || policyWorkspacePrepared || (request.Action == "start" && request.Workspace != nil)) {
 		err = requireTrustedDirectory(filepath.Join(filepath.Dir(configPath), "data"), allowedRoot)
 	}
 	if err == nil && request.Action == "config-apply-device-policy" {
@@ -465,6 +471,8 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)
 		case "config-apply-control":
 			response.Revision, err = runner.ApplyControlConfig(ctx, configPath, request.Revision, request.Payload)
+		case "config-apply-file":
+			response.Revision, err = runner.ApplyConfigFile(ctx, configPath, request.Revision, request.Payload)
 		case "config-apply-tailscale":
 			result, applyErr := runner.ApplyTailscale(ctx, configPath, request.Revision, request.Payload)
 			response.Revision, response.Reloaded, err = result.Revision, result.Reloaded, applyErr
@@ -533,7 +541,7 @@ func reconcilePreparedPolicyEngine(allowedRoot string) error {
 
 func helperActionAllowed(action string) bool {
 	switch action {
-	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "config-apply-tailscale", "config-forget-tailscale-identity", "sleep-prevention-hold", "policy-workspace", "policy-workspace-hold":
+	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "config-apply-file", "config-apply-tailscale", "config-forget-tailscale-identity", "sleep-prevention-hold", "policy-workspace", "policy-workspace-hold":
 		return true
 	default:
 		return false
