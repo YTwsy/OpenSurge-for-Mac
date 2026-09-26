@@ -88,6 +88,9 @@ transparent:
 local_system_proxy:
   enabled: %t
 
+local_system_dns:
+  enabled: %t
+
 upstream_proxy:
   enabled: %t
   name: %s
@@ -113,6 +116,7 @@ runtime:
 		q(cfg.Transparent.Mode), q(cfg.Transparent.TUNDevice), q(cfg.Transparent.TUNStack), cfg.Transparent.TUNAutoRoute, cfg.Transparent.TUNAutoDetectInterface, cfg.Transparent.TUNStrictRoute,
 		q(cfg.Transparent.TUNIPv6), cfg.Transparent.IPv6SharedL2Ready, q(cfg.Transparent.IPv6PacketBrokerBinary), cfg.Transparent.IPv6PacketMTU,
 		cfg.LocalSystemProxy.Enabled,
+		cfg.LocalSystemDNS.Enabled,
 		cfg.UpstreamProxy.Enabled, q(cfg.UpstreamProxy.Name), q(cfg.UpstreamProxy.Type), q(cfg.UpstreamProxy.Server), cfg.UpstreamProxy.Port, q(cfg.UpstreamProxy.Username), q(cfg.UpstreamProxy.Password), q(cfg.UpstreamProxy.MatchDomain),
 		q(cfg.Runtime.Dir),
 	)

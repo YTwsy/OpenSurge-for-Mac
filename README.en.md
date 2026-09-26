@@ -306,6 +306,14 @@ Failure gives the process a short cleanup window, rolls back the gateway
 runtime, and enriches the actual TUN error with the selected route interface
 and gateway. Two full-route TUNs are not supported by default.
 
+Mac IPv6 TUN routing works independently of downstream takeover. TUN captures
+public IPv6 and the full fake IPv6 pool; `dns.ipv6` only controls AAAA answers.
+`local_system_dns.enabled` defaults to true and manages the upstream network
+service's DNS after automatic TUN routes are ready. Stop and engine restart
+restore the original DNS while preserving external changes. Disable it with
+the Web GUI's “Mac system DNS” setting. Imported profiles must use explicit
+DNS resolvers: `system` would create a resolver loop and is rejected.
+
 ### Downstream IPv6 takeover (experimental)
 
 The Network page exposes two independent controls. `dns.ipv6` decides whether

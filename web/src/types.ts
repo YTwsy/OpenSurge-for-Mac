@@ -15,6 +15,8 @@ export type GatewayStatus = {
   ipv4_takeover: TakeoverState
   ipv6_takeover: TakeoverState
   dns_ipv6: boolean
+  mac_tun_ipv6?: string
+  mac_system_dns?: string
   tun_ipv6_requested: 'off' | 'auto' | 'always'
   ipv6_packet: 'disabled' | 'stopped' | 'ready' | 'failed'
   native_ipv6_available: boolean
@@ -106,6 +108,7 @@ export type ControlConfig = {
   mihomo: { store_fake_ip: boolean }
   transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }
+  local_system_dns?: { enabled: boolean }
   device_policy: { enabled: boolean; protected_ipv4: string[] }
 }
 
