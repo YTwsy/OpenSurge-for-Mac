@@ -25,7 +25,7 @@ diff --git a/config/config.go b/config/config.go
 +
 @@ -1665 +1675,4 @@ func parseIPV6(rawCfg *RawConfig) {
 -	if !rawCfg.IPv6 || !verifyIP6() {
-+	// OpenSurge's userspace packet listener is an IPv6 data plane in its own
-+	// right. DNS IPv6 is also an explicit operator choice. Neither must be
-+	// erased merely because the macOS host lacks a native IPv6 address.
-+	if !rawCfg.IPv6 || (!rawCfg.DNS.IPv6 && !hasOpenSurgePacketListener(rawCfg.Listeners) && !verifyIP6()) {
++	// OpenSurge's packet listener, DNS IPv6 and an explicit host TUN address
++	// are independent IPv6 choices. Do not erase them merely because the
++	// macOS host lacks a native IPv6 address.
++	if !rawCfg.IPv6 || (!rawCfg.DNS.IPv6 && !(rawCfg.Tun.Enable && len(rawCfg.Tun.Inet6Address) > 0) && !hasOpenSurgePacketListener(rawCfg.Listeners) && !verifyIP6()) {

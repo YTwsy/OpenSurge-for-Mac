@@ -204,10 +204,16 @@ func (m Manager) waitForTUN(pid int, timeout time.Duration) error {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 		state, err := FetchTUNRuntimeState(ctx, m.cfg)
-		cancel()
 		if err == nil && state.Enabled {
-			return nil
+			if m.cfg.Transparent.TUNAutoRoute {
+				err = macosnetwork.VerifyMacTUNRoutes(ctx, state.Device)
+			}
+			if err == nil {
+				cancel()
+				return nil
+			}
 		}
+		cancel()
 		if err != nil {
 			lastErr = err
 		}

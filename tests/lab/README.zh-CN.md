@@ -98,6 +98,12 @@ guest helper 必须收到所选 URL，每条门槛也会打印实际探针。如
 guest 却访问另一个域名，应归类为 Lab 参数传递错误，而不是产品数据路径结果。保留原始
 失败 artifact，并用已验证的地区端点重跑；不要把公共站点超时直接判定为网关回归。
 
+如果受控 HTTP CONNECT 夹具的公网出口也不稳定，可设置
+`OMG_LAB_EGRESS_HTTP_PROXY=<LAN 地址>:<端口>`，让该夹具通过一个已预检可用的
+局域网 HTTP CONNECT 代理出站。这个选项只影响受控代理的上游；客户端仍无显式代理，
+Mac DNS 验收仍要求系统代理关闭，DIRECT 分支也仍需直连所选 HTTPS 端点。
+报告应记录该选项，不能据此宣称测试了受控代理的原生直连出口。
+
 `lab-up` 会启动没有 DHCP 的 host network 和两个客户端。`lab-test` 会构建当前
 网关，用生成的 lab 配置启动它，刷新两个客户端租约，检查路由、DNS、ICMP/NAT、
 直连 HTTPS，以及通过 mihomo `mixed-port` 的显式 HTTPS，然后验证清理结果。

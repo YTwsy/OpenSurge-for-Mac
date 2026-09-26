@@ -32,6 +32,8 @@ type Status struct {
 	IPv6Takeover        string `json:"ipv6_takeover"`
 	ClientCount         int    `json:"client_count"`
 	DNSIPv6             bool   `json:"dns_ipv6"`
+	MacTUNIPv6          string `json:"mac_tun_ipv6"`
+	MacSystemDNS        string `json:"mac_system_dns"`
 	TUNIPv6Requested    string `json:"tun_ipv6_requested"`
 	IPv6Packet          string `json:"ipv6_packet"`
 	NativeIPv6Available bool   `json:"native_ipv6_available"`
@@ -167,11 +169,42 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		IPv6Takeover:        ipv6Takeover,
 		ClientCount:         len(clients),
 		DNSIPv6:             dnsIPv6,
+		MacTUNIPv6:          macTUNIPv6Status(state, exists, runtimeState, tunStatus),
+		MacSystemDNS:        macSystemDNSStatus(state, exists, runtimeState),
 		TUNIPv6Requested:    tunIPv6Requested,
 		IPv6Packet:          ipv6PacketStatus,
 		NativeIPv6Available: nativeIPv6Available,
 		IPv6Reason:          ipv6Reason,
 	}, nil
+}
+
+func macTUNIPv6Status(state runtime.State, exists bool, runtimeState, tun string) string {
+	if !exists {
+		return "stopped"
+	}
+	if runtimeState == "interrupted" {
+		return "interrupted"
+	}
+	if !state.MacTUNIPv6 {
+		return "unknown"
+	}
+	return tun
+}
+
+func macSystemDNSStatus(state runtime.State, exists bool, runtimeState string) string {
+	if !exists {
+		return "stopped"
+	}
+	if state.LocalSystemDNS == nil {
+		return "unmanaged"
+	}
+	if runtimeState == "interrupted" {
+		return "interrupted"
+	}
+	if !state.LocalSystemDNS.VerifiedAt.IsZero() {
+		return "applied_at_start"
+	}
+	return "unverified"
 }
 
 func deriveIPv4Takeover(gatewayStatus, runtimeState, pfStatus, forwarding string) string {
@@ -268,6 +301,8 @@ func (s Status) Format() string {
 		fmt.Sprintf("mihomo: %s", s.Mihomo),
 		fmt.Sprintf("TUN: %s", tunLabel),
 		fmt.Sprintf("IPv6 DNS queries: %t", s.DNSIPv6),
+		fmt.Sprintf("Mac IPv6 TUN: %s", s.MacTUNIPv6),
+		fmt.Sprintf("Mac system DNS: %s", s.MacSystemDNS),
 		fmt.Sprintf("IPv6 packet path: requested=%s state=%s (%s)", s.TUNIPv6Requested, s.IPv6Packet, s.IPv6Reason),
 		fmt.Sprintf("pf anchor: %s", s.PFAnchor),
 		fmt.Sprintf("IP forwarding: %s", s.Forwarding),

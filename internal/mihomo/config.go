@@ -58,12 +58,11 @@ tun:
   auto-route: {{ .TUNAutoRoute }}
   auto-detect-interface: {{ .TUNAutoDetectInterface }}
   strict-route: {{ .TUNStrictRoute }}
-{{- if .TUNIPv6Enabled }}
   inet6-address:
     - {{ .TUNIPv6Address }}
-{{- end }}
   dns-hijack:
     - any:53
+    - tcp://any:53
 {{- if .TUNRouteAddresses }}
   route-address:
 {{ .TUNRouteAddresses }}
@@ -158,6 +157,10 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err := resolveDevicePolicy(&cfg, imported); err != nil {
 		return templateData{}, err
 	}
+	dnsResolverFields, err = coordinateDNSResolvers(cfg, dnsResolverFields)
+	if err != nil {
+		return templateData{}, err
+	}
 	policySections, err := renderPolicySections(cfg, imported)
 	if err != nil {
 		return templateData{}, err
@@ -167,7 +170,7 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err != nil {
 		return templateData{}, fmt.Errorf("resolve IPv6 packet socket: %w", err)
 	}
-	tunRouteAddresses := renderTailscaleRouteAddresses(cfg, lanPrefix)
+	tunRouteAddresses := renderTUNRouteAddresses(cfg, lanPrefix)
 	return templateData{
 		MihomoConfig:           cfg.Mihomo,
 		TUNEnabled:             transparent.TUNEnabled(),
@@ -178,7 +181,7 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 		TUNStrictRoute:         transparent.TUNStrictRoute,
 		TUNRouteAddresses:      tunRouteAddresses,
 		TUNCustomRoutes:        tunRouteAddresses != "",
-		IPv6Enabled:            cfg.DNS.IPv6 || transparent.TUNIPv6 != config.TUNIPv6Off,
+		IPv6Enabled:            cfg.DNS.IPv6 || transparent.TUNEnabled(),
 		TUNIPv6Enabled:         transparent.TUNIPv6 != config.TUNIPv6Off,
 		TUNIPv6Address:         config.MihomoTUNIPv6,
 		UpstreamInterface:      cfg.Gateway.UpstreamInterface,

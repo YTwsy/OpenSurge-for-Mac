@@ -63,6 +63,12 @@ vsock SSH 回退到 usernet forwarder 并进入 `READY`；不要只因为这段�
 
 Lab 环境问题必须与数据面失败分开记录：
 
+- 公网 HTTPS 应先选择当前网络能无代理直连的 `OMG_LAB_TEST_URL`，再在门槛中
+  保持该目标一致。受控 CONNECT 夹具可用 `OMG_LAB_EGRESS_HTTP_PROXY=host:port`
+  指定已预检可达的 LAN 代理上游；它不改变客户端、系统 DNS 或 DIRECT 分支，
+  也不能作为受控代理原生直连出口的证据。公网站点和外部 DNS 的可达性不能替代
+  或否定已观测到的本地路由、身份和受控 HTTP/3 证据。
+
 - 启动和清理会把 guest `/etc/resolv.conf` 恢复到 Lima 控制网关，并保证本机
   hostname 可解析。如果 provisioning 报 `sudo: unable to resolve host` 或仍向已停止的
   `192.168.50.1` 查询，先运行 guest helper 的 `restore-control`，不要把它算作
@@ -431,14 +437,16 @@ LAN IPv4。`make test`、`make web-test` 或 `make policy-control-test` 都不�
 
 该门槛同时启用 `dns.ipv6: true`。无原生上游 IPv6 时，它向 TEST-NET-1
 发送受控 fake-AAAA TCP 与 QUIC 探针，证明流量以 `DEFAULT-TUN`、
-`fdfe:dcba:9876::1` 命中 `open-surge/mac-mode-*`：Rule 继续到导入规则，
+`fdfe:dcba:9877::1` 命中 `open-surge/mac-mode-*`：Rule 继续到导入规则，
 Direct 命中 `DIRECT`，Global 的 TCP 走所选出口而 HTTP-only UDP 明确命中
 `REJECT`。生成配置还必须只包含
-`DEFAULT-TUN + fdfe:dcba:9876::1/128`，不得扩大到 fake-IP `/64`、
+`DEFAULT-TUN + fdfe:dcba:9877::1/128`，不得扩大到 fake-IP `/64`、
 下游 `/64`、`fc00::/7` 或 `opensurge-ipv6`。再结合下游 IPv6 门槛中
 `opensurge-ipv6` / `IN-USER` 仍保持设备策略的证据，才能完成本机与下游隔离结论。
 该门槛默认从固定源码构建并使用发布同源的 patched Mihomo；不要退回 Lab 引导用的
 上游 `v1.19.27`，后者在纯 IPv4 Mac 上不会为这条门槛合成 fake-AAAA。
+
+本机模式门槛同时用 macOS `getaddrinfo` 解析随机新域名，要求 fake A/AAAA、系统代理关闭、UDP/TCP DNS 捕获、代理引擎重启后再次接管和停止恢复原 DNS。详见 [Mac 系统 DNS 与 IPv6 TUN](local-system-dns-coordination.md)。
 
 ## 每设备策略门槛
 

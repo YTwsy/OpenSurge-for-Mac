@@ -309,6 +309,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("local_system_proxy.enabled must be a boolean")
 		}
 		cfg.LocalSystemProxy.Enabled = enabled
+	case "local_system_dns.enabled":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("local_system_dns.enabled must be a boolean")
+		}
+		cfg.LocalSystemDNS.Enabled = enabled
 	case "upstream_proxy.enabled":
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {

@@ -373,6 +373,7 @@ write_config() {
     -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
     -e "s|__DNS_IPV6__|$(sed_escape "$dns_ipv6")|g" \
     -e "s|__TUN_IPV6__|$(sed_escape "$tun_ipv6")|g" \
+    -e "s|__LOCAL_SYSTEM_DNS__|$([[ "$gateway_mode" == isolated_lan ]] && echo true || echo false)|g" \
     -e "s|__IPV6_SHARED_L2_READY__|$(sed_escape "$ipv6_shared_l2_ready")|g" \
     -e "s|__IPV6_PACKET_BROKER_BINARY__|$(sed_escape "$ipv6_packet_binary")|g" \
     -e "s|__TRANSPARENT_MODE__|$(sed_escape "$transparent_mode")|g" \
@@ -766,6 +767,8 @@ collect_artifacts() {
     policy-workspace-start.log \
     device-policy.applied.evidence.json \
     state.evidence.json \
+    mac-system-dns-snapshot.json \
+    mac-system-dns-resolution.json \
     device-policies.json \
     device-policies-after-reload.json \
     connection-refresh-before.json \
@@ -1237,6 +1240,7 @@ start_egress_probe() {
   "$EGRESS_PROBE_BINARY" \
     --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
     --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
+    --upstream-http-proxy "${OMG_LAB_EGRESS_HTTP_PROXY:-}" \
     --upstream-interface "$(upstream_interface)" \
     --upstream-resolver "1.1.1.1:53" \
     --mapped-target "$CONNECTION_REFRESH_TEST_HOST:443" \
@@ -3205,7 +3209,7 @@ run_local_routing_assertions() {
 
 run_local_routing_ipv6_tcp() {
   local mode=$1 action=$2 source_ip fake_ip first_line output
-  source_ip="fdfe:dcba:9876::1"
+  source_ip="fdfe:dcba:9877::1"
   output="$STATE_DIR/local-routing-$mode-ipv6-tcp.out"
   fake_ip="$(dig +time=5 +tries=1 +short @127.0.0.1 -p "$CONFIG_DNS_PORT" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
   [[ -n "$fake_ip" ]] || { echo "local-routing Lab did not receive a fake-AAAA address" >&2; exit 1; }
@@ -3220,9 +3224,51 @@ run_local_routing_ipv6_tcp() {
   wait_for_local_ipv6_log_after TCP "$source_ip" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" 443 "$action" "$first_line"
 }
 
+# getaddrinfo uses macOS's system resolver. This complements the explicit
+# dig/--resolve packet probes and catches a router DNS path that bypasses TUN.
+assert_mac_system_dns() {
+  sudo -n /usr/bin/ruby -rjson -e '
+    snapshot = JSON.parse(File.read(ARGV[0])).fetch("local_system_dns")
+    abort "DNS write intent missing" unless snapshot.fetch("owned")
+    puts JSON.pretty_generate(snapshot)
+  ' "$STATE_DIR/state.json" >"$STATE_DIR/mac-system-dns-snapshot.json"
+  /usr/bin/ruby -rjson -rsocket -rsecurerandom -ropen3 -e '
+    snapshot = JSON.parse(File.read(ARGV[0]))
+    service = snapshot.fetch("network_service")
+    dns, status = Open3.capture2("/usr/sbin/networksetup", "-getdnsservers", service)
+    abort "system DNS not managed" unless status.success? && dns.strip == "114.114.114.114"
+    %w[-getwebproxy -getsecurewebproxy].each do |command|
+      output, status = Open3.capture2("/usr/sbin/networksetup", command, service)
+      abort "system proxy must be off during DNS acceptance" unless status.success? && output.include?("Enabled: No")
+    end
+    host = "mac-dns-#{SecureRandom.hex(6)}.opensurge.test"
+    addresses = Addrinfo.getaddrinfo(host, nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM).map(&:ip_address).uniq
+    abort "system resolver missed fake A" unless addresses.any? { |a| a.start_with?("198.18.") }
+    abort "system resolver missed fake AAAA" unless addresses.any? { |a| a.start_with?("fdfe:dcba:9876:") }
+    puts JSON.pretty_generate({host: host, resolver: "macOS getaddrinfo", system_proxy: false, addresses: addresses})
+  ' "$STATE_DIR/mac-system-dns-snapshot.json" >"$STATE_DIR/mac-system-dns-resolution.json"
+  # Both DNS transports must enter Mihomo, even when sent to the public
+  # capture address. These do not replace the system-resolver assertion above.
+  dig +time=3 +tries=1 +short @114.114.114.114 "$LOCAL_ROUTING_IPV6_HTTP3_HOST" A | grep -q '^198\.18\.'
+  dig +tcp +time=3 +tries=1 +short @114.114.114.114 "$LOCAL_ROUTING_IPV6_HTTP3_HOST" AAAA | grep -q '^fdfe:dcba:9876:'
+  echo "Mac system resolver returned fake A/AAAA with system proxy disabled; UDP/TCP DNS capture passed"
+}
+
+assert_mac_system_dns_restored() {
+  /usr/bin/ruby -rjson -ropen3 -e '
+    snapshot = JSON.parse(File.read(ARGV[0]))
+    service = snapshot.fetch("network_service")
+    output, status = Open3.capture2("/usr/sbin/networksetup", "-getdnsservers", service)
+    abort "cannot read restored DNS" unless status.success?
+    servers = output.start_with?("There aren") ? [] : output.lines.map(&:strip)
+    abort "original system DNS was not restored" unless servers == (snapshot["servers"] || [])
+    puts "Original Mac system DNS restored"
+  ' "$STATE_DIR/mac-system-dns-snapshot.json"
+}
+
 run_local_routing_ipv6_http3() {
   local mode=$1 action=$2 source_ip fake_ip first_line request_path origin_log output
-  source_ip="fdfe:dcba:9876::1"
+  source_ip="fdfe:dcba:9877::1"
   request_path="/local-mac-$mode"
   origin_log="$STATE_DIR/egress/http3-origin.log"
   output="$STATE_DIR/local-routing-$mode-ipv6-http3.out"
@@ -3383,10 +3429,9 @@ run_test() {
   require_cached_sudo
   ensure_lab_state_writable
   echo "Lab public HTTPS probe: $TEST_URL"
-  if [[ "$LOCAL_ROUTING_TEST" == "true" && -z "${OMG_LAB_MIHOMO_BINARY:-}" ]]; then
-    # The local IPv6 identity assertions require fake-AAAA support from the
-    # same patched Mihomo line shipped by OpenSurge. The bootstrap v1.19.27
-    # Lab binary does not synthesize fake IPv6 on an IPv4-only Mac.
+  if [[ "$mode" == "tun" && -z "${OMG_LAB_MIHOMO_BINARY:-}" ]]; then
+    # Host IPv6 is independent of native upstream availability, so every TUN
+    # gate uses the same patched core shipped by OpenSurge.
     build_ipv6_lab_binaries
     OMG_LAB_MIHOMO_BINARY="$PATCHED_MIHOMO_BINARY"
   fi
@@ -3452,12 +3497,15 @@ run_test() {
 
   if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
     grep -Fq 'fake-ip-range6: fdfe:dcba:9876::/64' "$STATE_DIR/mihomo.yaml"
-    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp' "$STATE_DIR/mihomo.yaml"
-    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp' "$STATE_DIR/mihomo.yaml"
+    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp' "$STATE_DIR/mihomo.yaml"
+    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp' "$STATE_DIR/mihomo.yaml"
     if grep -F 'open-surge/mac-mode-' "$STATE_DIR/mihomo.yaml" | grep -Eq 'fdfe:dcba:9876::/64|fdfe:dcba:9878::/64|fc00::/7|IN-NAME,opensurge-ipv6'; then
       echo "local Mac routing rules captured a broad or downstream IPv6 identity" >&2
       exit 1
     fi
+    assert_mac_system_dns
+    sudo -n "$BINARY" restart-mihomo --config "$CONFIG"
+    assert_mac_system_dns
   fi
 
   for client in $CLIENTS; do
@@ -3512,6 +3560,9 @@ run_test() {
   restore_client_control_dns
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
+  if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
+    assert_mac_system_dns_restored
+  fi
   if [[ "$egress_probe_started" == 1 ]]; then
     stop_egress_probe
     egress_probe_started=0
