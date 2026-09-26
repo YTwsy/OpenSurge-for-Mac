@@ -473,6 +473,12 @@ selector 隔离；同时要求设备默认 selector 指向 HTTP-only outbound �
 API 刷新该设备连接。第一台设备的旧连接必须消失，第二台设备连接必须保留，第一台设备
 随后建立的新连接必须使用当前 selector。
 
+共享策略组刷新场景先保持第一台设备的独立出口，让第二台 `inherit_global` 设备和
+Mac 的 loopback 显式代理连接共同经过 `LabShared`。切换节点本身必须保留旧连接；随后
+调用策略组刷新 API，要求 Mac 与第二台设备的匹配连接消失，第一台设备使用同一叶子
+节点的连接 ID 保持不变，Mac 和第二台设备重连后均出现新节点。它证明共享组作用域和
+下游 TUN 的连接关闭行为；Mac 部分使用 mixed-port，不代替本机 TUN 身份门槛。
+
 大型 rule-provider、模板与 domain/IP/protocol/port 组合只改变配置编译时，
 `make test` 提供相应覆盖；不需要为每条操作者定义的规则运行 Lab。系统 TUN 的设备
 身份边界是 MAC 绑定 IPv4 DHCP reservation 加 IPv4 `SRC-IP-CIDR`；下游 IPv6 则由

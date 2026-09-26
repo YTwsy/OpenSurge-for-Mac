@@ -11,6 +11,9 @@ export type ConnectionRefreshSuggestion = {
 } | {
   scope: 'device'
   deviceID: string
+} | {
+  scope: 'policy_group'
+  group: string
 })
 
 export type ConnectionRefreshSuggestionItem = ConnectionRefreshSuggestion & { id: number }
@@ -50,7 +53,9 @@ function ConnectionRefreshPrompt({ suggestion, onDismiss, onRefreshed }: {
     try {
       const response = suggestion.scope === 'gateway_local'
         ? await api.refreshLocalConnections()
-        : await api.refreshDeviceConnections(suggestion.deviceID)
+        : suggestion.scope === 'policy_group'
+          ? await api.refreshPolicyConnections(suggestion.group)
+          : await api.refreshDeviceConnections(suggestion.deviceID)
       setResult(response.closed_connections > 0
         ? t('已关闭 {{count}} 个连接，等待客户端建立新连接。', { count: response.closed_connections })
         : t('当前没有需要刷新的连接。'))
@@ -69,10 +74,14 @@ function ConnectionRefreshPrompt({ suggestion, onDismiss, onRefreshed }: {
       : t('{{name}} 的出口已切换', { name: suggestion.subject })
   const explanation = suggestion.scope === 'gateway_local'
     ? t('新连接将使用“{{selection}}”；已有连接可能继续使用原链路。刷新会关闭 Mac 本机当前由 OpenSurge 管理的连接，下载、通话等可能中断。', { selection: suggestion.selection })
-    : t('新连接将使用“{{selection}}”；已有连接可能继续使用原链路。刷新会关闭这台设备当前由 OpenSurge 管理的连接，下载、通话等可能中断。', { selection: suggestion.selection })
+    : suggestion.scope === 'policy_group'
+      ? t('经过此策略组的新连接将使用“{{selection}}”；已有连接可能继续使用原链路。刷新会关闭 Mac 本机及下游设备当前经过此组的连接，包括跟随网关规则或通过其他策略引用此组的设备。已使用新出口的连接也会关闭，下载、通话等可能中断。', { selection: suggestion.selection })
+      : t('新连接将使用“{{selection}}”；已有连接可能继续使用原链路。刷新会关闭这台设备当前由 OpenSurge 管理的连接，下载、通话等可能中断。', { selection: suggestion.selection })
   const refreshLabel = suggestion.scope === 'gateway_local'
     ? t('刷新 Mac 本机连接')
-    : t('刷新 {{name}} 连接', { name: suggestion.subject })
+    : suggestion.scope === 'policy_group'
+      ? t('刷新经过此策略组的连接')
+      : t('刷新 {{name}} 连接', { name: suggestion.subject })
 
   return <section className={`connection-refresh-prompt ${state}`} role={state === 'error' ? 'alert' : 'status'}>
     <div className="connection-refresh-prompt-heading">
