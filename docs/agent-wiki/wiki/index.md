@@ -28,6 +28,8 @@
   subnet route、Exit Node 与 outbound-only 边界。
 - [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、SwiftUI 菜单栏
   launcher、本地 API 与恢复状态的职责边界。
+- [桌面宿主迁移](concepts/desktop-host.md)：Next 分支的 Wails 宿主、React 界面复用、
+  独立后台服务与桌面生命周期契约。
 - [合盖运行临时接管](../sources/decisions/lid-closed-sleep-prevention.md)：为什么
   `caffeinate` 不满足合盖需求，以及 Helper lease、ownership marker 和恢复边界。
 - 许可证边界：OpenSurge 自有代码采用 `GPL-3.0-only`；随 pkg 分发的独立组件保留
