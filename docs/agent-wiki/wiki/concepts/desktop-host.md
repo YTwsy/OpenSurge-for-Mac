@@ -10,7 +10,8 @@ installer cutover is complete.
 - Wails owns native windows, the tray icon/popup, single-instance and reopen events,
   login registration, local service discovery, authentication, and desktop exit.
 - The existing React/TypeScript code owns the main control panel. A dedicated React
-  popup will replace the SwiftUI menu-bar view and share frontend types and language.
+  popup at `/desktop-tray` replaces the SwiftUI view inside the preview and shares
+  frontend language, status labels and theme with the main window.
 - The independently managed Go Control Service owns API orchestration, state,
   operations, configuration, and recovery. The root Helper owns privileged actions.
 - Closing a window or losing a WebView must not stop the gateway. Full exit must
@@ -66,6 +67,23 @@ recovery card through a native save panel. Browser file/link behavior remains su
 The preview bundle uses a distinct identifier and build output. Production identity,
 launchd and installer sequencing are a separate migration stage. Development preview
 builds must not register login items or change installed network services on launch.
+
+The menu-bar window uses a separate frontend entry and stylesheet; it does not load
+the main App or start its subscriptions. A native monitor reads the existing
+`/api/v1/menubar` DTO every 15 seconds in the background, every 2 seconds while the
+popup is open, and backs off failures up to 60 seconds. The visible popup reads the
+monitor's private snapshot. Failed reads clear actionable status, including quit
+eligibility, instead of displaying an old healthy result. Network-recovery attention
+takes precedence over stopped/running display; an unchanged prepared recovery card
+does not imply an interrupted network.
+
+Both desktop windows route explicit sleep-prevention changes through the existing
+Control API using one native serialisation boundary shared with menu-bar reads.
+An older read cannot overwrite an acknowledged toggle. Browser requests continue
+to use the Control API directly. Language comes from `ui_preferences`; the popup
+has no independent language preference. Theme follows the same origin's localStorage
+change event. The popup opens from the tray or `⌘⇧M`, dismisses on Escape or focus
+loss, and opens the existing main window for panel/recovery/diagnostic actions.
 
 For native acceptance, `scripts/desktop-smoke-service.py DIR` runs a harmless fixture.
 Launch the preview executable with `--control-dir DIR`; scenario changes and service

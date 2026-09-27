@@ -49,6 +49,22 @@ architectures with `OPENSURGE_DESKTOP_ARCH=arm64 make desktop-build` and
 `OPENSURGE_DESKTOP_ARCH=x86_64 make desktop-build`. Restore the host architecture
 before launching; a successful cross-build does not establish Intel UI behavior.
 
+## Menu-bar popup
+
+Open the native tray popup (or use `⌘⇧M`). Verify its compact layout without the
+main sidebar, focus-loss/Escape dismissal, and panel/network navigation reopening
+the existing main window. Change language and theme in the main window and verify
+the popup follows. Copy the fixture diagnostic summary and check native clipboard
+paste. Toggle sleep prevention once from each window: each click records exactly
+one PUT and the other window must show the acknowledged result.
+
+Set `recovery: true` and `recovery_stage: gateway_stopped_waiting_router_dhcp` in
+the fixture scenario to exercise recovery priority. Use `offline: true` to verify
+unreachable status clears stale values and disables the sleep control; restore it
+and increment `generation` to test reauthentication. With both windows hidden,
+only the native 15-second menu-bar monitor should keep polling; the main-window
+reads and SSE remain stopped. This fixture never wakes or stops an installed service.
+
 The minimum target is macOS 13. Native acceptance on macOS 14 alone must not be
 reported as a macOS 13 runtime test. Installer upgrade and real gateway/network
 acceptance remain separate gates.

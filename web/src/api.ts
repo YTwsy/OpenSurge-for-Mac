@@ -1,6 +1,6 @@
 import type { APIError, ConnectionObservation, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
 import { getOperation, markOperationConnection, operationStatusUnknownMessage, recordOperation } from './operations'
-import { desktopHeaders } from './desktop'
+import { desktopAction, desktopHeaders, isDesktop } from './desktop'
 import { t } from './i18n'
 import { watchVisibleRefresh } from './visibility'
 
@@ -49,7 +49,9 @@ export const api = {
   networkDefaults: (mode: NetworkDefaults['mode']) => request<NetworkDefaults>(`/api/v1/network/defaults?mode=${encodeURIComponent(mode)}`),
   saveConfig: (config: ControlConfig) => request<ControlConfig>('/api/v1/config', { method: 'PUT', headers: { 'If-Match': `"${config.revision}"` }, body: JSON.stringify(config) }),
   gateway: (action: 'start' | 'stop' | 'reload' | 'restart-mihomo') => trackedRequest<Operation>(action, `/api/v1/gateway/${action}`, { method: 'POST' }, true),
-  setSleepPrevention: (enabled: boolean) => request<SleepPreventionStatus>('/api/v1/sleep-prevention', { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  setSleepPrevention: (enabled: boolean) => isDesktop()
+    ? desktopAction<SleepPreventionStatus>('sleep-prevention', { enabled })
+    : request<SleepPreventionStatus>('/api/v1/sleep-prevention', { method: 'PUT', body: JSON.stringify({ enabled }) }),
   setUIPreferences: (preferences: Pick<UIPreferences, 'language'>) => request<UIPreferences>('/api/v1/ui-preferences', { method: 'PUT', body: JSON.stringify(preferences) }),
   operation: (id: string) => operationStatusRequest<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`),
   operations: () => operationStatusRequest<{ operations: Operation[] }>('/api/v1/operations'),

@@ -34,8 +34,11 @@ launch or **View → Show Main Window** preserves its state. `⌘Q` exits the pr
 
 Native menus follow the UI language. HTTP(S) links open in the system browser;
 confirmation, clipboard and recovery-card saving use macOS facilities. Recurring
-reads and SSE pause while the window is hidden, minimised or occluded. Tray UI,
-login registration and service lifecycle management follow in separate increments.
+reads and SSE pause while the window is hidden, minimised or occluded. A native
+menu-bar icon opens a separate compact React popup (`⌘⇧M` also opens it). It follows
+the main window's language/theme and shares the authoritative sleep-prevention
+control, with recovery reminders and a diagnostic summary. Login registration and
+service lifecycle management follow in separate increments.
 Run the native client and host boundary tests with `make desktop-test`.
 
 This preview has a separate bundle identifier and output path; production

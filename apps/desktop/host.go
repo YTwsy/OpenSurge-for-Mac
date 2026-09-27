@@ -11,6 +11,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"open-mihomo-gateway/apps/desktop/internal/controlclient"
 	"open-mihomo-gateway/apps/desktop/internal/desktopactions"
+	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/native"
 )
 
@@ -20,9 +21,15 @@ type desktopHost struct {
 	client   *controlclient.Client
 	mu       sync.Mutex
 	language string
+	popup    *application.WebviewWindow
+	tray     *application.SystemTray
+	status   *menustatus.Monitor
 }
 
 func (h *desktopHost) show(path string) {
+	if h.popup != nil {
+		h.popup.Hide()
+	}
 	h.main.UnMinimise()
 	h.main.Show()
 	h.main.Focus()
@@ -50,6 +57,20 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 		},
 		SaveRecovery: h.saveRecovery,
 		SetLanguage:  h.setLanguage,
+		ShowMain:     h.show,
+		MenuStatus: func(ctx context.Context, refresh bool) any {
+			if refresh {
+				return h.status.Refresh(ctx)
+			}
+			return h.status.Snapshot()
+		},
+		SetSleep: func(ctx context.Context, enabled bool) (any, error) {
+			return h.status.SetSleep(ctx, func(ctx context.Context) (menustatus.SleepPrevention, error) {
+				var result menustatus.SleepPrevention
+				err := h.client.WriteJSON(ctx, "PUT", "/api/v1/sleep-prevention", map[string]bool{"enabled": enabled}, &result)
+				return result, err
+			})
+		},
 	}
 }
 
@@ -79,6 +100,9 @@ func (h *desktopHost) setLanguage(language string) {
 	h.language = language
 	h.mu.Unlock()
 	native.SetLanguage(h.main, language == "en")
+	if h.popup != nil {
+		native.SetLanguage(h.popup, language == "en")
+	}
 	h.setMenu(language == "en")
 }
 
@@ -111,6 +135,7 @@ func (h *desktopHost) setMenu(english bool) {
 	}
 	view := menu.AddSubmenu(t("显示", "View"))
 	view.Add(t("显示主窗口", "Show Main Window")).OnClick(func(*application.Context) { h.show("") })
+	view.Add(t("显示菜单栏面板", "Show Menu Bar Panel")).SetAccelerator("CmdOrCtrl+Shift+m").OnClick(func(*application.Context) { h.showTray() })
 	for i, page := range []struct{ path, zh, en string }{
 		{"dashboard", "总览", "Overview"}, {"network", "网络设置", "Network Settings"}, {"sources", "代理与规则源", "Sources"}, {"devices", "设备", "Devices"},
 		{"connections", "连接", "Connections"}, {"policies", "策略", "Policies"}, {"connectivity", "连通性", "Connectivity"}, {"diagnostics", "诊断", "Diagnostics"},

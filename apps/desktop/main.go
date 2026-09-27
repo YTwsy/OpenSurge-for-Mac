@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"open-mihomo-gateway/apps/desktop/internal/controlclient"
 	"open-mihomo-gateway/apps/desktop/internal/desktopserver"
+	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/native"
 	"open-mihomo-gateway/internal/webui"
 )
@@ -29,6 +31,9 @@ func main() {
 	}
 	ready := make(chan struct{})
 	host := &desktopHost{client: controlclient.New(directory)}
+	host.status = menustatus.New(host.readMenuStatus, host.menuStatusChanged)
+	lifetime, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	assets, err := desktopserver.New(webui.FS(), host.client, host.actions())
 	if err != nil {
 		log.Fatal(err)
@@ -43,7 +48,8 @@ func main() {
 	})
 	app := application.New(application.Options{
 		Name: "OpenSurge", Description: "OpenSurge for Mac desktop host",
-		Assets: application.AssetOptions{Handler: handler, DisableLogging: true},
+		Assets:     application.AssetOptions{Handler: handler, DisableLogging: true},
+		OnShutdown: cancel,
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: fmt.Sprintf("com.opensurge.desktop.preview.%x", sha256.Sum256([]byte(directory))),
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
@@ -56,10 +62,12 @@ func main() {
 		Name: "main", Title: "OpenSurge", Width: 1280, Height: 860, MinWidth: 1080, MinHeight: 640, URL: "/dashboard",
 	})
 	host.main = window
+	host.createTray()
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide() })
 	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { host.show("") })
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		native.Configure(window, true)
+		native.Configure(host.popup, false)
 		host.mu.Lock()
 		language := host.language
 		host.mu.Unlock()
@@ -67,6 +75,7 @@ func main() {
 			native.SetLanguage(window, language == "en")
 		}
 		close(ready)
+		go host.status.Run(lifetime)
 	})
 	host.setMenu(false)
 	if err := app.Run(); err != nil {

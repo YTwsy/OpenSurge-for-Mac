@@ -147,12 +147,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sleep_enabled = payload["enabled"]
         preferences = {"schema_version": 1, "language": language}
         sleep = {"enabled": sleep_enabled, "active": sleep_enabled}
-        recovery = {"stage": "prepared" if state.get("recovery") else "idle", "required": state.get("recovery", False), "topology": "same_lan"}
+        recovery = {"stage": state.get("recovery_stage", "prepared" if state.get("recovery") else "idle"), "required": state.get("recovery", False), "topology": state.get("mode", "same_lan")}
         snapshot = {"network_service": "Smoke Wi-Fi", "interface": "en0", "ipv4": "192.0.2.10", "subnet_mask": "255.255.255.0", "router": "192.0.2.1", "dns": ["192.0.2.1"], "ipv6_default": False}
         if state.get("recovery"):
             recovery["network_snapshot"] = snapshot
         status = {"gateway": state["gateway"], "interface": "en0", "lan_ip": "192.0.2.10", "dhcp": "stopped", "dhcp_enabled": False, "mihomo": "stopped", "tun": "stopped", "pf_anchor": "unloaded", "forwarding": "disabled", "ipv4_takeover": "stopped", "ipv6_takeover": "disabled", "dns_ipv6": False, "tun_ipv6_requested": "off", "ipv6_packet": "disabled", "native_ipv6_available": False, "client_count": 0}
         common = {"schema_version": 1, "revision": "smoke", "topology": "same_lan", "drift": False, "warnings": [], "doctor_healthy": True, "sleep_prevention": sleep, "ui_preferences": preferences}
+        common.update({key: state[key] for key in ("drift", "doctor_healthy") if key in state})
+        common["topology"] = state.get("mode", "same_lan")
+        status.update({key: state[key] for key in ("dhcp", "mihomo", "pf_anchor") if key in state})
         routes = {
             "/api/v1/overview": {**common, "status": status, "doctor": [], "leases": [], "policies": [], "providers": {"proxy_providers": [], "rule_providers": []}, "recovery": recovery},
             "/api/v1/menubar": {**common, **status, "recovery_required": recovery["required"], "recovery_stage": recovery["stage"]},

@@ -187,3 +187,21 @@ func TestNativeReadsShareAuthenticationAndEnforceResponseLimit(t *testing.T) {
 		t.Fatal("native reads did not share the cached session")
 	}
 }
+
+func TestNativeJSONMutationUsesOneAuthenticatedRequest(t *testing.T) {
+	f := newServiceFixture(t)
+	directory := t.TempDir()
+	writeDiscovery(t, directory, f.server.URL, "native-token")
+	client := New(directory)
+	var result map[string]string
+	if err := client.WriteJSON(context.Background(), "PUT", "/api/v1/sleep-prevention", map[string]bool{"enabled": true}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["body"] != `{"enabled":true}` || f.writes.Load() != 1 {
+		t.Fatal("native write payload changed")
+	}
+	f.rejectWrites.Store(true)
+	if err := client.WriteJSON(context.Background(), "PUT", "/api/v1/sleep-prevention", map[string]bool{"enabled": false}, &result); err == nil || f.writes.Load() != 2 {
+		t.Fatal("native rejected write replayed")
+	}
+}

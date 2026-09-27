@@ -57,3 +57,26 @@ func (w *boundedResponse) Write(data []byte) (int, error) {
 	}
 	return w.body.Write(data)
 }
+
+// WriteJSON shares the non-replaying relay used by the main window. Callers pass
+// fixed API routes; no renderer-supplied URL reaches this helper.
+func (c *Client) WriteJSON(ctx context.Context, method, path string, body, result any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	r, err := http.NewRequestWithContext(ctx, method, path, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	r.Header.Set("Content-Type", "application/json")
+	w := &boundedResponse{header: make(http.Header), limit: 1 << 20}
+	c.ServeHTTP(w, r)
+	if w.status != http.StatusOK || w.exceeded {
+		return ErrUnavailable
+	}
+	if json.Unmarshal(w.body.Bytes(), result) != nil {
+		return ErrResponse
+	}
+	return nil
+}
