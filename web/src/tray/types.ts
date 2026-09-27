@@ -29,4 +29,5 @@ export type TraySnapshot = {
  indicator: 'connecting' | 'stopped' | 'running' | 'degraded' | 'recovery' | 'unreachable'
  sequence: number
  can_quit: boolean
+ service_actions?: boolean
 }

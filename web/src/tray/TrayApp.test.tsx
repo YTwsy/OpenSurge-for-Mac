@@ -32,11 +32,21 @@ it('presents recovery before runtime state and clears actionable controls on dis
  render(<TrayApp />)
  await screen.findByRole('button', { name: 'Continue recovery' })
  expect(screen.getByRole('alert').textContent).toContain('Network recovery')
+ expect((screen.getByRole('button', { name: 'Quit OpenSurge…' }) as HTMLButtonElement).disabled).toBe(true)
+ expect((screen.getByRole('button', { name: 'Quit Desktop App Only…' }) as HTMLButtonElement).disabled).toBe(false)
  vi.mocked(desktopAction).mockResolvedValue({ status: null, sequence: 2, indicator: 'unreachable', can_quit: false })
  await userEvent.click(screen.getByRole('button', { name: 'Refresh status' }))
  await waitFor(() => expect(screen.queryByText('192.0.2.10')).toBeNull())
  expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
  expect(screen.queryByRole('button', { name: 'Continue recovery' })).toBeNull()
+})
+
+it('routes full exit to native confirmation only when the service snapshot permits it', async () => {
+ vi.mocked(desktopAction).mockResolvedValue({ ...fixture, service_actions: true })
+ render(<TrayApp />)
+ await screen.findByText('192.0.2.10')
+ await userEvent.click(screen.getByRole('button', { name: 'Quit OpenSurge…' }))
+ expect(desktopAction).toHaveBeenCalledWith('quit', { full: true })
 })
 
 it('acknowledges sleep changes once and shows the heat warning', async () => {

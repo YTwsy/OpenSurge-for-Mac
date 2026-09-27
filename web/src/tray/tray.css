@@ -43,3 +43,6 @@ html[data-theme="light"] .tray-actions, html[data-theme="light"] .tray-preferenc
 html[data-theme="light"] .tray-notice { background: #e8f2ec; }
 html[data-theme="light"] .tray-notice.warning { background: #faf0dd; color: #8f5c16; }
 html[data-theme="light"] .tray-error { color: #a23e39; }
+.tray-exit { display: grid; gap: 6px; padding-top: 13px; margin-top: 14px; border-top: 1px solid #294034; }
+.tray-exit button { text-align: left; }
+html[data-theme="light"] .tray-exit { border-color: #d8e6df; }

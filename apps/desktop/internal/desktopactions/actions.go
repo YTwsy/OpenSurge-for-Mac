@@ -20,6 +20,8 @@ type Actions struct {
 	MenuStatus   func(context.Context, bool) any
 	ShowMain     func(string)
 	SetSleep     func(context.Context, bool) (any, error)
+	Reconnect    func(context.Context) error
+	Quit         func(context.Context, bool) (bool, error)
 }
 
 func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +38,7 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Page     string `json:"page"`
 		Refresh  bool   `json:"refresh"`
 		Enabled  *bool  `json:"enabled"`
+		Full     bool   `json:"full"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10))
 	decoder.DisallowUnknownFields()
@@ -79,16 +82,32 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result, err = a.SetSleep(r.Context(), *payload.Enabled)
+	case "/desktop/v1/reconnect":
+		err = a.Reconnect(r.Context())
+	case "/desktop/v1/quit":
+		var accepted bool
+		accepted, err = a.Quit(r.Context(), payload.Full)
+		result = map[string]bool{"accepted": accepted}
 	default:
 		http.NotFound(w, r)
 		return
 	}
 	if err != nil {
+		code := "desktop_action_failed"
+		var failure *Failure
+		if errors.As(err, &failure) {
+			code = failure.Code
+		}
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "desktop_action_failed", "message": "The desktop action could not be completed. Please try again."}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": "The desktop action could not be completed. Please try again."}})
 		return
 	}
 	_ = json.NewEncoder(w).Encode(result)
 }
 
 var ErrFailed = errors.New("desktop action failed")
+
+// Failure carries a closed, renderer-localised error code, never command output.
+type Failure struct{ Code string }
+
+func (f *Failure) Error() string { return f.Code }

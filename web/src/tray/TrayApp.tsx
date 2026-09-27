@@ -24,6 +24,7 @@ export function TrayApp() {
  const [copied, setCopied] = useState(false)
  const [sleepBusy, setSleepBusy] = useState(false)
  const [refreshing, setRefreshing] = useState(false)
+ const [serviceBusy, setServiceBusy] = useState(false)
  const sequence = useRef(0)
  const active = useRef(true)
  const sleepGeneration = useRef(0)
@@ -64,6 +65,13 @@ export function TrayApp() {
   try { await action() } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : String(cause)) }
  }
  const show = (page: string) => void run(() => desktopAction('show-main', { page }))
+ const serviceAction = async (action: 'reconnect' | 'quit', full = false) => {
+  if (serviceBusy) return
+  setServiceBusy(true)
+  await run(() => desktopAction(action, action === 'quit' ? { full } : {}))
+  setServiceBusy(false)
+  await refresh(true)
+ }
  const changeSleep = async (enabled: boolean) => {
   if (sleepPending.current) return
   sleepPending.current = true
@@ -93,7 +101,7 @@ export function TrayApp() {
    <dl className="tray-status">{rows.map(([name, value]) => <div key={name}><dt>{name}</dt><dd title={value}>{value}</dd></div>)}</dl>
    {status.recovery_required && status.recovery_stage === 'prepared' && <p className="tray-hint">{t('恢复资料已准备；尚未改动网络')}</p>}
    {status.drift && <p className="tray-notice warning">{t('配置已修改，需要重启网关')}</p>}
-  </> : <p className="tray-notice">{t('状态暂不可用。后台连接恢复后会自动更新。')}</p>}
+  </> : <section className="tray-notice"><p>{t('状态暂不可用。后台连接恢复后会自动更新。')}</p>{snapshot.service_actions && <button disabled={serviceBusy} onClick={() => void serviceAction('reconnect')}>{t('重新连接后台服务')}</button>}</section>}
   <section className="tray-actions">
    <button className="primary" onClick={() => show('dashboard')}>{t('打开 OpenSurge 面板')}<span aria-hidden="true">↗</span></button>
    {status?.recovery_required && <button onClick={() => show('network')}>{t(snapshot.indicator === 'recovery' ? '继续恢复' : '查看网络设置')}</button>}
@@ -106,5 +114,9 @@ export function TrayApp() {
   </section>
   {error && <p role="alert" className="tray-error">{error}</p>}
   <footer><span>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</span><button onClick={() => show('diagnostics')}>{t('诊断')}</button></footer>
+  <section className="tray-exit">
+   <button disabled={!snapshot.can_quit || !snapshot.service_actions || serviceBusy} title={!snapshot.can_quit ? t('请先在网络设置中停止网关并完成恢复。') : undefined} onClick={() => void serviceAction('quit', true)}>{t('退出 OpenSurge…')}</button>
+   <button disabled={serviceBusy} onClick={() => void serviceAction('quit')}>{t('只退出桌面 App…')}</button>
+  </section>
  </main>
 }
