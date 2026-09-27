@@ -60,9 +60,10 @@ sheets, external-navigation confinement, and actual NSWindow visibility. It forw
 the framework's other delegate methods, including file selection and renderer recovery.
 Hidden, minimised or fully occluded windows close SSE and pause recurring reads;
 becoming visible resumes them. Deliberate HTTP(S) links open the system browser.
-The private `/desktop/v1/` routes share the renderer capability check and expose only
-external links, clipboard text, resolved language, and saving a freshly authenticated
-recovery card through a native save panel. Browser file/link behavior remains supported.
+The private `/desktop/v1/` routes share the renderer capability check and expose
+bounded native actions: external links, clipboard, language, recovery-card saving,
+window navigation and the status/lifecycle/settings capabilities described below.
+Browser file/link behavior remains supported.
 
 The preview bundle uses a distinct identifier and build output. Production identity,
 launchd and installer sequencing are a separate migration stage. Development preview
@@ -111,6 +112,21 @@ at launch and every 24 hours (15-minute retry after failure), deduplicate concur
 requests and clear obsolete download links on failure. The host only opens the
 validated page on explicit action; download/install remain user actions. Both builds
 take their version from `OPENSURGE_RELEASE_TAG`, defaulting to `v0.2.4-next`.
+
+Uninstall is a closed native capability with two fixed modes. Production execution
+requires the installed App identity/path and a root-owned, non-writable script and
+parent chain. The preview cannot uninstall the production App. The host checks fresh
+stopped-service evidence before and after its native three-choice confirmation. The
+existing privileged script rechecks gateway state after administrator authorisation
+and remains the only cleanup implementation. Uninstall can preserve data, including
+credentials and recovery records, or remove it; pending manual network recovery and
+existing IPv4 forwarding are explicitly described and not silently changed.
+
+The host unregisters its own login item before uninstall, restores it on cancellation
+or failure, and reports restoration failures separately. Renderer writes, reconnect
+and quit are blocked while this action is pending. A WebView disconnect cannot cancel
+an already authorised cleanup halfway through. Production uninstall acceptance belongs
+to the installer cutover gate; fixture success establishes only the host interaction.
 
 For native acceptance, `scripts/desktop-smoke-service.py DIR` runs a harmless fixture.
 Launch the preview executable with `--control-dir DIR`; scenario changes and service

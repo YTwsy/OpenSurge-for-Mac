@@ -14,12 +14,13 @@ import (
 var releaseTag = "v0.2.4-next"
 
 type utilitySnapshot struct {
-	Login  loginitem.Snapshot `json:"login"`
-	Update updates.Snapshot   `json:"update"`
+	Login     loginitem.Snapshot `json:"login"`
+	Update    updates.Snapshot   `json:"update"`
+	Uninstall string             `json:"uninstall"`
 }
 
 func (h *desktopHost) utilities() any {
-	return utilitySnapshot{Login: h.login.Snapshot(), Update: h.updates.Snapshot()}
+	return utilitySnapshot{Login: h.login.Snapshot(), Update: h.updates.Snapshot(), Uninstall: h.uninstaller.Availability()}
 }
 func (h *desktopHost) initUtilities(installedDirectory, smoke bool) {
 	var provider loginitem.Provider

@@ -58,7 +58,15 @@ export async function desktopAction<T = { ok: boolean }>(action: string, body: R
   const response = await fetch(`/desktop/v1/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...desktopHeaders() }, body: JSON.stringify(body) })
   if (!response.ok) {
     const failure = await response.json().catch(() => null) as { error?: { code?: string } } | null
-    throw new Error(t(failure?.error?.code === 'desktop_exit_unsafe' ? '请先在网络设置中停止网关并完成恢复。' : '桌面操作未完成，请重试。'))
+    const messages: Record<string, string> = {
+      desktop_exit_unsafe: '请先在网络设置中停止网关并完成恢复。',
+      desktop_uninstall_unsafe: '请先在网络设置中停止网关，再卸载 OpenSurge。',
+      desktop_uninstall_unavailable: '当前 App 无法卸载已安装的 OpenSurge。',
+      desktop_uninstall_login: '无法关闭登录项。请在系统设置中关闭后重试卸载。',
+      desktop_uninstall_restore: '卸载未完成，登录项也未能恢复。请检查系统登录项设置。',
+      desktop_uninstall_failed: '卸载未完成。请重新连接后台服务并检查安装状态。',
+    }
+    throw new Error(t(messages[failure?.error?.code ?? ''] ?? '桌面操作未完成，请重试。'))
   }
   return response.json() as Promise<T>
 }

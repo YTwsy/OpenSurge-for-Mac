@@ -26,6 +26,7 @@ type Actions struct {
 	SetLogin      func(bool) (any, error)
 	LoginSettings func() error
 	CheckUpdates  func(context.Context) any
+	Uninstall     func(context.Context) (bool, error)
 }
 
 func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +101,10 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = a.LoginSettings()
 	case "/desktop/v1/check-updates":
 		result = a.CheckUpdates(r.Context())
+	case "/desktop/v1/uninstall":
+		var accepted bool
+		accepted, err = a.Uninstall(r.Context())
+		result = map[string]bool{"accepted": accepted}
 	case "/desktop/v1/quit":
 		var accepted bool
 		accepted, err = a.Quit(r.Context(), payload.Full)

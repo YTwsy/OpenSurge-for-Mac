@@ -12,3 +12,10 @@ bool setOpenSurgeLogin(bool enabled) {
     }
 }
 void openSurgeLoginSettings(void) { [SMAppService openSystemSettingsLoginItems]; }
+bool openSurgeIsInstalledApp(void) {
+    @autoreleasepool {
+        NSBundle *bundle = NSBundle.mainBundle;
+        return [bundle.bundleIdentifier isEqualToString:@"com.opensurge.menubar"] &&
+            [bundle.bundleURL.URLByResolvingSymlinksInPath.path isEqualToString:@"/Applications/OpenSurge.app"];
+    }
+}

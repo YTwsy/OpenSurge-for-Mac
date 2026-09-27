@@ -53,3 +53,5 @@ html[data-theme="light"] .tray-exit { border-color: #d8e6df; }
 .tray-utilities .tray-hint button { padding: 5px 8px; font-size: 12px; }
 .tray-update-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #47d498; margin-left: 8px; }
 html[data-theme="light"] .tray-utilities { border-color: #d8e6df; }
+.tray-uninstall { width: 100%; text-align: left; margin-top: 12px; color: #edaaa4; }
+html[data-theme="light"] .tray-uninstall { color: #a23e39; }

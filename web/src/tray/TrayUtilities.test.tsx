@@ -40,3 +40,17 @@ it('opens the validated stable release and clears it when a later check fails', 
  await waitFor(() => expect(screen.queryByRole('button', { name: /download page/ })).toBeNull())
  expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Could not check for updates. Please try again later.')
 })
+
+it('keeps preview uninstall disabled and routes eligible installed actions to native confirmation', async () => {
+ vi.mocked(desktopAction).mockResolvedValue({ ...initial, uninstall: 'preview' })
+ const view = render(<TrayUtilities canUninstall />)
+ await userEvent.click(await screen.findByText('App settings and updates'))
+ expect((screen.getByRole('button', { name: 'Uninstall OpenSurge…' }) as HTMLButtonElement).disabled).toBe(true)
+ expect(screen.getByText('The preview cannot uninstall your installed OpenSurge application.')).toBeTruthy()
+ view.unmount()
+ vi.mocked(desktopAction).mockResolvedValue({ ...initial, uninstall: 'available' })
+ render(<TrayUtilities canUninstall />)
+ await userEvent.click(await screen.findByText('App settings and updates'))
+ await userEvent.click(screen.getByRole('button', { name: 'Uninstall OpenSurge…' }))
+ expect(desktopAction).toHaveBeenCalledWith('uninstall')
+})
