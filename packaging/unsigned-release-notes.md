@@ -5,16 +5,19 @@
 
 ## 简体中文
 
-### v0.2.3 主要变化（相对 v0.2.2）
+### v0.2.4 主要变化（相对 v0.2.3）
 
-v0.2.2 为 OpenSurge 加入了 Tailscale / Headscale 出站。随着 Tailnet、Exit Node、代理节点和 `DIRECT` 等可选路径增多，v0.2.3 重点让每条连接的设备归属、命中规则和实际出口变得可见，并补齐出口切换后的连接刷新、双栈接管状态与网关运行反馈。
+v0.2.4 重点修复 Mac 本机的 DNS 与 IPv6 TUN 捕获路径，并补齐共享策略组切换节点后的连接刷新。下游设备仍使用各自的策略和 IPv6 packet 路径。
 
-- **新增独立的连接页面**：按 Mac 本机、下游设备或其他来源查看当前活跃连接，展示访问目标、协议、来源地址族、命中规则、完整出口链、实时上下行速率与持续时间；支持按设备、TCP/UDP、IPv4/IPv6 和出口类型筛选，方便确认流量实际使用 Tailscale、Exit Node、代理节点还是 `DIRECT`。
-- **更准确的双栈设备归属**：同一设备的 IPv4、IPv6 和 IPv6 隐私地址会聚合显示；Mac 本机流量根据 mihomo 当前实际运行的系统 TUN 地址精确识别，不依赖可能缺失的进程信息，也不会把下游 TUN 流量误判为本机连接。无法可靠确认身份的连接会单独保留在“无法归属”。
-- **出口切换后的定向连接刷新**：切换 Mac 本机模式、设备默认出口或策略组选择后，界面会提示新出口只影响新连接，并允许只刷新 Mac 本机或指定设备当前由 OpenSurge 管理的连接，不会一并关闭其他设备的会话；下载、通话等可能中断的影响会在执行前说明。
-- **统一的 IPv4 / IPv6 接管状态**：Web GUI 和菜单栏 App 分别展示 IPv4 与 IPv6 是否正在接管，并区分等待上游、已关闭、已停止、异常和重启后待清理等状态，比单独显示底层 forwarding 开关更接近网关的实际运行情况。
-- **更清晰的操作与 DHCP 检查反馈**：启动、停止、重载以及路由器 DHCP 关闭/恢复检查会持续展示当前阶段和最终结果；DHCP OFFER 探测期间不再表现为页面无响应，已经关闭或自动消失的操作结果也不会回退显示更早的旧记录。
-- **改进 DHCP/DNS 运行稳定性**：修正 dnsmasq 在正式环境中的前台进程管理，并保留正确的日志格式和运行路径，减少进程状态、日志与实际 DHCP/DNS 服务不一致的情况。感谢 [@Kaliscuit](https://github.com/Kaliscuit) 在 [PR #34](https://github.com/YTwsy/OpenSurge-for-Mac/pull/34) 中贡献这项修复。
+- **Mac 系统 DNS 随 TUN 协同**：在 TUN 自动路由就绪后，默认将上游网络服务的系统 DNS 设置到可被 mihomo 劫持的路径，减少本机查询绕过 TUN、连接失去域名或 fake-IP 上下文的情况。停止、回滚和代理引擎重启时按所有权恢复原设置，保留其他软件后续作出的修改；可在 Web GUI 中关闭。协同开启时，导入配置需使用显式解析器，避免 `system` 解析循环。
+- **补全独立的 Mac IPv6 TUN 路由**：Mac 的系统 TUN 同时覆盖公网 IPv6、完整 fake IPv6 地址池和 Tailnet 精确路由，不再因下游 IPv6 接管开关或一条自定义精确路由而漏掉本机流量。本机规则仍只匹配系统 TUN 的精确身份，不改变下游设备的 IPv6 packet 路径。
+- **共享策略组的连接刷新提示**：在「策略与节点健康」中成功切换普通策略组节点后，界面会说明新选择只影响后续连接，并邀请用户手动刷新。刷新按实际连接链中的策略组精确匹配，可涵盖 Mac、跟随网关规则或经其他策略组引用它的下游设备，同时保留不经过该组的连接；执行前会提示下载、通话等活动可能中断。切换节点本身不会自动关闭旧连接。
+
+### 开发幕后：Team Cross
+
+OpenSurge 的开发常要在 Mac 与多台下游设备上验证网络路径；调查和修复也可能跨越多台机器、多个 Agent Session，测试证据、关键判断和后续任务需要在这些会话之间持续传递。最初，我为自己的工作流做了一个多 Agent 协作工具。看到它在 OpenSurge 开发中显著提升了开发效率后，我意识到同样的痛点也存在于团队协作、产研协同等更广泛的场景。于是，我结合一线开发团队中积累的经验，围绕会话分享、证据讨论和任务交接重新设计这个工具，将它的能力扩展到真实的团队协作场景上；最终将它发展为独立的开源项目 [Team Cross](https://github.com/YTwsy/Team-Cross)。
+
+Team Cross 让团队成员和各自的 Agent 预览并分享选定的 Codex、Claude Code 会话材料，在原文旁批注和引用；需要共同执行时，再明确开放访问，并交接或收回共享会话的输入权。在最近几个版本的 OpenSurge 开发中，它帮助我把多设备测试的上下文带入需求推进、问题排查和 PR 代码审查，减少反复解释背景与重新定位结论的工作，让这些任务更快接续和推进。
 
 ### 选择安装包
 
@@ -62,16 +65,19 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ## English
 
-### v0.2.3 highlights since v0.2.2
+### v0.2.4 highlights since v0.2.3
 
-v0.2.2 introduced managed Tailscale / Headscale outbound access. With Tailnet resources, Exit Nodes, proxy nodes, and `DIRECT` now available as routing paths, v0.2.3 makes connection ownership, matched rules, and actual egress visible, while completing the workflow around connection refresh, dual-stack takeover status, and gateway operation feedback.
+v0.2.4 focuses on the local Mac's DNS and IPv6 TUN capture paths and completes connection refresh after changing a shared policy group. Downstream devices keep their own policies and IPv6 packet path.
 
-- **A dedicated Connections page:** Inspect current active connections by the local Mac, downstream device, or other source. Each row shows its destination, protocol, source address family, matched rule, complete outbound chain, live transfer rate, and duration. Filters for device, TCP/UDP, IPv4/IPv6, and route type make it easier to confirm whether traffic is actually using Tailscale, an Exit Node, a proxy, or `DIRECT`.
-- **More accurate dual-stack ownership:** IPv4, IPv6, and IPv6 privacy addresses belonging to the same device are aggregated together. Local Mac traffic is identified from Mihomo's live system-TUN addresses instead of optional process metadata, preventing downstream TUN traffic from being attributed to the Mac. Connections without reliable identity evidence remain visible under Unclassified.
-- **Scoped connection refresh after outlet changes:** After changing the Mac routing mode, a device's default outlet, or a policy-group selection, the UI explains that only new connections use the new outlet and offers to refresh only the Mac or the affected device's OpenSurge-managed connections. Other devices are left untouched, and possible interruptions to downloads or calls are disclosed before refresh.
-- **Unified IPv4 and IPv6 takeover status:** The Web GUI and menu bar app now report IPv4 and IPv6 takeover separately, including ready, waiting for upstream, disabled, stopped, failed, and interrupted states. These states describe the effective gateway path more clearly than the underlying forwarding switch alone.
-- **Clearer operation and DHCP-check feedback:** Start, stop, reload, and router-DHCP disable/restore checks keep their current phase and final result visible. DHCP OFFER probes no longer appear as an unresponsive page, and dismissing or expiring the newest result no longer reveals an older operation record.
-- **More reliable DHCP/DNS process handling:** Dnsmasq now uses the correct production foreground mode while preserving its log format and runtime paths, reducing disagreement between process state, logs, and the effective DHCP/DNS service. Thanks to [@Kaliscuit](https://github.com/Kaliscuit) for contributing this fix in [PR #34](https://github.com/YTwsy/OpenSurge-for-Mac/pull/34).
+- **Mac system DNS coordination with TUN:** Once TUN auto-routing is ready, OpenSurge now sets the upstream network service's system DNS to a path Mihomo can intercept by default. This reduces local queries bypassing TUN and connections losing domain or fake-IP context. Stop, rollback, and engine restart restore the original setting according to ownership while preserving later changes by other software; the Web GUI can disable the feature. Imported profiles need explicit resolvers while it is enabled, avoiding a `system` resolver loop.
+- **Complete, independent Mac IPv6 TUN routes:** The system TUN covers public IPv6, the full fake IPv6 pool, and precise Tailnet routes. Local capture no longer depends on downstream IPv6 takeover or disappears when a custom precise route is present. Mac-local rules still match only the system TUN's exact identity; downstream devices keep their separate IPv6 packet path.
+- **Connection refresh for shared policy groups:** After a successful node change in Policies & Node Health, the UI explains that the new selection affects new connections and offers an explicit refresh. It matches the policy group's exact name in active connection chains, including connections from the Mac and downstream devices following gateway rules or referencing the group through another policy, while leaving unrelated connections alone. Possible interruptions to downloads or calls are disclosed before refresh; changing the node itself does not close existing connections.
+
+### Behind the development: Team Cross
+
+OpenSurge development often requires validating the same network path on a Mac and multiple downstream devices. Investigations and fixes can span several machines and Agent Sessions, so test evidence, key findings, and next steps need to travel between them. I initially built a multi-agent collaboration tool for my own workflow. Seeing how much it accelerated OpenSurge development made me realize that teams face the same challenges when working together across product and engineering. Drawing on my experience in development teams, I redesigned and rebuilt the tool around sharing sessions, discussing evidence, and handing off tasks. What began as a personal tool became the independent open-source project [Team Cross](https://github.com/YTwsy/Team-Cross).
+
+Team Cross lets teammates and their agents preview and share selected Codex and Claude Code session material, annotate and cite passages alongside the original, and explicitly grant access when they need to work together. They can hand over or reclaim input control of a shared session. In recent OpenSurge versions, it has helped me carry multi-device test context into feature development, troubleshooting, and PR code review. That reduces repeated explanations and the need to rediscover conclusions, helping these tasks continue and move forward faster.
 
 ### Choose a package
 
