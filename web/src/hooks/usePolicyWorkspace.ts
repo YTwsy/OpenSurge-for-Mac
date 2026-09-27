@@ -73,6 +73,7 @@ export function usePolicyWorkspace(refreshKey: string) {
         setError('')
         setLoading(false)
       }
+      return response
     }).catch(cause => {
       if (mounted.current) {
         setSnapshot(null)

@@ -219,6 +219,8 @@ export const englishMessages: Record<string, string> = {
   '关闭提示：{{title}}': 'Dismiss prompt: {{title}}',
   '重试刷新连接': 'Retry connection refresh',
   '暂不刷新': 'Not now',
+  '经过此策略组的新连接将使用“{{selection}}”；已有连接可能继续使用原链路。刷新会关闭 Mac 本机及下游设备当前经过此组的连接，包括跟随网关规则或通过其他策略引用此组的设备。已使用新出口的连接也会关闭，下载、通话等可能中断。': 'New connections through this policy group will use “{{selection}}”; existing connections may keep using the previous path. Refreshing closes this group’s current connections from this Mac and downstream devices, including devices following gateway rules or referencing this group through other policies. Connections already using the new outlet are also closed, which may interrupt downloads, calls, and other activity.',
+  '刷新经过此策略组的连接': 'Refresh connections through this group',
   'Mac 本机': 'This Mac',
   '刷新连接': 'Refresh connections',
   '正在刷新…': 'Refreshing…',

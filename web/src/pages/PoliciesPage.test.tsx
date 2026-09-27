@@ -133,7 +133,8 @@ describe('PoliciesPage', () => {
     workspace.mode = 'prepared'
     workspace.groups.push({ name: 'Extension', type: 'Selector', selected: 'Proxy-A', options: ['Proxy-A', 'Proxy-B'] })
     const stopped = { ...overview, policies: [], status: { ...overview.status, gateway: 'stopped', mihomo: 'stopped' } }
-    render(<PoliciesPageHarness data={stopped} />)
+    const onSuggestConnectionRefresh = vi.fn()
+    render(<PoliciesPageHarness data={stopped} onSuggestConnectionRefresh={onSuggestConnectionRefresh} />)
 
     expect(await screen.findByText('待启动配置')).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Extension' })).toBeTruthy()
@@ -146,6 +147,7 @@ describe('PoliciesPage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Extension 选择 Proxy-B' }).getAttribute('aria-pressed')).toBe('true'))
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
+    expect(onSuggestConnectionRefresh).not.toHaveBeenCalled()
   })
 
   it('tests nodes in prepared mode and adopts the returned health snapshot', async () => {
@@ -318,6 +320,37 @@ describe('PoliciesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'device/alice/default 选择 Proxy-A' }))
 
     await waitFor(() => expect(onSuggestConnectionRefresh).toHaveBeenCalledWith({ key: 'device:alice', scope: 'device', deviceID: 'alice', subject: 'alice', selection: 'Proxy-A' }))
+  })
+
+  it('suggests the shared group scope after a successful change even if overview refresh fails', async () => {
+    const onSuggestConnectionRefresh = vi.fn()
+    render(<PoliciesPageHarness onChanged={async () => { throw new Error('overview unavailable') }} onSuggestConnectionRefresh={onSuggestConnectionRefresh} />)
+    await screen.findByRole('heading', { name: 'Main' })
+    await userEvent.click(screen.getByRole('button', { name: 'Main 选择 Proxy-A' }))
+    expect(onSuggestConnectionRefresh).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Main 选择 Proxy-B' }))
+    await waitFor(() => expect(onSuggestConnectionRefresh).toHaveBeenCalledExactlyOnceWith({ key: 'policy_group:Main', scope: 'policy_group', group: 'Main', subject: 'Main', selection: 'Proxy-B' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('does not suggest resetting connections when selection fails', async () => {
+    const onSuggestConnectionRefresh = vi.fn()
+    render(<PoliciesPageHarness onSuggestConnectionRefresh={onSuggestConnectionRefresh} />)
+    await screen.findByRole('heading', { name: 'Main' })
+    vi.mocked(api.policyWorkspace).mockRejectedValueOnce(new Error('selection failed'))
+    await userEvent.click(screen.getByRole('button', { name: 'Main 选择 Proxy-B' }))
+    await screen.findByText(/策略配置暂不可用/)
+    expect(onSuggestConnectionRefresh).not.toHaveBeenCalled()
+  })
+
+  it('uses the acknowledged workspace mode rather than a stale running overview', async () => {
+    const onSuggestConnectionRefresh = vi.fn()
+    render(<PoliciesPageHarness onSuggestConnectionRefresh={onSuggestConnectionRefresh} />)
+    await screen.findByRole('heading', { name: 'Main' })
+    workspace.mode = 'prepared'
+    await userEvent.click(screen.getByRole('button', { name: 'Main 选择 Proxy-B' }))
+    await screen.findByText('待启动配置')
+    expect(onSuggestConnectionRefresh).not.toHaveBeenCalled()
   })
 
   it('does not show a late Mac runtime response after the gateway stops', async () => {

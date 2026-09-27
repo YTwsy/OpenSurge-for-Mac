@@ -367,8 +367,9 @@ export type Diagnostics = { schema_version: number; revision: string; connection
 
 export type ConnectionRefreshResult = {
   schema_version: number
-  scope: 'gateway_local' | 'device'
+  scope: 'gateway_local' | 'device' | 'policy_group'
   device_id?: string
+  policy_group?: string
   matched_connections: number
   closed_connections: number
 }

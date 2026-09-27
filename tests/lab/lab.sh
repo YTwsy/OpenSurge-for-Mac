@@ -774,6 +774,11 @@ collect_artifacts() {
     connection-refresh-before.json \
     connection-refresh-after.json \
     connection-refresh-response.json \
+    policy-connection-refresh-before.json \
+    policy-connection-refresh-selected.json \
+    policy-connection-refresh-response.json \
+    policy-connection-refresh-after.json \
+    policy-connection-refresh-reconnected.json \
     ipv6-status.json \
     ipv6-devices.json \
     ipv6-connection-observation.json \
@@ -1619,6 +1624,87 @@ assert_connection_refresh_response() {
   ' "$response" "$device_id"
 }
 
+# Keep the shared-group proof separate from the device-wide refresh below. The
+# first client uses the same leaf directly, while Mac and the second (inherited)
+# client go through LabShared. Only the latter two connections may be closed.
+run_policy_connection_refresh_test() (
+  local client_one=$1 client_two=$2 mac_pid="" device_pid="" other_pid="" phase
+  cleanup_policy_refresh() {
+    stop_client_hold_connection "$mac_pid"
+    stop_client_hold_connection "$device_pid"
+    stop_client_hold_connection "$other_pid"
+  }
+  trap cleanup_policy_refresh EXIT
+  start_client_hold_connection "$client_one" "$STATE_DIR/logs/policy-refresh-other.log"
+  other_pid="$LAST_CLIENT_HOLD_PID"
+  wait_for_client_hold_connection "$client_one" "$STATE_DIR/logs/policy-refresh-other.log" "$other_pid"
+
+  for phase in before reconnected; do
+    /usr/bin/ruby -rsocket -e '
+      STDOUT.sync = true
+      socket = TCPSocket.new("127.0.0.1", 17890)
+      socket.write("CONNECT #{ARGV.fetch(0)}:443 HTTP/1.1\r\nHost: #{ARGV.fetch(0)}:443\r\n\r\n")
+      abort "CONNECT failed" unless socket.gets.to_s.include?(" 200 ")
+      puts "READY"
+      sleep 180
+    ' "$CONNECTION_REFRESH_TEST_HOST" >"$STATE_DIR/logs/policy-refresh-mac-$phase.log" 2>&1 &
+    mac_pid=$!
+    start_client_hold_connection "$client_two" "$STATE_DIR/logs/policy-refresh-device-$phase.log"
+    device_pid="$LAST_CLIENT_HOLD_PID"
+    wait_for_client_hold_connection Mac "$STATE_DIR/logs/policy-refresh-mac-$phase.log" "$mac_pid"
+    wait_for_client_hold_connection "$client_two" "$STATE_DIR/logs/policy-refresh-device-$phase.log" "$device_pid"
+    wait_for_connection_ids 127.0.0.1 "$CONNECTION_REFRESH_TEST_HOST" \
+      "$STATE_DIR/policy-connection-refresh-$phase.json" "$STATE_DIR/policy-refresh-mac.ids"
+    wait_for_connection_ids 192.168.51.102 "$CONNECTION_REFRESH_TEST_HOST" \
+      "$STATE_DIR/policy-connection-refresh-$phase.json" "$STATE_DIR/policy-refresh-device.ids"
+    wait_for_connection_ids 192.168.50.101 "$CONNECTION_REFRESH_TEST_HOST" \
+      "$STATE_DIR/policy-connection-refresh-$phase.json" "$STATE_DIR/policy-refresh-other.ids"
+    /usr/bin/ruby -rjson -e '
+      connections = JSON.parse(File.read(ARGV.fetch(0))).fetch("connections")
+      leaf = ARGV.fetch(1) == "before" ? "lab-controlled" : "lab-controlled-new"
+      %w[127.0.0.1 192.168.51.102 192.168.50.101].each do |source|
+        connection = connections.find { |c| c.fetch("metadata")["sourceIP"] == source && c.fetch("metadata")["host"] == ARGV.fetch(2) }
+        abort "missing held connection from #{source}" unless connection
+        chain = connection.fetch("chains")
+        if source == "192.168.50.101"
+          abort "independent device joined shared group" if chain.include?("LabShared")
+          abort "independent device lost its original leaf" unless chain.include?("lab-controlled")
+        else
+          abort "wrong shared egress for #{source}: #{chain}" unless chain.include?("LabShared") && chain.include?(leaf)
+        end
+      end
+    ' "$STATE_DIR/policy-connection-refresh-$phase.json" "$phase" "$CONNECTION_REFRESH_TEST_HOST"
+    if [[ "$phase" == reconnected ]]; then
+      # The unrelated connection must retain the same ID across refresh and reconnect.
+      snapshot_contains_any_ids "$STATE_DIR/policy-connection-refresh-reconnected.json" "$STATE_DIR/policy-refresh-preserved.ids"
+      break
+    fi
+    cat "$STATE_DIR/policy-refresh-mac.ids" "$STATE_DIR/policy-refresh-device.ids" >"$STATE_DIR/policy-refresh-target.ids"
+    cp "$STATE_DIR/policy-refresh-other.ids" "$STATE_DIR/policy-refresh-preserved.ids"
+    "$BINARY" policy-select --config "$CONFIG" --group LabShared --policy lab-controlled-new --format json >"$STATE_DIR/policy-refresh-selection.json"
+    fetch_mihomo_connections "$STATE_DIR/policy-connection-refresh-selected.json"
+    /usr/bin/ruby -rjson -rset -e '
+      current = JSON.parse(File.read(ARGV.fetch(0))).fetch("connections").map { |c| c.fetch("id") }.to_set
+      expected = File.readlines(ARGV.fetch(1), chomp: true).to_set
+      abort "selection itself closed old connections" unless expected.subset?(current)
+    ' "$STATE_DIR/policy-connection-refresh-selected.json" "$STATE_DIR/policy-refresh-target.ids"
+    /usr/bin/curl --fail --silent --show-error --request POST \
+      --header "Authorization: Bearer $CONTROL_API_TOKEN" \
+      "http://127.0.0.1:$CONTROL_API_PORT/api/v1/policies/LabShared/connections/refresh" \
+      >"$STATE_DIR/policy-connection-refresh-response.json"
+    /usr/bin/ruby -rjson -e '
+      response = JSON.parse(File.read(ARGV.fetch(0)))
+      abort "wrong refresh scope" unless response["scope"] == "policy_group" && response["policy_group"] == "LabShared"
+      abort "shared connections not closed" unless response.fetch("matched_connections") >= 2 && response["matched_connections"] == response["closed_connections"]
+    ' "$STATE_DIR/policy-connection-refresh-response.json"
+    wait_for_scoped_connection_refresh "$STATE_DIR/policy-refresh-target.ids" \
+      "$STATE_DIR/policy-refresh-preserved.ids" "$STATE_DIR/policy-connection-refresh-after.json"
+    stop_client_hold_connection "$mac_pid"
+    stop_client_hold_connection "$device_pid"
+  done
+  echo "policy group refresh closed Mac and inherited-device connections, preserved the independent device, and reconnected through the new selection"
+)
+
 wait_for_ipv6_policy_log() {
   local network=$1 source_ip=$2 target=$3 action=$4 i log_file
   log_file="$STATE_DIR/logs/mihomo.log"
@@ -2255,7 +2341,17 @@ proxies:
     type: http
     server: 127.0.0.1
     port: $EGRESS_PROXY_PORT
-rules: ['MATCH,DIRECT']
+  - name: lab-controlled-new
+    type: http
+    server: 127.0.0.1
+    port: $EGRESS_PROXY_PORT
+proxy-groups:
+  - name: LabShared
+    type: select
+    proxies: [lab-controlled, lab-controlled-new]
+rules:
+  - DOMAIN,$CONNECTION_REFRESH_TEST_HOST,LabShared
+  - MATCH,DIRECT
 EOF
   cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
 {
@@ -2549,6 +2645,8 @@ run_device_policy_test() {
     exit 1
   fi
   grep -Fq 'has no selectable policy slot' "$STATE_DIR/device-two-inherit-select.json"
+
+  run_policy_connection_refresh_test "$client_one" "$client_two"
 
   mutate_device_policy_desired
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-drift.json"

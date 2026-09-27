@@ -472,6 +472,7 @@ type ConnectionRefreshResponse struct {
 	SchemaVersion      int    `json:"schema_version"`
 	Scope              string `json:"scope"`
 	DeviceID           string `json:"device_id,omitempty"`
+	PolicyGroup        string `json:"policy_group,omitempty"`
 	MatchedConnections int    `json:"matched_connections"`
 	ClosedConnections  int    `json:"closed_connections"`
 }

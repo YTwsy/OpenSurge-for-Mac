@@ -160,6 +160,12 @@ Control API“刷新连接”：第一台设备的旧连接必须消失，第二
 初始/重载后设备视图会一起写入 artifact，便于复核这条边界。规则、模板和 provider 的
 编译仍由单元测试覆盖。
 
+共享策略组刷新场景在第二台设备仍为 `inherit_global` 时，让 Mac 的 loopback
+mixed-port 连接与第二台设备的 TUN 连接共同经过 `LabShared`。单独切换选择必须保留
+旧连接；点击刷新对应的真实 API 后，两者的匹配连接必须消失，第一台设备直接使用
+同一叶子节点的连接 ID 必须保留，Mac 和第二台设备重连后必须走新选择。Mac 部分
+验证显式代理连接行为，不代替本机 TUN 身份门槛。
+
 ### Tailscale 出站门槛
 
 `lab-test-tailscale` 在普通两个下游客户端之外创建第三台、持久化的 Lima VM

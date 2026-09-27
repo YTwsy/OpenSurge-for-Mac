@@ -32,4 +32,11 @@ describe('Control API requests', () => {
       expect(fetcher).toHaveBeenLastCalledWith('/api/v1/policy-workspace', expect.objectContaining({ method: 'POST', credentials: 'same-origin', body: JSON.stringify(action) }))
     }
   })
+
+  it('encodes the complete policy group name for a scoped connection refresh', async () => {
+    const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ scope: 'policy_group', closed_connections: 0 }) }))
+    vi.stubGlobal('fetch', fetcher)
+    await api.refreshPolicyConnections('共享/香港 策略')
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith(`/api/v1/policies/${encodeURIComponent('共享/香港 策略')}/connections/refresh`, expect.objectContaining({ method: 'POST', credentials: 'same-origin' }))
+  })
 })
