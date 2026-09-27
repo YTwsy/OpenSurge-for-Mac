@@ -83,7 +83,7 @@ export function TrayApp() {
  const topology = status ? ({ same_lan: '旁路由模式', same_wifi_dhcp: '局域网 DHCP 接管', isolated_lan: '独立下游 LAN' } as Record<string, string>)[status.topology] ?? status.topology : ''
  const rows = status ? [
   [t('网关'), statusLabel(status.gateway)], [t('拓扑'), t(topology)], ['LAN IP', status.lan_ip], [t('客户端'), String(status.client_count)],
-  ['DHCP / DNS', statusLabel(status.dhcp)], ['mihomo', statusLabel(status.mihomo)], ['TUN', `${takeoverLabel(status.tun)}${status.tun_interface ? ` · ${status.tun_interface}` : ''}`],
+  ['DHCP / DNS', statusLabel(status.dhcp)], ['mihomo', status.mihomo.startsWith('running') ? `${statusLabel('running')}${status.mihomo.slice(7)}` : statusLabel(status.mihomo)], ['TUN', `${takeoverLabel(status.tun)}${status.tun_interface ? ` · ${status.tun_interface}` : ''}`],
   ['PF', t(status.pf_anchor === 'loaded' ? '已加载' : '未加载')], [t('IPv4 接管'), takeoverLabel(status.ipv4_takeover)], [t('IPv6 接管'), takeoverLabel(status.ipv6_takeover)],
  ] : []
  return <main className="tray-app">

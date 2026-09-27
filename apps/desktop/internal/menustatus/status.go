@@ -4,6 +4,7 @@ package menustatus
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 )
@@ -53,7 +54,7 @@ func (s Status) RecoveryNeedsAttention() bool {
 	}
 }
 func (s Status) ServicesActive() bool {
-	return s.Gateway == "running" || s.Gateway == "degraded" || s.DHCP == "running" || s.Mihomo == "running" || s.PFAnchor == "loaded"
+	return s.Gateway == "running" || s.Gateway == "degraded" || s.DHCP == "running" || strings.HasPrefix(s.Mihomo, "running") || s.PFAnchor == "loaded"
 }
 func (s Status) CanQuit() bool {
 	return s.Gateway == "stopped" && !s.ServicesActive() && !s.RecoveryNeedsAttention()

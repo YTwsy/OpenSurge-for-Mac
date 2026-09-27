@@ -38,6 +38,10 @@ func TestExitAndIndicatorMatchExistingHostContract(t *testing.T) {
 	if !stopped.CanQuit() {
 		t.Fatal("prepared snapshot blocks exit")
 	}
+	stopped.Mihomo = "running (1.19.30-opensurge.1)"
+	if stopped.CanQuit() {
+		t.Fatal("versioned running engine permitted exit")
+	}
 }
 
 func TestFailureClearsHealthyStateAndAcknowledgedSleepSurvivesOldSnapshot(t *testing.T) {
