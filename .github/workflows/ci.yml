@@ -46,6 +46,8 @@ jobs:
         with:
           go-version-file: apps/desktop/go.mod
           cache-dependency-path: apps/desktop/go.sum
+      - name: Test desktop control client
+        run: make desktop-test
       - name: Build native desktop preview
         env:
           OPENSURGE_DESKTOP_ARCH: ${{ matrix.arch }}
