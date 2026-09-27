@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
+import { watchControlEvents } from './desktop'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { ConnectionRefreshPrompts, queueConnectionRefreshSuggestion, type ConnectionRefreshSuggestion, type ConnectionRefreshSuggestionItem } from './components/ConnectionRefreshPrompts'
 import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './components/OperationNotifications'
@@ -160,8 +161,7 @@ export function App() {
     if (authenticationRequired) return
     void refresh()
     const timer = window.setInterval(() => void refresh(), 8000)
-    const events = typeof EventSource === 'undefined' ? null : new EventSource('/api/v1/events')
-    events?.addEventListener('state', () => void refresh())
+    const stopEvents = watchControlEvents(() => void refresh())
     const onPop = () => {
       const next = currentPage()
       if (pageRef.current === 'devices' && next !== 'devices' && devicesDirtyRef.current && !window.confirm(t('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？'))) {
@@ -177,7 +177,7 @@ export function App() {
     window.addEventListener('popstate', onPop)
     return () => {
       window.clearInterval(timer)
-      events?.close()
+      stopEvents()
       window.removeEventListener('popstate', onPop)
     }
   }, [authenticationRequired, refresh])

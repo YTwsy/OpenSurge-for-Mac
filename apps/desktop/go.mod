@@ -2,7 +2,12 @@ module open-mihomo-gateway/apps/desktop
 
 go 1.25.0
 
-require github.com/wailsapp/wails/v3 v3.0.0-beta.26
+require (
+	github.com/wailsapp/wails/v3 v3.0.0-beta.26
+	open-mihomo-gateway v0.0.0
+)
+
+replace open-mihomo-gateway => ../..
 
 require (
 	github.com/adrg/xdg v0.5.3 // indirect

@@ -18,18 +18,29 @@ installer cutover is complete.
 
 ## Communication
 
-Start with the Control Service's loopback-served frontend, HTTP API, and SSE. The
-host obtains a one-time bootstrap grant using the native credential; the WebView
-receives an HttpOnly session, never the long-lived bearer token. Desktop bindings
-are limited to explicit desktop capabilities. Do not expose general shell execution
-or bind gateway managers into the GUI process.
+The host embeds the existing React build through `internal/webui.FS()` and serves
+it at `wails://localhost` over Wails' in-process asset transport. No extra TCP
+listener is opened. The independent desktop module imports only this static-asset
+package from the root module; root service builds do not depend on Wails.
+
+The native HTTP relay forwards `/api/v1/` to the existing Control Service. It obtains
+a one-time bootstrap grant and exchanges it for an HttpOnly session in native memory.
+Neither the bearer token nor the service cookie enters JavaScript. A random per-process
+capability injected into the bundled HTML authorizes private asset-transport requests;
+SSE carries it only on the events route. Native credentials replace renderer credentials
+before forwarding. Session/bootstrap endpoints, foreign origins and redirects are denied.
+Desktop bindings remain limited to explicit capabilities: never expose general shell
+execution or bind gateway managers into the GUI process.
 
 The preview's native client accepts only explicit-port HTTP loopback discovery,
 dials IPv4 loopback directly, and refuses redirects. It validates the returned
-bootstrap URL against the discovered service origin before navigating. Discovery
-and credentials are reread for each connection attempt. The initial main-window
-increment reconnects through the native menu; it does not yet renew a WebView
-session automatically or launch/stop the installed Control Service.
+bootstrap URL against the discovered service origin before exchanging it. Discovery
+and credentials are reread for every API request; port, process or token changes renew
+the native session. Authentication failure retries GET/HEAD once. Mutations are never
+replayed, including bodyless POSTs with an Idempotency-Key. Service loss produces a
+reconnect error, not browser-session expiry, so the React tree and unsaved drafts stay
+mounted. SSE flushes each chunk and propagates WebView cancellation upstream. The
+browser host retains its existing bootstrap/cookie and session-expiry behavior.
 
 Tray status must remain available without mounting the full main React application.
 Hidden-window work must be reduced explicitly rather than relying on browser-tab
@@ -39,6 +50,11 @@ unacknowledged privileged mutation.
 The preview bundle uses a distinct identifier and build output. Production identity,
 launchd and installer sequencing are a separate migration stage. Development preview
 builds must not register login items or change installed network services on launch.
+
+For native acceptance, `scripts/desktop-smoke-service.py DIR` runs a harmless fixture.
+Launch the preview executable with `--control-dir DIR`; scenario changes and service
+restarts exercise sessions, discovery and UI state without touching the installed
+gateway. Its observations record mutation payloads and SSE lifetimes, never credentials.
 
 The [migration plan](../../../desktop-migration.md) tracks stage boundaries;
 [GUI control-plane](gui-control-plane.md) documents the existing contracts to carry

@@ -32,6 +32,7 @@ const english: Record<string, string> = {
   'Web GUI 与 OpenSurge 的安全连接已过期': 'The secure connection between the Web GUI and OpenSurge has expired',
   '请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。': 'Click the OpenSurge icon in the macOS menu bar, then choose “Open OpenSurge Dashboard”.',
   '重试': 'Retry',
+  '正在重新连接后台服务，当前页面已保留。连接恢复后，请重新执行未完成的操作。': 'Reconnecting to the background service. Your current page is preserved. Retry unfinished actions after the connection is restored.',
   '局域网 DHCP 接管': 'Same-LAN DHCP Takeover',
   '让现有局域网设备自动接入 OpenSurge': 'Automatically connect devices on the existing LAN to OpenSurge',
   '自动接管': 'Automatic takeover',

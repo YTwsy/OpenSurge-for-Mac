@@ -1,11 +1,11 @@
 // Package controlclient discovers the existing per-user Control Service and
-// exchanges the native credential for a short-lived WebView bootstrap grant.
-// It intentionally exposes no gateway operations.
+// authenticates the desktop's native API transport. It contains no gateway rules.
 package controlclient
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,6 +31,12 @@ var (
 type Client struct {
 	directory string
 	http      *http.Client
+	api       *http.Client
+	mutations *http.Client
+	mu        sync.Mutex
+	session   *session
+	retryAt   time.Time
+	lastError error
 }
 
 func DefaultDirectory() (string, error) {
@@ -51,7 +58,19 @@ func New(directory string) *Client {
 		}
 		return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp4", net.JoinHostPort("127.0.0.1", port))
 	}
-	return &Client{directory: directory, http: &http.Client{
+	newHTTP := func(t *http.Transport, timeout time.Duration) *http.Client {
+		return &http.Client{
+			Transport: t, Timeout: timeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
+	}
+	apiTransport := transport.Clone()
+	apiTransport.ResponseHeaderTimeout = 2 * time.Minute
+	mutationTransport := apiTransport.Clone()
+	// A fresh connection prevents net/http's automatic retry on a reused
+	// connection, including bodyless POSTs carrying an Idempotency-Key.
+	mutationTransport.DisableKeepAlives = true
+	return &Client{directory: directory, api: newHTTP(apiTransport, 0), mutations: newHTTP(mutationTransport, 0), http: &http.Client{
 		Transport: transport,
 		Timeout:   5 * time.Second,
 		// Never follow a redirect carrying the native credential.
@@ -60,28 +79,47 @@ func New(directory string) *Client {
 }
 
 // BootstrapURL rereads discovery and credentials for every connection attempt,
-// including after a service restart. Only the one-time grant reaches the WebView.
+// including after a service restart. The desktop exchanges this grant natively.
 func (c *Client) BootstrapURL(ctx context.Context, path string) (string, error) {
+	discovery, err := c.discover()
+	if err != nil {
+		return "", err
+	}
+	return c.bootstrapURL(ctx, discovery, path)
+}
+
+type discovery struct {
+	base     *url.URL
+	token    string
+	identity [32]byte
+}
+
+func (c *Client) discover() (discovery, error) {
 	data, err := readLimited(filepath.Join(c.directory, "control-endpoint.json"), 16<<10)
 	if err != nil {
-		return "", ErrUnavailable
+		return discovery{}, ErrUnavailable
 	}
 	var descriptor struct {
 		SchemaVersion int    `json:"schema_version"`
 		URL           string `json:"url"`
 	}
 	if json.Unmarshal(data, &descriptor) != nil || descriptor.SchemaVersion != 1 {
-		return "", ErrDescriptor
+		return discovery{}, ErrDescriptor
 	}
 	base, err := url.Parse(descriptor.URL)
 	if err != nil || !validEndpoint(base) {
-		return "", ErrDescriptor
+		return discovery{}, ErrDescriptor
 	}
 	tokenBytes, err := readLimited(filepath.Join(c.directory, "control-token"), 4<<10)
 	token := strings.TrimSpace(string(tokenBytes))
 	if err != nil || token == "" || strings.ContainsAny(token, "\r\n\t ") {
-		return "", ErrCredential
+		return discovery{}, ErrCredential
 	}
+	return discovery{base: base, token: token, identity: sha256.Sum256(append(data, tokenBytes...))}, nil
+}
+
+func (c *Client) bootstrapURL(ctx context.Context, discovery discovery, path string) (string, error) {
+	base, token := discovery.base, discovery.token
 	body, _ := json.Marshal(struct {
 		Path string `json:"path"`
 	}{Path: path})
@@ -104,7 +142,7 @@ func (c *Client) BootstrapURL(ctx context.Context, path string) (string, error) 
 	if response.StatusCode != http.StatusCreated {
 		return "", fmt.Errorf("Control Service bootstrap failed (HTTP %d)", response.StatusCode)
 	}
-	data, err = io.ReadAll(io.LimitReader(response.Body, (16<<10)+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, (16<<10)+1))
 	var grant struct {
 		SchemaVersion int       `json:"schema_version"`
 		URL           string    `json:"url"`
