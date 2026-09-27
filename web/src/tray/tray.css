@@ -46,3 +46,10 @@ html[data-theme="light"] .tray-error { color: #a23e39; }
 .tray-exit { display: grid; gap: 6px; padding-top: 13px; margin-top: 14px; border-top: 1px solid #294034; }
 .tray-exit button { text-align: left; }
 html[data-theme="light"] .tray-exit { border-color: #d8e6df; }
+.tray-utilities { margin-top: 13px; border-top: 1px solid #294034; padding-top: 12px; }
+.tray-utilities summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.tray-utilities label { display: flex; align-items: center; justify-content: space-between; margin: 12px 0; }
+.tray-utilities input { accent-color: #28ad76; width: 17px; height: 17px; }
+.tray-utilities .tray-hint button { padding: 5px 8px; font-size: 12px; }
+.tray-update-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #47d498; margin-left: 8px; }
+html[data-theme="light"] .tray-utilities { border-color: #d8e6df; }

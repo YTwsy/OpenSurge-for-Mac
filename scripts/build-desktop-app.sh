@@ -5,6 +5,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ "$(uname -s)" == Darwin ]] || { echo "desktop app builds require macOS" >&2; exit 1; }
 
 GO_BIN="${GO_BIN:-go}"
+RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v0.2.4-next}"
+[[ "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]] || { echo "invalid desktop release tag" >&2; exit 1; }
+RELEASE_VERSION="${RELEASE_TAG#v}"
+RELEASE_VERSION="${RELEASE_VERSION%%[-+]*}"
 ARCH="${OPENSURGE_DESKTOP_ARCH:-$("$GO_BIN" env GOARCH)}"
 case "$ARCH" in
   arm64) GO_ARCH=arm64 ;;
@@ -19,10 +23,12 @@ mkdir -p "$OUTPUT/Contents/MacOS" "$OUTPUT/Contents/Resources"
   MACOSX_DEPLOYMENT_TARGET=13.0 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=1 \
     CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=13.0" \
     CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=13.0" \
-    "$GO_BIN" build -mod=readonly -trimpath -tags production -ldflags '-extldflags=-mmacosx-version-min=13.0' \
+    "$GO_BIN" build -mod=readonly -trimpath -tags production -ldflags "-extldflags=-mmacosx-version-min=13.0 -X main.releaseTag=$RELEASE_TAG" \
       -o "$OUTPUT/Contents/MacOS/OpenSurgeDesktop" .
 )
 cp "$ROOT/apps/desktop/Resources/Info.plist" "$OUTPUT/Contents/Info.plist"
+/usr/bin/plutil -insert OpenSurgeReleaseTag -string "$RELEASE_TAG" "$OUTPUT/Contents/Info.plist"
+/usr/bin/plutil -replace CFBundleShortVersionString -string "$RELEASE_VERSION" "$OUTPUT/Contents/Info.plist"
 ICONSET="$ROOT/bin/desktop-icons/OpenSurgeAppIcon.iconset"
 mkdir -p "$ICONSET"
 for icon_spec in \

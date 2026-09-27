@@ -6,6 +6,7 @@ import { recoveryLabel, statusLabel, takeoverLabel } from '../status'
 import type { SleepPreventionStatus } from '../types'
 import { watchVisibleRefresh } from '../visibility'
 import type { MenuBarStatus, TraySnapshot } from './types'
+import { TrayUtilities } from './TrayUtilities'
 import './tray.css'
 
 const initial: TraySnapshot = { status: null, indicator: 'connecting', sequence: 0, can_quit: false }
@@ -113,7 +114,8 @@ export function TrayApp() {
    {status?.sleep_prevention.error && <p role="alert" className="tray-error">{status.sleep_prevention.error}</p>}
   </section>
   {error && <p role="alert" className="tray-error">{error}</p>}
-  <footer><span>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</span><button onClick={() => show('diagnostics')}>{t('诊断')}</button></footer>
+  <TrayUtilities />
+  <footer><span>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</span></footer>
   <section className="tray-exit">
    <button disabled={!snapshot.can_quit || !snapshot.service_actions || serviceBusy} title={!snapshot.can_quit ? t('请先在网络设置中停止网关并完成恢复。') : undefined} onClick={() => void serviceAction('quit', true)}>{t('退出 OpenSurge…')}</button>
    <button disabled={serviceBusy} onClick={() => void serviceAction('quit')}>{t('只退出桌面 App…')}</button>

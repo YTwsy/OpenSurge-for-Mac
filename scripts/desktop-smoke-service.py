@@ -28,6 +28,7 @@ if not scenario_file.exists():
 lock = threading.Lock()
 observations = {"requests": {}, "writes": [], "events_opened": 0, "events_closed": 0}
 language, sleep_enabled = "zh-Hans", False
+login_state = "disabled"
 sources = []
 
 
@@ -86,7 +87,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.rfile.read(2)
 
     def handle_request(self):
-        global language, sleep_enabled
+        global language, sleep_enabled, login_state
         path = self.path.split("?", 1)[0]
         state = scenario()
         observed("requests", self.command + " " + path)
@@ -145,6 +146,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             language = payload["language"]
         if path == "/api/v1/sleep-prevention" and self.command == "PUT":
             sleep_enabled = payload["enabled"]
+        if path == "/api/v1/desktop-smoke/login" and self.command == "PUT":
+            if state.get("login_failure"):
+                self.reply({}, 503)
+                return
+            login_state = ("approval" if state.get("login_approval") else "enabled") if payload["enabled"] else "disabled"
+        if path == "/api/v1/desktop-smoke/release" and state.get("update_failure"):
+            self.reply({}, 503)
+            return
         preferences = {"schema_version": 1, "language": language}
         sleep = {"enabled": sleep_enabled, "active": sleep_enabled}
         recovery = {"stage": state.get("recovery_stage", "prepared" if state.get("recovery") else "idle"), "required": state.get("recovery", False), "topology": state.get("mode", "same_lan")}
@@ -158,6 +167,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         status.update({key: state[key] for key in ("dhcp", "mihomo", "pf_anchor") if key in state})
         routes = {
             "/api/v1/desktop-smoke/lifecycle": {},
+            "/api/v1/desktop-smoke/login": {"state": login_state},
+            "/api/v1/desktop-smoke/release": {"tag_name": state.get("release_tag", "v0.2.5"), "html_url": "https://github.com/YTwsy/OpenSurge-for-Mac/releases/tag/" + state.get("release_tag", "v0.2.5"), "draft": False, "prerelease": False},
             "/api/v1/overview": {**common, "status": status, "doctor": [], "leases": [], "policies": [], "providers": {"proxy_providers": [], "rule_providers": []}, "recovery": recovery},
             "/api/v1/menubar": {**common, **status, "recovery_required": recovery["required"], "recovery_stage": recovery["stage"]},
             "/api/v1/ui-preferences": preferences,

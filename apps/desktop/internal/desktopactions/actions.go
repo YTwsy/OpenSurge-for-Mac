@@ -13,15 +13,19 @@ import (
 )
 
 type Actions struct {
-	OpenExternal func(string) error
-	CopyText     func(string) error
-	SaveRecovery func(context.Context) (bool, error)
-	SetLanguage  func(string)
-	MenuStatus   func(context.Context, bool) any
-	ShowMain     func(string)
-	SetSleep     func(context.Context, bool) (any, error)
-	Reconnect    func(context.Context) error
-	Quit         func(context.Context, bool) (bool, error)
+	OpenExternal  func(string) error
+	CopyText      func(string) error
+	SaveRecovery  func(context.Context) (bool, error)
+	SetLanguage   func(string)
+	MenuStatus    func(context.Context, bool) any
+	ShowMain      func(string)
+	SetSleep      func(context.Context, bool) (any, error)
+	Reconnect     func(context.Context) error
+	Quit          func(context.Context, bool) (bool, error)
+	Utilities     func() any
+	SetLogin      func(bool) (any, error)
+	LoginSettings func() error
+	CheckUpdates  func(context.Context) any
 }
 
 func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +88,18 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = a.SetSleep(r.Context(), *payload.Enabled)
 	case "/desktop/v1/reconnect":
 		err = a.Reconnect(r.Context())
+	case "/desktop/v1/utilities":
+		result = a.Utilities()
+	case "/desktop/v1/login-item":
+		if payload.Enabled == nil {
+			http.Error(w, "enabled is required", http.StatusBadRequest)
+			return
+		}
+		result, err = a.SetLogin(*payload.Enabled)
+	case "/desktop/v1/login-settings":
+		err = a.LoginSettings()
+	case "/desktop/v1/check-updates":
+		result = a.CheckUpdates(r.Context())
 	case "/desktop/v1/quit":
 		var accepted bool
 		accepted, err = a.Quit(r.Context(), payload.Full)
