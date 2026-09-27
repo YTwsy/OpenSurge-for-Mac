@@ -17,6 +17,7 @@ import (
 	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/native"
 	"open-mihomo-gateway/apps/desktop/internal/servicelife"
+	"open-mihomo-gateway/apps/desktop/internal/uninstall"
 	"open-mihomo-gateway/apps/desktop/internal/updates"
 )
 
@@ -35,6 +36,7 @@ type desktopHost struct {
 	login         *loginitem.Manager
 	updates       *updates.Checker
 	loginSettings func() error
+	uninstaller   *uninstall.Manager
 }
 
 func (h *desktopHost) show(path string) {
@@ -72,6 +74,7 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 		MenuStatus:   h.menuSnapshot,
 		Reconnect:    h.reconnect,
 		Utilities:    h.utilities,
+		Uninstall:    h.uninstall,
 		SetLogin: func(enabled bool) (any, error) {
 			if !h.quitBusy.CompareAndSwap(false, true) {
 				return nil, servicelife.ErrQuitting

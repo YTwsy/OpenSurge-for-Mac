@@ -1515,4 +1515,12 @@ export const englishMessages: Record<string, string> = {
   '无法检查更新，请稍后重试。': 'Could not check for updates. Please try again later.',
   '打开稳定版 {{version}} 下载页': 'Open stable release {{version}} download page',
   '没有更新的稳定版': 'No newer stable release is available',
+  '卸载 OpenSurge…': 'Uninstall OpenSurge…',
+  '预览版不会卸载正式安装的 OpenSurge。': 'The preview cannot uninstall your installed OpenSurge application.',
+  '缺少可信的卸载组件，请重新安装当前版本。': 'A trusted uninstall component is missing. Reinstall the current version.',
+  '请先在网络设置中停止网关，再卸载 OpenSurge。': 'Stop the gateway in Network Settings before uninstalling OpenSurge.',
+  '当前 App 无法卸载已安装的 OpenSurge。': 'This App cannot uninstall the installed OpenSurge application.',
+  '无法关闭登录项。请在系统设置中关闭后重试卸载。': 'Could not disable the login item. Disable it in System Settings before retrying uninstall.',
+  '卸载未完成，登录项也未能恢复。请检查系统登录项设置。': 'Uninstall did not complete and the login item could not be restored. Check Login Items in System Settings.',
+  '卸载未完成。请重新连接后台服务并检查安装状态。': 'Uninstall did not complete. Reconnect to the service and check the installation.',
 }

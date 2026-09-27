@@ -24,6 +24,13 @@ enter `Next` through a separate synchronization PR.
 5. **Installer cutover:** production App identity, PKG upgrade/cleanup integration,
    architecture checks, macOS acceptance, user documentation, and old-host retirement.
 
+The preview now implements stages 1–4: native main-window integration, an independent
+React tray popup, service reconnect/exit, login-item state, stable update discovery,
+and an identity-gated uninstall entry. The production installer still ships the Swift
+host. Stage 5 must validate upgrades and cleanup, adopt the installed App identity,
+retire the old host, and complete the macOS 13/Intel runtime acceptance gaps before
+the preview can become the default installed experience.
+
 ## Validation
 
 - Root `make test` continues to validate the Go service code on Linux.

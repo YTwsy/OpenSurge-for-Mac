@@ -168,6 +168,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         routes = {
             "/api/v1/desktop-smoke/lifecycle": {},
             "/api/v1/desktop-smoke/login": {"state": login_state},
+            "/api/v1/desktop-smoke/uninstall": {"outcome": state.get("uninstall_outcome", "cancel")},
             "/api/v1/desktop-smoke/release": {"tag_name": state.get("release_tag", "v0.2.5"), "html_url": "https://github.com/YTwsy/OpenSurge-for-Mac/releases/tag/" + state.get("release_tag", "v0.2.5"), "draft": False, "prerelease": False},
             "/api/v1/overview": {**common, "status": status, "doctor": [], "leases": [], "policies": [], "providers": {"proxy_providers": [], "rule_providers": []}, "recovery": recovery},
             "/api/v1/menubar": {**common, **status, "recovery_required": recovery["required"], "recovery_stage": recovery["stage"]},

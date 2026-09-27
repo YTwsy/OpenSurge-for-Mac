@@ -8,11 +8,13 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/servicelife"
+	"open-mihomo-gateway/apps/desktop/internal/uninstall"
 )
 
 type desktopSnapshot struct {
 	menustatus.Snapshot
 	ServiceActions bool `json:"service_actions"`
+	CanUninstall   bool `json:"can_uninstall"`
 }
 
 func (h *desktopHost) menuSnapshot(ctx context.Context, refresh bool) any {
@@ -21,7 +23,7 @@ func (h *desktopHost) menuSnapshot(ctx context.Context, refresh bool) any {
 		snapshot = h.status.Refresh(ctx)
 	}
 	snapshot.CanQuit = servicelife.CanStop(snapshot.Status) && !h.quitBusy.Load()
-	return desktopSnapshot{Snapshot: snapshot, ServiceActions: h.services.Available()}
+	return desktopSnapshot{Snapshot: snapshot, ServiceActions: h.services.Available(), CanUninstall: uninstall.CanUninstall(snapshot.Status) && !h.quitBusy.Load()}
 }
 func (h *desktopHost) text(zh, en string) string {
 	h.mu.Lock()

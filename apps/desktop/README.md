@@ -46,7 +46,9 @@ macOS login-item state, including approval and failures. Login registration is
 explicit and scoped to this bundle; launch does not register anything. Stable-release
 discovery checks the official GitHub repository daily and supports a manual check.
 It opens a verified release page without downloading or installing an update.
-The uninstall entry follows separately.
+The uninstall entry offers keep-data and remove-all choices through native
+confirmation, then delegates to the existing installed script. The preview identity
+cannot uninstall a production installation; smoke mode records fixture actions only.
 Run the native client and host boundary tests with `make desktop-test`.
 
 This preview has a separate bundle identifier and output path; production

@@ -114,7 +114,7 @@ export function TrayApp() {
    {status?.sleep_prevention.error && <p role="alert" className="tray-error">{status.sleep_prevention.error}</p>}
   </section>
   {error && <p role="alert" className="tray-error">{error}</p>}
-  <TrayUtilities />
+  <TrayUtilities canUninstall={snapshot.can_uninstall === true} />
   <footer><span>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</span></footer>
   <section className="tray-exit">
    <button disabled={!snapshot.can_quit || !snapshot.service_actions || serviceBusy} title={!snapshot.can_quit ? t('请先在网络设置中停止网关并完成恢复。') : undefined} onClick={() => void serviceAction('quit', true)}>{t('退出 OpenSurge…')}</button>

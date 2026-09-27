@@ -27,7 +27,7 @@ func main() {
 		log.Fatal("Cannot locate the OpenSurge application support directory")
 	}
 	defaultDirectory := directory
-	smokeActions := flag.Bool("smoke-actions", false, "Record lifecycle commands in the isolated smoke service; never execute native service commands")
+	smokeActions := flag.Bool("smoke-actions", false, "Use isolated fixture providers for service, login, updates and uninstall; never change installed services or login items")
 	flag.StringVar(&directory, "control-dir", directory, "Control Service discovery directory (use a smoke fixture for desktop acceptance)")
 	flag.Parse()
 	directory, err = filepath.Abs(directory)
@@ -52,6 +52,7 @@ func main() {
 	}
 	host.services = servicelife.New(os.Getuid(), homeDirectory, directory == defaultDirectory || *smokeActions, runner, host.readMenuStatus)
 	host.initUtilities(directory == defaultDirectory, *smokeActions)
+	host.initUninstaller(directory == defaultDirectory, *smokeActions)
 	host.status = menustatus.New(host.readMenuStatus, host.menuStatusChanged)
 	lifetime, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -93,6 +93,20 @@ state and retryable failure. A failed check must clear the prior download link.
 The native App menu's update action opens this same panel. Real checks use only the
 official GitHub repository; fixture release versions are not claims about publication.
 
+## Uninstall entry
+
+Without smoke actions, the preview must show a disabled uninstall entry explaining
+that it cannot remove the installed App. With `--smoke-actions`, a stopped fixture
+enables it. Confirm the native dialog has **Uninstall and Keep Data**, **Remove All
+Data** and a default **Cancel**. Change the fixture to running while that dialog is
+open; confirming must fail without recording uninstall or login changes.
+
+`uninstall_outcome` defaults to `cancel`; set it to `failure` or `success` to exercise
+the other results. With fixture login enabled, cancellation/failure must record
+disable followed by restore and leave the App running; success must record the chosen
+mode once, leave fixture login disabled, and exit the App. This does not execute the
+installed script, ask for administrator privileges or delete any installed data.
+
 The minimum target is macOS 13. Native acceptance on macOS 14 alone must not be
 reported as a macOS 13 runtime test. Installer upgrade and real gateway/network
 acceptance remain separate gates.

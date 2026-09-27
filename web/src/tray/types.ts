@@ -30,4 +30,5 @@ export type TraySnapshot = {
  sequence: number
  can_quit: boolean
  service_actions?: boolean
+ can_uninstall?: boolean
 }

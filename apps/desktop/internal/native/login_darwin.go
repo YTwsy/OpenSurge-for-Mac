@@ -6,6 +6,7 @@ package native
 int openSurgeLoginStatus(void);
 bool setOpenSurgeLogin(bool enabled);
 void openSurgeLoginSettings(void);
+bool openSurgeIsInstalledApp(void);
 */
 import "C"
 
@@ -38,4 +39,5 @@ func (LoginItem) SetEnabled(enabled bool) error {
 	}
 	return nil
 }
-func OpenLoginSettings() { application.InvokeSync(func() { C.openSurgeLoginSettings() }) }
+func OpenLoginSettings()   { application.InvokeSync(func() { C.openSurgeLoginSettings() }) }
+func IsInstalledApp() bool { return bool(C.openSurgeIsInstalledApp()) }
