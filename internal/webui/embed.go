@@ -11,11 +11,17 @@ import (
 //go:embed dist
 var assets embed.FS
 
-func Handler() http.Handler {
+// FS exposes the shared frontend build to the service and desktop host.
+func FS() fs.FS {
 	root, err := fs.Sub(assets, "dist")
 	if err != nil {
 		panic(err)
 	}
+	return root
+}
+
+func Handler() http.Handler {
+	root := FS()
 	files := http.FileServer(http.FS(root))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested := strings.TrimPrefix(path.Clean(r.URL.Path), "/")

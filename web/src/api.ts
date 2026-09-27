@@ -1,5 +1,7 @@
 import type { APIError, ConnectionObservation, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
 import { getOperation, markOperationConnection, operationStatusUnknownMessage, recordOperation } from './operations'
+import { desktopHeaders } from './desktop'
+import { t } from './i18n'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -13,13 +15,16 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: 'same-origin',
     ...init,
-    headers: init?.body instanceof FormData ? init.headers : { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { ...desktopHeaders(), ...(init?.body instanceof FormData ? init.headers : { 'Content-Type': 'application/json', ...init?.headers }) },
   })
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new Event(authenticationRequiredEvent))
     let payload: APIError = {}
     try { payload = await response.json() as APIError } catch { /* response was not JSON */ }
-    throw new RequestError(response.status, payload.error?.code ?? 'request_failed', payload.error?.message ?? response.statusText)
+    const message = payload.error?.code === 'desktop_service_unavailable'
+      ? t('正在重新连接后台服务，当前页面已保留。连接恢复后，请重新执行未完成的操作。')
+      : payload.error?.message ?? response.statusText
+    throw new RequestError(response.status, payload.error?.code ?? 'request_failed', message)
   }
   return response.json() as Promise<T>
 }

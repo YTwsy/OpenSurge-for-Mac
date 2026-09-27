@@ -278,6 +278,31 @@ describe('OpenSurge app shell', () => {
     expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en')
   })
 
+  it('keeps network drafts mounted through desktop service loss and reconnect', async () => {
+    let stateListener: EventListener | undefined
+    class TestEventSource {
+      addEventListener(type: string, listener: EventListener) {
+        if (type === 'state') stateListener = listener
+      }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', TestEventSource)
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+    const input = await screen.findByLabelText('下游 LAN 接口') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'en99-draft' } })
+    vi.mocked(api.overview).mockRejectedValueOnce(new RequestError(503, 'desktop_service_unavailable', 'Reconnecting'))
+    await act(async () => stateListener?.(new Event('state')))
+    expect(await screen.findByText('Reconnecting')).toBeTruthy()
+    expect(screen.getByLabelText('下游 LAN 接口')).toBe(input)
+    expect(input.value).toBe('en99-draft')
+    await act(async () => stateListener?.(new Event('state')))
+    await waitFor(() => expect(screen.queryByText('Reconnecting')).toBeNull())
+    expect(screen.getByLabelText('下游 LAN 接口')).toBe(input)
+    expect(input.value).toBe('en99-draft')
+    expect(api.saveConfig).not.toHaveBeenCalled()
+  })
+
   it('does not present a saved recovery card as an unfinished network recovery', async () => {
     render(<App />)
     const brandIcon = document.querySelector<HTMLImageElement>('img.brand-mark')
