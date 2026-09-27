@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { api, waitForOperation } from '../api'
+import { RecoveryCardLinks } from '../components/RecoveryCardLinks'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
 import type { OperationNotification } from '../components/OperationNotifications'
@@ -590,7 +591,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
           <div><dt>{t('接口')}</dt><dd>{recoverySnapshot.interface || '—'}</dd></div>
           <div><dt>{t('子网掩码')}</dt><dd>{recoverySnapshot.subnet_mask || '—'}</dd></div>
         </dl>
-        <div className="recovery-card-actions"><a href="/api/v1/recovery/card" target="_blank" rel="noopener noreferrer">{t('查看恢复卡')}</a><a href="/api/v1/recovery/card?download=1" download="OpenSurge-WiFi-DHCP-Recovery-Card.txt">{t('下载恢复卡')}</a></div>
+        <RecoveryCardLinks />
       </section>}
       <section className="section">
         <SectionTitle title="恢复状态机" subtitle="推荐路径保留真实系统动作与网络证据；可跳过节点会明确记录为未验证" />

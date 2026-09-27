@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
-import { watchControlEvents } from './desktop'
+import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from './desktop'
+import { watchVisibleRefresh } from './visibility'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { ConnectionRefreshPrompts, queueConnectionRefreshSuggestion, type ConnectionRefreshSuggestion, type ConnectionRefreshSuggestionItem } from './components/ConnectionRefreshPrompts'
 import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './components/OperationNotifications'
@@ -19,7 +20,7 @@ import { SourcesPage } from './pages/SourcesPage'
 import { needsNetworkRecoveryWarning, statusLabel } from './status'
 import { operationStatusUnknownMessage } from './operations'
 import type { Overview } from './types'
-import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, t, type RequestedLanguage } from './i18n'
+import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, resolveLanguage, t, type RequestedLanguage } from './i18n'
 
 type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connections' | 'connectivity' | 'diagnostics'
 type Theme = 'dark' | 'light'
@@ -98,7 +99,10 @@ export function App() {
   useEffect(() => {
     activateLanguage(language)
     cacheRequestedLanguage(language)
+    if (isDesktop()) void desktopAction('language', { language: resolveLanguage(language) }).catch(() => {})
   }, [language])
+
+  useEffect(() => watchDesktopLinks(setError), [])
 
   const commitLanguage = useCallback(async (nextLanguage: RequestedLanguage) => {
     await prepareLanguage(nextLanguage)
@@ -159,8 +163,7 @@ export function App() {
 
   useEffect(() => {
     if (authenticationRequired) return
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 8000)
+    const stopRefresh = watchVisibleRefresh(refresh, 8000)
     const stopEvents = watchControlEvents(() => void refresh())
     const onPop = () => {
       const next = currentPage()
@@ -176,7 +179,7 @@ export function App() {
     }
     window.addEventListener('popstate', onPop)
     return () => {
-      window.clearInterval(timer)
+      stopRefresh()
       stopEvents()
       window.removeEventListener('popstate', onPop)
     }
@@ -198,6 +201,17 @@ export function App() {
     setPage(next)
     return true
   }
+
+  const goRef = useRef(go)
+  goRef.current = go
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const path = (event as CustomEvent<string>).detail
+      if (nav.some(item => item.id === path)) goRef.current(path as Page, path === 'network' ? 'control' : 'none')
+    }
+    window.addEventListener('opensurge:navigate', navigate)
+    return () => window.removeEventListener('opensurge:navigate', navigate)
+  }, [])
 
   const openConnections = (owner = 'all') => {
     if (!go('connections')) return

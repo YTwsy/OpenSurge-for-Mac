@@ -33,6 +33,16 @@ transport fixture, not a substitute for Control API or network validation.
 5. Confirm SSE opens and reconnects, closes when the window host exits, and carries
    state changes before the stream ends. Unit tests additionally assert cancellation
    and prohibit automatic mutation replay after authentication failure.
+6. Use `⌘1`–`⌘8` for pages and `⌘R` to refresh state without reloading a draft.
+   `⌘W` hides the main window; opening the App again must reveal the same window
+   and draft. Hidden/minimised/occluded windows suspend recurring requests and SSE.
+7. Follow an HTTP(S) link to the system browser. Gateway confirmation uses a native
+   sheet; cancel must leave the operation unsubmitted. File/custom-scheme navigation
+   and unsolicited external redirects must not replace the bundled application.
+8. Set the fixture's `recovery` to `true` and `mode` to `same_wifi_dhcp`. View its
+   recovery card as plain text, close the modal, and download it with the native save
+   panel. Cancel is not success. Compare the saved text and permissions with the
+   fixture response. Check both languages, keyboard copy/paste, and window sizing.
 
 Run `make test web-test desktop-test` before opening a PR. Build both native
 architectures with `OPENSURGE_DESKTOP_ARCH=arm64 make desktop-build` and

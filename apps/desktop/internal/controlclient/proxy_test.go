@@ -167,3 +167,23 @@ func TestProxyMissingServicePreservesFrontendSession(t *testing.T) {
 		t.Fatal("frontend can create a native bootstrap")
 	}
 }
+
+func TestNativeReadsShareAuthenticationAndEnforceResponseLimit(t *testing.T) {
+	f := newServiceFixture(t)
+	directory := t.TempDir()
+	writeDiscovery(t, directory, f.server.URL, "native-token")
+	c := New(directory)
+	var result map[string]string
+	if err := c.ReadJSON(context.Background(), "/api/v1/menubar", &result); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Read(context.Background(), "/api/v1/recovery/card", 8); err == nil {
+		t.Fatal("oversized native response accepted")
+	}
+	if _, err := c.Read(context.Background(), "/api/v1/session/bootstrap", 1024); err == nil {
+		t.Fatal("native read bypassed route boundary")
+	}
+	if f.grants.Load() != 1 {
+		t.Fatal("native reads did not share the cached session")
+	}
+}

@@ -47,6 +47,22 @@ Hidden-window work must be reduced explicitly rather than relying on browser-tab
 throttling. Reconnect must recover authentication and state without replaying an
 unacknowledged privileged mutation.
 
+The main window persists its frame, hides on close, and reopens through Dock or a
+second launch without replacing its React tree. Single-instance scope includes the
+canonical discovery directory so fixture acceptance cannot redirect an installed host.
+Native View-menu navigation preserves React's existing dirty-device guard; refresh
+requests state without reloading. The host loads the pinned Wails runtime explicitly
+so native-to-renderer events are delivered through the supported bridge.
+
+A small AppKit/WKWebView delegate adapter supplies native JavaScript confirmation
+sheets, external-navigation confinement, and actual NSWindow visibility. It forwards
+the framework's other delegate methods, including file selection and renderer recovery.
+Hidden, minimised or fully occluded windows close SSE and pause recurring reads;
+becoming visible resumes them. Deliberate HTTP(S) links open the system browser.
+The private `/desktop/v1/` routes share the renderer capability check and expose only
+external links, clipboard text, resolved language, and saving a freshly authenticated
+recovery card through a native save panel. Browser file/link behavior remains supported.
+
 The preview bundle uses a distinct identifier and build output. Production identity,
 launchd and installer sequencing are a separate migration stage. Development preview
 builds must not register login items or change installed network services on launch.

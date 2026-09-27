@@ -511,8 +511,9 @@ html[data-theme="light"] .connection-refresh-prompt{background:#fffffff5;border-
 .recovery-card-grid dt{color:#789087;font-size:11px;margin-bottom:7px}
 .recovery-card-grid dd{margin:0;color:#e8f3ee;font-weight:700;overflow-wrap:anywhere}
 .recovery-card-actions,.recovery-actions{display:flex;gap:10px;align-items:center;margin-top:18px}
-.recovery-card-actions a{border:1px solid #2b433b;background:#172b25;color:#d7e5df;border-radius:9px;padding:9px 13px;text-decoration:none;font-weight:700;font-size:13px}
-.recovery-card-actions a:hover{border-color:#6fcfa6;color:#a9f5d1}
+.recovery-card-actions a,.recovery-card-actions button,.desktop-recovery-card button{border:1px solid #2b433b;background:#172b25;color:#d7e5df;border-radius:9px;padding:9px 13px;text-decoration:none;font-weight:700;font-size:13px;cursor:pointer}
+.recovery-card-actions a:hover,.recovery-card-actions button:hover,.desktop-recovery-card button:hover{border-color:#6fcfa6;color:#a9f5d1}
+.recovery-card-actions button:disabled{opacity:.6;cursor:wait}
 .router-guide p{margin:8px 0;color:inherit;line-height:1.6}
 .router-guide ol{margin:8px 0 10px;padding-left:22px;line-height:1.8}
 .router-guide .router-link{color:#ffe2a8}
@@ -849,3 +850,10 @@ html[data-theme="light"] .tailscale-route-conflict{background:#fff8e8;border-col
 html[data-theme="light"] .overlay-preview-row>a{background:#edf5f1;border-color:#b8d1c6;color:#285644}
 @media(max-width:720px){.overlay-preview-row>a{width:100%}}
 @media(prefers-reduced-motion:reduce){.policy-group-nav-step,.policy-group-nav-viewport:before,.policy-group-nav-viewport:after,.policy-group-nav button,.policy-health-group,.overlay-switch i:after,.overlay-editor-section>summary>i,.profile-overlay-controls>i,.overlay-expert-toggle>i{transition:none!important}}
+.desktop-recovery-card { width: min(800px, 85vw); max-height: 80vh; padding: 24px; color: #eaf2ee; background: #0d1b17; border: 1px solid #20342d; border-radius: 16px; }
+html[data-theme="light"] .desktop-recovery-card { color: #142b22; background: #f8fcfa; border-color: #d8e6df; }
+html[data-theme="light"] .recovery-card-actions button,html[data-theme="light"] .desktop-recovery-card button { background:#edf5f1;border-color:#bed3ca;color:#254c3e; }
+.desktop-recovery-card::backdrop { background: rgb(0 0 0 / .45); }
+.desktop-recovery-card header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.desktop-recovery-card pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; line-height: 1.6; }
+.sidebar { overflow-y: auto; }

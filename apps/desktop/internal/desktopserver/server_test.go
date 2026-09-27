@@ -10,7 +10,7 @@ import (
 
 func TestEmbeddedUIAndPrivateAPITransport(t *testing.T) {
 	calls := 0
-	server, err := New(fstest.MapFS{"index.html": {Data: []byte("<head></head><body>shared React</body>")}}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(204) }))
+	server, err := New(fstest.MapFS{"index.html": {Data: []byte("<head></head><body>shared React</body>")}}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(204) }), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestEmbeddedUIAndPrivateAPITransport(t *testing.T) {
 }
 
 func TestEventCapabilityCannotAuthorizeOtherRoutes(t *testing.T) {
-	server, _ := New(fstest.MapFS{"index.html": {Data: []byte("<head></head>")}}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	server, _ := New(fstest.MapFS{"index.html": {Data: []byte("<head></head>")}}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }), nil)
 	for _, endpoint := range []string{"/api/v1/events", "/api/v1/overview"} {
 		request := httptest.NewRequest("GET", "wails://localhost"+endpoint+"?desktop_session="+server.secret, nil)
 		response := httptest.NewRecorder()
@@ -53,5 +53,27 @@ func TestEventCapabilityCannotAuthorizeOtherRoutes(t *testing.T) {
 		if response.Code != want {
 			t.Fatalf("%s: %d", endpoint, response.Code)
 		}
+	}
+}
+
+func TestNativeActionsRequireRendererCapability(t *testing.T) {
+	calls := 0
+	action := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(204) })
+	server, _ := New(fstest.MapFS{"index.html": {Data: []byte("<head></head>")}}, nil, action)
+	for _, scenario := range []struct {
+		proof, origin string
+		status        int
+	}{{"", "", 403}, {server.secret, "https://external.example", 403}, {server.secret, "wails://localhost", 204}} {
+		r := httptest.NewRequest("POST", "wails://localhost/desktop/v1/copy-text?desktop_session="+server.secret, strings.NewReader(`{"text":"hello"}`))
+		r.Header.Set("X-OpenSurge-Desktop", scenario.proof)
+		r.Header.Set("Origin", scenario.origin)
+		w := httptest.NewRecorder()
+		server.ServeHTTP(w, r)
+		if w.Code != scenario.status {
+			t.Fatalf("native action status = %d, want %d", w.Code, scenario.status)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("untrusted native action reached host: %d calls", calls)
 	}
 }

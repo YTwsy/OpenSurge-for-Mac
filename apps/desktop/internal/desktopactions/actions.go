@@ -1,0 +1,74 @@
+// Package desktopactions exposes an explicit, small set of native capabilities.
+// It receives only requests authenticated by desktopserver's private transport.
+package desktopactions
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+)
+
+type Actions struct {
+	OpenExternal func(string) error
+	CopyText     func(string) error
+	SaveRecovery func(context.Context) (bool, error)
+	SetLanguage  func(string)
+}
+
+func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var payload struct {
+		URL      string `json:"url"`
+		Text     string `json:"text"`
+		Language string `json:"language"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&payload) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		http.Error(w, "invalid desktop request", http.StatusBadRequest)
+		return
+	}
+	var err error
+	result := map[string]any{"ok": true}
+	switch r.URL.Path {
+	case "/desktop/v1/open-external":
+		u, parseErr := url.Parse(payload.URL)
+		if parseErr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil || u.Opaque != "" || strings.ContainsAny(payload.URL, "\x00\r\n") {
+			http.Error(w, "unsupported link", http.StatusBadRequest)
+			return
+		}
+		err = a.OpenExternal(payload.URL)
+	case "/desktop/v1/copy-text":
+		err = a.CopyText(payload.Text)
+	case "/desktop/v1/save-recovery-card":
+		var saved bool
+		saved, err = a.SaveRecovery(r.Context())
+		result["saved"] = saved
+	case "/desktop/v1/language":
+		if payload.Language != "en" && payload.Language != "zh-Hans" {
+			http.Error(w, "unsupported language", http.StatusBadRequest)
+			return
+		}
+		a.SetLanguage(payload.Language)
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "desktop_action_failed", "message": "The desktop action could not be completed. Please try again."}})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+var ErrFailed = errors.New("desktop action failed")
