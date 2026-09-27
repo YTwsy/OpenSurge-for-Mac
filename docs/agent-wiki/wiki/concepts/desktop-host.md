@@ -24,6 +24,13 @@ receives an HttpOnly session, never the long-lived bearer token. Desktop binding
 are limited to explicit desktop capabilities. Do not expose general shell execution
 or bind gateway managers into the GUI process.
 
+The preview's native client accepts only explicit-port HTTP loopback discovery,
+dials IPv4 loopback directly, and refuses redirects. It validates the returned
+bootstrap URL against the discovered service origin before navigating. Discovery
+and credentials are reread for each connection attempt. The initial main-window
+increment reconnects through the native menu; it does not yet renew a WebView
+session automatically or launch/stop the installed Control Service.
+
 Tray status must remain available without mounting the full main React application.
 Hidden-window work must be reduced explicitly rather than relying on browser-tab
 throttling. Reconnect must recover authentication and state without replaying an

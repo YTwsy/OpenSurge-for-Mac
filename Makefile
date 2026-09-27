@@ -1,5 +1,5 @@
 .PHONY: test build mihomo-build doctor status policy-control-test
-.PHONY: desktop-build
+.PHONY: desktop-build desktop-test
 .PHONY: web-install web-build web-test control-build control-run menubar-build menubar-test gui-build gui-test gui-installer gui-notarize
 .PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
 .PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-test-tun-local-routing lab-test-tun-device-policy lab-test-tailscale lab-tailscale-up lab-tailscale-down lab-tailscale-destroy lab-test-ipv6-userspace lab-test-ipv6-same-wifi lab-test-ipv6-same-lan lab-test-ipv6-imported-egress lab-down lab-destroy
@@ -22,6 +22,9 @@ build:
 
 desktop-build:
 	./scripts/build-desktop-app.sh
+
+desktop-test:
+	cd apps/desktop && go test -race ./internal/...
 
 mihomo-build:
 	./scripts/build-opensurge-mihomo.sh
