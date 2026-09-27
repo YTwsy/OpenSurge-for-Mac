@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
 import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from './desktop'
 import { watchVisibleRefresh } from './visibility'
+import { useTheme } from './hooks/useTheme'
+import './styles.css'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { ConnectionRefreshPrompts, queueConnectionRefreshSuggestion, type ConnectionRefreshSuggestion, type ConnectionRefreshSuggestionItem } from './components/ConnectionRefreshPrompts'
 import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './components/OperationNotifications'
@@ -23,7 +25,6 @@ import type { Overview } from './types'
 import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, resolveLanguage, t, type RequestedLanguage } from './i18n'
 
 type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connections' | 'connectivity' | 'diagnostics'
-type Theme = 'dark' | 'light'
 type NetworkNavigationTarget = 'none' | 'control' | 'bottom'
 
 const nav = [
@@ -40,12 +41,6 @@ const nav = [
 function currentPage(): Page {
   const candidate = window.location.pathname.split('/').filter(Boolean)[0] as Page | undefined
   return nav.some(item => item.id === candidate) ? candidate! : 'dashboard'
-}
-
-function initialTheme(): Theme {
-  const stored = window.localStorage.getItem('opensurge-theme')
-  if (stored === 'dark' || stored === 'light') return stored
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
 function focusGatewayControl(target: Exclude<NetworkNavigationTarget, 'none'>) {
@@ -71,7 +66,7 @@ export function App() {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState('')
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
-  const [theme, setTheme] = useState<Theme>(initialTheme)
+  const [theme, setTheme] = useTheme()
   const [language, setLanguage] = useState<RequestedLanguage>(initialRequestedLanguage)
   const [languageChanging, setLanguageChanging] = useState(false)
   const [devicesDirty, setDevicesDirty] = useState(false)
@@ -90,11 +85,6 @@ export function App() {
   const devicesDirtyRef = useRef(devicesDirty)
   pageRef.current = page
   devicesDirtyRef.current = devicesDirty
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    window.localStorage.setItem('opensurge-theme', theme)
-  }, [theme])
 
   useEffect(() => {
     activateLanguage(language)

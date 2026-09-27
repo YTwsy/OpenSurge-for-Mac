@@ -1,0 +1,45 @@
+:root { color-scheme: dark; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #eaf2ee; background: #0d1b17; }
+html[data-theme="light"] { color-scheme: light; color: #142b22; background: #f8fcfa; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, input { font: inherit; }
+button { border: 1px solid #304b40; background: #172b25; color: inherit; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+button:hover { background: #233f33; }
+button:disabled { cursor: default; opacity: .5; }
+button:focus-visible, input:focus-visible { outline: 2px solid #39c987; outline-offset: 2px; }
+.tray-app { padding: 18px; }
+.tray-header { display: flex; align-items: center; gap: 11px; margin-bottom: 17px; }
+.tray-header img { width: 38px; height: 38px; }
+h1 { margin: 0 0 5px; font-size: 16px; font-weight: 650; }
+.tray-header p { margin: 0; font-size: 12px; color: #a0b8aa; display: flex; align-items: center; gap: 6px; }
+.tray-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #809b8d; }
+.tray-dot.running { background: #47d498; }
+.tray-dot.degraded, .tray-dot.recovery { background: #edb465; }
+.tray-dot.unreachable { background: #df8989; }
+.tray-status { display: grid; gap: 7px; margin: 0 0 14px; }
+.tray-status div { display: flex; gap: 12px; justify-content: space-between; }
+.tray-status dt { color: #91ab9c; flex-shrink: 0; }
+.tray-status dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tray-actions { display: grid; gap: 8px; border-top: 1px solid #294034; padding-top: 13px; }
+.tray-actions .primary { background: #2aaa74; color: #061b10; border-color: #2aaa74; font-weight: 650; display: flex; justify-content: space-between; }
+.tray-row { display: flex; justify-content: space-between; gap: 8px; }
+.tray-row button { flex: 1; }
+.tray-preferences { margin-top: 14px; border-top: 1px solid #294034; padding-top: 13px; }
+.tray-preferences label { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; }
+.tray-preferences small { display: block; margin-top: 4px; font-size: 11px; color: #91ab9c; }
+.tray-preferences input { accent-color: #28ad76; width: 17px; height: 17px; }
+.tray-hint { color: #91ab9c; font-size: 12px; line-height: 1.5; }
+.tray-notice { padding: 10px; border-radius: 8px; background: #203328; line-height: 1.5; }
+.tray-notice p { margin: 4px 0 0; }
+.tray-notice.warning { background: #b8862821; color: #e8c386; }
+.tray-error { color: #edaaa4; line-height: 1.5; overflow-wrap: anywhere; }
+footer { display: flex; align-items: center; justify-content: space-between; margin-top: 15px; color: #91ab9c; font-size: 11px; }
+footer button { padding: 4px 7px; font-size: 11px; }
+html[data-theme="light"] button { background: #edf5f1; border-color: #bed3ca; }
+html[data-theme="light"] button:hover { background: #dfede6; }
+html[data-theme="light"] .primary { background: #209767; color: white; border-color: #209767; }
+html[data-theme="light"] .tray-header p, html[data-theme="light"] .tray-status dt, html[data-theme="light"] .tray-hint, html[data-theme="light"] small, html[data-theme="light"] footer { color: #567364; }
+html[data-theme="light"] .tray-actions, html[data-theme="light"] .tray-preferences { border-color: #d8e6df; }
+html[data-theme="light"] .tray-notice { background: #e8f2ec; }
+html[data-theme="light"] .tray-notice.warning { background: #faf0dd; color: #8f5c16; }
+html[data-theme="light"] .tray-error { color: #a23e39; }

@@ -10,6 +10,7 @@ package native
 void configureOpenSurgeWindow(void *window, bool rememberFrame);
 void setOpenSurgeWindowLanguage(void *window, bool english);
 bool openSurgeExternalURLAllowed(const char *url);
+bool openSurgeSystemUsesEnglish(void);
 */
 import "C"
 
@@ -31,4 +32,11 @@ func ExternalURLAllowed(value string) bool {
 	url := C.CString(value)
 	defer C.free(unsafe.Pointer(url))
 	return bool(C.openSurgeExternalURLAllowed(url))
+}
+
+func SystemLanguage() string {
+	if bool(C.openSurgeSystemUsesEnglish()) {
+		return "en"
+	}
+	return "zh-Hans"
 }

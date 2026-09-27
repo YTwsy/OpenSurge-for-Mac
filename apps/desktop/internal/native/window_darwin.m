@@ -4,6 +4,8 @@
 
 static const char guardKey;
 
+bool openSurgeSystemUsesEnglish(void) { return ![NSLocale.preferredLanguages.firstObject hasPrefix:@"zh"]; }
+
 static BOOL isInternal(NSURL *url) {
     return [url.scheme.lowercaseString isEqualToString:@"wails"] &&
         [url.host.lowercaseString isEqualToString:@"localhost"] &&

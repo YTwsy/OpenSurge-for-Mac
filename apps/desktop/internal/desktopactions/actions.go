@@ -17,6 +17,9 @@ type Actions struct {
 	CopyText     func(string) error
 	SaveRecovery func(context.Context) (bool, error)
 	SetLanguage  func(string)
+	MenuStatus   func(context.Context, bool) any
+	ShowMain     func(string)
+	SetSleep     func(context.Context, bool) (any, error)
 }
 
 func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +33,9 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		URL      string `json:"url"`
 		Text     string `json:"text"`
 		Language string `json:"language"`
+		Page     string `json:"page"`
+		Refresh  bool   `json:"refresh"`
+		Enabled  *bool  `json:"enabled"`
 	}
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10))
 	decoder.DisallowUnknownFields()
@@ -38,7 +44,7 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
-	result := map[string]any{"ok": true}
+	var result any = map[string]any{"ok": true}
 	switch r.URL.Path {
 	case "/desktop/v1/open-external":
 		u, parseErr := url.Parse(payload.URL)
@@ -52,13 +58,27 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/desktop/v1/save-recovery-card":
 		var saved bool
 		saved, err = a.SaveRecovery(r.Context())
-		result["saved"] = saved
+		result = map[string]any{"saved": saved}
 	case "/desktop/v1/language":
 		if payload.Language != "en" && payload.Language != "zh-Hans" {
 			http.Error(w, "unsupported language", http.StatusBadRequest)
 			return
 		}
 		a.SetLanguage(payload.Language)
+	case "/desktop/v1/menubar-status":
+		result = a.MenuStatus(r.Context(), payload.Refresh)
+	case "/desktop/v1/show-main":
+		if payload.Page != "dashboard" && payload.Page != "network" && payload.Page != "diagnostics" {
+			http.Error(w, "unsupported page", http.StatusBadRequest)
+			return
+		}
+		a.ShowMain(payload.Page)
+	case "/desktop/v1/sleep-prevention":
+		if payload.Enabled == nil {
+			http.Error(w, "enabled is required", http.StatusBadRequest)
+			return
+		}
+		result, err = a.SetSleep(r.Context(), *payload.Enabled)
 	default:
 		http.NotFound(w, r)
 		return
