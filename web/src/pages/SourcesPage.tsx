@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { copyText } from '../desktop'
 import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import type { OperationNotification } from '../components/OperationNotifications'
 import { TailscaleCard } from '../components/TailscaleCard'
@@ -249,21 +250,4 @@ function SourceMetric({ value, label }: { value: number; label: string }) {
 
 function ActionLabel({ active, idle, pending }: { active: boolean; idle: string; pending: string }) {
   return <>{active && <span className="button-spinner" aria-hidden="true" />}{t(active ? pending : idle)}</>
-}
-
-async function copyText(value: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value)
-    return
-  }
-  const field = document.createElement('textarea')
-  field.value = value
-  field.setAttribute('readonly', '')
-  field.style.position = 'fixed'
-  field.style.opacity = '0'
-  document.body.appendChild(field)
-  field.select()
-  const copied = document.execCommand('copy')
-  field.remove()
-  if (!copied) throw new Error(t('浏览器未允许复制路径，请使用 Finder 中显示。'))
 }

@@ -24,7 +24,7 @@ desktop-build:
 	./scripts/build-desktop-app.sh
 
 desktop-test:
-	cd apps/desktop && go test -race ./internal/...
+	cd apps/desktop && MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="$(CGO_CFLAGS) -mmacosx-version-min=13.0" CGO_LDFLAGS="$(CGO_LDFLAGS) -mmacosx-version-min=13.0" go test -race -ldflags '-extldflags=-mmacosx-version-min=13.0' ./internal/...
 
 mihomo-build:
 	./scripts/build-opensurge-mihomo.sh

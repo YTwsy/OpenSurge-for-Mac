@@ -6,6 +6,30 @@ afterEach(() => {
   document.querySelector('meta[name="opensurge-desktop-session"]')?.remove()
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  delete window.__opensurgeWindowVisible
+})
+
+it('closes the native event stream when hidden and opens a fresh one on return', () => {
+  const streams: FakeSource[] = []
+  class FakeSource extends EventTarget {
+    close = vi.fn()
+    constructor() { super(); streams.push(this) }
+  }
+  vi.stubGlobal('EventSource', FakeSource)
+  const changed = vi.fn()
+  const stop = watchControlEvents(changed)
+  window.__opensurgeWindowVisible = false
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(streams[0].close).toHaveBeenCalledOnce()
+  streams[0].dispatchEvent(new Event('state'))
+  expect(changed).not.toHaveBeenCalled()
+  window.__opensurgeWindowVisible = true
+  document.dispatchEvent(new Event('visibilitychange'))
+  expect(streams).toHaveLength(2)
+  streams[1].dispatchEvent(new Event('state'))
+  expect(changed).toHaveBeenCalledOnce()
+  stop()
+  expect(streams[1].close).toHaveBeenCalledOnce()
 })
 
 it('reopens a failed native event stream with bounded backoff and cancels on teardown', () => {

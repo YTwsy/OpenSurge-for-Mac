@@ -2,6 +2,7 @@ import type { APIError, ConnectionObservation, ConnectionRefreshResult, Connecti
 import { getOperation, markOperationConnection, operationStatusUnknownMessage, recordOperation } from './operations'
 import { desktopHeaders } from './desktop'
 import { t } from './i18n'
+import { watchVisibleRefresh } from './visibility'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -11,7 +12,7 @@ export class RequestError extends Error {
 
 export const authenticationRequiredEvent = 'opensurge:authentication-required'
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function controlResponse(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, {
     credentials: 'same-origin',
     ...init,
@@ -26,7 +27,11 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       : payload.error?.message ?? response.statusText
     throw new RequestError(response.status, payload.error?.code ?? 'request_failed', message)
   }
-  return response.json() as Promise<T>
+  return response
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await controlResponse(path, init)).json() as Promise<T>
 }
 
 async function operationStatusRequest<T>(path: string): Promise<T> {
@@ -37,6 +42,7 @@ async function operationStatusRequest<T>(path: string): Promise<T> {
 }
 
 export const api = {
+  recoveryCard: async () => (await controlResponse('/api/v1/recovery/card')).text(),
   overview: () => request<Overview>('/api/v1/overview'),
   config: () => request<ControlConfig>('/api/v1/config'),
   networkInterfaces: () => request<NetworkInterfacesResponse>('/api/v1/network/interfaces'),
@@ -206,7 +212,6 @@ export function watchOperations() {
     } catch { /* normal auth and connection banners handle discovery errors */ }
     finally { fetching = false }
   }
-  void discover()
-  const timer = window.setInterval(() => void discover(), 4000)
-  return () => { stopped = true; window.clearInterval(timer) }
+  const stopRefresh = watchVisibleRefresh(discover, 4000)
+  return () => { stopped = true; stopRefresh() }
 }

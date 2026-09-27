@@ -14,13 +14,14 @@ import (
 )
 
 type Server struct {
-	assets http.Handler
-	api    http.Handler
-	index  []byte
-	secret string
+	assets  http.Handler
+	api     http.Handler
+	desktop http.Handler
+	index   []byte
+	secret  string
 }
 
-func New(assets fs.FS, api http.Handler) (*Server, error) {
+func New(assets fs.FS, api http.Handler, desktop http.Handler) (*Server, error) {
 	index, err := fs.ReadFile(assets, "index.html")
 	if err != nil {
 		return nil, err
@@ -30,15 +31,15 @@ func New(assets fs.FS, api http.Handler) (*Server, error) {
 		return nil, err
 	}
 	secret := hex.EncodeToString(nonce[:])
-	index = bytes.Replace(index, []byte("</head>"), []byte(`<meta name="opensurge-desktop-session" content="`+secret+`"></head>`), 1)
-	return &Server{assets: http.FileServer(http.FS(assets)), api: api, index: index, secret: secret}, nil
+	index = bytes.Replace(index, []byte("</head>"), []byte(`<meta name="opensurge-desktop-session" content="`+secret+`"><script type="module" src="/wails/runtime.js"></script></head>`), 1)
+	return &Server{assets: http.FileServer(http.FS(assets)), api: api, desktop: desktop, index: index, secret: secret}, nil
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'")
-	if strings.HasPrefix(r.URL.Path, "/api/") {
+	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/desktop/") {
 		proof := r.Header.Get("X-OpenSurge-Desktop")
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/events" {
 			proof = r.URL.Query().Get("desktop_session")
@@ -49,7 +50,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "desktop request rejected", http.StatusForbidden)
 			return
 		}
-		s.api.ServeHTTP(w, r)
+		if strings.HasPrefix(r.URL.Path, "/desktop/") {
+			if s.desktop == nil {
+				http.NotFound(w, r)
+				return
+			}
+			s.desktop.ServeHTTP(w, r)
+		} else {
+			s.api.ServeHTTP(w, r)
+		}
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {

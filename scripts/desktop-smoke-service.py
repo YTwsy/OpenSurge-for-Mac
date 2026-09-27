@@ -148,6 +148,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         preferences = {"schema_version": 1, "language": language}
         sleep = {"enabled": sleep_enabled, "active": sleep_enabled}
         recovery = {"stage": "prepared" if state.get("recovery") else "idle", "required": state.get("recovery", False), "topology": "same_lan"}
+        snapshot = {"network_service": "Smoke Wi-Fi", "interface": "en0", "ipv4": "192.0.2.10", "subnet_mask": "255.255.255.0", "router": "192.0.2.1", "dns": ["192.0.2.1"], "ipv6_default": False}
+        if state.get("recovery"):
+            recovery["network_snapshot"] = snapshot
         status = {"gateway": state["gateway"], "interface": "en0", "lan_ip": "192.0.2.10", "dhcp": "stopped", "dhcp_enabled": False, "mihomo": "stopped", "tun": "stopped", "pf_anchor": "unloaded", "forwarding": "disabled", "ipv4_takeover": "stopped", "ipv6_takeover": "disabled", "dns_ipv6": False, "tun_ipv6_requested": "off", "ipv6_packet": "disabled", "native_ipv6_available": False, "client_count": 0}
         common = {"schema_version": 1, "revision": "smoke", "topology": "same_lan", "drift": False, "warnings": [], "doctor_healthy": True, "sleep_prevention": sleep, "ui_preferences": preferences}
         routes = {
@@ -165,6 +168,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/v1/profile-overlay": {"schema_version": 1, "revision": "smoke", "yaml": "schema-version: 1\nenabled: false\n", "document": {"schema_version": 1, "enabled": False, "rules": {"prepend": [], "append_before_match": []}, "proxies": {"add": [], "replace": []}, "proxy_providers": {"add": {}, "replace": {}}, "proxy_groups": {"add": [], "replace": [], "patch": []}, "rule_providers": {"add": {}, "replace": {}}, "dns": {"merge": {}, "append": {}}}, "desired": True, "applied": False, "validation": "smoke"},
             "/api/v1/tailscale": {"schema_version": 1, "revision": "smoke", "settings": {"enabled": False, "display_name": "Tailnet", "hostname": "smoke", "control_url": "https://controlplane.tailscale.com", "accept_routes": False, "magic_dns_suffixes": [], "peer_cidrs": [], "subnet_routes": [], "allow_mac": False, "allow_all_devices": False, "allowed_devices": [], "exit_node": "", "exit_node_allow_lan_access": False}, "auth_key_present": False, "identity_present": False, "gateway_active": False, "runtime_state": "disabled", "selectable_exit": False, "warnings": []},
         }
+        routes["/api/v1/config"]["gateway"]["mode"] = state.get("mode", "same_lan")
+        routes["/api/v1/gateway/plan"] = {"schema_version": 1, "revision": "smoke", "topology": state.get("mode", "same_lan"), "snapshot": snapshot, "protected_ipv4": ["192.0.2.1", "192.0.2.10"], "dhcp_servers": [], "warnings": [], "blockers": []}
         if path == "/api/v1/sources":
             if self.command == "POST":
                 source = {"id": "smoke", "name": payload.get("name", payload.get("files", [{}])[0].get("filename", "smoke")), "kind": "mihomo_profile", "format": "yaml", "enabled": False, "validation": "valid", "applied": False}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
+import { watchVisibleRefresh } from '../visibility'
 import type { PolicyWorkspaceRequest, PolicyWorkspaceSnapshot } from '../types'
 
 function normalizeSnapshot(snapshot: PolicyWorkspaceSnapshot): PolicyWorkspaceSnapshot {
@@ -57,10 +58,9 @@ export function usePolicyWorkspace(refreshKey: string) {
   useEffect(() => { void refresh() }, [refresh, refreshKey])
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (!document.hidden && !activeReads.current && !pendingMutations.current) void refresh()
-    }, 5000)
-    return () => { window.clearInterval(timer) }
+    return watchVisibleRefresh(async () => {
+      if (!activeReads.current && !pendingMutations.current) await refresh()
+    }, 5000, false)
   }, [refresh])
 
   const mutate = useCallback((request: Exclude<PolicyWorkspaceRequest, { action: 'read' }>) => {

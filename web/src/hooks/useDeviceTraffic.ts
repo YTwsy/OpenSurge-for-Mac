@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { watchVisibleRefresh } from '../visibility'
 import type { DeviceTraffic, TrafficHistoryPoint } from '../types'
 
 const refreshIntervalMs = 2_000
@@ -29,11 +30,10 @@ export function useDeviceTraffic(gateway?: string) {
       }
     }
 
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), refreshIntervalMs)
+    const stopRefresh = watchVisibleRefresh(refresh, refreshIntervalMs)
     return () => {
       active = false
-      window.clearInterval(timer)
+      stopRefresh()
     }
   }, [gateway])
 
