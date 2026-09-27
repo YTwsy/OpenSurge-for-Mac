@@ -20,22 +20,23 @@ The build defaults to the Go toolchain's architecture. Set
 deployment target is macOS 13.0; compiling on a newer macOS does not establish
 runtime compatibility with macOS 13.
 
-The preview connects to the already-running Control Service using its per-user
-discovery file and native credential. It exchanges that credential for a one-time
-bootstrap URL and loads the existing React control panel in WKWebView. The WebView
-uses the service's HttpOnly session; the native credential is never passed to JS.
-No gateway business implementation is linked into the host.
+The preview embeds the existing React control panel at `wails://localhost` and
+connects to the independent Control Service through native discovery and a bounded
+HTTP relay. The bearer credential and authenticated cookie remain in native memory;
+neither enters JavaScript. No gateway business implementation is linked into the host.
 
-Start the installed OpenSurge app before opening the preview. Startup retries are
-bounded; use **Control Panel → Reconnect** (Cmd-R) after a service restart, session
-expiry, or a failed initial connection. This returns to the dashboard and discards
-the current page's unsaved UI state. Reconnect never repeats a gateway operation.
-Closing the window hides it; reopening from the Dock or **Show Window** (Cmd-1)
-preserves the page. Cmd-Q exits the preview UI only.
+Start the installed OpenSurge app before opening the preview, or use the isolated
+[smoke fixture](../../docs/desktop-smoke.md). Session and endpoint changes reconnect
+automatically while preserving the current page and drafts. Mutations are never
+replayed automatically. `⌘R` refreshes state without reloading, and `⌘1`–`⌘8`
+navigate the existing pages. Closing the window hides it; Dock reopen, a second
+launch or **View → Show Main Window** preserves its state. `⌘Q` exits the preview UI.
 
-This is the first main-window increment. Automatic session recovery, external links,
-downloads, tray UI, login registration, and service lifecycle management are separate
-follow-ups. Test the native authentication client with `make desktop-test`.
+Native menus follow the UI language. HTTP(S) links open in the system browser;
+confirmation, clipboard and recovery-card saving use macOS facilities. Recurring
+reads and SSE pause while the window is hidden, minimised or occluded. Tray UI,
+login registration and service lifecycle management follow in separate increments.
+Run the native client and host boundary tests with `make desktop-test`.
 
 This preview has a separate bundle identifier and output path; production
 PKG builds continue to use the existing menu-bar application until the installation
