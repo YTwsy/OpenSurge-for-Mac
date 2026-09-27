@@ -80,6 +80,19 @@ confirm: the App must stay open and record no `bootout`. Reset to stopped, confi
 again, and verify exactly one `bootout gui/<uid>/com.opensurge.control` followed by
 App exit. Cancellation must restore the popup. Test Cmd-Q as the UI-only route.
 
+## Login items and updates
+
+With `--smoke-actions`, expand **App settings and updates**. Login changes affect
+only fixture state. `login_approval: true` makes enablement require approval;
+`login_failure: true` rejects a change and must preserve the actual checkbox state.
+Without smoke actions, do not register a preview login item just to test the UI.
+
+The fixture defaults to a hypothetical `v0.2.5` release. `release_tag` changes it;
+`update_failure: true` fails checks. Verify the stable release link, no-newer-release
+state and retryable failure. A failed check must clear the prior download link.
+The native App menu's update action opens this same panel. Real checks use only the
+official GitHub repository; fixture release versions are not claims about publication.
+
 The minimum target is macOS 13. Native acceptance on macOS 14 alone must not be
 reported as a macOS 13 runtime test. Installer upgrade and real gateway/network
 acceptance remain separate gates.

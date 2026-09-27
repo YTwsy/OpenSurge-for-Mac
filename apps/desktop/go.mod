@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/wailsapp/wails/v3 v3.0.0-beta.26
+	golang.org/x/mod v0.37.0
 	open-mihomo-gateway v0.0.0
 )
 

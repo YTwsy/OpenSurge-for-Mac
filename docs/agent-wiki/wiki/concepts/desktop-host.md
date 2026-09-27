@@ -96,6 +96,22 @@ confirmation, and boots out only the user Control Service. Unknown/offline statu
 fails closed. The root Helper stays loaded. Pending exit blocks new renderer API
 mutations; cancellation returns to the popup without replacing the main React tree.
 
+The native login-item manager uses `SMAppService.mainAppService` and serialises
+status reads and explicit changes. The returned OS status is authoritative; approval
+required and failed registration must never be presented as successful enablement.
+No automatic registration occurs. Custom discovery directories disable real login
+management, while smoke mode supplies a fixture provider. Settings and update results
+have independent monotonic sequences so a late poll cannot overwrite a newer result.
+
+The native update checker contacts only the official GitHub latest-release API,
+with an eight-second timeout and a 1 MiB response limit. It rejects redirects,
+draft/prerelease entries and links that do not exactly match the repository/tag.
+Semantic version comparison includes Next and release-candidate builds. Checks run
+at launch and every 24 hours (15-minute retry after failure), deduplicate concurrent
+requests and clear obsolete download links on failure. The host only opens the
+validated page on explicit action; download/install remain user actions. Both builds
+take their version from `OPENSURGE_RELEASE_TAG`, defaulting to `v0.2.4-next`.
+
 For native acceptance, `scripts/desktop-smoke-service.py DIR` runs a harmless fixture.
 Launch the preview executable with `--control-dir DIR`; scenario changes and service
 restarts exercise sessions, discovery and UI state without touching the installed

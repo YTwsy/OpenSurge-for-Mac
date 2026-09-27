@@ -51,6 +51,7 @@ func main() {
 		log.Fatal("Cannot locate the user LaunchAgent")
 	}
 	host.services = servicelife.New(os.Getuid(), homeDirectory, directory == defaultDirectory || *smokeActions, runner, host.readMenuStatus)
+	host.initUtilities(directory == defaultDirectory, *smokeActions)
 	host.status = menustatus.New(host.readMenuStatus, host.menuStatusChanged)
 	lifetime, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -101,6 +102,7 @@ func main() {
 		}
 		close(ready)
 		go host.status.Run(lifetime)
+		go host.updates.Run(lifetime)
 	})
 	host.setMenu(false)
 	if err := app.Run(); err != nil {

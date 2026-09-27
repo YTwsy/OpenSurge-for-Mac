@@ -41,8 +41,12 @@ the main window's language/theme and shares the authoritative sleep-prevention
 control, with recovery reminders and a diagnostic summary. Reconnect can wake the
 installed user Control Service. Full exit requires a fresh stopped/recovered status,
 then stops only that user service and leaves the root Helper available. Both exit
-choices require native confirmation. Login registration, updates and uninstall
-controls follow in separate increments.
+choices require native confirmation. The popup's App settings report the actual
+macOS login-item state, including approval and failures. Login registration is
+explicit and scoped to this bundle; launch does not register anything. Stable-release
+discovery checks the official GitHub repository daily and supports a manual check.
+It opens a verified release page without downloading or installing an update.
+The uninstall entry follows separately.
 Run the native client and host boundary tests with `make desktop-test`.
 
 This preview has a separate bundle identifier and output path; production

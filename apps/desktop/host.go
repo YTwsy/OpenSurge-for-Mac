@@ -13,23 +13,28 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"open-mihomo-gateway/apps/desktop/internal/controlclient"
 	"open-mihomo-gateway/apps/desktop/internal/desktopactions"
+	"open-mihomo-gateway/apps/desktop/internal/loginitem"
 	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/native"
 	"open-mihomo-gateway/apps/desktop/internal/servicelife"
+	"open-mihomo-gateway/apps/desktop/internal/updates"
 )
 
 type desktopHost struct {
-	app      *application.App
-	main     *application.WebviewWindow
-	client   *controlclient.Client
-	mu       sync.Mutex
-	language string
-	popup    *application.WebviewWindow
-	tray     *application.SystemTray
-	status   *menustatus.Monitor
-	services *servicelife.Coordinator
-	quitBusy atomic.Bool
-	quitting atomic.Bool
+	app           *application.App
+	main          *application.WebviewWindow
+	client        *controlclient.Client
+	mu            sync.Mutex
+	language      string
+	popup         *application.WebviewWindow
+	tray          *application.SystemTray
+	status        *menustatus.Monitor
+	services      *servicelife.Coordinator
+	quitBusy      atomic.Bool
+	quitting      atomic.Bool
+	login         *loginitem.Manager
+	updates       *updates.Checker
+	loginSettings func() error
 }
 
 func (h *desktopHost) show(path string) {
@@ -66,6 +71,16 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 		ShowMain:     h.show,
 		MenuStatus:   h.menuSnapshot,
 		Reconnect:    h.reconnect,
+		Utilities:    h.utilities,
+		SetLogin: func(enabled bool) (any, error) {
+			if !h.quitBusy.CompareAndSwap(false, true) {
+				return nil, servicelife.ErrQuitting
+			}
+			defer h.quitBusy.Store(false)
+			return h.login.SetEnabled(enabled), nil
+		},
+		LoginSettings: h.loginSettings,
+		CheckUpdates:  func(ctx context.Context) any { return h.updates.Check(ctx) },
 		Quit: func(ctx context.Context, full bool) (bool, error) {
 			accepted, err := h.quit(ctx, full)
 			if errors.Is(err, servicelife.ErrUnsafe) {
@@ -128,6 +143,10 @@ func (h *desktopHost) setMenu(english bool) {
 	menu := h.app.Menu.New()
 	appMenu := menu.AddSubmenu("OpenSurge")
 	appMenu.Add(t("关于 OpenSurge", "About OpenSurge")).SetRole(application.About)
+	appMenu.Add(t("检查更新…", "Check for Updates…")).OnClick(func(*application.Context) {
+		h.showTray()
+		h.popup.ExecJS(`window.dispatchEvent(new Event('opensurge:check-update'));`)
+	})
 	appMenu.AddSeparator()
 	appMenu.Add(t("隐藏 OpenSurge", "Hide OpenSurge")).SetRole(application.Hide).SetAccelerator("CmdOrCtrl+h")
 	appMenu.Add(t("隐藏其他应用", "Hide Others")).SetRole(application.HideOthers).SetAccelerator("CmdOrCtrl+OptionOrAlt+h")
