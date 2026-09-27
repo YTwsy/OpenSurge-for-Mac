@@ -19,6 +19,7 @@ type Config struct {
 	PF               PFConfig
 	Transparent      TransparentConfig
 	LocalSystemProxy LocalSystemProxyConfig
+	LocalSystemDNS   LocalSystemDNSConfig
 	UpstreamProxy    UpstreamProxyConfig
 	Runtime          RuntimeConfig
 }
@@ -168,6 +169,21 @@ type LocalSystemProxyConfig struct {
 	Enabled bool
 }
 
+// LocalSystemDNS coordinates the upstream macOS service only while automatic
+// TUN routing is active. Resolvers/Domains are a transient pre-takeover snapshot
+// used to retain private DNS; they are never serialized as desired config.
+type LocalSystemDNSConfig struct {
+	Enabled   bool
+	Resolvers []string
+	Domains   []string
+}
+
+const LocalSystemDNSServer = "114.114.114.114"
+
+func (c Config) ManageSystemDNS() bool {
+	return c.LocalSystemDNS.Enabled && c.Transparent.TUNEnabled() && c.Transparent.TUNAutoRoute
+}
+
 func (c TransparentConfig) TUNEnabled() bool {
 	return c.Mode == TransparentModeTUN
 }
@@ -263,6 +279,7 @@ func Default() Config {
 			IPv6PacketMTU:          1500,
 		},
 		LocalSystemProxy: LocalSystemProxyConfig{Enabled: false},
+		LocalSystemDNS:   LocalSystemDNSConfig{Enabled: true},
 		UpstreamProxy: UpstreamProxyConfig{
 			Enabled:     false,
 			Name:        "real-device-egress",

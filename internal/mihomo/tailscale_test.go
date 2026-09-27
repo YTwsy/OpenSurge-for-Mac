@@ -335,8 +335,8 @@ func TestTailscaleRulesReuseScopedLocalMacIPv6Identities(t *testing.T) {
 			name:       "fake AAAA system TUN",
 			dnsIPv6:    true,
 			tunIPv6:    config.TUNIPv6Off,
-			wantIPv6:   localRoutingFakeIPv6Source(),
-			rejectIPv6: localRoutingHostTUNIPv6Source(),
+			wantIPv6:   localRoutingHostTUNIPv6Source(),
+			rejectIPv6: localRoutingFakeIPv6Source(),
 		},
 		{
 			name:       "effective host IPv6 system TUN",
@@ -402,7 +402,7 @@ func TestTailscaleRouteAddressesPreserveDefaultTUNCapture(t *testing.T) {
 	cfg.Tailscale.PeerCIDRs = []string{"100.82.10.7/32"}
 	cfg.Tailscale.SubnetRoutes = []string{"10.203.77.0/24"}
 
-	got := renderTailscaleRouteAddresses(cfg, "192.168.48.0/22")
+	got := renderTUNRouteAddresses(cfg, "192.168.48.0/22")
 	assertRenderedRouteCoverage(t, got, "1.1.1.1", true)
 	assertRenderedRouteCoverage(t, got, "198.18.0.4", true)
 	assertRenderedRouteCoverage(t, got, "10.1.2.3", false)
@@ -419,9 +419,36 @@ func TestTailscaleRouteAddressesPreserveDefaultTUNCapture(t *testing.T) {
 	}
 
 	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
-	got = renderTailscaleRouteAddresses(cfg, "192.168.48.0/22")
+	got = renderTUNRouteAddresses(cfg, "192.168.48.0/22")
 	assertRenderedRouteCoverage(t, got, "2606:4700:4700::1111", true)
 	assertRenderedRouteCoverage(t, got, "::1", false)
+}
+
+func TestMacIPv6RoutesDoNotDependOnDownstreamOrTailnet(t *testing.T) {
+	for _, peers := range [][]string{nil, {"100.82.10.7/32"}, {"fd7a:115c:a1e0::7/128"}} {
+		for _, downstream := range []string{config.TUNIPv6Off, config.TUNIPv6Always} {
+			for _, aaaa := range []bool{false, true} {
+				cfg := config.Default()
+				cfg.Transparent.Mode = config.TransparentModeTUN
+				cfg.Transparent.TUNIPv6 = downstream
+				cfg.DNS.IPv6 = aaaa
+				cfg.Tailscale.Enabled = len(peers) > 0
+				cfg.Tailscale.PeerCIDRs = peers
+				got := renderTUNRouteAddresses(cfg, "192.168.1.0/24")
+				for _, addr := range []string{"114.114.114.114", "198.18.1.2", "2001:4860:4860::8888", "fdfe:dcba:9876::ffff:ffff:ffff:ffff"} {
+					assertRenderedRouteCoverage(t, got, addr, true)
+				}
+				for _, addr := range []string{"192.168.1.1", "fe80::1", "ff02::1", "::1", "fdfe:dcba:9878::7", "fd00::1"} {
+					assertRenderedRouteCoverage(t, got, addr, false)
+				}
+				for _, peer := range peers {
+					if strings.Count(got, "    - "+peer+"\n") != 1 && !strings.HasSuffix(got, "    - "+peer) {
+						t.Fatalf("missing distinct peer route %s: %s", peer, got)
+					}
+				}
+			}
+		}
+	}
 }
 
 func assertRenderedRouteCoverage(t *testing.T, rendered, address string, want bool) {

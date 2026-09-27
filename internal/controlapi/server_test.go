@@ -2073,6 +2073,10 @@ func TestControlConfigRoundTripsLocalSystemProxyCompatibilityMode(t *testing.T) 
 		t.Fatal("control config did not expose enabled local system proxy coordination")
 	}
 	input.LocalSystemProxy.Enabled = false
+	if input.LocalSystemDNS == nil || !input.LocalSystemDNS.Enabled {
+		t.Fatal("Mac DNS default missing from API")
+	}
+	input.LocalSystemDNS.Enabled = false
 	payload, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)
@@ -2086,6 +2090,22 @@ func TestControlConfigRoundTripsLocalSystemProxyCompatibilityMode(t *testing.T) 
 	}
 	if updated.LocalSystemProxy.Enabled {
 		t.Fatal("local system proxy coordination remained enabled after control config update")
+	}
+	if updated.LocalSystemDNS.Enabled {
+		t.Fatal("Mac DNS opt-out was not persisted")
+	}
+	legacy := controlConfigFrom(updated, fileDigest(path))
+	legacy.LocalSystemDNS = nil
+	legacyPayload, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyControlConfig(path, legacy.Revision, legacyPayload); err != nil {
+		t.Fatal(err)
+	}
+	updated, err = config.Load(path)
+	if err != nil || updated.LocalSystemDNS.Enabled {
+		t.Fatal("legacy client changed DNS ownership preference", err)
 	}
 }
 

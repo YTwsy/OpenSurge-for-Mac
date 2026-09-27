@@ -68,6 +68,10 @@ transparent:
   ipv6_packet_broker_binary: "opensurge-network"
   ipv6_packet_mtu: 1500
 
+local_system_dns:
+  # Applied only with TUN auto-routing; original upstream service DNS is restored on stop.
+  enabled: true
+
 local_system_proxy:
   # Optional compatibility layer for local Mac apps that honor HTTP/HTTPS
   # system proxies. Requires TUN and follows mihomo.mixed_port.

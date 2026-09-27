@@ -73,6 +73,12 @@ type localSystemProxyService interface {
 	Restore(context.Context, runtime.SystemProxySnapshot) error
 }
 
+type localSystemDNSService interface {
+	Prepare(context.Context, string) (runtime.SystemDNSSnapshot, error)
+	Enable(context.Context, runtime.SystemDNSSnapshot) error
+	Restore(context.Context, runtime.SystemDNSSnapshot) (bool, error)
+}
+
 type ipv6PacketService interface {
 	Check() error
 	Start() (int, error)
@@ -99,6 +105,7 @@ type gatewayDeps struct {
 	newPF               func(config.Config, runtime.Paths) pfService
 	newSysctl           func() sysctlService
 	newLocalSystemProxy func() localSystemProxyService
+	newLocalSystemDNS   func() localSystemDNSService
 	newIPv6Packet       func(config.Config, runtime.Paths) ipv6PacketService
 	newIPv6Host         func(config.Config) ipv6HostService
 	interfaces          func() ([]net.Interface, error)
@@ -135,6 +142,7 @@ func defaultGatewayDeps() gatewayDeps {
 		newLocalSystemProxy: func() localSystemProxyService {
 			return macosnetwork.SystemProxy{}
 		},
+		newLocalSystemDNS: func() localSystemDNSService { return macosnetwork.SystemDNS{} },
 		newIPv6Packet: func(cfg config.Config, paths runtime.Paths) ipv6PacketService {
 			manager := ipv6packet.NewManager(cfg, paths)
 			return manager
@@ -216,6 +224,10 @@ func (m *Manager) resolveIPv6(deps gatewayDeps) ipv6Resolution {
 
 func appliedConfigFromState(cfg config.Config, state runtime.State) config.Config {
 	cfg.DNS.IPv6 = state.DNSIPv6
+	if state.LocalSystemDNS != nil {
+		cfg.LocalSystemDNS.Resolvers = state.LocalSystemDNS.Resolvers
+		cfg.LocalSystemDNS.Domains = state.LocalSystemDNS.Domains
+	}
 	if state.IPv6PacketEffective {
 		cfg.Transparent.TUNIPv6 = state.TUNIPv6Requested
 	} else {
@@ -236,6 +248,25 @@ func (m Manager) localSystemProxy(deps gatewayDeps) localSystemProxyService {
 		return deps.newLocalSystemProxy()
 	}
 	return macosnetwork.SystemProxy{}
+}
+
+func (m Manager) localSystemDNS(deps gatewayDeps) localSystemDNSService {
+	if deps.newLocalSystemDNS != nil {
+		return deps.newLocalSystemDNS()
+	}
+	return macosnetwork.SystemDNS{}
+}
+
+func (m Manager) restoreSystemDNS(ctx context.Context, deps gatewayDeps, state runtime.State) (bool, error) {
+	if state.LocalSystemDNS == nil || !state.LocalSystemDNS.Owned {
+		return false, nil
+	}
+	ReportProgress(ctx, "restoring_system_dns")
+	owned, err := m.localSystemDNS(deps).Restore(ctx, *state.LocalSystemDNS)
+	if err != nil {
+		return owned, fmt.Errorf("restore Mac system DNS: %w", err)
+	}
+	return owned, nil
 }
 
 func currentBoot(deps gatewayDeps) (runtime.BootSession, error) {
@@ -379,6 +410,17 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 		}
 		systemProxySnapshot = &snapshot
 	}
+	var systemDNSSnapshot *runtime.SystemDNSSnapshot
+	if m.cfg.ManageSystemDNS() {
+		snapshot, err := m.localSystemDNS(deps).Prepare(ctx, m.cfg.Gateway.UpstreamInterface)
+		if err != nil {
+			return fmt.Errorf("prepare Mac system DNS: %w", err)
+		}
+		systemDNSSnapshot = &snapshot
+		m.cfg.LocalSystemDNS.Resolvers = snapshot.Resolvers
+		m.cfg.LocalSystemDNS.Domains = snapshot.Domains
+		mihomoManager = deps.newMihomo(m.cfg, m.paths)
+	}
 	ReportProgress(ctx, "preparing_config")
 	if err := mihomoManager.WriteConfig(); err != nil {
 		return err
@@ -437,6 +479,8 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 		PFEnabledBefore:     pfEnabledBefore,
 		ProfileDigest:       profileDigest,
 		LocalSystemProxy:    systemProxySnapshot,
+		LocalSystemDNS:      systemDNSSnapshot,
+		MacTUNIPv6:          m.cfg.Transparent.TUNEnabled(),
 		DNSIPv6:             m.cfg.DNS.IPv6,
 		TUNIPv6Requested:    ipv6Resolution.Requested,
 		IPv6PacketEffective: ipv6Resolution.Effective,
@@ -562,6 +606,24 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 	}
 	if err := deps.saveState(m.paths.StateFile, state); err != nil {
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+	}
+	if state.LocalSystemDNS != nil {
+		ReportProgress(ctx, "enabling_system_dns")
+		if err := checkCanceled(); err != nil {
+			return err
+		}
+		state.LocalSystemDNS.Owned = true
+		if err := deps.saveState(m.paths.StateFile, state); err != nil {
+			state.LocalSystemDNS.Owned = false
+			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
+		if err := m.localSystemDNS(deps).Enable(ctx, *state.LocalSystemDNS); err != nil {
+			return m.rollback(ctx, fmt.Errorf("enable Mac system DNS: %w", err), state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
+		state.LocalSystemDNS.VerifiedAt = deps.now()
+		if err := deps.saveState(m.paths.StateFile, state); err != nil {
+			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
 	}
 	if state.LocalSystemProxy != nil {
 		ReportProgress(ctx, "enabling_system_proxy")
@@ -709,6 +771,18 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
 		return fmt.Errorf("prepared mihomo config validation failed: %w", err)
 	}
+	// Restore DNS while the old TUN still exists. A failed restart must never
+	// leave the public capture address installed as the Mac's DNS resolver.
+	reapplyDNS, err := m.restoreSystemDNS(ctx, deps, state)
+	if err != nil {
+		return err
+	}
+	if state.LocalSystemDNS != nil {
+		state.LocalSystemDNS.VerifiedAt = time.Time{}
+		if !reapplyDNS {
+			state.LocalSystemDNS = nil
+		}
+	}
 
 	previousPID := state.PIDMihomo
 	previousFingerprint := state.MihomoProcessFingerprint
@@ -750,6 +824,18 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 		restoreErr := restoreSystemProxy()
 		stopErr := mihomoManager.Stop(newPID)
 		return errors.Join(fmt.Errorf("save replacement mihomo pid: %w", err), restoreErr, stopErr)
+	}
+	if reapplyDNS && state.LocalSystemDNS != nil {
+		ReportProgress(ctx, "enabling_system_dns")
+		if err := m.localSystemDNS(deps).Enable(ctx, *state.LocalSystemDNS); err != nil {
+			_, restoreErr := m.restoreSystemDNS(context.WithoutCancel(ctx), deps, state)
+			return errors.Join(fmt.Errorf("reapply Mac DNS after mihomo restart: %w", err), restoreErr)
+		}
+		state.LocalSystemDNS.VerifiedAt = deps.now()
+		if err := deps.saveState(m.paths.StateFile, state); err != nil {
+			_, restoreErr := m.restoreSystemDNS(context.WithoutCancel(ctx), deps, state)
+			return errors.Join(err, restoreErr)
+		}
 	}
 	m.warmManagedTailscale(ctx, deps)
 
@@ -877,6 +963,9 @@ func (m Manager) stop(ctx context.Context) error {
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
 	if exists {
+		if _, err := m.restoreSystemDNS(ctx, deps, state); err != nil {
+			return err
+		}
 		if state.LocalSystemProxy != nil {
 			ReportProgress(ctx, "restoring_system_proxy")
 			if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
@@ -947,6 +1036,9 @@ func (m Manager) cleanupIPv6(ctx context.Context, deps gatewayDeps, state runtim
 }
 
 func (m Manager) cleanupInterruptedRuntime(ctx context.Context, deps gatewayDeps, state runtime.State) error {
+	if _, err := m.restoreSystemDNS(ctx, deps, state); err != nil {
+		return err
+	}
 	if state.LocalSystemProxy != nil {
 		ReportProgress(ctx, "restoring_system_proxy")
 		if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
@@ -1074,6 +1166,9 @@ func (m Manager) rollback(ctx context.Context, cause error, state runtime.State,
 	ReportProgress(ctx, "rolling_back")
 	deps := m.gatewayDeps()
 	var cleanupErr error
+	if _, err := m.restoreSystemDNS(ctx, deps, state); err != nil {
+		return fmt.Errorf("%w; rollback could not restore Mac system DNS; gateway services and state retained for recovery: %v", cause, err)
+	}
 	if restoreSystemProxy && state.LocalSystemProxy != nil {
 		if err := systemProxyManager.Restore(ctx, *state.LocalSystemProxy); err != nil {
 			return fmt.Errorf("%w; rollback could not restore the local system proxy, so gateway services were left running for recovery: %v", cause, err)

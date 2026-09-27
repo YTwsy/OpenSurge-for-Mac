@@ -22,6 +22,8 @@ type State struct {
 	DevicePolicyDigest        string               `json:"device_policy_digest,omitempty"`
 	ProfileDigest             string               `json:"profile_digest,omitempty"`
 	LocalSystemProxy          *SystemProxySnapshot `json:"local_system_proxy,omitempty"`
+	LocalSystemDNS            *SystemDNSSnapshot   `json:"local_system_dns,omitempty"`
+	MacTUNIPv6                bool                 `json:"mac_tun_ipv6"`
 	DNSIPv6                   bool                 `json:"dns_ipv6"`
 	TUNIPv6Requested          string               `json:"tun_ipv6_requested,omitempty"`
 	IPv6PacketEffective       bool                 `json:"ipv6_packet_effective"`
@@ -30,6 +32,20 @@ type State struct {
 	IPv6GatewayAliasOwned     bool                 `json:"ipv6_gateway_alias_owned"`
 	IPv6RAEffective           bool                 `json:"ipv6_ra_effective"`
 	StartedAt                 time.Time            `json:"started_at"`
+}
+
+// Owned is write intent, persisted before networksetup. Empty Servers means
+// automatic DNS, not a failed read. ServiceID prevents restoring a replacement
+// service that happens to reuse a name. VerifiedAt is startup evidence only.
+type SystemDNSSnapshot struct {
+	NetworkService string    `json:"network_service"`
+	ServiceID      string    `json:"service_id"`
+	Interface      string    `json:"interface"`
+	Servers        []string  `json:"servers"`
+	Resolvers      []string  `json:"resolvers,omitempty"`
+	Domains        []string  `json:"domains,omitempty"`
+	Owned          bool      `json:"owned"`
+	VerifiedAt     time.Time `json:"verified_at,omitempty"`
 }
 
 // SystemProxySnapshot is the macOS network-service proxy state captured before
@@ -89,6 +105,10 @@ func SaveState(path string, state State) error {
 		_ = tmp.Close()
 		return err
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
@@ -99,7 +119,12 @@ func SaveState(path string, state State) error {
 		return err
 	}
 	cleanup = false
-	return nil
+	directory, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func RemoveState(path string) error {

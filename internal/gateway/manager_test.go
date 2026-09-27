@@ -23,7 +23,7 @@ func TestWarmManagedTailscaleOnlyWhenEnabled(t *testing.T) {
 		calls++
 		return nil
 	}}
-	manager := Manager{cfg: config.Default()}
+	manager := Manager{cfg: gatewayTestConfig()}
 	manager.warmManagedTailscale(context.Background(), deps)
 	if calls != 0 {
 		t.Fatalf("disabled Tailscale warm-up calls = %d", calls)
@@ -37,7 +37,7 @@ func TestWarmManagedTailscaleOnlyWhenEnabled(t *testing.T) {
 
 func TestManagedTailscaleWarmupReportsDispatchNotReachability(t *testing.T) {
 	for _, dispatchErr := range []error{nil, errors.New("controller unavailable")} {
-		cfg := config.Default()
+		cfg := gatewayTestConfig()
 		cfg.Tailscale.Enabled = true
 		cfg.Tailscale.ExitNode = "100.90.3.4"
 		var progress []Progress
@@ -54,7 +54,7 @@ func TestManagedTailscaleWarmupReportsDispatchNotReachability(t *testing.T) {
 }
 
 func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -144,7 +144,7 @@ func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 }
 
 func TestPreflightRejectsSameGatewayAndUpstreamInterface(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "en0"
 	cfg.Gateway.UpstreamInterface = " en0 "
 	manager := Manager{cfg: cfg, paths: runtime.NewPaths(cfg), deps: defaultGatewayDeps()}
@@ -159,7 +159,7 @@ func TestPreflightRejectsSameGatewayAndUpstreamInterface(t *testing.T) {
 }
 
 func TestPreflightAcceptsSameInterfaceInSameLANMode(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Mode = config.GatewayModeSameLAN
 	cfg.Gateway.Interface = "en0"
 	cfg.Gateway.UpstreamInterface = " en0 "
@@ -192,7 +192,7 @@ func TestPreflightAcceptsSameInterfaceInSameLANMode(t *testing.T) {
 }
 
 func TestPreflightAcceptsSameInterfaceInSameWiFiDHCPMode(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
 	cfg.Gateway.Interface = "en0"
 	cfg.Gateway.UpstreamInterface = " en0 "
@@ -227,7 +227,7 @@ func TestPreflightAcceptsSameInterfaceInSameWiFiDHCPMode(t *testing.T) {
 }
 
 func TestPreflightRejectsDifferentInterfacesInSameLANMode(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Mode = config.GatewayModeSameLAN
 	cfg.Gateway.Interface = "en0"
 	cfg.Gateway.UpstreamInterface = "en7"
@@ -245,7 +245,7 @@ func TestPreflightRejectsDifferentInterfacesInSameLANMode(t *testing.T) {
 }
 
 func TestPreflightRejectsLANIPOnAnotherInterface(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "bridge102"
 	cfg.Gateway.UpstreamInterface = "en0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -293,7 +293,7 @@ func TestCheckReservationConflictsRejectsObservedDifferentMACInSameWiFiDHCP(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Mode = config.GatewayModeSameWiFiDHCP
 	cfg.DevicePolicy.Bundle = &bundle
 	manager := Manager{cfg: cfg, deps: gatewayDeps{
@@ -310,7 +310,7 @@ func TestCheckReservationConflictsRejectsObservedDifferentMACInSameWiFiDHCP(t *t
 }
 
 func TestStartValidatesMihomoBeforeEnablingForwarding(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -355,7 +355,7 @@ func TestStartValidatesMihomoBeforeEnablingForwarding(t *testing.T) {
 }
 
 func TestStartAndStopCoordinateLocalSystemProxyAroundGatewayServices(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -435,7 +435,7 @@ func TestStartAndStopCoordinateLocalSystemProxyAroundGatewayServices(t *testing.
 }
 
 func TestReloadValidationFailureLeavesRunningGatewayUntouched(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -482,7 +482,7 @@ func TestReloadValidationFailureLeavesRunningGatewayUntouched(t *testing.T) {
 }
 
 func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -551,7 +551,7 @@ func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
 }
 
 func TestRestartMihomoValidatesBeforeStoppingLiveProcess(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -582,7 +582,7 @@ func TestRestartMihomoValidatesBeforeStoppingLiveProcess(t *testing.T) {
 }
 
 func TestRestartMihomoRejectsImportedProfileDrift(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
@@ -613,7 +613,7 @@ func TestRestartMihomoRejectsImportedProfileDrift(t *testing.T) {
 }
 
 func TestRestartMihomoReplacesOnlyProxyEngineAndArchivesLog(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -652,7 +652,7 @@ func TestRestartMihomoReplacesOnlyProxyEngineAndArchivesLog(t *testing.T) {
 }
 
 func TestRestartMihomoStartFailureLeavesRetryableRuntimeState(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -692,7 +692,7 @@ func TestRestartMihomoStartFailureLeavesRetryableRuntimeState(t *testing.T) {
 }
 
 func TestRestartMihomoStopFailureRestoresLivePID(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -722,7 +722,7 @@ func TestRestartMihomoStopFailureRestoresLivePID(t *testing.T) {
 }
 
 func TestStopFailureRetainsRuntimeStateForRetryAndRecovery(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	paths := runtime.NewPaths(cfg)
 	if err := runtime.Ensure(paths); err != nil {
@@ -749,7 +749,7 @@ func TestStopFailureRetainsRuntimeStateForRetryAndRecovery(t *testing.T) {
 }
 
 func TestStopClearsPreviousBootRuntimeWithoutTouchingStalePIDsOrKernelState(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -806,7 +806,7 @@ func TestStopClearsPreviousBootRuntimeWithoutTouchingStalePIDsOrKernelState(t *t
 }
 
 func TestStopKeepsPreviousBootRuntimeWhenSystemProxyRestoreFails(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	paths := runtime.NewPaths(cfg)
 	if err := runtime.Ensure(paths); err != nil {
@@ -839,7 +839,7 @@ func TestStopKeepsPreviousBootRuntimeWhenSystemProxyRestoreFails(t *testing.T) {
 }
 
 func TestStopDoesNotSignalCurrentBootPIDWithDifferentFingerprint(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -877,7 +877,7 @@ func TestStopDoesNotSignalCurrentBootPIDWithDifferentFingerprint(t *testing.T) {
 }
 
 func TestRestartMihomoRejectsPreviousBootRuntimeBeforeProcessValidation(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
 	paths := runtime.NewPaths(cfg)
@@ -904,7 +904,7 @@ func TestRestartMihomoRejectsPreviousBootRuntimeBeforeProcessValidation(t *testi
 }
 
 func TestStopProxyRestoreFailureKeepsServicesRunningAndStateRetryable(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Runtime.Dir = t.TempDir()
 	paths := runtime.NewPaths(cfg)
 	if err := runtime.Ensure(paths); err != nil {
@@ -939,7 +939,7 @@ func TestStopProxyRestoreFailureKeepsServicesRunningAndStateRetryable(t *testing
 }
 
 func TestIPv6TakeoverLifecycleOrdersMihomoBrokerRAAndDNSMasq(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -1006,7 +1006,7 @@ func TestIPv6TakeoverLifecycleOrdersMihomoBrokerRAAndDNSMasq(t *testing.T) {
 }
 
 func TestIPv6GatewayAddFailureRollsBackOwnedAliasAndPacketBroker(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Interface = "lan0"
 	cfg.Gateway.UpstreamInterface = "wan0"
 	cfg.Gateway.LANIP = "192.168.50.1"
@@ -1068,7 +1068,7 @@ func TestIPv6GatewayAddFailureRollsBackOwnedAliasAndPacketBroker(t *testing.T) {
 }
 
 func TestSameLANIPv6CleanupDoesNotBroadcastRouterWithdrawal(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Gateway.Mode = config.GatewayModeSameLAN
 	cfg.Gateway.UpstreamInterface = cfg.Gateway.Interface
 	cfg.DHCP.Enabled = false
@@ -1097,7 +1097,7 @@ func TestSameLANIPv6CleanupDoesNotBroadcastRouterWithdrawal(t *testing.T) {
 }
 
 func TestResolveIPv6AutoFailsClosedWithoutNativeUpstream(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Transparent.Mode = config.TransparentModeTUN
 	cfg.Transparent.TUNIPv6 = config.TUNIPv6Auto
 	host := &fakeIPv6Host{native: false}
@@ -1109,7 +1109,7 @@ func TestResolveIPv6AutoFailsClosedWithoutNativeUpstream(t *testing.T) {
 }
 
 func TestResolveIPv6AlwaysReportsNativeStateWithoutFailingClosed(t *testing.T) {
-	cfg := config.Default()
+	cfg := gatewayTestConfig()
 	cfg.Transparent.Mode = config.TransparentModeTUN
 	cfg.Transparent.TUNIPv6 = config.TUNIPv6Always
 	host := &fakeIPv6Host{native: true}
@@ -1422,4 +1422,11 @@ func fakeProcessFingerprint(pid int) (string, error) {
 func fakeProcessMatches(pid int, fingerprint string) (bool, error) {
 	expected, _ := fakeProcessFingerprint(pid)
 	return expected != "" && fingerprint == expected, nil
+}
+
+// Existing service fixtures do not mutate the host DNS. DNS lifecycle cases inject their own coordinator.
+func gatewayTestConfig() config.Config {
+	cfg := config.Default()
+	cfg.LocalSystemDNS.Enabled = false
+	return cfg
 }

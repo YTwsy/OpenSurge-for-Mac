@@ -275,6 +275,7 @@ tun:
 	cfg := config.Default()
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
 	cfg.Mihomo.Profile = profilePath
+	cfg.LocalSystemDNS.Enabled = false // This fixture explicitly tests importing system DNS without coordination.
 	cfg.Mihomo.MixedPort = 17890
 	cfg.Mihomo.APIAddr = "127.0.0.1:19090"
 	cfg.Transparent.Mode = config.TransparentModeTUN
@@ -317,7 +318,7 @@ tun:
 		"external-controller: 127.0.0.1:9999",
 		"enable: false",
 		"listen: 127.0.0.1:5335",
-		"ipv6: true",
+		"  ipv6: true",
 		"enhanced-mode: redir-host",
 		"fake-ip-range: 198.19.0.1/16",
 		"open-surge-egress",
@@ -466,9 +467,10 @@ func TestRenderConfigWithTUN(t *testing.T) {
 		"  auto-route: true",
 		"  dns-hijack:",
 		"    - any:53",
-		"  route-exclude-address:",
-		"    - 192.168.50.0/24",
-		"    - 192.168.0.0/16",
+		"    - tcp://any:53",
+		"    - 2000::/3",
+		"    - fdfe:dcba:9876::/64",
+		"    - fdfe:dcba:9877::1/126",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered config missing %q:\n%s", want, rendered)

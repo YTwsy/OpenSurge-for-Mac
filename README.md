@@ -260,7 +260,14 @@ OpenSurge 不会在启动前根据现有 utun 或公网路由猜测冲突。实�
 运行时确认 TUN ready；失败时给进程短暂清理窗口、回滚网关运行时，并根据实际
 TUN 错误补充冲突路由的接口/网关信息。默认不支持两个全局 TUN 同时占有公网路由。
 
+Mac 本机的 IPv6 TUN 路由与下游接管独立：启用 TUN 后捕获公网 IPv6 和整个
+fake IPv6 地址池，`dns.ipv6` 只控制 AAAA 答案。`local_system_dns.enabled`
+默认开启，在自动 TUN 路由就绪后管理上游网络服务的系统 DNS，停止或重启引擎时
+恢复原设置，并保留外部修改。可在 Web GUI 的“Mac 系统 DNS”中关闭。
+此功能要求导入 profile 使用显式 DNS 解析器；`system` 会形成解析循环并被拒绝。
+
 ### 下游 IPv6 接管（实验性）
+
 
 网络设置页提供两个独立开关：`dns.ipv6` 决定 OpenSurge DNS 是否回答 AAAA 并生成
 fake IPv6；`transparent.tun_ipv6` 决定是否在下游发布 IPv6 网关、SLAAC/RDNSS 和

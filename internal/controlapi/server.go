@@ -71,6 +71,7 @@ type Server struct {
 	revealInFinder        func(context.Context, string) error
 	fetchConnections      func(context.Context, config.Config) (mihomo.ConnectionsSnapshot, error)
 	closeConnections      func(context.Context, config.Config, []string) (int, error)
+	fetchProxyGroups      func(context.Context, config.Config) ([]mihomo.ProxyGroup, error)
 	fetchProxyHealth      func(context.Context, config.Config) (mihomo.ProxyHealthSnapshot, error)
 	fetchLocalRouting     func(context.Context, config.Config) (mihomo.LocalRoutingSnapshot, error)
 	setLocalRouting       func(context.Context, config.Config, string, string) (mihomo.LocalRoutingSnapshot, error)
@@ -221,6 +222,7 @@ func New(options Options) (*Server, error) {
 		revealInFinder:        options.RevealInFinder,
 		fetchConnections:      mihomo.FetchConnections,
 		closeConnections:      mihomo.CloseConnections,
+		fetchProxyGroups:      mihomo.FetchProxyGroups,
 		fetchProxyHealth:      mihomo.FetchProxyHealth,
 		fetchLocalRouting:     mihomo.FetchLocalRouting,
 		setLocalRouting:       mihomo.SetLocalRouting,
@@ -312,6 +314,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
 	mux.Handle("POST /api/v1/policy-workspace", s.auth(http.HandlerFunc(s.handlePolicyWorkspace)))
 	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
+	mux.Handle("POST /api/v1/policies/{group}/connections/refresh", s.auth(http.HandlerFunc(s.handlePolicyConnectionRefresh)))
 	mux.Handle("GET /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
 	mux.Handle("POST /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
 	mux.Handle("POST /api/v1/local-routing/connections/refresh", s.auth(http.HandlerFunc(s.handleLocalConnectionRefresh)))
@@ -409,6 +412,7 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 		Mihomo:           MihomoConfigInput{StoreFakeIP: &storeFakeIP},
 		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
 		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
+		LocalSystemDNS:   &LocalSystemDNSConfigInput{Enabled: cfg.LocalSystemDNS.Enabled},
 		DevicePolicy:     DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
 	}
 }

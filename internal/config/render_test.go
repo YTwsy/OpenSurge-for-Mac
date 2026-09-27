@@ -20,6 +20,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	cfg.DHCP.BypassDNS = []string{"192.168.1.1", "1.1.1.1"}
 	cfg.Transparent.Mode = TransparentModeTUN
 	cfg.LocalSystemProxy.Enabled = true
+	cfg.LocalSystemDNS.Enabled = false
 	cfg.Mihomo.StoreFakeIP = false
 	cfg.Mihomo.ProfileMode = MihomoProfileModeImported
 	cfg.Mihomo.Profile = filepath.Join(dir, "profile.yaml")
@@ -41,6 +42,9 @@ func TestRenderRoundTrip(t *testing.T) {
 	loaded, err := Load(path)
 	if err != nil {
 		t.Fatalf("Load(Render()) error = %v", err)
+	}
+	if loaded.LocalSystemDNS.Enabled {
+		t.Fatal("explicit system DNS opt-out lost during serialization")
 	}
 	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP || loaded.Mihomo.ProfileSourceDigest != cfg.Mihomo.ProfileSourceDigest || loaded.Mihomo.ProfileOverlayDigest != cfg.Mihomo.ProfileOverlayDigest {
 		t.Fatalf("round trip mismatch: %#v", loaded)

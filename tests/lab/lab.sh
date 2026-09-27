@@ -373,6 +373,7 @@ write_config() {
     -e "s|__DNS_UPSTREAM_LINE__|$(sed_escape "$dns_upstream_line")|g" \
     -e "s|__DNS_IPV6__|$(sed_escape "$dns_ipv6")|g" \
     -e "s|__TUN_IPV6__|$(sed_escape "$tun_ipv6")|g" \
+    -e "s|__LOCAL_SYSTEM_DNS__|$([[ "$gateway_mode" == isolated_lan ]] && echo true || echo false)|g" \
     -e "s|__IPV6_SHARED_L2_READY__|$(sed_escape "$ipv6_shared_l2_ready")|g" \
     -e "s|__IPV6_PACKET_BROKER_BINARY__|$(sed_escape "$ipv6_packet_binary")|g" \
     -e "s|__TRANSPARENT_MODE__|$(sed_escape "$transparent_mode")|g" \
@@ -766,11 +767,18 @@ collect_artifacts() {
     policy-workspace-start.log \
     device-policy.applied.evidence.json \
     state.evidence.json \
+    mac-system-dns-snapshot.json \
+    mac-system-dns-resolution.json \
     device-policies.json \
     device-policies-after-reload.json \
     connection-refresh-before.json \
     connection-refresh-after.json \
     connection-refresh-response.json \
+    policy-connection-refresh-before.json \
+    policy-connection-refresh-selected.json \
+    policy-connection-refresh-response.json \
+    policy-connection-refresh-after.json \
+    policy-connection-refresh-reconnected.json \
     ipv6-status.json \
     ipv6-devices.json \
     ipv6-connection-observation.json \
@@ -1237,6 +1245,7 @@ start_egress_probe() {
   "$EGRESS_PROBE_BINARY" \
     --origin "127.0.0.1:$EGRESS_ORIGIN_PORT" \
     --proxy "127.0.0.1:$EGRESS_PROXY_PORT" \
+    --upstream-http-proxy "${OMG_LAB_EGRESS_HTTP_PROXY:-}" \
     --upstream-interface "$(upstream_interface)" \
     --upstream-resolver "1.1.1.1:53" \
     --mapped-target "$CONNECTION_REFRESH_TEST_HOST:443" \
@@ -1614,6 +1623,87 @@ assert_connection_refresh_response() {
     abort "refresh did not close every matched connection" unless matched.positive? && closed == matched
   ' "$response" "$device_id"
 }
+
+# Keep the shared-group proof separate from the device-wide refresh below. The
+# first client uses the same leaf directly, while Mac and the second (inherited)
+# client go through LabShared. Only the latter two connections may be closed.
+run_policy_connection_refresh_test() (
+  local client_one=$1 client_two=$2 mac_pid="" device_pid="" other_pid="" phase
+  cleanup_policy_refresh() {
+    stop_client_hold_connection "$mac_pid"
+    stop_client_hold_connection "$device_pid"
+    stop_client_hold_connection "$other_pid"
+  }
+  trap cleanup_policy_refresh EXIT
+  start_client_hold_connection "$client_one" "$STATE_DIR/logs/policy-refresh-other.log"
+  other_pid="$LAST_CLIENT_HOLD_PID"
+  wait_for_client_hold_connection "$client_one" "$STATE_DIR/logs/policy-refresh-other.log" "$other_pid"
+
+  for phase in before reconnected; do
+    /usr/bin/ruby -rsocket -e '
+      STDOUT.sync = true
+      socket = TCPSocket.new("127.0.0.1", 17890)
+      socket.write("CONNECT #{ARGV.fetch(0)}:443 HTTP/1.1\r\nHost: #{ARGV.fetch(0)}:443\r\n\r\n")
+      abort "CONNECT failed" unless socket.gets.to_s.include?(" 200 ")
+      puts "READY"
+      sleep 180
+    ' "$CONNECTION_REFRESH_TEST_HOST" >"$STATE_DIR/logs/policy-refresh-mac-$phase.log" 2>&1 &
+    mac_pid=$!
+    start_client_hold_connection "$client_two" "$STATE_DIR/logs/policy-refresh-device-$phase.log"
+    device_pid="$LAST_CLIENT_HOLD_PID"
+    wait_for_client_hold_connection Mac "$STATE_DIR/logs/policy-refresh-mac-$phase.log" "$mac_pid"
+    wait_for_client_hold_connection "$client_two" "$STATE_DIR/logs/policy-refresh-device-$phase.log" "$device_pid"
+    wait_for_connection_ids 127.0.0.1 "$CONNECTION_REFRESH_TEST_HOST" \
+      "$STATE_DIR/policy-connection-refresh-$phase.json" "$STATE_DIR/policy-refresh-mac.ids"
+    wait_for_connection_ids 192.168.51.102 "$CONNECTION_REFRESH_TEST_HOST" \
+      "$STATE_DIR/policy-connection-refresh-$phase.json" "$STATE_DIR/policy-refresh-device.ids"
+    wait_for_connection_ids 192.168.50.101 "$CONNECTION_REFRESH_TEST_HOST" \
+      "$STATE_DIR/policy-connection-refresh-$phase.json" "$STATE_DIR/policy-refresh-other.ids"
+    /usr/bin/ruby -rjson -e '
+      connections = JSON.parse(File.read(ARGV.fetch(0))).fetch("connections")
+      leaf = ARGV.fetch(1) == "before" ? "lab-controlled" : "lab-controlled-new"
+      %w[127.0.0.1 192.168.51.102 192.168.50.101].each do |source|
+        connection = connections.find { |c| c.fetch("metadata")["sourceIP"] == source && c.fetch("metadata")["host"] == ARGV.fetch(2) }
+        abort "missing held connection from #{source}" unless connection
+        chain = connection.fetch("chains")
+        if source == "192.168.50.101"
+          abort "independent device joined shared group" if chain.include?("LabShared")
+          abort "independent device lost its original leaf" unless chain.include?("lab-controlled")
+        else
+          abort "wrong shared egress for #{source}: #{chain}" unless chain.include?("LabShared") && chain.include?(leaf)
+        end
+      end
+    ' "$STATE_DIR/policy-connection-refresh-$phase.json" "$phase" "$CONNECTION_REFRESH_TEST_HOST"
+    if [[ "$phase" == reconnected ]]; then
+      # The unrelated connection must retain the same ID across refresh and reconnect.
+      snapshot_contains_any_ids "$STATE_DIR/policy-connection-refresh-reconnected.json" "$STATE_DIR/policy-refresh-preserved.ids"
+      break
+    fi
+    cat "$STATE_DIR/policy-refresh-mac.ids" "$STATE_DIR/policy-refresh-device.ids" >"$STATE_DIR/policy-refresh-target.ids"
+    cp "$STATE_DIR/policy-refresh-other.ids" "$STATE_DIR/policy-refresh-preserved.ids"
+    "$BINARY" policy-select --config "$CONFIG" --group LabShared --policy lab-controlled-new --format json >"$STATE_DIR/policy-refresh-selection.json"
+    fetch_mihomo_connections "$STATE_DIR/policy-connection-refresh-selected.json"
+    /usr/bin/ruby -rjson -rset -e '
+      current = JSON.parse(File.read(ARGV.fetch(0))).fetch("connections").map { |c| c.fetch("id") }.to_set
+      expected = File.readlines(ARGV.fetch(1), chomp: true).to_set
+      abort "selection itself closed old connections" unless expected.subset?(current)
+    ' "$STATE_DIR/policy-connection-refresh-selected.json" "$STATE_DIR/policy-refresh-target.ids"
+    /usr/bin/curl --fail --silent --show-error --request POST \
+      --header "Authorization: Bearer $CONTROL_API_TOKEN" \
+      "http://127.0.0.1:$CONTROL_API_PORT/api/v1/policies/LabShared/connections/refresh" \
+      >"$STATE_DIR/policy-connection-refresh-response.json"
+    /usr/bin/ruby -rjson -e '
+      response = JSON.parse(File.read(ARGV.fetch(0)))
+      abort "wrong refresh scope" unless response["scope"] == "policy_group" && response["policy_group"] == "LabShared"
+      abort "shared connections not closed" unless response.fetch("matched_connections") >= 2 && response["matched_connections"] == response["closed_connections"]
+    ' "$STATE_DIR/policy-connection-refresh-response.json"
+    wait_for_scoped_connection_refresh "$STATE_DIR/policy-refresh-target.ids" \
+      "$STATE_DIR/policy-refresh-preserved.ids" "$STATE_DIR/policy-connection-refresh-after.json"
+    stop_client_hold_connection "$mac_pid"
+    stop_client_hold_connection "$device_pid"
+  done
+  echo "policy group refresh closed Mac and inherited-device connections, preserved the independent device, and reconnected through the new selection"
+)
 
 wait_for_ipv6_policy_log() {
   local network=$1 source_ip=$2 target=$3 action=$4 i log_file
@@ -2251,7 +2341,17 @@ proxies:
     type: http
     server: 127.0.0.1
     port: $EGRESS_PROXY_PORT
-rules: ['MATCH,DIRECT']
+  - name: lab-controlled-new
+    type: http
+    server: 127.0.0.1
+    port: $EGRESS_PROXY_PORT
+proxy-groups:
+  - name: LabShared
+    type: select
+    proxies: [lab-controlled, lab-controlled-new]
+rules:
+  - DOMAIN,$CONNECTION_REFRESH_TEST_HOST,LabShared
+  - MATCH,DIRECT
 EOF
   cat >"$LAB_DEVICE_POLICY_FILE" <<EOF
 {
@@ -2545,6 +2645,8 @@ run_device_policy_test() {
     exit 1
   fi
   grep -Fq 'has no selectable policy slot' "$STATE_DIR/device-two-inherit-select.json"
+
+  run_policy_connection_refresh_test "$client_one" "$client_two"
 
   mutate_device_policy_desired
   "$BINARY" devices --config "$CONFIG" --format json >"$STATE_DIR/device-policies-drift.json"
@@ -3205,7 +3307,7 @@ run_local_routing_assertions() {
 
 run_local_routing_ipv6_tcp() {
   local mode=$1 action=$2 source_ip fake_ip first_line output
-  source_ip="fdfe:dcba:9876::1"
+  source_ip="fdfe:dcba:9877::1"
   output="$STATE_DIR/local-routing-$mode-ipv6-tcp.out"
   fake_ip="$(dig +time=5 +tries=1 +short @127.0.0.1 -p "$CONFIG_DNS_PORT" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" AAAA | awk '/^fdfe:dcba:9876:/ { print; exit }')"
   [[ -n "$fake_ip" ]] || { echo "local-routing Lab did not receive a fake-AAAA address" >&2; exit 1; }
@@ -3220,9 +3322,51 @@ run_local_routing_ipv6_tcp() {
   wait_for_local_ipv6_log_after TCP "$source_ip" "$LOCAL_ROUTING_IPV6_HTTP3_HOST" 443 "$action" "$first_line"
 }
 
+# getaddrinfo uses macOS's system resolver. This complements the explicit
+# dig/--resolve packet probes and catches a router DNS path that bypasses TUN.
+assert_mac_system_dns() {
+  sudo -n /usr/bin/ruby -rjson -e '
+    snapshot = JSON.parse(File.read(ARGV[0])).fetch("local_system_dns")
+    abort "DNS write intent missing" unless snapshot.fetch("owned")
+    puts JSON.pretty_generate(snapshot)
+  ' "$STATE_DIR/state.json" >"$STATE_DIR/mac-system-dns-snapshot.json"
+  /usr/bin/ruby -rjson -rsocket -rsecurerandom -ropen3 -e '
+    snapshot = JSON.parse(File.read(ARGV[0]))
+    service = snapshot.fetch("network_service")
+    dns, status = Open3.capture2("/usr/sbin/networksetup", "-getdnsservers", service)
+    abort "system DNS not managed" unless status.success? && dns.strip == "114.114.114.114"
+    %w[-getwebproxy -getsecurewebproxy].each do |command|
+      output, status = Open3.capture2("/usr/sbin/networksetup", command, service)
+      abort "system proxy must be off during DNS acceptance" unless status.success? && output.include?("Enabled: No")
+    end
+    host = "mac-dns-#{SecureRandom.hex(6)}.opensurge.test"
+    addresses = Addrinfo.getaddrinfo(host, nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM).map(&:ip_address).uniq
+    abort "system resolver missed fake A" unless addresses.any? { |a| a.start_with?("198.18.") }
+    abort "system resolver missed fake AAAA" unless addresses.any? { |a| a.start_with?("fdfe:dcba:9876:") }
+    puts JSON.pretty_generate({host: host, resolver: "macOS getaddrinfo", system_proxy: false, addresses: addresses})
+  ' "$STATE_DIR/mac-system-dns-snapshot.json" >"$STATE_DIR/mac-system-dns-resolution.json"
+  # Both DNS transports must enter Mihomo, even when sent to the public
+  # capture address. These do not replace the system-resolver assertion above.
+  dig +time=3 +tries=1 +short @114.114.114.114 "$LOCAL_ROUTING_IPV6_HTTP3_HOST" A | grep -q '^198\.18\.'
+  dig +tcp +time=3 +tries=1 +short @114.114.114.114 "$LOCAL_ROUTING_IPV6_HTTP3_HOST" AAAA | grep -q '^fdfe:dcba:9876:'
+  echo "Mac system resolver returned fake A/AAAA with system proxy disabled; UDP/TCP DNS capture passed"
+}
+
+assert_mac_system_dns_restored() {
+  /usr/bin/ruby -rjson -ropen3 -e '
+    snapshot = JSON.parse(File.read(ARGV[0]))
+    service = snapshot.fetch("network_service")
+    output, status = Open3.capture2("/usr/sbin/networksetup", "-getdnsservers", service)
+    abort "cannot read restored DNS" unless status.success?
+    servers = output.start_with?("There aren") ? [] : output.lines.map(&:strip)
+    abort "original system DNS was not restored" unless servers == (snapshot["servers"] || [])
+    puts "Original Mac system DNS restored"
+  ' "$STATE_DIR/mac-system-dns-snapshot.json"
+}
+
 run_local_routing_ipv6_http3() {
   local mode=$1 action=$2 source_ip fake_ip first_line request_path origin_log output
-  source_ip="fdfe:dcba:9876::1"
+  source_ip="fdfe:dcba:9877::1"
   request_path="/local-mac-$mode"
   origin_log="$STATE_DIR/egress/http3-origin.log"
   output="$STATE_DIR/local-routing-$mode-ipv6-http3.out"
@@ -3383,10 +3527,9 @@ run_test() {
   require_cached_sudo
   ensure_lab_state_writable
   echo "Lab public HTTPS probe: $TEST_URL"
-  if [[ "$LOCAL_ROUTING_TEST" == "true" && -z "${OMG_LAB_MIHOMO_BINARY:-}" ]]; then
-    # The local IPv6 identity assertions require fake-AAAA support from the
-    # same patched Mihomo line shipped by OpenSurge. The bootstrap v1.19.27
-    # Lab binary does not synthesize fake IPv6 on an IPv4-only Mac.
+  if [[ "$mode" == "tun" && -z "${OMG_LAB_MIHOMO_BINARY:-}" ]]; then
+    # Host IPv6 is independent of native upstream availability, so every TUN
+    # gate uses the same patched core shipped by OpenSurge.
     build_ipv6_lab_binaries
     OMG_LAB_MIHOMO_BINARY="$PATCHED_MIHOMO_BINARY"
   fi
@@ -3452,12 +3595,15 @@ run_test() {
 
   if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
     grep -Fq 'fake-ip-range6: fdfe:dcba:9876::/64' "$STATE_DIR/mihomo.yaml"
-    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp' "$STATE_DIR/mihomo.yaml"
-    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp' "$STATE_DIR/mihomo.yaml"
+    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp' "$STATE_DIR/mihomo.yaml"
+    grep -Fq 'AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp' "$STATE_DIR/mihomo.yaml"
     if grep -F 'open-surge/mac-mode-' "$STATE_DIR/mihomo.yaml" | grep -Eq 'fdfe:dcba:9876::/64|fdfe:dcba:9878::/64|fc00::/7|IN-NAME,opensurge-ipv6'; then
       echo "local Mac routing rules captured a broad or downstream IPv6 identity" >&2
       exit 1
     fi
+    assert_mac_system_dns
+    sudo -n "$BINARY" restart-mihomo --config "$CONFIG"
+    assert_mac_system_dns
   fi
 
   for client in $CLIENTS; do
@@ -3512,6 +3658,9 @@ run_test() {
   restore_client_control_dns
   sudo -n "$BINARY" stop --config "$CONFIG"
   gateway_started=0
+  if [[ "$LOCAL_ROUTING_TEST" == "true" ]]; then
+    assert_mac_system_dns_restored
+  fi
   if [[ "$egress_probe_started" == 1 ]]; then
     stop_egress_probe
     egress_probe_started=0

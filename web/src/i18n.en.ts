@@ -1,4 +1,14 @@
 export const englishMessages: Record<string, string> = {
+  '就绪': 'Ready',
+  '接管 Mac 系统 DNS': 'Managing Mac system DNS',
+  '恢复 Mac 系统 DNS': 'Restoring Mac system DNS',
+  'Mac 系统 DNS': 'Mac system DNS',
+  '随 TUN 管理 Mac 系统 DNS': 'Manage Mac system DNS with TUN',
+  'Mac IPv6 TUN': 'Mac IPv6 TUN',
+  '未确认': 'Unverified',
+  '启动时已校验，可用诊断检查当前设置': 'Verified at startup; run diagnostics to check current settings',
+  'Mac 的公网 IPv6 与 fake IPv6 路由随 TUN 启用，独立于下游 IPv6 开关。AAAA 开关只控制 DNS 是否返回 IPv6 地址。': 'Mac public and fake IPv6 routes start with TUN, independently of downstream IPv6. The AAAA switch only controls IPv6 DNS answers.',
+  '在 TUN 自动路由就绪后接管上游网络服务的系统 DNS，停止、回滚或重启代理引擎时恢复原设置。仅当设置仍由 OpenSurge 持有时恢复。mihomo 继续使用配置中的解析器，导入配置不能使用 system 解析器。': 'Manage system DNS on the upstream network service after TUN routes are ready. Restore the original settings on stop, rollback or engine restart only while OpenSurge still owns them. Mihomo keeps the configured resolvers; imported profiles must use explicit resolvers instead of system.',
   '读取连接失败：{{error}}': 'Could not load connections: {{error}}',
   '连接数据暂不可用，请等待恢复。': 'Connection data is unavailable. Waiting for recovery.',
 
@@ -209,6 +219,8 @@ export const englishMessages: Record<string, string> = {
   '关闭提示：{{title}}': 'Dismiss prompt: {{title}}',
   '重试刷新连接': 'Retry connection refresh',
   '暂不刷新': 'Not now',
+  '经过此策略组的新连接将使用“{{selection}}”；已有连接可能继续使用原链路。刷新会关闭 Mac 本机及下游设备当前经过此组的连接，包括跟随网关规则或通过其他策略引用此组的设备。已使用新出口的连接也会关闭，下载、通话等可能中断。': 'New connections through this policy group will use “{{selection}}”; existing connections may keep using the previous path. Refreshing closes this group’s current connections from this Mac and downstream devices, including devices following gateway rules or referencing this group through other policies. Connections already using the new outlet are also closed, which may interrupt downloads, calls, and other activity.',
+  '刷新经过此策略组的连接': 'Refresh connections through this group',
   'Mac 本机': 'This Mac',
   '刷新连接': 'Refresh connections',
   '正在刷新…': 'Refreshing…',

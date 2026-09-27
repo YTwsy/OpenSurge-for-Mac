@@ -21,7 +21,6 @@ mihomo 顶层 `mode: global` 或 `mode: direct` 会改变同一进程内的所�
 
 ```text
 AND,((IN-TYPE,TUN),(SRC-IP-CIDR,198.18.0.1/32),(NETWORK,TCP)),open-surge/mac-mode-tcp
-AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp
 AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp
 AND,((IN-TYPE,SOCKS/HTTP),(SRC-IP-CIDR,127.0.0.0/8),(NETWORK,TCP)),open-surge/mac-mode-tcp
 ```
@@ -32,10 +31,9 @@ local/private `DIRECT` 保护。IPv6 本机入口只保护 `::1/128`、本项目
 `DIRECT`，否则 fake-AAAA 目的地址会绕过模式选择。
 
 `dns.ipv6: true` 会独立于 `transparent.tun_ipv6` 是否实际生效而返回
-`fdfe:dcba:9876::/64` fake AAAA。AAAA 开启、IPv6 TUN 未启用时，mihomo 使用
-`fdfe:dcba:9876::1/126` 作为默认系统 TUN 地址，生成器只匹配精确的 `/128` 源身份；
-IPv6 TUN 有效时，显式 `fdfe:dcba:9877::1/126` 取代该默认值，生成器也只匹配它的
-`/128`。两种规则都要求系统 TUN 名 `DEFAULT-TUN`，但只生成当前配置对应的一种。下游 IPv6 使用独立
+`fdfe:dcba:9876::/64` fake AAAA。Mac 系统 TUN 始终显式使用
+`fdfe:dcba:9877::1/126`，与 AAAA、下游 IPv6 和上游原生 IPv6 检测独立。
+生成器只匹配其精确 `/128` 源身份，并要求系统 TUN 名 `DEFAULT-TUN`。下游 IPv6 使用独立
 `opensurge-ipv6` packet listener、`fdfe:dcba:9878::/64` 源和设备 `IN-USER`，不能命中
 本机规则。不要把本机源扩大成 fake-IP `/64`、host-TUN 子网或下游 `/64`。
 

@@ -1,15 +1,18 @@
 package doctor
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/ipv6packet"
+	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
 )
@@ -41,6 +44,29 @@ func Run(cfg config.Config) Report {
 	}
 	if cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
 		checks = append(checks, checkIPv6PacketBroker(cfg))
+	}
+	if state, exists, err := runtime.LoadState(runtime.NewPaths(cfg).StateFile); err == nil && exists {
+		boot, bootErr := runtime.CurrentBootSession()
+		if bootErr == nil && state.BelongsToBoot(boot) && state.PIDMihomo > 0 {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if cfg.Transparent.TUNEnabled() && cfg.Transparent.TUNAutoRoute {
+				err := macosnetwork.VerifyMacTUNRoutes(ctx, cfg.Transparent.TUNDevice)
+				check := Check{Name: "Mac IPv4/IPv6 TUN routes", OK: err == nil}
+				if err != nil {
+					check.Message = err.Error()
+				}
+				checks = append(checks, check)
+			}
+			if state.LocalSystemDNS != nil && state.LocalSystemDNS.Owned {
+				err := (macosnetwork.SystemDNS{}).Verify(ctx, *state.LocalSystemDNS)
+				check := Check{Name: "Mac system DNS ownership", OK: err == nil}
+				if err != nil {
+					check.Message = err.Error()
+				}
+				checks = append(checks, check)
+			}
+			cancel()
+		}
 	}
 	return Report{Checks: checks}
 }

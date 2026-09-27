@@ -62,12 +62,14 @@ export function PoliciesPage({ overview, onChanged, viewState, onViewStateChange
 
   const select = async (group: string, policy: string) => {
     const previous = groups.find(item => item.name === group)?.selected
-    await selectWorkspacePolicy(group, policy)
+    const updated = await selectWorkspacePolicy(group, policy)
     const deviceID = deviceIDFromPolicyGroup(group)
-    if (overview?.status.gateway === 'running' && previous !== policy && deviceID) {
-      onSuggestConnectionRefresh?.({ key: `device:${deviceID}`, scope: 'device', deviceID, subject: deviceID, selection: policyDisplayName(policy, byName.get(policy)) })
+    if (updated.mode === 'running' && previous !== policy) {
+      onSuggestConnectionRefresh?.(deviceID
+        ? { key: `device:${deviceID}`, scope: 'device', deviceID, subject: deviceID, selection: policyDisplayName(policy, byName.get(policy)) }
+        : { key: `policy_group:${group}`, scope: 'policy_group', group, subject: policyDisplayName(group, byName.get(group)), selection: policyDisplayName(policy, byName.get(policy)) })
     }
-    await onChanged()
+    try { await onChanged() } catch { /* The selection succeeded; overview refresh is best-effort. */ }
   }
 
   const registerGroup = useCallback((name: string) => (node: HTMLElement | null) => {

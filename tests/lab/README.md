@@ -109,6 +109,14 @@ traffic to another hostname is a Lab wiring failure, not a product-path
 result. Keep the original failure artifact and rerun with the verified regional
 endpoint rather than treating a public-site timeout as a gateway regression.
 
+If the controlled HTTP CONNECT fixture's public egress is also unreliable, set
+`OMG_LAB_EGRESS_HTTP_PROXY=<LAN address>:<port>` to use a preflighted LAN HTTP
+CONNECT proxy as its upstream. This affects only the controlled proxy's egress;
+clients still have no explicit proxy, Mac DNS acceptance still requires system
+proxies to be off, and DIRECT branches must reach the selected HTTPS endpoint
+directly. Record this option in the results; it does not prove native direct
+egress from the controlled proxy.
+
 `lab-up` starts the DHCP-free host network and the two clients. `lab-test`
 builds the current gateway, starts it with the generated lab config, renews both
 client leases, checks routing, DNS, ICMP/NAT, direct HTTPS, and explicit HTTPS
@@ -195,6 +203,12 @@ It also opens one held connection from each device, changes the first device
 selector, and calls the real Control API connection-refresh action. The first
 device's old connection must disappear, the second device connection must
 remain, and a new first-device connection must use the newly selected egress.
+Before switching the second device out of `inherit_global`, the gate also holds
+Mac loopback mixed-port and second-device TUN connections through `LabShared`.
+Selection alone must preserve them. Group refresh must close both, retain the
+first device's independent connection to the same leaf, and allow Mac and the
+second device to reconnect through the new selection. The Mac part proves
+mixed-port behavior, not local TUN identity.
 The passing artifact retains that applied snapshot, runtime state, generated
 dnsmasq/mihomo configuration, and the initial and post-reload device views so
 the boundary remains auditable.

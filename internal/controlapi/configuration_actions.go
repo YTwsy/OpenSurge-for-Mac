@@ -654,6 +654,9 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 		cfg.Transparent.TUNIPv6 = config.TUNIPv6Off
 	}
 	cfg.LocalSystemProxy.Enabled = input.LocalSystemProxy.Enabled
+	if input.LocalSystemDNS != nil {
+		cfg.LocalSystemDNS.Enabled = input.LocalSystemDNS.Enabled
+	}
 	cfg.DevicePolicy.ProtectedIPv4 = append([]string(nil), input.DevicePolicy.ProtectedIPv4...)
 	createdPolicy := ""
 	// Device policy is always enabled by the control plane. Ignore the legacy

@@ -503,6 +503,17 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
               </div>
             </div>
           </details>
+          <ConfigField label="Mac 系统 DNS" setting="local_system_dns.enabled" hint="在 TUN 自动路由就绪后接管上游网络服务的系统 DNS，停止、回滚或重启代理引擎时恢复原设置。仅当设置仍由 OpenSurge 持有时恢复。mihomo 继续使用配置中的解析器，导入配置不能使用 system 解析器。">
+            <ConfigSwitch
+              label="随 TUN 管理 Mac 系统 DNS"
+              checked={config.local_system_dns?.enabled ?? true}
+              disabled={config.transparent.mode !== 'tun'}
+              disabledText="需要 TUN"
+              onChange={enabled => setConfig({ ...config, local_system_dns: { enabled } })}
+            />
+            <small>{t('Mac 的公网 IPv6 与 fake IPv6 路由随 TUN 启用，独立于下游 IPv6 开关。AAAA 开关只控制 DNS 是否返回 IPv6 地址。')}</small>
+            {gatewayActive && overview?.status && <small>{t('Mac IPv6 TUN')}：{t(overview.status.mac_tun_ipv6 === 'ready' ? '就绪' : '未确认')} · {t('Mac 系统 DNS')}：{t(overview.status.mac_system_dns === 'applied_at_start' ? '启动时已校验，可用诊断检查当前设置' : '未确认')}</small>}
+          </ConfigField>
           <DownstreamIPv6Card
             config={config}
             editable={configurationEditable}

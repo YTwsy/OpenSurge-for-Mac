@@ -86,6 +86,7 @@ func TestWaitForTUNWaitsForEnabledRuntimeState(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.Default()
+	cfg.Transparent.TUNAutoRoute = false // API readiness fixture; route readiness is tested separately.
 	cfg.Mihomo.APIAddr = server.URL
 	cfg.Runtime.Dir = t.TempDir()
 	manager := New(cfg, runtime.NewPaths(cfg))

@@ -186,6 +186,7 @@ type ControlConfig struct {
 	Mihomo           MihomoConfigInput           `json:"mihomo"`
 	Transparent      TransparentConfigInput      `json:"transparent"`
 	LocalSystemProxy LocalSystemProxyConfigInput `json:"local_system_proxy"`
+	LocalSystemDNS   *LocalSystemDNSConfigInput  `json:"local_system_dns,omitempty"`
 	DevicePolicy     DevicePolicyConfigInput     `json:"device_policy"`
 }
 
@@ -227,6 +228,10 @@ type TransparentConfigInput struct {
 }
 
 type LocalSystemProxyConfigInput struct {
+	Enabled bool `json:"enabled"`
+}
+
+type LocalSystemDNSConfigInput struct {
 	Enabled bool `json:"enabled"`
 }
 
@@ -467,6 +472,7 @@ type ConnectionRefreshResponse struct {
 	SchemaVersion      int    `json:"schema_version"`
 	Scope              string `json:"scope"`
 	DeviceID           string `json:"device_id,omitempty"`
+	PolicyGroup        string `json:"policy_group,omitempty"`
 	MatchedConnections int    `json:"matched_connections"`
 	ClosedConnections  int    `json:"closed_connections"`
 }

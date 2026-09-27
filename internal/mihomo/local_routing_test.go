@@ -96,8 +96,8 @@ func TestBuildLocalRoutingPolicyAddsOnlyEffectiveSystemTUNIPv6Identities(t *test
 		wantFake bool
 		wantHost bool
 	}{
-		{name: "IPv6 disabled", tunIPv6: config.TUNIPv6Off},
-		{name: "AAAA enabled without downstream IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Off, wantFake: true},
+		{name: "AAAA and downstream disabled", tunIPv6: config.TUNIPv6Off, wantHost: true},
+		{name: "AAAA enabled without downstream IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Off, wantHost: true},
 		{name: "host TUN IPv6 enabled without AAAA", tunIPv6: config.TUNIPv6Always, wantHost: true},
 		{name: "host TUN IPv6 replaces fake range TUN address", dnsIPv6: true, tunIPv6: config.TUNIPv6Always, wantHost: true},
 	}
@@ -195,7 +195,7 @@ rules:
 		source    string
 		forbidden string
 	}{
-		{name: "fake-AAAA with inactive downstream IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Off, source: localRoutingFakeIPv6Source(), forbidden: localRoutingHostTUNIPv6Source()},
+		{name: "fake-AAAA with inactive downstream IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Off, source: localRoutingHostTUNIPv6Source(), forbidden: localRoutingFakeIPv6Source()},
 		{name: "effective host TUN IPv6", dnsIPv6: true, tunIPv6: config.TUNIPv6Always, source: localRoutingHostTUNIPv6Source(), forbidden: localRoutingFakeIPv6Source()},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

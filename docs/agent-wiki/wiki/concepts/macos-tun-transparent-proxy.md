@@ -50,7 +50,8 @@ pf:
 
 mihomo REST API 可以先于 TUN 初始化对外响应，因此 `/version` 成功不代表透明
 路径已经就绪。启动流程必须在有限时间内等待运行时 `/configs` 报告
-`tun.enable: true`，同时识别 `Start TUN listening error`。当前启动预算是 10 秒；
+`tun.enable: true`，自动路由开启时还检查 DNS 捕获、fake IPv4/IPv6 与公网 IPv6
+目标实际选择该 TUN，同时识别 `Start TUN listening error`。当前启动预算是 10 秒；
 失败时先给新进程 3 秒 SIGTERM 清理窗口，再按需 SIGKILL，并进入 gateway
 rollback。运行中的 status/overview 每次只读取一次轻量运行时状态；若 `/configs`
 暂时不可读，TUN 显示 `unknown` 并附带 warning，但不能据此把仍运行的网关改成
@@ -64,6 +65,9 @@ mihomo 时必须重新核对失败后的 `/configs` 行为并跑真实 TUN Lab�
 当前默认不支持与另一个全局 TUN 同时占有公网路由。DNS resolver 状态与 TUN 路由
 所有权是不同信号；不要因为出现 utun scoped/supplemental resolver 就判定 TUN
 冲突。
+
+Mac 系统 DNS 默认随自动 TUN 路由接管并恢复；Mac IPv6 TUN 独立于下游 IPv6。
+具体所有权、私有解析与路由契约见 [Mac 系统 DNS 与 IPv6 TUN](local-system-dns-coordination.md)。
 
 SafeDNS、DNS Proxy、内容过滤等 Network Extension 可能让 TUN 已 ready，但部分本机
 应用的 DNS/访问路径仍异常。`local_system_proxy.enabled` 提供默认关闭的 HTTP/HTTPS
