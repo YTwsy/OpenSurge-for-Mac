@@ -1,4 +1,8 @@
 export const englishMessages: Record<string, string> = {
+  '重新连接后台服务': 'Reconnect to service',
+  '请先在网络设置中停止网关并完成恢复。': 'Stop the gateway and complete recovery in Network Settings first.',
+  '退出 OpenSurge…': 'Quit OpenSurge…',
+  '只退出桌面 App…': 'Quit Desktop App Only…',
   '正在连接后台服务…': 'Connecting to service…',
   '网关已停止': 'Gateway stopped',
   '网关正在运行': 'Gateway running',

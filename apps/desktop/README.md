@@ -30,15 +30,19 @@ Start the installed OpenSurge app before opening the preview, or use the isolate
 automatically while preserving the current page and drafts. Mutations are never
 replayed automatically. `⌘R` refreshes state without reloading, and `⌘1`–`⌘8`
 navigate the existing pages. Closing the window hides it; Dock reopen, a second
-launch or **View → Show Main Window** preserves its state. `⌘Q` exits the preview UI.
+launch or **View → Show Main Window** preserves its state. `⌘Q` confirms UI-only exit;
+the gateway and background service keep running.
 
 Native menus follow the UI language. HTTP(S) links open in the system browser;
 confirmation, clipboard and recovery-card saving use macOS facilities. Recurring
 reads and SSE pause while the window is hidden, minimised or occluded. A native
 menu-bar icon opens a separate compact React popup (`⌘⇧M` also opens it). It follows
 the main window's language/theme and shares the authoritative sleep-prevention
-control, with recovery reminders and a diagnostic summary. Login registration and
-service lifecycle management follow in separate increments.
+control, with recovery reminders and a diagnostic summary. Reconnect can wake the
+installed user Control Service. Full exit requires a fresh stopped/recovered status,
+then stops only that user service and leaves the root Helper available. Both exit
+choices require native confirmation. Login registration, updates and uninstall
+controls follow in separate increments.
 Run the native client and host boundary tests with `make desktop-test`.
 
 This preview has a separate bundle identifier and output path; production

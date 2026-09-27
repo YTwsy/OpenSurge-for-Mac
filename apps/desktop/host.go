@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -13,6 +15,7 @@ import (
 	"open-mihomo-gateway/apps/desktop/internal/desktopactions"
 	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/native"
+	"open-mihomo-gateway/apps/desktop/internal/servicelife"
 )
 
 type desktopHost struct {
@@ -24,6 +27,9 @@ type desktopHost struct {
 	popup    *application.WebviewWindow
 	tray     *application.SystemTray
 	status   *menustatus.Monitor
+	services *servicelife.Coordinator
+	quitBusy atomic.Bool
+	quitting atomic.Bool
 }
 
 func (h *desktopHost) show(path string) {
@@ -58,13 +64,19 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 		SaveRecovery: h.saveRecovery,
 		SetLanguage:  h.setLanguage,
 		ShowMain:     h.show,
-		MenuStatus: func(ctx context.Context, refresh bool) any {
-			if refresh {
-				return h.status.Refresh(ctx)
+		MenuStatus:   h.menuSnapshot,
+		Reconnect:    h.reconnect,
+		Quit: func(ctx context.Context, full bool) (bool, error) {
+			accepted, err := h.quit(ctx, full)
+			if errors.Is(err, servicelife.ErrUnsafe) {
+				err = &desktopactions.Failure{Code: "desktop_exit_unsafe"}
 			}
-			return h.status.Snapshot()
+			return accepted, err
 		},
 		SetSleep: func(ctx context.Context, enabled bool) (any, error) {
+			if h.quitBusy.Load() {
+				return nil, servicelife.ErrQuitting
+			}
 			return h.status.SetSleep(ctx, func(ctx context.Context) (menustatus.SleepPrevention, error) {
 				var result menustatus.SleepPrevention
 				err := h.client.WriteJSON(ctx, "PUT", "/api/v1/sleep-prevention", map[string]bool{"enabled": enabled}, &result)
@@ -121,7 +133,8 @@ func (h *desktopHost) setMenu(english bool) {
 	appMenu.Add(t("隐藏其他应用", "Hide Others")).SetRole(application.HideOthers).SetAccelerator("CmdOrCtrl+OptionOrAlt+h")
 	appMenu.Add(t("显示全部", "Show All")).SetRole(application.ShowAll)
 	appMenu.AddSeparator()
-	appMenu.Add(t("只退出桌面 App", "Quit Desktop App Only")).SetAccelerator("CmdOrCtrl+q").OnClick(func(*application.Context) { h.app.Quit() })
+	appMenu.Add(t("退出 OpenSurge…", "Quit OpenSurge…")).OnClick(func(*application.Context) { h.quitFromMenu(true) })
+	appMenu.Add(t("只退出桌面 App…", "Quit Desktop App Only…")).SetAccelerator("CmdOrCtrl+q").OnClick(func(*application.Context) { h.quitFromMenu(false) })
 	edit := menu.AddSubmenu(t("编辑", "Edit"))
 	for _, item := range []struct {
 		zh, en, key string
@@ -152,4 +165,7 @@ func (h *desktopHost) setMenu(english bool) {
 	windowMenu.Add(t("关闭窗口", "Close Window")).SetRole(application.CloseWindow).SetAccelerator("CmdOrCtrl+w")
 	windowMenu.Add(t("进入全屏幕", "Enter Full Screen")).SetRole(application.ToggleFullscreen).SetAccelerator("CmdOrCtrl+Control+f")
 	h.app.Menu.Set(menu)
+	if h.tray != nil {
+		h.tray.SetMenu(h.trayMenu(english))
+	}
 }

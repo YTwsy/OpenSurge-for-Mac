@@ -157,6 +157,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         common["topology"] = state.get("mode", "same_lan")
         status.update({key: state[key] for key in ("dhcp", "mihomo", "pf_anchor") if key in state})
         routes = {
+            "/api/v1/desktop-smoke/lifecycle": {},
             "/api/v1/overview": {**common, "status": status, "doctor": [], "leases": [], "policies": [], "providers": {"proxy_providers": [], "rule_providers": []}, "recovery": recovery},
             "/api/v1/menubar": {**common, **status, "recovery_required": recovery["required"], "recovery_stage": recovery["stage"]},
             "/api/v1/ui-preferences": preferences,

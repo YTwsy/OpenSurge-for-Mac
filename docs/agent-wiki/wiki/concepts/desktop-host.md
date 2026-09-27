@@ -85,10 +85,23 @@ has no independent language preference. Theme follows the same origin's localSto
 change event. The popup opens from the tray or `⌘⇧M`, dismisses on Escape or focus
 loss, and opens the existing main window for panel/recovery/diagnostic actions.
 
+Service lifecycle uses a closed native capability. Explicit reconnect checks the
+fixed user LaunchAgent, bootstraps its installed plist if needed, and kickstarts it
+without `-k`; launch itself never wakes it. Custom discovery directories cannot
+operate launchd. A serial coordinator prevents reconnect from resurrecting a service
+during exit. UI-only exit (including Cmd-Q and Dock Quit) confirms that the gateway
+and Control Service continue. Full exit requires the existing `can_quit` contract
+plus explicit stopped DHCP/mihomo and unloaded PF states, reads again after native
+confirmation, and boots out only the user Control Service. Unknown/offline status
+fails closed. The root Helper stays loaded. Pending exit blocks new renderer API
+mutations; cancellation returns to the popup without replacing the main React tree.
+
 For native acceptance, `scripts/desktop-smoke-service.py DIR` runs a harmless fixture.
 Launch the preview executable with `--control-dir DIR`; scenario changes and service
 restarts exercise sessions, discovery and UI state without touching the installed
 gateway. Its observations record mutation payloads and SSE lifetimes, never credentials.
+The additional `--smoke-actions` flag is accepted only with a custom directory and
+records fixed lifecycle commands through the fixture instead of executing launchctl.
 
 The [migration plan](../../../desktop-migration.md) tracks stage boundaries;
 [GUI control-plane](gui-control-plane.md) documents the existing contracts to carry

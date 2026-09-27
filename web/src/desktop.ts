@@ -56,7 +56,10 @@ export function watchControlEvents(onState: () => void): () => void {
 
 export async function desktopAction<T = { ok: boolean }>(action: string, body: Record<string, unknown> = {}): Promise<T> {
   const response = await fetch(`/desktop/v1/${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...desktopHeaders() }, body: JSON.stringify(body) })
-  if (!response.ok) throw new Error(t('桌面操作未完成，请重试。'))
+  if (!response.ok) {
+    const failure = await response.json().catch(() => null) as { error?: { code?: string } } | null
+    throw new Error(t(failure?.error?.code === 'desktop_exit_unsafe' ? '请先在网络设置中停止网关并完成恢复。' : '桌面操作未完成，请重试。'))
+  }
   return response.json() as Promise<T>
 }
 

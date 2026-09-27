@@ -65,6 +65,21 @@ and increment `generation` to test reauthentication. With both windows hidden,
 only the native 15-second menu-bar monitor should keep polling; the main-window
 reads and SSE remain stopped. This fixture never wakes or stops an installed service.
 
+## Service lifecycle
+
+For lifecycle acceptance, add `--smoke-actions` to the preview invocation above.
+This flag requires a custom discovery directory. The fixture records lifecycle
+commands as mutation bodies and never executes launchctl. Without this flag, custom
+discovery directories disable service management.
+
+Verify reconnect records only `print`/`bootstrap` as needed and `kickstart` without
+`-k`. UI-only exit must confirm that the gateway continues and issue no stop command.
+Full exit must be disabled for running, recovering, unavailable or unknown status.
+With a stopped fixture, open its confirmation, change the scenario to running, and
+confirm: the App must stay open and record no `bootout`. Reset to stopped, confirm
+again, and verify exactly one `bootout gui/<uid>/com.opensurge.control` followed by
+App exit. Cancellation must restore the popup. Test Cmd-Q as the UI-only route.
+
 The minimum target is macOS 13. Native acceptance on macOS 14 alone must not be
 reported as a macOS 13 runtime test. Installer upgrade and real gateway/network
 acceptance remain separate gates.
