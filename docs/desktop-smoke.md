@@ -43,6 +43,11 @@ transport fixture, not a substitute for Control API or network validation.
    recovery card as plain text, close the modal, and download it with the native save
    panel. Cancel is not success. Compare the saved text and permissions with the
    fixture response. Check both languages, keyboard copy/paste, and window sizing.
+   On first launch the window requests 1440 × 900 points (fitted to the available
+   screen). Verify the transparent title area in both themes, the native traffic
+   lights, top-strip dragging, resize, and quit/reopen restoring the chosen frame.
+   Use only an isolated test bundle's saved frame when exercising first launch;
+   do not remove a user's existing preview/window preference.
 
 Run `make test web-test desktop-test` before opening a PR. Build both native
 architectures with `OPENSURGE_DESKTOP_ARCH=arm64 make desktop-build` and

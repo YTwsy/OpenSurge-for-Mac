@@ -33,6 +33,12 @@ navigate the existing pages. Closing the window hides it; Dock reopen, a second
 launch or **View → Show Main Window** preserves its state. `⌘Q` confirms UI-only exit;
 the gateway and background service keep running.
 
+First launch uses a 1440 × 900 point window, constrained to the screen's available
+area. Users can resize it (minimum 1080 × 640); subsequent launches restore their
+chosen frame. A transparent inset title bar keeps the native traffic lights over
+the sidebar and hides the duplicate window title. The empty top strip supports
+native dragging and double-click behaviour; it does not cover page controls.
+
 Native menus follow the UI language. HTTP(S) links open in the system browser;
 confirmation, clipboard and recovery-card saving use macOS facilities. Recurring
 reads and SSE pause while the window is hidden, minimised or occluded. A native

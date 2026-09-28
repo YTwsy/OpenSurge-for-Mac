@@ -48,7 +48,11 @@ Hidden-window work must be reduced explicitly rather than relying on browser-tab
 throttling. Reconnect must recover authentication and state without replaying an
 unacknowledged privileged mutation.
 
-The main window persists its frame, hides on close, and reopens through Dock or a
+The main window initially requests 1440 × 900 points and fits the available screen.
+It preserves user-resized frames (minimum 1080 × 640) rather than forcing the default
+on every launch. Its transparent inset title bar keeps native traffic lights, hides
+the duplicate title, and reserves a drag region above the React controls. Desktop-only
+spacing must not affect browser or tray layouts. The window hides on close and reopens through Dock or a
 second launch without replacing its React tree. Single-instance scope includes the
 absolute discovery directory so fixture acceptance cannot redirect an installed host.
 Native View-menu navigation preserves React's existing dirty-device guard; refresh

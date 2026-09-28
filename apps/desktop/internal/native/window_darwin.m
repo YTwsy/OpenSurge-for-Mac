@@ -115,8 +115,14 @@ void configureOpenSurgeWindow(void *pointer, bool rememberFrame) {
     }
     if (rememberFrame) {
         [window setFrameUsingName:@"OpenSurgeMainWindow"];
+        // The first launch is deliberately spacious. Fit smaller displays and
+        // frames restored from a larger monitor without overriding user sizing.
+        NSRect frame = window.frame;
+        NSRect available = (window.screen ?: NSScreen.mainScreen).visibleFrame;
+        frame.size.width = MIN(frame.size.width, available.size.width);
+        frame.size.height = MIN(frame.size.height, available.size.height);
+        [window setFrame:[window constrainFrameRect:frame toScreen:window.screen] display:NO];
         [window setFrameAutosaveName:@"OpenSurgeMainWindow"];
-        [window setFrame:[window constrainFrameRect:window.frame toScreen:window.screen] display:NO];
     }
     [guard publishVisibility:nil];
 }

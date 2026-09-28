@@ -857,3 +857,9 @@ html[data-theme="light"] .recovery-card-actions button,html[data-theme="light"] 
 .desktop-recovery-card header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .desktop-recovery-card pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 60vh; line-height: 1.6; }
 .sidebar { overflow-y: auto; }
+
+/* AppKit draws the real traffic lights over the sidebar. The rest of the title
+   area is a Wails drag region; browser and tray layouts remain unchanged. */
+.desktop-titlebar { position:fixed;inset:0 16px auto 0;height:40px;z-index:20;--wails-draggable:drag;user-select:none;-webkit-user-select:none; }
+.desktop-shell .sidebar { padding-top:54px; }
+.desktop-shell .workspace { padding-top:54px; }
