@@ -21,12 +21,12 @@ func (h *desktopHost) showTray() {
 func (h *desktopHost) createTray() {
 	h.popup = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "menu-bar", Title: "OpenSurge Menu Bar", URL: "/desktop-tray",
-		Width: 360, Height: 640, Hidden: true, Frameless: true, DisableResize: true,
+		Width: 390, Height: 550, Hidden: true, Frameless: true, DisableResize: true,
 		AlwaysOnTop: true, HideOnFocusLost: true, HideOnEscape: true,
-		Mac: application.MacWindow{CollectionBehavior: application.MacWindowCollectionBehaviorCanJoinAllSpaces | application.MacWindowCollectionBehaviorFullScreenAuxiliary, TabbingMode: application.MacWindowTabbingModeDisallowed},
+		Mac: application.MacWindow{Backdrop: application.MacBackdropTranslucent, CollectionBehavior: application.MacWindowCollectionBehaviorCanJoinAllSpaces | application.MacWindowCollectionBehaviorFullScreenAuxiliary, TabbingMode: application.MacWindowTabbingModeDisallowed},
 	})
 	h.tray = h.app.SystemTray.New().SetTemplateIcon(trayIcon).AttachWindow(h.popup).WindowOffset(8)
-	h.tray.SetTooltip("OpenSurge Desktop Preview")
+	h.tray.SetTooltip("OpenSurge")
 	h.popup.OnWindowEvent(events.Common.WindowShow, func(*application.WindowEvent) { h.status.SetRapid(true) })
 	h.popup.OnWindowEvent(events.Common.WindowHide, func(*application.WindowEvent) { h.status.SetRapid(false) })
 	h.popup.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); h.popup.Hide() })

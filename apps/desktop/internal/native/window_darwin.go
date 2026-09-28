@@ -11,6 +11,8 @@ void configureOpenSurgeWindow(void *window, bool rememberFrame);
 void setOpenSurgeWindowLanguage(void *window, bool english);
 bool openSurgeExternalURLAllowed(const char *url);
 bool openSurgeSystemUsesEnglish(void);
+void setOpenSurgeWindowAppearance(void *window, bool dark);
+void configureOpenSurgeMenuBarIcon(void);
 */
 import "C"
 
@@ -39,4 +41,13 @@ func SystemLanguage() string {
 		return "en"
 	}
 	return "zh-Hans"
+}
+
+// Appearance applies only to the popup; the main window retains its own styling.
+func SetAppearance(window *application.WebviewWindow, theme string) {
+	application.InvokeSync(func() { C.setOpenSurgeWindowAppearance(window.NativeWindow(), C.bool(theme == "dark")) })
+}
+
+func ConfigureMenuBarIcon() {
+	C.configureOpenSurgeMenuBarIcon()
 }

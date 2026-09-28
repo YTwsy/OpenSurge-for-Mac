@@ -13,20 +13,21 @@ import (
 )
 
 type Actions struct {
-	OpenExternal  func(string) error
-	CopyText      func(string) error
-	SaveRecovery  func(context.Context) (bool, error)
-	SetLanguage   func(string)
-	MenuStatus    func(context.Context, bool) any
-	ShowMain      func(string)
-	SetSleep      func(context.Context, bool) (any, error)
-	Reconnect     func(context.Context) error
-	Quit          func(context.Context, bool) (bool, error)
-	Utilities     func() any
-	SetLogin      func(bool) (any, error)
-	LoginSettings func() error
-	CheckUpdates  func(context.Context) any
-	Uninstall     func(context.Context) (bool, error)
+	OpenExternal      func(string) error
+	CopyText          func(string) error
+	SaveRecovery      func(context.Context) (bool, error)
+	SetLanguage       func(string)
+	SetTrayAppearance func(string)
+	MenuStatus        func(context.Context, bool) any
+	ShowMain          func(string)
+	SetSleep          func(context.Context, bool) (any, error)
+	Reconnect         func(context.Context) error
+	Quit              func(context.Context, bool) (bool, error)
+	Utilities         func() any
+	SetLogin          func(bool) (any, error)
+	LoginSettings     func() error
+	CheckUpdates      func(context.Context) any
+	Uninstall         func(context.Context) (bool, error)
 }
 
 func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +42,8 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Text     string `json:"text"`
 		Language string `json:"language"`
 		Page     string `json:"page"`
+		Owner    string `json:"owner"`
+		Theme    string `json:"theme"`
 		Refresh  bool   `json:"refresh"`
 		Enabled  *bool  `json:"enabled"`
 		Full     bool   `json:"full"`
@@ -75,12 +78,30 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.SetLanguage(payload.Language)
 	case "/desktop/v1/menubar-status":
 		result = a.MenuStatus(r.Context(), payload.Refresh)
+	case "/desktop/v1/tray-appearance":
+		if payload.Theme != "light" && payload.Theme != "dark" {
+			http.Error(w, "unsupported appearance", http.StatusBadRequest)
+			return
+		}
+		a.SetTrayAppearance(payload.Theme)
 	case "/desktop/v1/show-main":
-		if payload.Page != "dashboard" && payload.Page != "network" && payload.Page != "diagnostics" {
+		if payload.Page != "dashboard" && payload.Page != "network" && payload.Page != "diagnostics" && payload.Page != "devices" && payload.Page != "connections" {
 			http.Error(w, "unsupported page", http.StatusBadRequest)
 			return
 		}
-		a.ShowMain(payload.Page)
+		if len(payload.Owner) > 256 || strings.ContainsAny(payload.Owner, "\x00\r\n") || (payload.Owner != "" && payload.Page != "connections") {
+			http.Error(w, "unsupported connection owner", http.StatusBadRequest)
+			return
+		}
+		target := payload.Page
+		if payload.Page == "connections" {
+			owner := payload.Owner
+			if owner == "" {
+				owner = "all"
+			}
+			target += "?owner=" + url.QueryEscape(owner)
+		}
+		a.ShowMain(target)
 	case "/desktop/v1/sleep-prevention":
 		if payload.Enabled == nil {
 			http.Error(w, "enabled is required", http.StatusBadRequest)

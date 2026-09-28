@@ -197,7 +197,16 @@ export function App() {
   useEffect(() => {
     const navigate = (event: Event) => {
       const path = (event as CustomEvent<string>).detail
-      if (nav.some(item => item.id === path)) goRef.current(path as Page, path === 'network' ? 'control' : 'none')
+      if (typeof path !== 'string') return
+      const [page, query = ''] = path.split('?')
+      if (!nav.some(item => item.id === page)) return
+      if (!goRef.current(page as Page, page === 'network' ? 'control' : 'none')) return
+      if (page === 'connections') {
+        const owner = new URLSearchParams(query).get('owner') || 'all'
+        setConnectionsView({ ...initialConnectionsView(), owner })
+        connectionsScroll.current = 0
+        history.replaceState({}, '', `/connections?owner=${encodeURIComponent(owner)}`)
+      }
     }
     window.addEventListener('opensurge:navigate', navigate)
     return () => window.removeEventListener('opensurge:navigate', navigate)

@@ -68,13 +68,14 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 			}
 			return nil
 		},
-		SaveRecovery: h.saveRecovery,
-		SetLanguage:  h.setLanguage,
-		ShowMain:     h.show,
-		MenuStatus:   h.menuSnapshot,
-		Reconnect:    h.reconnect,
-		Utilities:    h.utilities,
-		Uninstall:    h.uninstall,
+		SaveRecovery:      h.saveRecovery,
+		SetLanguage:       h.setLanguage,
+		SetTrayAppearance: func(theme string) { native.SetAppearance(h.popup, theme) },
+		ShowMain:          h.show,
+		MenuStatus:        h.menuSnapshot,
+		Reconnect:         h.reconnect,
+		Utilities:         h.utilities,
+		Uninstall:         h.uninstall,
 		SetLogin: func(enabled bool) (any, error) {
 			if !h.quitBusy.CompareAndSwap(false, true) {
 				return nil, servicelife.ErrQuitting

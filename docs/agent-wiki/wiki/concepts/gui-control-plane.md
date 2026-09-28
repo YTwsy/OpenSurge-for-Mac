@@ -13,8 +13,10 @@ Next 的完整 GUI 是 `web/` 中的 React 应用，由 `apps/desktop/` 中的 W
 未来采用 Icon Composer 时应按其模板重新校准并验证系统实际渲染。菜单栏状态项使用
 独立的 `OpenSurgeMenuBarIcon.png`，显示尺寸为 18 × 18 pt，不跟随应用图标的留白调整。
 
-菜单栏 App 不提供 start/stop 或策略切换。它只消费 `/api/v1/menubar`，显示网关、
-客户端、drift 和恢复状态，并恢复同一个桌面主窗口。唯一独立的网关相关动作是
+菜单栏 App 不提供 start/stop 或策略切换。它消费 `/api/v1/menubar` 显示网关、
+drift 和恢复状态；运行时还只读 `/api/v1/device-traffic` 与 `/api/v1/local-routing`，
+展示最近 60 秒流量、本机出口和活跃设备，并带设备筛选恢复同一个桌面主窗口。
+显示与采样约定见 [Desktop host](desktop-host.md)。唯一独立的网关相关动作是
 与网关状态无关的临时“合盖保持运行”开关；不要借此把菜单栏演变成第二套网关控制面。
 
 界面语言同样保持单一设置入口：Web GUI 的侧栏提供“跟随系统 / 简体中文 / English”，

@@ -85,6 +85,55 @@ eligibility, instead of displaying an old healthy result. Network-recovery atten
 takes precedence over stopped/running display; an unchanged prepared recovery card
 does not imply an interrupted network.
 
+The popup presents a gateway overview: current rates and a short chart, this Mac's
+routing summary, this Mac plus two active downstream devices, expandable network
+state, and the session-only sleep control. Utilities and exit actions live in the
+header's More actions panel, with settings and updates shown directly and matching
+switch styles. Routing and device rows first expand inline summaries; their explicit
+desktop links navigate to settings or the existing main connection view with an
+encoded owner, preserving unsaved-device navigation guards. Native
+navigation accepts only explicit page names and an optional bounded connection owner.
+
+Visible, running popups read the existing `/api/v1/device-traffic` and
+`/api/v1/local-routing` endpoints every two seconds. Rates cover observed active
+mihomo sessions, not interface bandwidth or daily usage. Active downstream counts
+exclude the Mac and inactive inventory. Downstream ranking is held for ten seconds
+to reduce moving click targets. Failed reads clear the corresponding observation;
+stopped/unknown gateways stop these reads. Chart history is at most 60 seconds and
+restarts after a hidden-window gap; the first sample is not shown as a zero rate.
+
+The background is AppKit `NSVisualEffectMaterialPopover` with behind-window
+blending beneath a transparent WKWebView, enabled by Wails' `MacBackdropTranslucent`
+and the build tag `production,private_mac_apis`. The private tag is required by the
+pinned Wails version's WebKit transparency implementation; CSS alone cannot expose
+the material. No Liquid Glass is used. The popup appearance tracks its React theme;
+AppKit supplies label, separator, control, accent and chart colours. Use system fonts
+and visible keyboard focus; respect increased contrast and reduced transparency.
+These choices follow Apple's [materials](https://developer.apple.com/design/human-interface-guidelines/materials),
+[buttons](https://developer.apple.com/design/human-interface-guidelines/buttons) and
+[typography](https://developer.apple.com/design/human-interface-guidelines/typography)
+guidance rather than sampling screenshot colours.
+
+The popup fits its content instead of scrolling inside a fixed-height window.
+Network details use a 220 ms disclosure transition and the historical Swift Grid's
+leading columns, 14-point column gap, 7-point row gap and caption text. A tray-only
+WKScriptMessageHandler accepts finite, bounded height measurements from the internal
+main frame; an injected ResizeObserver follows intrinsic content height, so the
+native window's lower edge follows the disclosure while its top stays anchored.
+The height is capped to the current display's visible area; only an unusually short
+display or long warning needs internal scrolling, without a visible scrollbar.
+Reduced Motion disables the transition, following Apple's
+[motion guidance](https://developer.apple.com/design/human-interface-guidelines/motion).
+
+The menu-bar template image remains the existing brand asset at **18 × 18 points**,
+matching the Swift host. Wails beta.26 otherwise scales it to the status bar's height.
+Status-item windows are absent from `NSApp.windows`, so searching that list cannot
+resize the image. Before tray creation, the native adapter installs a process-local
+`NSStatusBarButton.setImage:` adaptation, gated to Wails' `StatusItemController` target.
+It restores the 18-point template size on every image assignment, without raster
+resampling or changing the superclass `NSButton` setter. Recheck this adaptation when
+upgrading Wails; smoke mode logs the actual assigned image dimensions.
+
 Both desktop windows route explicit sleep-prevention changes through the existing
 Control API using one native serialisation boundary shared with menu-bar reads.
 An older read cannot overwrite an acknowledged toggle. Browser requests continue

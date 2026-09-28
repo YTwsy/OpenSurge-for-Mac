@@ -119,6 +119,7 @@ func main() {
 		Mac: application.MacWindow{TitleBar: application.MacTitleBarHiddenInset, InvisibleTitleBarHeight: 40},
 	})
 	host.main = window
+	native.ConfigureMenuBarIcon()
 	host.createTray()
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide() })
 	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { host.show("") })
