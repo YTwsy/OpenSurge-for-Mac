@@ -71,9 +71,11 @@ the UI available for explicit reconnect. A custom directory never operates the r
 job; production `--smoke-actions` exercises launch wake with a fixture runner.
 Preview and production single-instance identities are separate.
 
-The preview retains its separate identifier and output. PKG builds still ship Swift
-until the installer cutover PR. Local bundles are ad-hoc signed, not Developer ID
-signed or notarized.
+The preview retains its separate identifier and output. On `Next`, `make gui-build`
+and `make gui-installer` now use this Wails host. The Swift host remains only as
+maintenance source in `apps/menubar`; its explicit legacy build writes under
+`bin/legacy/`. Local bundles are ad-hoc signed, not Developer ID signed or notarized.
+See [installer acceptance](../../docs/desktop-installation.md) for validation limits.
 
 See [the migration plan](../../docs/desktop-migration.md) and
 [the desktop host contract](../../docs/agent-wiki/wiki/concepts/desktop-host.md).

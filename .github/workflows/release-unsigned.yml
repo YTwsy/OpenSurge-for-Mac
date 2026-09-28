@@ -65,16 +65,18 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache: true
+          go-version-file: apps/desktop/go.mod
+          cache-dependency-path: |
+            go.sum
+            apps/desktop/go.sum
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Set up pnpm
-        run: npm install --global pnpm@11.9.0
+        run: npm install --global pnpm@11.19.0
 
       - name: Install Web dependencies
         run: pnpm --dir web install --frozen-lockfile

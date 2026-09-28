@@ -579,6 +579,19 @@ ownership marker 引用计数和上次异常运行的 marker reconciliation。pk
 恢复合盖睡眠、Control Service kill、Helper kill 与系统重启后的恢复，并记录 `pmset -g`
 中的 `SleepDisabled` 证据。测试机必须保持通风，不能把合盖运行中的机器放入包内。
 
+## Wails 安装器切换
+
+`make gui-test` 包含 Go、Web、桌面 race 测试及 GUI packaging contracts。
+`check-gui-packaging.sh` 检查生产宿主选择、两代已安装进程的精确路径范围，并运行
+`tests/packaging/test_installer.py`：在临时目录中执行安装脚本，用假系统命令验证
+恢复未完成时拒绝升级、清理顺序、失败保留、首次安装、升级保留和两种卸载模式。
+这些测试不会操作真实 launchd、网关或用户数据。
+
+完整 PKG 还须解包验证 bundle ID / executable / version / build / tag、架构、macOS
+最低目标、签名状态、Helper 与许可证。上述结果不能替代真实 PackageKit 安装、管理员
+授权、SMAppService 登录项连续性、macOS 13 / Intel 原生 GUI 或网络清理验收。
+具体矩阵见 [桌面安装验收](../../../desktop-installation.md)。
+
 ## 结论纪律
 
 最终报告必须明确说出实际运行了哪些命令。如果只运行了 `make test`，不要暗示

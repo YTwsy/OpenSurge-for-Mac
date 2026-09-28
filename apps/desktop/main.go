@@ -8,8 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -79,9 +81,10 @@ func main() {
 	})
 	app := application.New(application.Options{
 		Name: "OpenSurge", Description: "OpenSurge for Mac desktop host",
-		Assets:     application.AssetOptions{Handler: handler, DisableLogging: true},
-		OnShutdown: cancel,
-		ShouldQuit: host.shouldQuit,
+		Assets:                      application.AssetOptions{Handler: handler, DisableLogging: true},
+		OnShutdown:                  cancel,
+		ShouldQuit:                  host.shouldQuit,
+		DisableDefaultSignalHandler: true,
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: fmt.Sprintf("%s.%x", bundleIdentifier, sha256.Sum256([]byte(directory))),
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
@@ -90,6 +93,27 @@ func main() {
 		},
 	})
 	host.app = app
+	termination := make(chan os.Signal, 1)
+	signal.Notify(termination, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(termination)
+	go func() {
+		select {
+		case <-ready:
+		case <-lifetime.Done():
+			return
+		}
+		select {
+		case <-termination:
+			// Installer TERM stops only the host, without an interactive quit
+			// dialog. The installer owns service ordering and gateway recovery.
+			host.quitBusy.Store(true)
+			cancel()
+			host.services.ExitUI()
+			host.quitting.Store(true)
+			app.Quit()
+		case <-lifetime.Done():
+		}
+	}()
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "main", Title: "OpenSurge", Width: 1440, Height: 900, MinWidth: 1080, MinHeight: 640, URL: "/dashboard",
 		Mac: application.MacWindow{TitleBar: application.MacTitleBarHiddenInset, InvisibleTitleBarHeight: 40},

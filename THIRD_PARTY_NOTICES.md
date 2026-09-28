@@ -56,3 +56,11 @@ places this notice and the referenced license texts under
 - License: MIT
 - Upstream: <https://github.com/facebook/react>
 - License text: [`third_party/licenses/react-MIT.txt`](third_party/licenses/react-MIT.txt)
+
+## Wails desktop host
+
+- Version: `v3.0.0-beta.26`, pinned by the independent `apps/desktop/go.mod`
+- License: MIT
+- Use: native window, tray and system WebView hosting; no Chromium/Node runtime
+- Upstream: <https://github.com/wailsapp/wails/tree/v3.0.0-beta.26>
+- License text: [`third_party/licenses/wails-MIT.txt`](third_party/licenses/wails-MIT.txt)
