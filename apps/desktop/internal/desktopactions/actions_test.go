@@ -31,3 +31,30 @@ func TestClosedNativeCapabilities(t *testing.T) {
 		t.Fatal("an untrusted URL reached the native opener")
 	}
 }
+
+func TestTrayNavigationAndAppearance(t *testing.T) {
+	target, theme := "", ""
+	a := &Actions{ShowMain: func(value string) { target = value }, SetTrayAppearance: func(value string) { theme = value }}
+	for _, test := range []struct {
+		action, body string
+		want         int
+	}{
+		{"show-main", `{"page":"devices"}`, 200},
+		{"show-main", `{"page":"connections","owner":"device:tv & family"}`, 200},
+		{"show-main", `{"page":"https://example.com"}`, 400},
+		{"show-main", `{"page":"network","owner":"device:tv"}`, 400},
+		{"show-main", `{"page":"connections","owner":"bad\nowner"}`, 400},
+		{"tray-appearance", `{"theme":"light"}`, 200},
+		{"tray-appearance", `{"theme":"dark"}`, 200},
+		{"tray-appearance", `{"theme":"arbitrary"}`, 400},
+	} {
+		w := httptest.NewRecorder()
+		a.ServeHTTP(w, httptest.NewRequest("POST", "/desktop/v1/"+test.action, strings.NewReader(test.body)))
+		if w.Code != test.want {
+			t.Fatalf("%s: got %d: %s", test.body, w.Code, w.Body.String())
+		}
+	}
+	if target != "connections?owner=device%3Atv+%26+family" || theme != "dark" {
+		t.Fatalf("target=%q theme=%q", target, theme)
+	}
+}

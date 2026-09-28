@@ -177,13 +177,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/api/v1/operations": {"operations": []},
             "/api/v1/config": {"schema_version": 1, "revision": "smoke", "gateway": {"mode": "same_lan", "interface": "en0", "lan_ip": "192.0.2.10", "lan_prefix_len": 24, "upstream_interface": "en0"}, "dhcp": {"enabled": False, "range_start": "192.0.2.100", "range_end": "192.0.2.200", "lease_time": "12h", "domain": "lan", "bypass_gateway": "", "bypass_dns": []}, "dns": {"listen": "192.0.2.10", "upstream": "1.1.1.1", "ipv6": False}, "mihomo": {"store_fake_ip": True}, "transparent": {"mode": "tun", "strict_route": False, "tun_ipv6": "off"}, "local_system_proxy": {"enabled": False}, "device_policy": {"enabled": False, "protected_ipv4": []}},
             "/api/v1/network/interfaces": {"schema_version": 1, "interfaces": [{"interface": "en0", "network_service": "Smoke Wi-Fi"}]},
-            "/api/v1/device-traffic": {"schema_version": 1, "sampled_at": str(time.time()), "scope": "active_sessions", "gateway_local": {"ip": "192.0.2.10", "mac": "", "online": False, "active_connections": 0, "upload": 0, "download": 0, "upload_rate": 0, "download_rate": 0}, "devices": [], "totals": {"devices": 0, "active_connections": 0, "upload": 0, "download": 0}, "gateway_rates": {"upload": 0, "download": 0}},
+            "/api/v1/devices": {"drift": False, "applied": False, "devices": [], "leases": [], "observed_devices": []},
+            "/api/v1/device-traffic": {"schema_version": 1, "sampled_at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "scope": "active_sessions", "gateway_local": {"ip": "192.0.2.10", "mac": "", "online": False, "active_connections": 0, "upload": 0, "download": 0, "upload_rate": 0, "download_rate": 0}, "devices": [], "totals": {"devices": 0, "active_connections": 0, "upload": 0, "download": 0}, "gateway_rates": {"upload": 0, "download": 0}},
             "/api/v1/local-routing": {"schema_version": 1, "mode": "rule", "available_modes": ["rule", "direct"], "udp_behavior": "rules", "transports": ["tun"], "new_connections_only": True, "consistent": True},
             "/api/v1/diagnostics": {"schema_version": 1, "revision": "smoke", "connections": {"upload_total": 0, "download_total": 0, "connections": []}, "logs": {}, "operations": [], "recovery": recovery},
             "/api/v1/doctor": {"schema_version": 1, "state": "idle", "current": True, "checks": [], "healthy": True},
             "/api/v1/profile-overlay": {"schema_version": 1, "revision": "smoke", "yaml": "schema-version: 1\nenabled: false\n", "document": {"schema_version": 1, "enabled": False, "rules": {"prepend": [], "append_before_match": []}, "proxies": {"add": [], "replace": []}, "proxy_providers": {"add": {}, "replace": {}}, "proxy_groups": {"add": [], "replace": [], "patch": []}, "rule_providers": {"add": {}, "replace": {}}, "dns": {"merge": {}, "append": {}}}, "desired": True, "applied": False, "validation": "smoke"},
             "/api/v1/tailscale": {"schema_version": 1, "revision": "smoke", "settings": {"enabled": False, "display_name": "Tailnet", "hostname": "smoke", "control_url": "https://controlplane.tailscale.com", "accept_routes": False, "magic_dns_suffixes": [], "peer_cidrs": [], "subnet_routes": [], "allow_mac": False, "allow_all_devices": False, "allowed_devices": [], "exit_node": "", "exit_node_allow_lan_access": False}, "auth_key_present": False, "identity_present": False, "gateway_active": False, "runtime_state": "disabled", "selectable_exit": False, "warnings": []},
         }
+        if "traffic" in state:
+            routes["/api/v1/device-traffic"].update(state["traffic"])
+        traffic = routes["/api/v1/device-traffic"]
+        routes["/api/v1/connections"] = {
+            **traffic,
+            "gateway_totals": {
+                **traffic["totals"],
+                "active_connections": traffic["gateway_local"]["active_connections"] + traffic["totals"]["active_connections"] + traffic.get("unclassified_connections", 0),
+                "upload_rate": traffic["gateway_rates"]["upload"],
+                "download_rate": traffic["gateway_rates"]["download"],
+            },
+            "unclassified": {"key": "unclassified", "identity_source": "unclassified", "ip": "", "mac": "", "online": False, "active_connections": 0, "upload": 0, "download": 0, "upload_rate": 0, "download_rate": 0},
+            "connections": state.get("connections", []),
+        }
+        if "routing" in state:
+            routes["/api/v1/local-routing"].update(state["routing"])
+        if state.get("traffic_unavailable") and path == "/api/v1/device-traffic":
+            self.reply({}, 503)
+            return
         routes["/api/v1/config"]["gateway"]["mode"] = state.get("mode", "same_lan")
         routes["/api/v1/gateway/plan"] = {"schema_version": 1, "revision": "smoke", "topology": state.get("mode", "same_lan"), "snapshot": snapshot, "protected_ipv4": ["192.0.2.1", "192.0.2.10"], "dhcp_servers": [], "warnings": [], "blockers": []}
         if path == "/api/v1/sources":

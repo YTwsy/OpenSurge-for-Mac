@@ -70,6 +70,25 @@ and increment `generation` to test reauthentication. With both windows hidden,
 only the native 15-second menu-bar monitor should keep polling; the main-window
 reads and SSE remain stopped. This fixture never wakes or stops an installed service.
 
+The overview additionally needs a running fixture with `traffic` and `routing`
+objects in `scenario.json` (merged into their existing API responses). Use RFC 3339
+sample timestamps supplied by the fixture, three downstream devices including one
+inactive inventory row, and a separate `gateway_local`. Verify Mac-first rows, active
+counts and rates after two samples. Routing and device rows must expand in place;
+only their explicit desktop links navigate, retaining the selected connection owner. Set
+`traffic_unavailable: true` to confirm old rates disappear; hide both windows for
+more than six seconds to confirm traffic reads stop and the chart restarts on reopen.
+Compare native light/dark backgrounds over another window, keyboard focus, and
+reduced transparency/contrast. The menu icon must use the original image at 18 points.
+Expand and collapse Network status repeatedly, including by keyboard: the disclosure
+and native window must animate together, keep the top edge anchored and show no right
+scrollbar. Values align at the start of the second column as in the Swift Grid.
+Check that the footer remains visible; on a short display, content may scroll without
+a visible scrollbar. With `--smoke-actions`, the host logs measured native window
+heights and the actual template image size for this acceptance check.
+These native checks require a build with `private_mac_apis`, as provided by the App
+builder; a browser screenshot alone does not verify the AppKit material.
+
 ## Service lifecycle
 
 For lifecycle acceptance, add `--smoke-actions` to the preview invocation above.
@@ -87,7 +106,8 @@ App exit. Cancellation must restore the popup. Test Cmd-Q as the UI-only route.
 
 ## Login items and updates
 
-With `--smoke-actions`, expand **App settings and updates**. Login changes affect
+With `--smoke-actions`, open **More actions**; settings and updates are already expanded.
+Verify that Show at login uses the same switch style as the sleep control. Login changes affect
 only fixture state. `login_approval: true` makes enablement require approval;
 `login_failure: true` rejects a change and must preserve the actual checkbox state.
 Without smoke actions, do not register a preview login item just to test the UI.

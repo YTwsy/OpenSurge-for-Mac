@@ -43,7 +43,7 @@ mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
   MACOSX_DEPLOYMENT_TARGET=13.0 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=1 \
     CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=13.0" \
     CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=13.0" \
-    "$GO_BIN" build -mod=readonly -trimpath -tags production -ldflags "-extldflags=-mmacosx-version-min=13.0 -X main.releaseTag=$RELEASE_TAG -X main.bundleIdentifier=$BUNDLE_ID" \
+    "$GO_BIN" build -mod=readonly -trimpath -tags production,private_mac_apis -ldflags "-extldflags=-mmacosx-version-min=13.0 -X main.releaseTag=$RELEASE_TAG -X main.bundleIdentifier=$BUNDLE_ID" \
       -o "$BUNDLE/Contents/MacOS/OpenSurgeDesktop" .
 )
 cp "$ROOT/apps/desktop/Resources/Info.plist" "$BUNDLE/Contents/Info.plist"
