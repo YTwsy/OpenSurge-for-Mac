@@ -313,6 +313,22 @@ void setOpenSurgeWindowAppearance(void *pointer, bool dark) {
     [guard publishAppearance:nil];
 }
 
+static __weak NSStatusBarButton *menuBarButton;
+static NSImage *menuBarBrandImage;
+static NSString *menuBarIndicator = @"connecting";
+static NSString *menuBarDescription = @"OpenSurge";
+
+void setOpenSurgeMenuBarIndicator(const char *indicator, const char *description) {
+    NSString *next = [NSString stringWithUTF8String:indicator];
+    NSString *label = [NSString stringWithUTF8String:description];
+    if ([menuBarIndicator isEqualToString:next] && [menuBarDescription isEqualToString:label]) return;
+    menuBarIndicator = next;
+    menuBarDescription = label;
+    // Reapply the cached brand source through the same adaptation. Never use a
+    // previously rendered warning symbol as the next state's brand source.
+    if (menuBarButton && menuBarBrandImage) menuBarButton.image = menuBarBrandImage;
+}
+
 // Wails beta.26 scales every assigned image to NSStatusBar.thickness and does
 // not expose its NSStatusItem. Status-item windows aren't in NSApp.windows.
 // Intercept only NSStatusBarButton's public setter, and only for buttons owned
@@ -330,12 +346,26 @@ void configureOpenSurgeMenuBarIcon(void) {
             Class controllerClass = NSClassFromString(@"StatusItemController");
             BOOL owned = controllerClass && [button.target isKindOfClass:controllerClass];
             if (owned && image) {
+                menuBarButton = button;
+                menuBarBrandImage = [image copy];
+                NSString *symbol = nil;
+                if ([menuBarIndicator isEqualToString:@"degraded"]) symbol = @"exclamationmark.circle";
+                else if ([menuBarIndicator isEqualToString:@"recovery"]) symbol = @"exclamationmark.triangle.fill";
+                image = (symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:nil] : nil) ?: [menuBarBrandImage copy];
                 image.size = NSMakeSize(18, 18);
                 image.template = YES;
                 button.imageScaling = NSImageScaleNone;
+                // Match the Swift host: stopped/offline dim the same brand
+                // image, without text badges or a wider status item.
+                button.alphaValue = [menuBarIndicator isEqualToString:@"connecting"] ? 0.75 :
+                    [menuBarIndicator isEqualToString:@"stopped"] ? 0.55 :
+                    [menuBarIndicator isEqualToString:@"unreachable"] ? 0.35 : 1.0;
+                button.imagePosition = NSImageOnly;
+                button.toolTip = menuBarDescription;
+                [button setAccessibilityLabel:menuBarDescription];
             }
             ((void (*)(id, SEL, NSImage *))original)(button, selector, image);
-            if (owned && image && smokeActions()) NSLog(@"OpenSurge menu bar image: %.0f x %.0f pt; template=%d", button.image.size.width, button.image.size.height, button.image.isTemplate);
+            if (owned && image && smokeActions()) NSLog(@"OpenSurge menu bar image: %.0f x %.0f pt; template=%d; state=%@; opacity=%.2f", button.image.size.width, button.image.size.height, button.image.isTemplate, menuBarIndicator, button.alphaValue);
         });
         if (!class_addMethod(buttonClass, selector, sized, method_getTypeEncoding(method))) {
             method_setImplementation(class_getInstanceMethod(buttonClass, selector), sized);

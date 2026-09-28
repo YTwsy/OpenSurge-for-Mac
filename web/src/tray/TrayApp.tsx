@@ -4,7 +4,7 @@ import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isR
 import { useTheme } from '../hooks/useTheme'
 import { recoveryLabel, statusLabel, takeoverLabel } from '../status'
 import type { SleepPreventionStatus } from '../types'
-import { watchVisibleRefresh } from '../visibility'
+import { isWindowVisible, watchVisibleRefresh } from '../visibility'
 import type { MenuBarStatus, TraySnapshot } from './types'
 import { TrayUtilities } from './TrayUtilities'
 import { TrayActivity } from './TrayActivity'
@@ -19,6 +19,20 @@ export function diagnosticSummary(status: MenuBarStatus | null): string {
 }
 
 export function TrayApp() {
+ const panel = useRef<HTMLElement>(null)
+ useEffect(() => {
+  // WKWebView otherwise focuses the first action when the native popup opens.
+  // Start on the panel; Tab still reaches More actions and retains its focus ring.
+  let visible = false
+  const focusPanel = () => {
+   const next = isWindowVisible()
+   if (next && !visible) panel.current?.focus({ preventScroll: true })
+   visible = next
+  }
+  focusPanel()
+  document.addEventListener('visibilitychange', focusPanel)
+  return () => document.removeEventListener('visibilitychange', focusPanel)
+ }, [])
  const [theme] = useTheme()
  useEffect(() => { void desktopAction('tray-appearance', { theme }).catch(() => {}) }, [theme])
  const more = useRef<HTMLDetailsElement>(null)
@@ -36,6 +50,9 @@ export function TrayApp() {
  const [sleepBusy, setSleepBusy] = useState(false)
  const [refreshing, setRefreshing] = useState(false)
  const [serviceBusy, setServiceBusy] = useState(false)
+ const [browserBusy, setBrowserBusy] = useState(false)
+ const [browserError, setBrowserError] = useState('')
+ const browserPending = useRef(false)
  const [networkExpanded, setNetworkExpanded] = useState(false)
  const sequence = useRef(0)
  const active = useRef(true)
@@ -77,6 +94,13 @@ export function TrayApp() {
   try { await action() } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : String(cause)) }
  }
  const show = (page: string, options?: { owner?: string; section?: 'active-devices' }) => void run(() => desktopAction('show-main', { page, ...options }))
+ const openBrowser = async () => {
+  if (browserPending.current) return
+  browserPending.current = true; setBrowserBusy(true); setBrowserError('')
+  try { await desktopAction('open-browser') }
+  catch (cause) { if (active.current) setBrowserError(cause instanceof Error ? cause.message : String(cause)) }
+  finally { browserPending.current = false; if (active.current) setBrowserBusy(false) }
+ }
  const serviceAction = async (action: 'reconnect' | 'quit', full = false) => {
   if (serviceBusy) return
   setServiceBusy(true)
@@ -106,13 +130,15 @@ export function TrayApp() {
   ['DHCP / DNS', statusLabel(status.dhcp)], ['mihomo', status.mihomo.startsWith('running') ? `${statusLabel('running')}${status.mihomo.slice(7)}` : statusLabel(status.mihomo)], ['TUN', `${takeoverLabel(status.tun)}${status.tun_interface ? ` · ${status.tun_interface}` : ''}`],
   ['PF', t(status.pf_anchor === 'loaded' ? '已加载' : '未加载')], [t('IPv4 接管'), takeoverLabel(status.ipv4_takeover)], [t('IPv6 接管'), takeoverLabel(status.ipv6_takeover)],
  ] : []
- return <main className="tray-app">
+ return <main className="tray-app" ref={panel} tabIndex={-1}>
   <header className="tray-header">
    <img src="/opensurge-icon.png" alt="" /><h1>OpenSurge</h1>
    <span className={`tray-indicator ${snapshot.indicator}`} title={t(indicatorLabels[snapshot.indicator])}><span className={`tray-dot ${snapshot.indicator}`} />{t(snapshot.indicator === 'running' ? '运行中' : snapshot.indicator === 'stopped' ? '已停止' : snapshot.indicator === 'connecting' ? '正在连接…' : '需要处理')}</span>
    <details className="tray-more" ref={more} onKeyDown={event => { if (event.key === 'Escape' && more.current?.open) { more.current.open = false; event.stopPropagation(); more.current.querySelector('summary')?.focus() } }}>
     <summary aria-label={t('更多操作')} title={t('更多操作')}>···</summary>
     <div className="tray-more-panel">
+     <button className="tray-browser" disabled={browserBusy} onClick={() => void openBrowser()}>{t(browserBusy ? '正在打开浏览器…' : '在浏览器中打开')}</button>
+     {browserError && <p role="alert" className="tray-error">{browserError}</p>}
      <div className="tray-row"><button onClick={() => void run(async () => { await copyText(diagnosticSummary(status)); setCopied(true) })}>{t(copied ? '已复制' : '复制诊断摘要')}</button><button disabled={refreshing} aria-label={t('刷新状态')} onClick={() => { setRefreshing(true); void refresh(true).finally(() => setRefreshing(false)) }}>{t(refreshing ? '正在刷新…' : '刷新')}</button></div>
      <TrayUtilities canUninstall={snapshot.can_uninstall === true} />
      <p className="tray-caption">{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</p>

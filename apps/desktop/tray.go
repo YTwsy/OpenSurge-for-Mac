@@ -49,8 +49,6 @@ func (h *desktopHost) menuStatusChanged(snapshot menustatus.Snapshot) {
 			h.setLanguage(language)
 		}
 	}
-	labels := map[string]string{"connecting": "…", "stopped": "○", "running": "", "degraded": "!", "recovery": "!", "unreachable": "?"}
-	h.tray.SetLabel(labels[snapshot.Indicator])
 	h.mu.Lock()
 	english := h.language == "en"
 	h.mu.Unlock()
@@ -64,5 +62,5 @@ func (h *desktopHost) menuStatusChanged(snapshot menustatus.Snapshot) {
 	if english {
 		i = 1
 	}
-	h.tray.SetTooltip("OpenSurge — " + descriptions[snapshot.Indicator][i])
+	native.SetMenuBarIndicator(snapshot.Indicator, "OpenSurge — "+descriptions[snapshot.Indicator][i])
 }

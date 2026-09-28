@@ -13,6 +13,7 @@ bool openSurgeExternalURLAllowed(const char *url);
 bool openSurgeSystemUsesEnglish(void);
 void setOpenSurgeWindowAppearance(void *window, bool dark);
 void configureOpenSurgeMenuBarIcon(void);
+void setOpenSurgeMenuBarIndicator(const char *indicator, const char *description);
 void setOpenSurgeDockVisible(bool visible);
 void presentOpenSurgeWindow(void *window);
 */
@@ -52,6 +53,14 @@ func SetAppearance(window *application.WebviewWindow, theme string) {
 
 func ConfigureMenuBarIcon() {
 	C.configureOpenSurgeMenuBarIcon()
+}
+
+func SetMenuBarIndicator(indicator, description string) {
+	value := C.CString(indicator)
+	defer C.free(unsafe.Pointer(value))
+	label := C.CString(description)
+	defer C.free(unsafe.Pointer(label))
+	application.InvokeSync(func() { C.setOpenSurgeMenuBarIndicator(value, label) })
 }
 
 func SetDockVisible(visible bool) {

@@ -56,6 +56,18 @@ func (h *desktopHost) show(path string) {
 
 func (h *desktopHost) actions() *desktopactions.Actions {
 	return &desktopactions.Actions{
+		OpenBrowser: func(ctx context.Context) error {
+			if h.quitBusy.Load() {
+				return servicelife.ErrQuitting
+			}
+			ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+			defer cancel()
+			if err := h.client.OpenBrowser(ctx, h.app.Browser.OpenURL); err != nil {
+				return &desktopactions.Failure{Code: "desktop_browser_failed"}
+			}
+			h.popup.Hide()
+			return nil
+		},
 		OpenExternal: func(url string) error {
 			if !native.ExternalURLAllowed(url) {
 				return desktopactions.ErrFailed

@@ -62,6 +62,57 @@ func TestBootstrapUsesNativeCredentialAndRereadsDiscovery(t *testing.T) {
 	}
 }
 
+func TestOpenBrowserUsesFreshUnconsumedDashboardGrant(t *testing.T) {
+	directory := t.TempDir()
+	client := New(directory)
+	t.Cleanup(client.http.CloseIdleConnections)
+	for _, token := range []string{"first-token", "rotated-token"} {
+		var calls atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			var request struct{ Path string }
+			if r.Method != "POST" || r.URL.Path != "/api/v1/session/bootstrap" ||
+				r.Header.Get("Authorization") != "Bearer "+token ||
+				json.NewDecoder(r.Body).Decode(&request) != nil || request.Path != "dashboard" {
+				t.Error("browser grant must be authenticated, unconsumed and scoped to Dashboard")
+			}
+			writeGrant(w, "http://"+r.Host)
+		}))
+		writeDiscovery(t, directory, server.URL, token)
+		opened := ""
+		err := client.OpenBrowser(context.Background(), func(value string) error { opened = value; return nil })
+		if err != nil || opened != server.URL+"/bootstrap?code=one-time-grant" || calls.Load() != 1 {
+			t.Fatalf("unexpected browser launch: %v, requests=%d", err, calls.Load())
+		}
+		server.Close()
+	}
+}
+
+func TestOpenBrowserRejectsInvalidGrantAndRedactsOpenerErrors(t *testing.T) {
+	var valid atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if valid.Load() {
+			writeGrant(w, "http://"+r.Host)
+		} else {
+			writeGrant(w, "https://external.example")
+		}
+	}))
+	defer server.Close()
+	directory := t.TempDir()
+	writeDiscovery(t, directory, server.URL, "private-token")
+	client := New(directory)
+	t.Cleanup(client.http.CloseIdleConnections)
+	opened := 0
+	opener := func(value string) error { opened++; return errors.New(value) }
+	if err := client.OpenBrowser(context.Background(), opener); err == nil || opened != 0 {
+		t.Fatal("unvalidated grant reached the browser")
+	}
+	valid.Store(true)
+	if err := client.OpenBrowser(context.Background(), opener); err == nil || strings.Contains(err.Error(), "one-time-grant") || opened != 1 {
+		t.Fatal("opener errors must not expose the grant")
+	}
+}
+
 func TestBootstrapRejectsUntrustedDescriptorBeforeSendingCredential(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1) }))

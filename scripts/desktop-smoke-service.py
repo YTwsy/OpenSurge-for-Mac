@@ -12,6 +12,7 @@ import datetime
 import http.cookies
 import http.server
 import json
+import mimetypes
 import pathlib
 import threading
 import time
@@ -20,6 +21,7 @@ from email.parser import BytesParser
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("directory", type=pathlib.Path)
+parser.add_argument("--web-root", type=pathlib.Path, help="serve the built React UI for browser-launch acceptance")
 args = parser.parse_args()
 args.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
 scenario_file = args.directory / "scenario.json"
@@ -57,7 +59,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # Bootstrap grants must not enter URL logs.
 
     def reply(self, value, status=200, content_type="application/json"):
-        data = json.dumps(value).encode() if content_type == "application/json" else value.encode()
+        data = value if isinstance(value, bytes) else json.dumps(value).encode() if content_type == "application/json" else value.encode()
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
@@ -111,6 +113,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cookie = http.cookies.SimpleCookie(self.headers.get("Cookie", ""))
         if "opensurge_session" not in cookie or cookie["opensurge_session"].value != str(state["generation"]):
             self.reply({}, 401)
+            return
+        if args.web_root and self.command == "GET" and not path.startswith("/api/"):
+            root = args.web_root.resolve()
+            pages = {"/", "/dashboard", "/network", "/sources", "/devices", "/connections", "/policies", "/connectivity", "/diagnostics"}
+            asset = (root / ("index.html" if path in pages else path.lstrip("/"))).resolve()
+            if not asset.is_relative_to(root) or not asset.is_file():
+                self.reply({}, 404)
+                return
+            self.reply(asset.read_bytes(), content_type=mimetypes.guess_type(asset.name)[0] or "application/octet-stream")
             return
         if path == "/api/v1/events":
             observed("events_opened")

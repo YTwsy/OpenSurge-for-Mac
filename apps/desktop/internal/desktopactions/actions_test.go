@@ -1,10 +1,40 @@
 package desktopactions
 
 import (
+	"context"
+	"errors"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestBrowserActionIsArgumentFreeAndDoesNotExposeGrant(t *testing.T) {
+	calls := 0
+	a := &Actions{OpenBrowser: func(context.Context) error { calls++; return nil }}
+	for _, body := range []string{`{}`, `{"url":"https://example.com"}`, `{"page":"network"}`, `{"enabled":true}`} {
+		w := httptest.NewRecorder()
+		a.ServeHTTP(w, httptest.NewRequest("POST", "/desktop/v1/open-browser", strings.NewReader(body)))
+		want := 400
+		if body == `{}` {
+			want = 200
+			if strings.TrimSpace(w.Body.String()) != `{"ok":true}` {
+				t.Fatal("browser response must contain only acknowledgement")
+			}
+		}
+		if w.Code != want {
+			t.Fatalf("%s: got %d", body, w.Code)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("unexpected browser actions: %d", calls)
+	}
+	a.OpenBrowser = func(context.Context) error { return errors.New("opener failed: /bootstrap?code=private-grant") }
+	w := httptest.NewRecorder()
+	a.ServeHTTP(w, httptest.NewRequest("POST", "/desktop/v1/open-browser", strings.NewReader(`{}`)))
+	if w.Code != 503 || strings.Contains(w.Body.String(), "private-grant") {
+		t.Fatal("browser failure must be reported without exposing its grant")
+	}
+}
 
 func TestClosedNativeCapabilities(t *testing.T) {
 	opened := ""

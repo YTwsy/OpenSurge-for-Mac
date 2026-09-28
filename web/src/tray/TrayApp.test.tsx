@@ -15,7 +15,42 @@ beforeEach(async () => {
  await prepareLanguage('en'); activateLanguage('en')
  vi.mocked(desktopAction).mockImplementation(async () => fixture)
 })
-afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans'); localStorage.clear() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans'); localStorage.clear(); delete window.__opensurgeWindowVisible })
+
+it('focuses the panel on reopen without stealing existing keyboard focus', async () => {
+ render(<TrayApp />)
+ const panel = screen.getByRole('main')
+ expect(document.activeElement).toBe(panel)
+ screen.getByLabelText('More actions').focus()
+ expect(document.activeElement).toBe(screen.getByLabelText('More actions'))
+ document.dispatchEvent(new Event('visibilitychange'))
+ expect(document.activeElement).toBe(screen.getByLabelText('More actions'))
+ window.__opensurgeWindowVisible = false
+ document.dispatchEvent(new Event('visibilitychange'))
+ window.__opensurgeWindowVisible = true
+ document.dispatchEvent(new Event('visibilitychange'))
+ expect(document.activeElement).toBe(panel)
+})
+
+it('opens the browser through a native grant action and makes failures retryable', async () => {
+ let finish: () => void = () => {}
+ vi.mocked(desktopAction).mockImplementation(async action => {
+  if (action === 'open-browser') return new Promise<void>(resolve => { finish = resolve })
+  return fixture
+ })
+ render(<TrayApp />)
+ await userEvent.click(screen.getByLabelText('More actions'))
+ await userEvent.click(screen.getByRole('button', { name: 'Open in browser' }))
+ expect(desktopAction).toHaveBeenCalledWith('open-browser')
+ expect((screen.getByRole('button', { name: 'Opening browser…' }) as HTMLButtonElement).disabled).toBe(true)
+ finish()
+ await waitFor(() => expect((screen.getByRole('button', { name: 'Open in browser' }) as HTMLButtonElement).disabled).toBe(false))
+ vi.mocked(desktopAction).mockRejectedValueOnce(new Error('Browser could not be opened'))
+ await userEvent.click(screen.getByRole('button', { name: 'Open in browser' }))
+ expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Browser could not be opened')
+ expect((screen.getByRole('button', { name: 'Open in browser' }) as HTMLButtonElement).disabled).toBe(false)
+ expect(vi.mocked(desktopAction).mock.calls.some(([action]) => action === 'open-external')).toBe(false)
+})
 
 it('opens the existing main window and copies a credential-free diagnostic summary', async () => {
  render(<TrayApp />)

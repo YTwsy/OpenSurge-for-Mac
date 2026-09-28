@@ -1,4 +1,7 @@
 export const englishMessages: Record<string, string> = {
+  '在浏览器中打开': 'Open in browser',
+  '正在打开浏览器…': 'Opening browser…',
+  '无法在浏览器中打开。请确认后台服务可用后重试。': 'Could not open the browser. Check that the background service is available and try again.',
   '仅影响本机 Mac，下游设备保持各自的出口设置。': 'Applies to this Mac only. LAN devices keep their own routing settings.',
   '接入方式': 'Traffic path',
   '显式代理': 'Explicit proxy',

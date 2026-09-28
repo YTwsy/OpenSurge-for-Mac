@@ -14,6 +14,7 @@ import (
 
 type Actions struct {
 	OpenExternal      func(string) error
+	OpenBrowser       func(context.Context) error
 	CopyText          func(string) error
 	SaveRecovery      func(context.Context) (bool, error)
 	SetLanguage       func(string)
@@ -38,7 +39,7 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	var payload struct {
+	type request struct {
 		URL      string `json:"url"`
 		Text     string `json:"text"`
 		Language string `json:"language"`
@@ -50,6 +51,7 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Enabled  *bool  `json:"enabled"`
 		Full     bool   `json:"full"`
 	}
+	var payload request
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&payload) != nil || decoder.Decode(&struct{}{}) != io.EOF {
@@ -59,6 +61,12 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var result any = map[string]any{"ok": true}
 	switch r.URL.Path {
+	case "/desktop/v1/open-browser":
+		if payload != (request{}) {
+			http.Error(w, "browser action takes no arguments", http.StatusBadRequest)
+			return
+		}
+		err = a.OpenBrowser(r.Context())
 	case "/desktop/v1/open-external":
 		u, parseErr := url.Parse(payload.URL)
 		if parseErr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil || u.Opaque != "" || strings.ContainsAny(payload.URL, "\x00\r\n") {
