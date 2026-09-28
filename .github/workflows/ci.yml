@@ -59,3 +59,6 @@ jobs:
           OPENSURGE_BUILD_NUMBER: 42
           OPENSURGE_RELEASE_TAG: v0.2.4-next
         run: ./scripts/build-desktop-app.sh production
+      - name: Verify GUI packaging contracts
+        if: matrix.arch == 'arm64'
+        run: ./scripts/check-gui-packaging.sh

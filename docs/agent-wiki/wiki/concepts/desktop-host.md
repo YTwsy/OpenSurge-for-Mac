@@ -2,15 +2,16 @@
 
 The `Next` branch develops a Wails v3 host in `apps/desktop/`. Its Go module is
 independent of the root module so native UI dependencies do not enter backend CI.
-The installed Swift menu-bar host remains the production entry until the desktop
-installer cutover is complete.
+On `Next`, production GUI targets and the PKG ship the Wails host. Swift sources
+remain for historical maintenance; their explicit build writes to `bin/legacy/`.
+This does not establish PackageKit or macOS 13/Intel runtime acceptance.
 
 ## Ownership
 
 - Wails owns native windows, the tray icon/popup, single-instance and reopen events,
   login registration, local service discovery, authentication, and desktop exit.
 - The existing React/TypeScript code owns the main control panel. A dedicated React
-  popup at `/desktop-tray` replaces the SwiftUI view inside the preview and shares
+  popup at `/desktop-tray` replaces the SwiftUI view and shares
   frontend language, status labels and theme with the main window.
 - The independently managed Go Control Service owns API orchestration, state,
   operations, configuration, and recovery. The root Helper owns privileged actions.
@@ -146,3 +147,19 @@ records fixed lifecycle commands through the fixture instead of executing launch
 The [migration plan](../../../desktop-migration.md) tracks stage boundaries;
 [GUI control-plane](gui-control-plane.md) documents the existing contracts to carry
 forward, and [validation gates](validation-gates.md) define required evidence.
+
+## Installer boundary
+
+The PKG preserves `/Applications/OpenSurge.app` and `com.opensurge.menubar` but
+ships `OpenSurgeDesktop`. Full bundle replacement removes the old executable.
+Preinstall recognises both installed host generations, excludes previews/developer
+paths, stops hosts before the user Control Service, then retains the existing
+recovery CLI / sleep ownership / Helper order. TERM stops only the Wails host with
+no confirmation; interactive quit retains its confirmation and safety gates.
+
+The installer does not register or unregister login items. The OS-reported state
+remains authoritative after upgrade. Real login continuity and authorization require
+installed acceptance, not a bundle-ID or fixture assertion. The uninstaller retains
+its fixed path and data modes, and waits for its caller to exit itself on success.
+`tests/packaging/test_installer.py` exercises script ordering/retention in temporary
+roots with mocked system commands. It cannot establish host-network cleanup.

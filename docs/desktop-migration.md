@@ -24,12 +24,16 @@ enter `Next` through a separate synchronization PR.
 5. **Installer cutover:** production App identity, PKG upgrade/cleanup integration,
    architecture checks, macOS acceptance, user documentation, and old-host retirement.
 
-The preview now implements stages 1–4: native main-window integration, an independent
-React tray popup, service reconnect/exit, login-item state, stable update discovery,
-and an identity-gated uninstall entry. The production installer still ships the Swift
-host. Stage 5 must validate upgrades and cleanup, adopt the installed App identity,
-retire the old host, and complete the macOS 13/Intel runtime acceptance gaps before
-the preview can become the default installed experience.
+Stages 1–4 and the stage 5 implementation now reach the `Next` PKG: the Wails host
+uses the installed identity, and upgrade process handling recognises both Swift and
+Wails executables. Default GUI build/test/package targets no longer use Swift.
+The local preview remains isolated. The main window also uses a spacious default
+and integrated native title bar.
+
+This is an integration-branch cutover, not a public release acceptance claim. Real
+PackageKit upgrade/uninstall, login-item continuity and administrator authorization
+must be verified on a disposable installation. macOS 13 and native Intel runtime
+acceptance remain outstanding. See [installer acceptance](desktop-installation.md).
 
 ## Validation
 

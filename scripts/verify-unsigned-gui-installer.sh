@@ -8,7 +8,7 @@ EXPECTED_MINIMUM_MACOS="${4:-13.0}"
 EXPECTED_RELEASE_TAG="${5:-v$EXPECTED_VERSION}"
 
 if [[ ! -f "$PKG" || -z "$EXPECTED_VERSION" || -z "$EXPECTED_ARCH" ]]; then
-  echo "usage: $0 /path/to/OpenSurge.pkg VERSION [ARCH] [MINIMUM_MACOS] [RELEASE_TAG]" >&2
+  echo "usage: $0 /path/to/OpenSurge.pkg VERSION [ARCH] [MINIMUM_MACOS] [RELEASE_TAG] [BUILD_NUMBER]" >&2
   exit 2
 fi
 
@@ -25,7 +25,7 @@ grep -Fxq './Applications/OpenSurge.app' <<<"$payload_files" || {
   exit 1
 }
 if grep -Fq './Applications/OpenSurge Menu Bar.app' <<<"$payload_files"; then
-  echo "legacy menu bar app name must not remain in the installer payload" >&2
+  echo "legacy desktop app name must not remain in the installer payload" >&2
   exit 1
 fi
 grep -Fxq './Library/PrivilegedHelperTools/com.opensurge.helper' <<<"$payload_files" || {
@@ -50,11 +50,11 @@ grep -Fq 'install-location="/"' "$package_info" || {
   exit 1
 }
 grep -Fq 'relocatable="false"' "$package_info" || {
-  echo "menu bar app is not marked non-relocatable" >&2
+  echo "desktop app is not marked non-relocatable" >&2
   exit 1
 }
 grep -Fq "CFBundleShortVersionString=\"$EXPECTED_VERSION\"" "$package_info" || {
-  echo "menu bar bundle version does not match $EXPECTED_VERSION" >&2
+  echo "desktop bundle version does not match $EXPECTED_VERSION" >&2
   exit 1
 }
 
@@ -67,7 +67,7 @@ mkdir -p "$payload"
 
 executables=(
   "$scripts/omg-recovery"
-  "$payload/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar"
+  "$payload/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeDesktop"
   "$payload/Library/Application Support/OpenSurge/bin/omg"
   "$payload/Library/Application Support/OpenSurge/bin/mihomo"
   "$payload/Library/Application Support/OpenSurge/bin/opensurge-network"
@@ -85,6 +85,12 @@ done
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :OpenSurgeReleaseTag' "$payload/Applications/OpenSurge.app/Contents/Info.plist")" == "$EXPECTED_RELEASE_TAG" ]] || {
   echo "packaged app release tag does not match $EXPECTED_RELEASE_TAG" >&2
   exit 1
+}
+app="$payload/Applications/OpenSurge.app"
+build_number="${6:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")}"
+"$(cd "$(dirname "$0")" && pwd)/verify-desktop-app.sh" "$app" "$EXPECTED_ARCH" production "$EXPECTED_VERSION" "$build_number" "$EXPECTED_RELEASE_TAG"
+[[ -s "$payload/Library/Application Support/OpenSurge/share/licenses/wails-MIT.txt" ]] || {
+  echo "Wails license is missing from the payload" >&2; exit 1;
 }
 version_not_newer_than() {
   local actual=$1 maximum=$2

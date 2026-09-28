@@ -55,9 +55,9 @@ menubar-build:
 menubar-test:
 	./scripts/check-menubar.sh
 
-gui-build: control-build menubar-build
+gui-build: control-build desktop-production-build
 
-gui-test: test web-test menubar-test
+gui-test: test web-test desktop-test
 	./scripts/check-gui-packaging.sh
 
 gui-installer:

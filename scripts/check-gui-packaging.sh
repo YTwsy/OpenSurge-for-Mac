@@ -10,21 +10,16 @@ RELEASE_DEPS="$ROOT/scripts/prepare-gui-release-deps.sh"
 MIHOMO_BUILD="$ROOT/scripts/build-opensurge-mihomo.sh"
 RELEASE_VERIFY="$ROOT/scripts/verify-unsigned-gui-installer.sh"
 RELEASE_WORKFLOW="$ROOT/.github/workflows/release-unsigned.yml"
-MENUBAR_PACKAGE="$ROOT/apps/menubar/Package.swift"
-MENUBAR_INFO="$ROOT/apps/menubar/Resources/Info.plist"
-MENUBAR_EN_STRINGS="$ROOT/apps/menubar/Resources/en.lproj/Localizable.strings"
-MENUBAR_ZH_STRINGS="$ROOT/apps/menubar/Resources/zh-Hans.lproj/Localizable.strings"
 GUI_COMPONENTS="$ROOT/packaging/gui-components.plist"
-APP_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeAppIcon.png"
-MENU_BAR_ICON_SOURCE="$ROOT/apps/menubar/Resources/OpenSurgeMenuBarIcon.png"
+APP_ICON_SOURCE="$ROOT/apps/desktop/Resources/OpenSurgeAppIcon.png"
+MENU_BAR_ICON_SOURCE="$ROOT/apps/desktop/Resources/OpenSurgeMenuBarIcon.png"
 WEB_ICON_SOURCE="$ROOT/web/public/opensurge-icon.png"
 WEB_INDEX="$ROOT/web/index.html"
 WEB_APP="$ROOT/web/src/App.tsx"
-MENUBAR_CONTENT="$ROOT/apps/menubar/Sources/OpenSurgeMenuBar/MenuContentView.swift"
 UNINSTALLER="$ROOT/scripts/uninstall-gui.sh"
 
 bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$INSTALLED_PROCESSES" "$ROOT/scripts/uninstall-gui.sh" \
-  "$ROOT/scripts/build-gui-installer.sh" "$RELEASE_DEPS" "$MIHOMO_BUILD" "$RELEASE_VERIFY"
+  "$ROOT/scripts/build-gui-installer.sh" "$ROOT/scripts/build-desktop-app.sh" "$ROOT/scripts/verify-desktop-app.sh" "$RELEASE_DEPS" "$MIHOMO_BUILD" "$RELEASE_VERIFY"
 [[ -x "$PREINSTALL" ]] || { echo "preinstall must be executable" >&2; exit 1; }
 [[ -x "$RELEASE_DEPS" && -x "$MIHOMO_BUILD" && -x "$RELEASE_VERIFY" ]] || {
   echo "release preparation, patched mihomo build, and verification scripts must be executable" >&2
@@ -77,6 +72,16 @@ if opensurge_is_installed_gui_command \
   echo "a developer menu bar build must not block package installation" >&2
   exit 1
 fi
+# Both installed generations must stop before the Control Service. Exact paths
+# exclude preview builds, developer copies and similarly named executables.
+for command in "/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeDesktop" "/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeDesktop --control-dir /tmp/test"; do
+  opensurge_is_installed_gui_command "$command" /Users/tester || exit 1
+done
+for command in "/Applications/OpenSurge Desktop Preview.app/Contents/MacOS/OpenSurgeDesktop" "/Users/tester/project/bin/OpenSurge.app/Contents/MacOS/OpenSurgeDesktop" "/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeDesktopOther" "/Users/other/Library/Application Support/OpenSurge/bin/opensurge-control"; do
+  if opensurge_is_installed_gui_command "$command" /Users/tester; then
+    echo "installer must not stop an unrelated host: $command" >&2; exit 1
+  fi
+done
 if grep -Eq 'recovery-state|RECOVERY_STAGE|recovery\.json' "$UNINSTALLER"; then
   echo "uninstall must not be blocked by the DHCP recovery state" >&2
   exit 1
@@ -259,80 +264,19 @@ grep -Fq -- '--scripts "$PKG_SCRIPTS"' "$ROOT/scripts/build-gui-installer.sh" ||
   echo "pkgbuild must include the staged packaging scripts directory" >&2
   exit 1
 }
-grep -Fq 'plutil -replace CFBundleShortVersionString' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build must stamp the package version into Info.plist" >&2
-  exit 1
+grep -Fq '"$ROOT/scripts/build-desktop-app.sh" production' "$ROOT/scripts/build-gui-installer.sh" || {
+  echo "PKG must build the production Wails host" >&2; exit 1;
 }
-grep -Fq 'plutil -replace CFBundleVersion' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build must stamp the build number into Info.plist" >&2
-  exit 1
+if grep -Fq 'build-menubar-app.sh' "$ROOT/scripts/build-gui-installer.sh"; then
+  echo "PKG must not build the retired Swift host" >&2; exit 1
+fi
+[[ -s "$APP_ICON_SOURCE" && -s "$MENU_BAR_ICON_SOURCE" && -s "$ROOT/third_party/licenses/wails-MIT.txt" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :0:BundleOverwriteAction' "$GUI_COMPONENTS")" == upgrade ]] || {
+  echo "installer must replace the complete App bundle, removing the old executable" >&2; exit 1;
 }
-grep -Fq 'plutil -replace OpenSurgeReleaseTag' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build must stamp the full release tag into Info.plist" >&2
-  exit 1
-}
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :OpenSurgeReleaseTag' "$MENUBAR_INFO")" == "v0.1.0" ]] || {
-  echo "menu bar app Info.plist must declare a default full release tag" >&2
-  exit 1
-}
-[[ -s "$APP_ICON_SOURCE" && -s "$MENU_BAR_ICON_SOURCE" ]] || {
-  echo "menu bar app icon assets must be present" >&2
-  exit 1
-}
-[[ -s "$MENUBAR_EN_STRINGS" && -s "$MENUBAR_ZH_STRINGS" ]] || {
-  echo "menu bar localization resources are missing" >&2
-  exit 1
-}
-/usr/bin/plutil -lint "$MENUBAR_EN_STRINGS" "$MENUBAR_ZH_STRINGS" >/dev/null || {
-  echo "menu bar localization resources must be valid strings files" >&2
-  exit 1
-}
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDevelopmentRegion' "$MENUBAR_INFO")" == "en" ]] || {
-  echo "menu bar development language must be English" >&2
-  exit 1
-}
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:0' "$MENUBAR_INFO")" == "en" && "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:1' "$MENUBAR_INFO")" == "zh-Hans" ]] || {
-  echo "menu bar bundle must declare English and Simplified Chinese localizations" >&2
-  exit 1
-}
-grep -Fq 'cp -R "$PACKAGE/Resources/en.lproj" "$PACKAGE/Resources/zh-Hans.lproj"' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build must copy localization resources into the app bundle" >&2
-  exit 1
-}
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$MENUBAR_INFO")" == "OpenSurgeAppIcon" ]] || {
-  echo "menu bar app Info.plist must reference the OpenSurge app icon" >&2
-  exit 1
-}
-for bundle_name_key in CFBundleName CFBundleDisplayName; do
-  [[ "$(/usr/libexec/PlistBuddy -c "Print :$bundle_name_key" "$MENUBAR_INFO")" == "OpenSurge" ]] || {
-    echo "menu bar app $bundle_name_key must use the OpenSurge product name" >&2
-    exit 1
-  }
-done
-grep -Fq 'OUTPUT="$ROOT/bin/OpenSurge.app"' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build output must use the OpenSurge product name" >&2
-  exit 1
-}
-grep -Fq '<string>Applications/OpenSurge.app</string>' "$GUI_COMPONENTS" || {
-  echo "GUI component metadata must install OpenSurge.app" >&2
-  exit 1
-}
-grep -Fq '"$PAYLOAD/Applications/OpenSurge.app"' "$ROOT/scripts/build-gui-installer.sh" || {
-  echo "GUI installer payload must use OpenSurge.app" >&2
-  exit 1
-}
-grep -Fq 'OpenSurgeAppIcon.icns' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build must generate the app icon resource" >&2
-  exit 1
-}
-grep -Fq 'OpenSurgeMenuBarIcon.png' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build must include the monochrome menu bar icon resource" >&2
-  exit 1
-}
-grep -Fq 'OpenSurgeAppIconView()' "$MENUBAR_CONTENT" || {
-  echo "menu bar window header must use the OpenSurge app icon" >&2
-  exit 1
-}
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :0:BundleIsRelocatable' "$GUI_COMPONENTS")" == false ]]
+grep -Fq 'Contents/MacOS/OpenSurgeDesktop' "$ROOT/scripts/build-gui-installer.sh"
+grep -Fq '"$PAYLOAD/Applications/OpenSurge.app"' "$ROOT/scripts/build-gui-installer.sh"
 [[ -s "$WEB_ICON_SOURCE" ]] || {
   echo "Web GUI app icon must be present" >&2
   exit 1
@@ -343,14 +287,6 @@ grep -Fq 'rel="icon" type="image/png" href="/opensurge-icon.png"' "$WEB_INDEX" |
 }
 grep -Fq 'className="brand-mark" src="/opensurge-icon.png"' "$WEB_APP" || {
   echo "Web GUI sidebar must use the OpenSurge app icon" >&2
-  exit 1
-}
-grep -Fq -- '--arch "$ARCH"' "$ROOT/scripts/build-menubar-app.sh" || {
-  echo "menu bar build must use the package architecture explicitly" >&2
-  exit 1
-}
-grep -Fq '// swift-tools-version: 5.10' "$MENUBAR_PACKAGE" || {
-  echo "menu bar package must remain buildable by the macOS 14 release runner" >&2
   exit 1
 }
 grep -Fq 'lipo "$executable" -verify_arch "$OPENSURGE_APP_ARCH"' "$ROOT/scripts/build-gui-installer.sh" || {
@@ -430,4 +366,5 @@ grep -Fq 'verify-unsigned-gui-installer.sh' "$RELEASE_WORKFLOW" || {
   exit 1
 }
 
+python3 "$ROOT/tests/packaging/test_installer.py"
 echo "GUI packaging checks passed"

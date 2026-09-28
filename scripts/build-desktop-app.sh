@@ -63,7 +63,7 @@ for icon_spec in \
   "256:icon_256x256.png" "512:icon_256x256@2x.png" \
   "512:icon_512x512.png" "1024:icon_512x512@2x.png"; do
   /usr/bin/sips -z "${icon_spec%%:*}" "${icon_spec%%:*}" \
-    "$ROOT/apps/menubar/Resources/OpenSurgeAppIcon.png" --out "$ICONSET/${icon_spec#*:}" >/dev/null
+    "$ROOT/apps/desktop/Resources/OpenSurgeAppIcon.png" --out "$ICONSET/${icon_spec#*:}" >/dev/null
 done
 /usr/bin/iconutil -c icns "$ICONSET" -o "$BUNDLE/Contents/Resources/OpenSurgeAppIcon.icns"
 /usr/bin/codesign --force --sign - --timestamp=none "$BUNDLE"
