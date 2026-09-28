@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { selectOption } from '../test/select'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -107,7 +108,7 @@ describe('TailscaleCard', () => {
     await userEvent.click(within(editor).getByRole('button', { name: '指定设备' }))
     await waitFor(() => expect(within(editor).getByRole('button', { name: '指定设备' }).getAttribute('aria-pressed')).toBe('true'))
     await userEvent.click(await within(editor).findByText('apple-tv'))
-    await userEvent.selectOptions(within(editor).getByLabelText('Tailscale Exit Node'), '100.90.3.4')
+    await selectOption(within(editor).getByLabelText('Tailscale Exit Node'), '100.90.3.4')
     await userEvent.click(within(editor).getByText('保存后启用'))
     await userEvent.click(within(editor).getByRole('button', { name: '保存，随网关启动' }))
 
@@ -151,7 +152,8 @@ describe('TailscaleCard', () => {
     expect(within(editor).getByText('未发现已知冲突')).toBeTruthy()
     expect(within(editor).getByText('当前使用上次发现的信息，运行 OpenSurge 不需要连接本机 App。Tailnet 内容发生变化时，再临时连接并重新检测。')).toBeTruthy()
     expect(within(editor).getByText('上次在线')).toBeTruthy()
-    expect(within(editor).getByLabelText('Tailscale Exit Node').querySelector('option[value="100.90.3.4"]')).toBeTruthy()
+    await userEvent.click(within(editor).getByLabelText('Tailscale Exit Node'))
+    expect(screen.getAllByRole('option').some(option => option.dataset.value === '100.90.3.4')).toBe(true)
   })
 
   it('migrates a discovered Exit Node name to its stable Tailscale IPv4', async () => {
@@ -164,7 +166,7 @@ describe('TailscaleCard', () => {
     render(<TailscaleCard onChanged={vi.fn()} onNotify={vi.fn()} />)
 
     await userEvent.click(await screen.findByRole('button', { name: '开始设置' }))
-    const select = within(screen.getByRole('region', { name: '配置 Tailscale 出站' })).getByLabelText('Tailscale Exit Node') as HTMLSelectElement
+    const select = within(screen.getByRole('region', { name: '配置 Tailscale 出站' })).getByLabelText('Tailscale Exit Node') as HTMLButtonElement
     expect(select.value).toBe('100.90.3.4')
   })
 

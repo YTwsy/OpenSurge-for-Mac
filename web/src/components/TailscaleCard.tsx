@@ -1,3 +1,4 @@
+import { Select } from './Select'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api'
 import { t } from '../i18n'
@@ -274,7 +275,7 @@ function TailscaleEditor({ draft, setDraft, savedDeviceScope, discovery, discove
       </section>
 
       <section className="tailscale-exit-card"><div className="tailscale-section-copy"><span>04</span><div><h3>{t('公网出口（可选）')}</h3><p>{t('只有明确选择后，Tailscale 才会成为设备可选的公网出口。')}</p></div></div>
-        <label><span>{t('Exit Node')}</span><select aria-label="Tailscale Exit Node" value={draft.exit_node} disabled={!exitCandidates.length && !draft.exit_node} onChange={event => setExitNode(event.target.value)}><option value="">{t(exitCandidates.length ? '不使用 Exit Node' : '未发现可用 Exit Node')}</option>{draft.exit_node && !exitCandidates.some(peer => exitNodeValue(peer) === draft.exit_node) && <option value={draft.exit_node}>{t('当前手动值：{{value}}', { value: draft.exit_node })}</option>}{exitCandidates.map(peer => <option key={peer.id || peer.name} value={exitNodeValue(peer)}>{peer.name} · {t(peer.online ? '在线' : '离线')}</option>)}</select></label>
+        <label><span>{t('Exit Node')}</span><Select aria-label="Tailscale Exit Node" value={draft.exit_node} disabled={!exitCandidates.length && !draft.exit_node} onChange={value => setExitNode(value)}><option value="">{t(exitCandidates.length ? '不使用 Exit Node' : '未发现可用 Exit Node')}</option>{draft.exit_node && !exitCandidates.some(peer => exitNodeValue(peer) === draft.exit_node) && <option value={draft.exit_node}>{t('当前手动值：{{value}}', { value: draft.exit_node })}</option>}{exitCandidates.map(peer => <option key={peer.id || peer.name} value={exitNodeValue(peer)}>{peer.name} · {t(peer.online ? '在线' : '离线')}</option>)}</Select></label>
         <label className="tailscale-check"><input type="checkbox" checked={draft.exit_node_allow_lan_access} disabled={!draft.exit_node.trim()} onChange={event => update('exit_node_allow_lan_access', event.target.checked)} /><span><strong>{t('使用 Exit Node 时保留本地 LAN 访问')}</strong><small>{t('本地 NAS、打印机和路由器继续走 DIRECT。')}</small></span></label>
         {!exitCandidates.length && <small className="tailscale-exit-empty">{t('当前节点都没有发布 Exit Node；留空就是正常的 Tailnet-only 配置。')}</small>}
       </section>

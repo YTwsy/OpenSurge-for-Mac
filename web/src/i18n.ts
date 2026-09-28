@@ -119,6 +119,9 @@ export function prepareLanguage(requested: RequestedLanguage): Promise<void> {
   if (resolveLanguage(requested) !== 'en') return Promise.resolve()
   englishCatalogPromise ??= import('./i18n.en').then(({ englishMessages }) => {
     Object.assign(english, englishMessages)
+  }).catch(error => {
+    englishCatalogPromise = undefined
+    throw error
   })
   return englishCatalogPromise
 }

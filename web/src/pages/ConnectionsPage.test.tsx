@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { selectOption } from '../test/select'
 import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -38,16 +39,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('ConnectionsPage', () => {
-  it('combines both families under the deep-linked device and composes filters', () => {
+  it('combines both families under the deep-linked device and composes filters', async () => {
     window.history.replaceState({}, '', '/connections?owner=device%3Aphone')
     render(<Harness />)
     expect(screen.getAllByRole('row')).toHaveLength(3)
     expect(screen.queryByRole('button', { name: 'mac.example.invalid' })).toBeNull()
-    fireEvent.change(screen.getByLabelText('来源地址族'), { target: { value: 'ipv6' } })
+    await selectOption(screen.getByLabelText('来源地址族'), 'ipv6')
     expect(screen.getAllByRole('row')).toHaveLength(2)
-    fireEvent.change(screen.getByLabelText('出口类型'), { target: { value: 'direct' } })
+    await selectOption(screen.getByLabelText('出口类型'), 'direct')
     expect(screen.getAllByRole('row')).toHaveLength(1)
-    fireEvent.change(screen.getByLabelText('出口类型'), { target: { value: 'proxy' } })
+    await selectOption(screen.getByLabelText('出口类型'), 'proxy')
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'HK' } })
     expect(screen.getAllByRole('row')).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'phone-v6.example.invalid' }))

@@ -4,7 +4,58 @@
 #include <math.h>
 
 static const char guardKey;
+static BOOL presentingMainWindow;
 static BOOL smokeActions(void) { return [NSProcessInfo.processInfo.arguments containsObject:@"--smoke-actions"]; }
+
+void setOpenSurgeDockVisible(bool visible) {
+    NSApplicationActivationPolicy policy = visible ? NSApplicationActivationPolicyRegular : NSApplicationActivationPolicyAccessory;
+    if (NSApp.activationPolicy == policy) return;
+    [NSApp setActivationPolicy:policy];
+    if (smokeActions()) NSLog(@"OpenSurge Dock: %@", visible ? @"visible" : @"hidden");
+}
+
+static void activateOpenSurge(void) {
+    if (@available(macOS 14.0, *)) [NSApp activate];
+    else [NSApp activateIgnoringOtherApps:YES];
+}
+
+void presentOpenSurgeWindow(void *pointer) {
+    NSWindow *window = (__bridge NSWindow *)pointer;
+    // Policy changes themselves produce visibility notifications. Do not let an
+    // intermediate hidden/occluded state undo the explicit foreground request.
+    presentingMainWindow = YES;
+    setOpenSurgeDockVisible(true);
+    [NSApp unhideWithoutActivation];
+    if (window.isMiniaturized) [window deminiaturize:nil];
+    activateOpenSurge();
+    [window makeKeyAndOrderFront:nil];
+    [window orderFrontRegardless];
+    presentingMainWindow = NO;
+    // AppKit finishes accessory -> regular activation on the next event-loop
+    // turn. Order once more then, without timers or a permanent floating level.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!window.isVisible || window.isMiniaturized || NSApp.isHidden) return;
+        activateOpenSurge();
+        [window makeKeyAndOrderFront:nil];
+        [window orderFrontRegardless];
+        if (smokeActions()) NSLog(@"OpenSurge foreground: active=%d key=%d visible=%d", NSApp.isActive, window.isKeyWindow, window.isVisible);
+    });
+}
+
+// Draw before WebKit paints its first document. The same light palette is used
+// by the HTML bootstrap; neither depends on loading JavaScript or API data.
+@interface OpenSurgeStartupView : NSView
+@end
+@implementation OpenSurgeStartupView
+- (BOOL)isOpaque { return YES; }
+- (void)drawRect:(NSRect)dirtyRect {
+    NSColor *white = [NSColor colorWithSRGBRed:0.98 green:0.99 blue:0.98 alpha:1];
+    NSColor *mint = [NSColor colorWithSRGBRed:0.86 green:0.94 blue:0.90 alpha:1];
+    [[[NSGradient alloc] initWithStartingColor:white endingColor:mint] drawInRect:self.bounds angle:35];
+    NSRect icon = NSMakeRect(NSMidX(self.bounds) - 44, NSMidY(self.bounds) - 44, 88, 88);
+    [NSApp.applicationIconImage drawInRect:icon fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
+}
+@end
 
 bool openSurgeSystemUsesEnglish(void) { return ![NSLocale.preferredLanguages.firstObject hasPrefix:@"zh"]; }
 
@@ -41,11 +92,28 @@ static WKWebView *findWebView(NSView *view) {
 @property (weak) WKWebView *webView;
 @property BOOL english;
 @property BOOL tray;
+@property (strong) OpenSurgeStartupView *startup;
 - (void)publishAppearance:(NSNotification *)notification;
 - (void)publishTraySizing;
+- (void)showStartup;
+- (void)finishStartup;
 @end
 
 @implementation OpenSurgeWebViewGuard
+- (void)showStartup {
+    if (self.tray || self.startup) return;
+    NSView *content = self.webView.window.contentView;
+    self.startup = [[OpenSurgeStartupView alloc] initWithFrame:content.bounds];
+    self.startup.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [content addSubview:self.startup positioned:NSWindowAbove relativeTo:nil];
+    if (smokeActions()) NSLog(@"OpenSurge startup: native placeholder visible");
+}
+- (void)finishStartup {
+    if (!self.startup) return;
+    [self.startup removeFromSuperview];
+    self.startup = nil;
+    if (smokeActions()) NSLog(@"OpenSurge startup: first React frame ready");
+}
 - (BOOL)respondsToSelector:(SEL)selector {
     return [super respondsToSelector:selector] || [self.navigation respondsToSelector:selector] || [self.ui respondsToSelector:selector];
 }
@@ -96,6 +164,9 @@ static WKWebView *findWebView(NSView *view) {
 }
 - (void)publishVisibility:(NSNotification *)notification {
     NSWindow *window = self.webView.window;
+    // Occlusion pauses polling but must not remove a covered window from Dock.
+    // A minimised window keeps its Dock entry so the normal restore path works.
+    if (!self.tray && !presentingMainWindow) setOpenSurgeDockVisible((window.isVisible || window.isMiniaturized) && !NSApp.isHidden);
     BOOL visible = window.isVisible && !window.isMiniaturized && (window.occlusionState & NSWindowOcclusionStateVisible);
     NSString *script = [NSString stringWithFormat:@"window.__opensurgeWindowVisible=%@;document.dispatchEvent(new Event('visibilitychange'));", visible ? @"true" : @"false"];
     [self.webView evaluateJavaScript:script completionHandler:nil];
@@ -115,6 +186,11 @@ static WKWebView *findWebView(NSView *view) {
     [self.webView evaluateJavaScript:script completionHandler:nil];
 }
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
+    if (!message.frameInfo.isMainFrame || !isInternal(message.frameInfo.request.URL)) return;
+    if (!self.tray && [message.name isEqualToString:@"opensurgeUIReady"] && [message.body isEqual:@"ready"]) {
+        [self finishStartup];
+        return;
+    }
     if (!self.tray || ![message.name isEqualToString:@"opensurgeTraySize"] || !message.frameInfo.isMainFrame ||
         !isInternal(message.frameInfo.request.URL) || ![message.body isKindOfClass:NSNumber.class]) return;
     CGFloat height = [message.body doubleValue];
@@ -137,6 +213,13 @@ static WKWebView *findWebView(NSView *view) {
     [self publishVisibility:nil];
     [self publishAppearance:nil];
     [self publishTraySizing];
+    if (!self.tray) [webView evaluateJavaScript:@"document.documentElement.dataset.uiReady === 'true'" completionHandler:^(id ready, NSError *error) {
+        if ([ready isEqual:@YES]) [self finishStartup];
+    }];
+}
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    [self showStartup];
+    if ([self.navigation respondsToSelector:_cmd]) [self.navigation webViewWebContentProcessDidTerminate:webView];
 }
 - (NSAlert *)alert:(NSString *)message {
     NSAlert *alert = [NSAlert new];
@@ -181,6 +264,13 @@ void configureOpenSurgeWindow(void *pointer, bool rememberFrame) {
             }
         }
         [NSNotificationCenter.defaultCenter addObserver:guard selector:@selector(publishAppearance:) name:NSSystemColorsDidChangeNotification object:nil];
+    } else {
+        webView.underPageBackgroundColor = [NSColor colorWithSRGBRed:242.0/255 green:247.0/255 blue:244.0/255 alpha:1];
+        [webView.configuration.userContentController addScriptMessageHandler:guard name:@"opensurgeUIReady"];
+        [guard showStartup];
+        for (NSNotificationName name in @[NSApplicationDidHideNotification, NSApplicationDidUnhideNotification]) {
+            [NSNotificationCenter.defaultCenter addObserver:guard selector:@selector(publishVisibility:) name:name object:NSApp];
+        }
     }
     guard.navigation = webView.navigationDelegate;
     guard.ui = webView.UIDelegate;
@@ -203,6 +293,9 @@ void configureOpenSurgeWindow(void *pointer, bool rememberFrame) {
         [window setFrameAutosaveName:@"OpenSurgeMainWindow"];
     }
     [guard publishVisibility:nil];
+    if (!guard.tray) [webView evaluateJavaScript:@"document.documentElement.dataset.uiReady === 'true'" completionHandler:^(id ready, NSError *error) {
+        if ([ready isEqual:@YES]) [guard finishStartup];
+    }];
 }
 
 void setOpenSurgeWindowLanguage(void *pointer, bool english) {

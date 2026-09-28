@@ -17,6 +17,7 @@ import (
 	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/native"
 	"open-mihomo-gateway/apps/desktop/internal/servicelife"
+	"open-mihomo-gateway/apps/desktop/internal/trayactivity"
 	"open-mihomo-gateway/apps/desktop/internal/uninstall"
 	"open-mihomo-gateway/apps/desktop/internal/updates"
 )
@@ -30,6 +31,7 @@ type desktopHost struct {
 	popup         *application.WebviewWindow
 	tray          *application.SystemTray
 	status        *menustatus.Monitor
+	activity      *trayactivity.Monitor
 	services      *servicelife.Coordinator
 	quitBusy      atomic.Bool
 	quitting      atomic.Bool
@@ -45,7 +47,7 @@ func (h *desktopHost) show(path string) {
 	}
 	h.main.UnMinimise()
 	h.main.Show()
-	h.main.Focus()
+	native.Present(h.main)
 	if path != "" {
 		value, _ := json.Marshal(path)
 		h.main.ExecJS(`window.dispatchEvent(new CustomEvent('opensurge:navigate',{detail:` + string(value) + `}));`)
@@ -73,6 +75,7 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 		SetTrayAppearance: func(theme string) { native.SetAppearance(h.popup, theme) },
 		ShowMain:          h.show,
 		MenuStatus:        h.menuSnapshot,
+		TrayActivity:      func() any { return h.activity.Snapshot() },
 		Reconnect:         h.reconnect,
 		Utilities:         h.utilities,
 		Uninstall:         h.uninstall,

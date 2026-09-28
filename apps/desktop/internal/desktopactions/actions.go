@@ -19,6 +19,7 @@ type Actions struct {
 	SetLanguage       func(string)
 	SetTrayAppearance func(string)
 	MenuStatus        func(context.Context, bool) any
+	TrayActivity      func() any
 	ShowMain          func(string)
 	SetSleep          func(context.Context, bool) (any, error)
 	Reconnect         func(context.Context) error
@@ -78,6 +79,8 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.SetLanguage(payload.Language)
 	case "/desktop/v1/menubar-status":
 		result = a.MenuStatus(r.Context(), payload.Refresh)
+	case "/desktop/v1/tray-activity":
+		result = a.TrayActivity()
 	case "/desktop/v1/tray-appearance":
 		if payload.Theme != "light" && payload.Theme != "dark" {
 			http.Error(w, "unsupported appearance", http.StatusBadRequest)

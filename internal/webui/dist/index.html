@@ -3,13 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/png" href="/opensurge-icon.png" />
     <link rel="apple-touch-icon" href="/opensurge-icon.png" />
     <title>OpenSurge for Mac</title>
-    <script type="module" crossorigin src="/assets/index-FqP6USl2.js"></script>
+    <style>
+      html { background: #f2f7f4; }
+      body { margin: 0; }
+      .startup { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 24px; background: linear-gradient(35deg,#fafcfb,#dbf0e6); color: #31584a; font: 14px -apple-system,BlinkMacSystemFont,sans-serif; }
+      .startup img { width: 88px; height: 88px; object-fit: contain; }
+      .startup p { text-align: center; line-height: 1.6; }
+    </style>
+    <script type="module" crossorigin src="/assets/index-BnvjkHeR.js"></script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="startup"><img src="/opensurge-icon.png" alt="OpenSurge" /><p id="startup-error" hidden>OpenSurge 未能载入，请重新打开应用。<br />Unable to load OpenSurge. Please reopen the app.</p></div></div>
   </body>
 </html>

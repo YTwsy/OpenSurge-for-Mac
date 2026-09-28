@@ -60,6 +60,37 @@ Native View-menu navigation preserves React's existing dirty-device guard; refre
 requests state without reloading. The host loads the pinned Wails runtime explicitly
 so native-to-renderer events are delivered through the supported bridge.
 
+Dock presence follows the main window, using AppKit's regular/accessory activation
+policies. Closing or hiding the main UI removes its Dock entry; reopening from the
+menu bar or a second launch restores it. A covered window stays in Dock, and a
+minimised window retains its normal Dock restore path. Tray visibility does not
+control Dock presence. Do not use Wails WindowHide alone for this decision: on macOS
+that event also represents occlusion by another window.
+
+Explicit launch/reopen requests use one native presentation path: restore Dock
+presence, unhide/activate the application and order the main window to the front.
+Ignore intermediate visibility notifications during that activation-policy change,
+and finish ordering on the next AppKit turn. Background status refreshes never
+activate the application. Exit/uninstall warnings attach as sheets to the foreground
+main window; cancelling restores its previous hidden/minimised state.
+
+The main window starts hidden until its native light-gradient/icon placeholder is
+installed. An HTML bootstrap uses the same light palette while loading React. The
+native cover is removed only after the renderer reports its first committed frame
+through a main-frame, internal-origin WebKit message; API readiness is independent.
+The cover also protects WebView process recovery. The isolated smoke host accepts
+`--smoke-startup-delay 3s` with `--smoke-actions` to inspect slow asset loading without
+adding a minimum splash duration to normal launches.
+
+Main UI selects share the themed select-only combobox in `Select.tsx`, including
+portal positioning, keyboard/typeahead navigation, cancellation, disabled options
+and explicit WebKit pointer focus. Scrollbars and text selection share light/dark
+control colours. The page canvas extends its background through the transparent
+scrollbar track; thumbs use a low-opacity neutral green, including on hover.
+Language saves fence background preference refreshes until the
+mutation completes; async catalog preparation must recheck the request generation
+before updating the rendered language.
+
 A small AppKit/WKWebView delegate adapter supplies native JavaScript confirmation
 sheets, external-navigation confinement, and actual NSWindow visibility. It forwards
 the framework's other delegate methods, including file selection and renderer recovery.
@@ -94,13 +125,20 @@ desktop links navigate to settings or the existing main connection view with an
 encoded owner, preserving unsaved-device navigation guards. Native
 navigation accepts only explicit page names and an optional bounded connection owner.
 
-Visible, running popups read the existing `/api/v1/device-traffic` and
-`/api/v1/local-routing` endpoints every two seconds. Rates cover observed active
+While the gateway is running/degraded, a native observation monitor reads the
+existing `/api/v1/device-traffic` endpoint every two seconds, independently of both
+WebViews. It retains at most 30 samples / 60 seconds in memory and backs off failed
+reads up to 30 seconds. Stopped or unknown gateways clear the cache and cancel
+pending reads; late results cannot overwrite a restarted gateway. Rate calculation
+stays in the Control Service. Rates cover observed active
 mihomo sessions, not interface bandwidth or daily usage. Active downstream counts
 exclude the Mac and inactive inventory. Downstream ranking is held for ten seconds
-to reduce moving click targets. Failed reads clear the corresponding observation;
-stopped/unknown gateways stop these reads. Chart history is at most 60 seconds and
-restarts after a hidden-window gap; the first sample is not shown as a zero rate.
+to reduce moving click targets. The visible popup reads the private native cache
+every second, and reads `/api/v1/local-routing` separately every two seconds so a
+slow routing query cannot stall rates. Hidden popups pause renderer reads, retaining
+native history for immediate display on reopen. Failed reads clear observations;
+sleep/service gaps over the Control API's 15-second validity window require a new
+baseline. The first sample is not shown as a zero rate.
 
 The background is AppKit `NSVisualEffectMaterialPopover` with behind-window
 blending beneath a transparent WKWebView, enabled by Wails' `MacBackdropTranslucent`

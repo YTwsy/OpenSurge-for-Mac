@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { selectOption } from '../test/select'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -85,7 +86,7 @@ describe('ProfileOverlayPanel', () => {
     expect(panel.open).toBe(false)
     await userEvent.click(screen.getByRole('heading', { name: 'Advanced: Global Profile Overlay' }))
     expect(panel.open).toBe(true)
-    await userEvent.selectOptions(screen.getByLabelText('Select a source to preview'), 'home')
+    await selectOption(screen.getByLabelText('Select a source to preview'), 'home')
     await userEvent.click(screen.getByRole('button', { name: 'View composed result' }))
     const dialog = await screen.findByRole('dialog', { name: 'Final configuration preview' })
     expect(within(dialog).getByText('Composition order')).toBeTruthy()
@@ -160,7 +161,7 @@ describe('ProfileOverlayPanel', () => {
     render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
 
     await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
-    await userEvent.selectOptions(screen.getByLabelText('选择要预览的来源'), 'home')
+    await selectOption(screen.getByLabelText('选择要预览的来源'), 'home')
     await userEvent.click(screen.getByRole('button', { name: '查看组合结果' }))
 
     const dialog = await screen.findByRole('dialog', { name: '最终配置预览' })
