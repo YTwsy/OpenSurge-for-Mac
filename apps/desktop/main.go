@@ -91,7 +91,8 @@ func main() {
 	})
 	host.app = app
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name: "main", Title: "OpenSurge", Width: 1280, Height: 860, MinWidth: 1080, MinHeight: 640, URL: "/dashboard",
+		Name: "main", Title: "OpenSurge", Width: 1440, Height: 900, MinWidth: 1080, MinHeight: 640, URL: "/dashboard",
+		Mac: application.MacWindow{TitleBar: application.MacTitleBarHiddenInset, InvisibleTitleBarHeight: 40},
 	})
 	host.main = window
 	host.createTray()

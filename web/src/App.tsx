@@ -266,7 +266,8 @@ export function App() {
     policiesScrollPosition.current = scrollY
   }, [])
 
-  return <div className="app-shell">
+  return <div className={`app-shell${isDesktop() ? ' desktop-shell' : ''}`}>
+    {isDesktop() && <div className="desktop-titlebar" aria-hidden="true" />}
     <aside className="sidebar">
       <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
       <nav aria-label="OpenSurge sections">
