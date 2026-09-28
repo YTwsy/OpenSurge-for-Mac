@@ -1,7 +1,8 @@
 # Agent 指南
 
 OpenSurge for Mac 是一个开源的 Surge for Mac 风格 macOS 网关与控制面。
-面向用户的主要操作入口已经是 React Web GUI 与 SwiftUI 菜单栏 App；`omg`
+Next 分支面向用户的入口是 Wails + 系统 WebView 桌面 App，复用 React 主界面与
+菜单栏面板；浏览器 Web GUI 继续受支持。`omg`
 CLI 保留为运维、诊断、自动化和恢复接口。核心能力是全屋代理网关：Mac 为
 下游设备承担网关职责，并按拓扑提供 DHCP/DNS；mihomo 作为当前代理引擎，
 macOS 网络能力负责 NAT、转发与透明路由。
@@ -30,7 +31,7 @@ macOS 网络能力负责 NAT、转发与透明路由。
   提供 NAT，sysctl 管理 macOS IPv4 forwarding 状态。
 - 实验性的下游 IPv6 使用 dnsmasq RA/SLAAC/RDNSS 或手工 ULA 接入，并通过
   macOS BPF broker 与本项目补丁构建的 mihomo `opensurge-packet`/gVisor 数据面处理。
-- Web GUI 是主要操作控制面；菜单栏 App 负责状态、恢复提醒和入口，CLI 负责
+- React 主窗口 / Web GUI 是主要操作控制面；菜单栏面板负责状态、恢复提醒和入口，CLI 负责
   运维、诊断、自动化与恢复。三者应复用现有 Go 业务规则，不建立平行业务实现。
 - 工程方向是：Mac-native、可审计、带透明路由，并以可复现实验室验证约束
   高风险网络能力。

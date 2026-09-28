@@ -5,23 +5,29 @@
 本指南面向通过安装包使用 OpenSurge for Mac 的普通用户，介绍从安装、准备代理配置到启动
 网关和安全恢复网络的基本流程。CLI、开发构建和高级配置不在本文展开。
 
+本页的桌面操作描述对应 `Next` 构建；公开 v0.2.4 仍使用旧菜单栏宿主。
+安装器的已验证范围与待完成平台验收见[桌面安装验收](desktop-installation.md)。
+
 ![OpenSurge for Mac 总览](images/opensurge-dashboard.png)
 
 ## 安装与打开
 
-1. 从 [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases) 下载适合
-   当前 Mac 的安装包：Apple Silicon 使用 `arm64-unsigned.pkg`，Intel Mac 使用
-   `x86_64-unsigned.pkg`。
+1. 体验本页描述的桌面端时，使用提供的 `Next` 测试安装包：Apple Silicon 选择 `arm64`，
+   Intel Mac 选择 `x86_64`。公开安装包位于
+   [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases)；v0.2.4 的旧菜单栏
+   操作请参照[对应版本指南](https://github.com/YTwsy/OpenSurge-for-Mac/blob/v0.2.4/docs/app-user-guide.zh-CN.md)。
 2. 双击安装包。如果 macOS 阻止打开，请前往**系统设置 → 隐私与安全性**，对这个安装包
    选择**仍要打开**。不需要全局关闭 Gatekeeper。
-3. 安装完成后，从 `/Applications` 打开 **OpenSurge**；App 会直接展开菜单栏状态面板。
-4. 之后既可以再次打开 **OpenSurge**，也可以点击菜单栏图标展开同一面板；选择
-   **打开 OpenSurge 面板**进入 Web GUI。
+3. 安装完成后，从 `/Applications` 打开 **OpenSurge**，进入独立主窗口。
+4. 之后点击 Dock、再次打开 App 或选择菜单栏的**打开 OpenSurge 面板**，都会恢复同一个
+   主窗口。菜单栏图标展开独立的状态面板，订阅、网络、设备和策略操作在主窗口完成。
 
-<img width="402" height="612" alt="截屏2026-07-27 23 21 08" src="https://github.com/user-attachments/assets/53ec001c-6755-4a67-8482-fb1fa50b072a" />
+首次打开默认约 1440 × 900 个逻辑像素，会适配当前屏幕的可用区域。用户可以手动缩放，
+下次打开会记住所选尺寸。顶部空白区域可拖动；原生红黄绿按钮与侧栏融合。关闭窗口只会
+隐藏，`⌘Q` 会确认只退出桌面 App，后台服务与运行中的网关继续工作。
 
-菜单栏 App 用于显示状态、恢复提醒和打开 Web GUI；订阅、网络、设备和策略操作都在
-Web GUI 中完成。
+菜单栏的 **App 设置与更新**可显式启用登录项；需要系统批准时，按提示进入登录项设置。
+升级不会自动开关登录项，以 macOS 返回的状态为准。
 
 菜单栏状态面板会自动检查一次最新稳定版，也可以点击**检查更新**手动刷新。发现新版本
 后，选择**打开下载页**会进入该版本的 GitHub Release；App 不会自行下载或安装 PKG，
@@ -187,8 +193,8 @@ OpenSurge 会先探测当前网络是否已有 DHCP server：若已恢复，就�
 
 菜单栏中的两个退出入口含义不同：
 
-- **只退出菜单栏 App**：只关闭菜单栏图标，不停止网关和后台服务。
-- **退出 OpenSurge**：仅在网关已经停止且没有待处理恢复时可用，同时退出菜单栏 App 和
+- **只退出桌面 App**：关闭主窗口和菜单栏图标，不停止网关和后台服务。
+- **退出 OpenSurge**：仅在网关已经停止且没有待处理恢复时可用，同时退出桌面 App 和
   用户级 Control Service。
 
 ## 卸载

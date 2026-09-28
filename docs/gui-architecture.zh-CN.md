@@ -1,11 +1,11 @@
 # Web GUI 与菜单栏 App
 
-OpenSurge 现在提供同一个本地控制面之上的两个 GUI 入口：
+Next 使用独立桌面主窗口与菜单栏面板，浏览器 Web GUI 继续受支持：
 
 - `cmd/opensurge-control` 是只监听 `127.0.0.1` 的 Go Control API，并嵌入
   `web/` 构建出的 React 应用；
-- `apps/menubar/` 是 macOS 13+ 的原生菜单栏 App，由 AppKit 状态项承载 SwiftUI
-  状态面板，只显示状态、恢复警报并打开 Web GUI；
+- `apps/desktop/` 是 Wails + 系统 WebView 宿主，主窗口与菜单栏面板都复用
+  React/TypeScript；认证、窗口与固定原生能力见 [Desktop host](agent-wiki/wiki/concepts/desktop-host.md)；
 - `cmd/opensurge-helper` 是窄权限 Unix-socket helper，只接受 start/stop、网络
   固定地址/恢复 DHCP 和主动 DHCP OFFER 探测等固定动作，不提供任意 shell 命令；
   生产配置、runtime 和可执行文件必须位于允许目录、由 root 拥有且不能被普通用户修改。
@@ -18,13 +18,10 @@ make control-build
 ./bin/opensurge-control --config examples/config.example.yaml
 ```
 
-控制服务会输出一个 30 秒内有效、只能使用一次的 bootstrap URL。浏览器通过它换取
-`HttpOnly`、`SameSite=Strict` session cookie。API mutation 还会校验 Origin；菜单栏
-App 使用应用支持目录内权限为 `0600` 的本地 token 请求一个新的短期 bootstrap URL，
-不会把长期凭据放进浏览器历史，也不会把该 token 再复制到 Keychain。该 token 的事实
-来源始终是用户级 Control Service；文件尚未生成时，菜单栏自动唤醒服务并重试，仍失败
-才显示“OpenSurge 后台服务尚未准备好”和显式“重新连接”。用户点击重新连接只会重启
-用户级 Control Service，不会停止正在运行的网关数据面。
+控制服务会输出一个 30 秒有效、一次性的 bootstrap URL，浏览器用它换取 HttpOnly
+session。Wails 通过 native relay 执行同样的交换，token 和 cookie 保留在原生内存，不进入
+JavaScript。正式安装位置的 App 启动时唤醒已有用户 Control Service；显式重新连接同样
+不使用 `kickstart -k`，不会强制重启后台或启动网关。Preview 启动不操作服务。
 
 ### 选择嵌入式调试或 Vite 热更新
 
@@ -101,54 +98,27 @@ Vitest 中的 fixture 只供自动化测试使用，不会被 `pnpm dev` 自动�
 需要对照当前真实订阅、设备和运行流量时，使用上述“已安装 Control Service + Vite”的
 只读方式。
 
-菜单栏 App 入口使用纯 AppKit `NSApplication` 生命周期，不声明仅含 `EmptyView` 的
-SwiftUI `Settings` Scene，避免系统管理和恢复一个产品并不需要的空设置窗口。状态面板由
-AppKit `NSStatusItem` 与锚定的 `NSPopover` 承载，内部继续复用 SwiftUI
-`MenuContentView`。点击菜单栏图标会切换面板；用户首次主动打开或再次打开
-`/Applications/OpenSurge.app` 时，`NSApplicationDelegate` 会要求同一个控制器确保
-面板已经展开。每次菜单栏 App 进程启动完成都会主动展开面板，因此通过“登录时显示”
-启动时也会弹出。首次启动会等待状态栏按钮实际附着到可见窗口后再调用
-`NSPopover.show`，但不会等待 App active 或 popover window 成为 key；cooperative
-activation 和 `makeKey()` 都只是展示后的 best-effort 增强。App 未 active 时 popover 使用
-`.applicationDefined` 并自行处理状态栏按钮、Escape 与外部鼠标点击关闭，获得 active 后再
-切回 `.transient`。SwiftUI 面板显式保持 active control appearance，状态栏按钮用持久 state
-记录面板展示状态；状态轮询只有 indicator 改变才重绘图标。展示过程由 App 激活、popover
-delegate 与 common run loop 上短时、有界的退避重试推进，不使用高频
-`applicationDidUpdate`。它会给 popover 动画留出 window 创建宽限期，不把
-`NSPopover.isShown` 当成窗口已经真实出现的充分证据；重试期限到达时执行一次非阻塞兜底并
-清除 pending，后续用户点击仍可重新进入展示流程。
+## 桌面生命周期
 
-菜单栏面板独立查询 GitHub `releases/latest` 发现新的稳定版本：面板首次打开时自动检查，
-同一 App 进程中最多每 24 小时自动请求一次，并保留手动检查入口。版本检查状态不得并入
-Control Service 可达性或网关 indicator。只有远端语义版本更高、且 `html_url` 仍精确指向
-本仓库对应 tag 的 Release 页面时才显示更新按钮；按钮只交给默认浏览器打开下载页，不下载
-或安装 unsigned PKG，也不改变任何网关或后台服务状态。
-App 从 `OpenSurgeReleaseTag` 读取完整安装版本，并按 `rc.N` 低于同基础版本 stable 的顺序
-比较；因此 `0.1.24-rc.1` 不会被旧的 `0.1.23` 降级，却会在 `0.1.24` stable 发布时收到
-提醒。旧包缺少该 key 时回退到数字形式的 `CFBundleShortVersionString`。
+主窗口默认请求 1440 × 900 points，保留用户手动尺寸并适配屏幕。透明 inset 标题栏保留
+原生红黄绿按钮，隐藏重复标题；顶部空白区域支持拖动。关闭只隐藏窗口，Dock / 再次启动
+恢复同一个 React 树。菜单栏是独立 React 入口，状态轮询与主窗口订阅分别管理。
 
-菜单栏提供两个不同的退出层级。“只退出菜单栏 App”在二次确认后直接结束菜单栏进程，
-不会改变用户级 Control Service、网关数据面或 root Helper。“退出 OpenSurge”只有在
-Gateway、DHCP/DNS、mihomo 与 PF 已确认停止，并且没有待处理网络恢复时
-才可执行；它会 bootout 用户级 `com.opensurge.control` 并退出菜单栏 App。已安装的
-`com.opensurge.helper` 继续由系统 launchd 托管并保持空闲加载，不卸载、不要求下次打开
-再次授权。重新打开菜单栏 App 时，如果用户级 Control Service 已被 bootout，App 会从
-现有 LaunchAgent plist 重新 bootstrap 并连接它。
+“只退出桌面 App”（含 Cmd-Q）经原生确认后关闭窗口和菜单栏，后台与网关继续运行。
+“退出 OpenSurge”要求网关数据面已停止、恢复已完成，确认后再次检查最新状态，再停止
+用户 Control Service；root Helper 保持空闲加载。全局 IPv4 forwarding 不是运行所有权证据，
+不会单独阻止退出。安装器 TERM 只结束宿主，不显示交互确认，不接管网关清理。
 
-系统 `net.inet.ip.forwarding` 是宿主机全局观测值，不是 OpenSurge 运行所有权证据。退出
-门禁不因该值单独为 enabled 而阻止操作；网关生命周期仍按 runtime state 恢复 OpenSurge
-启动前的值。
+登录项使用 `SMAppService.mainAppService`，返回真实 OS 状态，不自动注册。更新检查只访问
+官方 GitHub stable release API，保留手动检查与 24 小时自动检查；仅显式打开已验证下载页。
+原生宿主和前端显示同一个完整 release tag，包含 Next / RC 身份。
 
-“卸载 OpenSurge”是独立的管理员操作，只以 `gateway == stopped` 作为状态门禁，不读取
-DHCP 接管 recovery，也不要求全局 IPv4 forwarding 为 disabled。菜单栏使用同步
-`NSAlert` 选择保留数据或彻底删除，再通过 macOS 管理员授权调用 pkg 内固定安装、root
-拥有的卸载脚本。脚本会再次读取 CLI gateway 状态，随后 bootout Control Service 与
-root Helper、移除 App 和 pkg receipt；保留模式留下配置、订阅凭据和策略数据，彻底模式
-同时删除用户与系统数据、runtime 和日志。
+卸载仅对正式身份且位于 `/Applications/OpenSurge.app` 的 App 启用。宿主确认前后读取
+最新停止证据，检查固定 root-owned 脚本，选择保留数据或彻底删除并发起管理员授权。
+脚本再次验证 gateway 已停止。登录项在授权前停用，取消或失败时尝试恢复并报告结果。
+生产安装、授权和平台兼容性的未验证边界见 [桌面安装验收](desktop-installation.md)。
 
-退出确认使用同步的 AppKit `NSAlert.runModal()` 并直接消费返回值，不再把进程退出动作
-依赖于 SwiftUI alert 的状态写回/关闭时序。早期 `MenuBarExtra` 的 SwiftUI alert 曾在两个退出
-入口中都只关闭确认框而没有进入动作回调，因此这里保留显式的 AppKit 边界。
+旧 `apps/menubar/` 中的 Swift/AppKit 宿主保留供 v0.2.4 维护，已退出 Next 默认构建链路。
 
 Control API 默认位置是 `http://127.0.0.1:61767`。端点描述、token、来源快照、操作记录
 和局域网 DHCP 接管恢复状态位于：
@@ -371,9 +341,9 @@ DHCP、DNS 或 TUN 验收证据，不能显示成“已验收”。
 菜单栏 App 不提供 start/stop、provider refresh 或策略切换。它每 15 秒获取一次
 `/api/v1/menubar`，窗口打开时每 2 秒刷新，失败时指数退避到最多 60 秒，并根据 connecting、
 stopped、running、degraded、recovery、unreachable 显示状态。首次启动尚未取得状态时，
-connecting 从第一帧就使用半透明 OpenSurge 品牌图标；只有真实请求失败后，unreachable 才
-使用更低透明度和对应无障碍文案表示不可达，但仍保持品牌图标，不再显示看起来像旧版图标
-的 `network.slash`。恢复警报优先于其他状态。
+connecting 使用 OpenSurge 品牌图标和等待符号；只有真实请求失败后才进入 unreachable。
+Next 通过图标旁的状态符号、tooltip 和面板文案表示状态，不依赖旧 Swift 的图标透明度。
+恢复警报优先于其他状态。
 网关明确处于 `stopped` 时显示“OpenSurge 网关已停止”；此时 runtime-oriented doctor
 未通过或存在待应用配置都不能把“未启动”误报成“运行异常”。
 
@@ -384,14 +354,14 @@ single-flight 后台任务，并通过 `GET /api/v1/doctor` 读取进度和最�
 后标记为旧结果且不影响当前菜单栏健康。Doctor 的历史结果不参与 start/reload 判定；真实
 生命周期动作继续执行各自的配置预检与 TUN readiness。
 
-“只退出菜单栏 App”只终止菜单栏 App；点击后会先提示后台 Control Service 仍会继续，若网关正在
+“只退出桌面 App”关闭主窗口与菜单栏；点击后会先提示后台 Control Service 仍会继续，若网关正在
 运行，还会明确 DHCP/DNS、mihomo、PF/转发不会随菜单栏退出。停止网关仍须进入 Web GUI。
 
 构建：
 
 ```sh
-make menubar-build
-./scripts/build-menubar-app.sh
+make desktop-production-build
+# 独立预览使用 make desktop-build
 ```
 
 构建统一 pkg：
@@ -418,19 +388,18 @@ relocatable bundle，确保它固定安装到 `/Applications/OpenSurge.app`。
 
 升级到采用产品名 bundle 的版本时，postinstall 会在新 payload 已落盘后删除旧的
 `/Applications/OpenSurge Menu Bar.app`，避免 Launchpad 同时保留两个相同 bundle ID
-的入口；卸载脚本兼容清理新旧两个路径。内部 Swift executable 仍名为
-`OpenSurgeMenuBar`，launchd label 与 bundle identifier 也不因这个显示名称迁移而改变。
+的入口；卸载脚本兼容清理新旧两个路径。Next 的内部 executable 改为
+`OpenSurgeDesktop`，保持原 bundle ID `com.opensurge.menubar` 与 launchd labels。
 
-安装包包含 Web 静态资源（嵌入 control binary）、用户级 Control Service、菜单栏 App、
+安装包包含 Web 静态资源（嵌入 control binary 与桌面宿主）、用户级 Control Service、桌面 App、
 CLI 和 root helper。postinstall 会创建 root:admin、用户只读的 applied 配置/runtime，
 安装固定 launchd 服务，并把固定卸载脚本安装到系统支持目录。卸载脚本只在 gateway
 明确为 stopped 时继续，不尝试代替用户停止网关，也不因 recovery 或宿主 forwarding
 状态拒绝删除。
 
 升级仍采用更严格的网络安全前置顺序：preinstall 先检查 recovery 只能处于 `idle`、
-`complete` 或明确保留静态 IPv4 的终态 `complete_static`，再 bootout 用户级 Control
-Service 并退出菜单栏 App，调用旧版本
-`omg stop` 清理 DHCP/DNS/mihomo/pf/forwarding，最后 bootout root helper。任何一步
+`complete` 或明确保留静态 IPv4 的终态 `complete_static`，先退出两代宿主，再 bootout 用户级 Control
+Service，调用新包自带的恢复 CLI `omg-recovery stop` 清理 DHCP/DNS/mihomo/pf/forwarding，最后 bootout root helper。任何一步
 失败都在 Installer 覆盖旧 payload 前终止。postinstall 只在首次安装时 seed
 `config.yaml`，升级保留现有 config、`data/` 与 `runtime/`。
 
@@ -454,14 +423,14 @@ ID 签名或 notarization，不能宣称安装包可被 Gatekeeper 直接放行�
 ```sh
 make test
 make web-build
-make menubar-build
-make menubar-test
+make desktop-production-build
+make desktop-test
+./scripts/check-gui-packaging.sh
 ```
 
-`menubar-test` 使用独立 Swift 检查程序与 mock `URLProtocol`，因此只安装 Command Line
-Tools 也可验证 icon 优先级、Bearer、最小 DTO、bootstrap 深链接、URL 打开失败回退、
-Control Service transport 恢复、两级退出门禁、root Helper 不被 bootout 和 token 泄漏边界。
-`apps/menubar/Tests` 仍保留 XCTest 版本，供具有完整 Xcode/XCTest 的 CI 执行。
+`desktop-test` 覆盖 native relay、权限边界、菜单状态和生命周期，packaging checks
+还在临时目录执行安装/卸载脚本验证保留范围与步骤顺序。它们不执行真实管理员授权或安装。
+旧 `menubar-test` 只用于历史 Swift 维护，不再属于默认 GUI gate。
 
 修改真实网关、TUN、DHCP 或设备策略数据面后，仍须运行对应的 lab/same-WiFi gate；
 GUI 构建通过不能替代这些 host-network 证据。
