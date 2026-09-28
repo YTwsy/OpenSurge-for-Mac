@@ -1,3 +1,4 @@
+import { Select } from '../components/Select'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { api, waitForOperation } from '../api'
 import { RecoveryCardLinks } from '../components/RecoveryCardLinks'
@@ -437,9 +438,9 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
             <input aria-label={t('Mac 网关 IPv4')} value={config.gateway.lan_ip} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_ip: event.target.value }, dns: { ...config.dns, listen: event.target.value } })} />
           </ConfigField>
           <ConfigField label="下游 LAN 子网前缀" setting="gateway.lan_prefix_len" hint="下游网段的真实子网掩码。pf NAT、TUN 路由排除、DHCP 地址池校验和设备地址归属都由它推导，填错会让同网段设备被当成外部流量。接入现有局域网时请与主路由保持一致。">
-            <select aria-label={t('下游 LAN 子网前缀')} value={config.gateway.lan_prefix_len || 24} onChange={event => setConfig({ ...config, gateway: { ...config.gateway, lan_prefix_len: Number(event.target.value) } })}>
+            <Select aria-label={t('下游 LAN 子网前缀')} value={config.gateway.lan_prefix_len || 24} onChange={value => setConfig({ ...config, gateway: { ...config.gateway, lan_prefix_len: Number(value) } })}>
               {supportedPrefixLengths.map(prefixLength => <option key={prefixLength} value={prefixLength}>{`/${prefixLength}（${netmaskForPrefixLength(prefixLength)}）`}</option>)}
-            </select>
+            </Select>
           </ConfigField>
           <fieldset className={`dhcp-config-group ${dhcpRuntimeDisabled ? 'runtime-inactive' : ''}`} disabled={dhcpRuntimeDisabled}>
             <legend><strong>{t('DHCP 地址池')}</strong><small>{t(dhcpRuntimeDisabled ? '旁路由模式运行时不使用；当前值仅保留供切换网络模式后复用' : 'dnsmasq 为下游客户端分配 IPv4 时使用')}</small></legend>
@@ -486,10 +487,10 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
                 <small>{t('推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。')}</small>
               </ConfigField>
               <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
-                <select aria-label={t('透明代理模式')} value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={event => {
-                  const mode = event.target.value as 'off' | 'tun'
+                <Select aria-label={t('透明代理模式')} value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={value => {
+                  const mode = value as 'off' | 'tun'
                   setConfig({ ...config, dns: { ...config.dns, ipv6: mode === 'tun' && config.dns.ipv6 }, transparent: { ...config.transparent, mode, tun_ipv6: mode === 'off' ? 'off' : config.transparent.tun_ipv6 }, local_system_proxy: { ...config.local_system_proxy, enabled: mode === 'tun' && config.local_system_proxy.enabled } })
-                }}><option value="off">{t('关闭（off）')}</option><option value="tun">mihomo TUN</option></select>
+                }}><option value="off">{t('关闭（off）')}</option><option value="tun">mihomo TUN</option></Select>
               </ConfigField>
               <ConfigField label="Fake-IP 映射持久化" setting="mihomo.store_fake_ip" hint="生成 profile.store-fake-ip。开启后 mihomo 会在重启时恢复域名与 fake-IP 的映射，避免 cloudflared 等长驻进程继续使用已经失效的 198.18.x.x；不会保留既有 TCP/QUIC 连接。修改 fake-ip-filter 后，旧映射仍可能需要单独清理缓存。">
                 <ConfigSwitch

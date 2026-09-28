@@ -39,6 +39,7 @@ func (h *desktopHost) readMenuStatus(ctx context.Context) (*menustatus.Status, e
 }
 
 func (h *desktopHost) menuStatusChanged(snapshot menustatus.Snapshot) {
+	h.activity.SetRunning(snapshot.Status != nil && (snapshot.Status.Gateway == "running" || snapshot.Status.Gateway == "degraded"))
 	if status := snapshot.Status; status != nil {
 		language := status.UIPreferences.Language
 		if language == "system" {

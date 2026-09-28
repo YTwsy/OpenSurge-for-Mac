@@ -21,6 +21,7 @@ import (
 	"open-mihomo-gateway/apps/desktop/internal/menustatus"
 	"open-mihomo-gateway/apps/desktop/internal/native"
 	"open-mihomo-gateway/apps/desktop/internal/servicelife"
+	"open-mihomo-gateway/apps/desktop/internal/trayactivity"
 	"open-mihomo-gateway/internal/webui"
 )
 
@@ -35,6 +36,7 @@ func main() {
 	}
 	defaultDirectory := directory
 	smokeActions := flag.Bool("smoke-actions", false, "Use isolated fixture providers for service, login, updates and uninstall; never change installed services or login items")
+	smokeStartupDelay := flag.Duration("smoke-startup-delay", 0, "Delay JavaScript assets to inspect the cold-start placeholder; requires --smoke-actions (maximum 15s)")
 	flag.StringVar(&directory, "control-dir", directory, "Control Service discovery directory (use a smoke fixture for desktop acceptance)")
 	flag.Parse()
 	directory, err = filepath.Abs(directory)
@@ -45,6 +47,9 @@ func main() {
 	host := &desktopHost{client: controlclient.New(directory)}
 	if *smokeActions && directory == defaultDirectory {
 		log.Fatal("Smoke actions require an isolated --control-dir")
+	}
+	if *smokeStartupDelay < 0 || *smokeStartupDelay > 15*time.Second || (*smokeStartupDelay > 0 && !*smokeActions) {
+		log.Fatal("Startup delay requires isolated smoke actions and must be between 0 and 15s")
 	}
 	runner := servicelife.Run
 	if *smokeActions {
@@ -60,6 +65,9 @@ func main() {
 	host.services = servicelife.New(os.Getuid(), homeDirectory, directory == defaultDirectory || *smokeActions, runner, host.readMenuStatus)
 	host.initUtilities(directory == defaultDirectory, *smokeActions)
 	host.initUninstaller(directory == defaultDirectory, *smokeActions)
+	host.activity = trayactivity.New(func(ctx context.Context) ([]byte, error) {
+		return host.client.Read(ctx, "/api/v1/device-traffic", 4<<20)
+	})
 	host.status = menustatus.New(host.readMenuStatus, host.menuStatusChanged)
 	lifetime, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -69,6 +77,13 @@ func main() {
 	}
 	runtimeAssets := application.BundledAssetFileServer(webui.FS())
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if *smokeStartupDelay > 0 && strings.HasSuffix(r.URL.Path, ".js") {
+			select {
+			case <-time.After(*smokeStartupDelay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		if host.quitBusy.Load() && strings.HasPrefix(r.URL.Path, "/api/") && r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "A desktop lifecycle action is pending", http.StatusConflict)
 			return
@@ -116,12 +131,13 @@ func main() {
 	}()
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "main", Title: "OpenSurge", Width: 1440, Height: 900, MinWidth: 1080, MinHeight: 640, URL: "/dashboard",
+		Hidden: true, BackgroundColour: application.NewRGBA(242, 247, 244, 255),
 		Mac: application.MacWindow{TitleBar: application.MacTitleBarHiddenInset, InvisibleTitleBarHeight: 40},
 	})
 	host.main = window
 	native.ConfigureMenuBarIcon()
 	host.createTray()
-	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide() })
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide(); native.SetDockVisible(false) })
 	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { host.show("") })
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		native.Configure(window, true)
@@ -132,6 +148,7 @@ func main() {
 		if language != "" {
 			native.SetLanguage(window, language == "en")
 		}
+		host.show("")
 		close(ready)
 		go func() {
 			// Only the installed bundle wakes the installed user job on launch.
@@ -146,6 +163,7 @@ func main() {
 			host.status.Run(lifetime)
 		}()
 		go host.updates.Run(lifetime)
+		go host.activity.Run(lifetime)
 	})
 	host.setMenu(false)
 	if err := app.Run(); err != nil {

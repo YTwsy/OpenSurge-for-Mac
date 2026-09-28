@@ -1,3 +1,4 @@
+import { Select } from '../components/Select'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Empty, PageHeader } from '../components/Common'
 import { useConnections } from '../hooks/useConnections'
@@ -66,10 +67,10 @@ export function ConnectionsPage({ overview, view, onViewChange, restoreScrollY }
         {selectedDevice?.gateway_target === 'upstream_router' && <p className="connection-context">{t('IPv4 直连主路由，该路径不在统计范围内；列表仅展示核心实际观察到的连接。')}</p>}
         <div className="connection-filters">
           <input type="search" aria-label={t('搜索连接')} placeholder={t('搜索域名、IP、设备、进程或出口')} value={view.search} onChange={event => changeFilter({ search: event.target.value })} />
-          <select aria-label={t('连接协议')} value={view.protocol} onChange={event => changeFilter({ protocol: event.target.value })}><option value="all">{t('全部协议')}</option><option value="tcp">TCP</option><option value="udp">UDP</option></select>
-          <select aria-label={t('来源地址族')} value={view.family} onChange={event => changeFilter({ family: event.target.value })}><option value="all">{t('全部地址族')}</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select>
-          <select aria-label={t('出口类型')} value={view.route} onChange={event => changeFilter({ route: event.target.value })}><option value="all">{t('全部出口')}</option><option value="direct">DIRECT</option><option value="proxy">{t('代理')}</option><option value="reject">REJECT</option><option value="unknown">{t('未知')}</option></select>
-          <select aria-label={t('连接排序')} value={view.sort} onChange={event => changeFilter({ sort: event.target.value as ConnectionsViewState['sort'] })}><option value="newest">{t('最新建立')}</option><option value="download">{t('下载速率')}</option><option value="upload">{t('上传速率')}</option></select>
+          <Select aria-label={t('连接协议')} value={view.protocol} onChange={value => changeFilter({ protocol: value })}><option value="all">{t('全部协议')}</option><option value="tcp">TCP</option><option value="udp">UDP</option></Select>
+          <Select aria-label={t('来源地址族')} value={view.family} onChange={value => changeFilter({ family: value })}><option value="all">{t('全部地址族')}</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></Select>
+          <Select aria-label={t('出口类型')} value={view.route} onChange={value => changeFilter({ route: value })}><option value="all">{t('全部出口')}</option><option value="direct">DIRECT</option><option value="proxy">{t('代理')}</option><option value="reject">REJECT</option><option value="unknown">{t('未知')}</option></Select>
+          <Select aria-label={t('连接排序')} value={view.sort} onChange={value => changeFilter({ sort: value as ConnectionsViewState['sort'] })}><option value="newest">{t('最新建立')}</option><option value="download">{t('下载速率')}</option><option value="upload">{t('上传速率')}</option></Select>
         </div>
         <div className="connection-table-wrap"><table className="connection-table"><thead><tr><th>{t('目标与来源')}</th><th>{t('协议')}</th><th>{t('实际出口链')}</th><th>{t('命中规则')}</th><th>{t('上下行速率')}</th><th>{t('持续时间')}</th></tr></thead><tbody>
           {visible.map(connection => <Fragment key={connection.id}><tr className={view.connection === connection.id ? 'selected' : ''}>

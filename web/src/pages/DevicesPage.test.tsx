@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { selectOption } from '../test/select'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -190,7 +191,7 @@ describe('DevicesPage', () => {
     expect(within(secondCard).getByRole('button', { name: '编辑设备分流' })).toBeTruthy()
     await userEvent.click(within(secondCard).getByRole('button', { name: '编辑设备分流' }))
     expect(screen.getByRole('tab', { name: /设备分流/ }).getAttribute('aria-selected')).toBe('true')
-    expect((screen.getByLabelText('设备分流设备') as HTMLSelectElement).value).toBe('bob')
+    expect((screen.getByLabelText('设备分流设备') as HTMLButtonElement).value).toBe('bob')
     await userEvent.click(within(firstCard).getByRole('radio', { name: /独立设备出口/ }))
     expect(saveBar.classList.contains('has-changes')).toBe(true)
   })
@@ -751,7 +752,7 @@ describe('DevicesPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '用于设备' }))
     expect(screen.getByRole('tab', { name: /设备分流/ }).getAttribute('aria-selected')).toBe('true')
-    expect((screen.getByLabelText('设备分流匹配对象') as HTMLSelectElement).value).toBe('claude-code')
+    expect((screen.getByLabelText('设备分流匹配对象') as HTMLButtonElement).value).toBe('claude-code')
     await userEvent.click(screen.getByRole('button', { name: '添加到草稿' }))
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
@@ -776,7 +777,7 @@ describe('DevicesPage', () => {
     await userEvent.click(screen.getByRole('tab', { name: /设备分流/ }))
     await userEvent.click(screen.getByRole('button', { name: '＋ 添加设备分流' }))
     await userEvent.click(screen.getByRole('radio', { name: '单个规则集' }))
-    await userEvent.selectOptions(screen.getByLabelText('设备分流匹配对象'), 'work-domains')
+    await selectOption(screen.getByLabelText('设备分流匹配对象'), 'work-domains')
     await userEvent.click(screen.getByRole('radio', { name: '独立即时切换' }))
     await userEvent.type(screen.getByLabelText('设备分流出口候选'), 'Main{Enter}')
     await userEvent.click(screen.getByRole('button', { name: '添加到草稿' }))
@@ -844,7 +845,7 @@ describe('DevicesPage', () => {
     await userEvent.click(await screen.findByRole('tab', { name: /设备分流/ }))
     await userEvent.click(screen.getByRole('button', { name: '＋ 添加设备分流' }))
     await userEvent.click(screen.getByRole('radio', { name: '单个规则集' }))
-    await userEvent.selectOptions(screen.getByLabelText('设备分流匹配对象'), 'claude-code-domains')
+    await selectOption(screen.getByLabelText('设备分流匹配对象'), 'claude-code-domains')
     await userEvent.click(screen.getByRole('button', { name: '添加到草稿' }))
     await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
     await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())

@@ -2,11 +2,13 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { api } from '../api'
+import { desktopAction } from '../desktop'
 import { activateLanguage, prepareLanguage } from '../i18n'
 import type { DeviceTraffic, DeviceTrafficRow } from '../types'
 import { TrayActivity } from './TrayActivity'
 
-vi.mock('../api', () => ({ api: { deviceTraffic: vi.fn(), localRouting: vi.fn() } }))
+vi.mock('../api', () => ({ api: { localRouting: vi.fn() } }))
+vi.mock('../desktop', () => ({ desktopAction: vi.fn() }))
 const row = (key: string, name: string, rate: number, connections = 1): DeviceTrafficRow => ({ key, name, ip: '192.0.2.20', mac: '', identity_source: 'registered_static', online: true, active_connections: connections, upload: 0, download: 0, upload_rate: 0, download_rate: rate })
 const fixture: DeviceTraffic = {
  schema_version: 1, revision: 'sample', sampled_at: '', scope: 'active_sessions',
@@ -18,7 +20,9 @@ const fixture: DeviceTraffic = {
 beforeEach(async () => {
  await prepareLanguage('en'); activateLanguage('en')
  vi.useFakeTimers()
- vi.mocked(api.deviceTraffic).mockImplementation(async () => ({ ...fixture, sampled_at: new Date().toISOString() }))
+ vi.mocked(desktopAction).mockImplementation(async () => ({ traffic: { ...fixture, sampled_at: new Date().toISOString() }, failed: false, history: [
+  { time: Date.now() - 2000, ...fixture.gateway_rates }, { time: Date.now(), ...fixture.gateway_rates },
+ ] }))
  vi.mocked(api.localRouting).mockResolvedValue({ schema_version: 1, mode: 'rule', available_modes: ['rule', 'direct'], udp_behavior: 'rules', transports: ['tun'], new_connections_only: true, consistent: true })
 })
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); delete window.__opensurgeWindowVisible; activateLanguage('zh-Hans') })
@@ -26,9 +30,6 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); delete wind
 it('shows live rates, counts active downstream devices, and expands details before navigating', async () => {
  const open = vi.fn()
  await act(async () => { render(<TrayActivity gateway="running" onOpen={open} />) })
- expect(screen.getByText('Sampling traffic…')).toBeTruthy()
- expect(screen.queryByText('12 MB/s')).toBeNull()
- await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
  expect(screen.getByText('12 MB/s')).toBeTruthy()
  expect(screen.getByText('2 active LAN devices · 10 total connections')).toBeTruthy()
  expect(screen.queryByText('Idle phone')).toBeNull()
@@ -48,24 +49,45 @@ it('shows live rates, counts active downstream devices, and expands details befo
  expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
 })
 
-it('pauses hidden-window reads, resets the chart after a gap, and clears failed observations', async () => {
+it('pauses renderer reads but displays retained native history immediately on reopening', async () => {
  const view = render(<TrayActivity gateway="running" onOpen={vi.fn()} />)
  await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
  expect(screen.getByText('12 MB/s')).toBeTruthy()
  window.__opensurgeWindowVisible = false
- const calls = vi.mocked(api.deviceTraffic).mock.calls.length
+ const calls = vi.mocked(desktopAction).mock.calls.length
  await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
- expect(api.deviceTraffic).toHaveBeenCalledTimes(calls)
+ expect(desktopAction).toHaveBeenCalledTimes(calls)
  window.__opensurgeWindowVisible = true
  await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
- expect(screen.getByText('Sampling traffic…')).toBeTruthy()
- vi.mocked(api.deviceTraffic).mockRejectedValue(new Error('offline'))
+ expect(screen.queryByText('Sampling traffic…')).toBeNull()
+ expect(screen.getByText('12 MB/s')).toBeTruthy()
+ expect(document.querySelector('.download-line')?.getAttribute('d')).toContain(' C ')
+ vi.mocked(desktopAction).mockResolvedValue({ traffic: null, history: null, failed: true })
  await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
  expect(screen.getByText('Traffic unavailable')).toBeTruthy()
  expect(screen.queryByText('Apple TV')).toBeNull()
  expect(screen.queryByText('12 MB/s')).toBeNull()
  view.rerender(<TrayActivity gateway="stopped" onOpen={vi.fn()} />)
- const stoppedCalls = vi.mocked(api.deviceTraffic).mock.calls.length
+ const stoppedCalls = vi.mocked(desktopAction).mock.calls.length
  await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
- expect(api.deviceTraffic).toHaveBeenCalledTimes(stoppedCalls)
+ expect(desktopAction).toHaveBeenCalledTimes(stoppedCalls)
+})
+
+it('renders cached traffic without waiting for a stalled routing request', async () => {
+ vi.mocked(api.localRouting).mockReturnValue(new Promise(() => {}))
+ await act(async () => { render(<TrayActivity gateway="running" onOpen={vi.fn()} />) })
+ expect(screen.getByText('12 MB/s')).toBeTruthy()
+ expect(screen.getByText('Loading…')).toBeTruthy()
+ await act(async () => { await vi.advanceTimersByTimeAsync(4000) })
+ expect(desktopAction).toHaveBeenCalledTimes(5)
+ expect(api.localRouting).toHaveBeenCalledOnce()
+})
+
+it('does not turn the first baseline sample into a zero rate', async () => {
+ vi.mocked(desktopAction).mockResolvedValueOnce({ traffic: fixture, history: [{ time: Date.now(), upload: 0, download: 0 }], failed: false })
+ await act(async () => { render(<TrayActivity gateway="running" onOpen={vi.fn()} />) })
+ expect(screen.getByText('Sampling traffic…')).toBeTruthy()
+ expect(screen.queryByText('12 MB/s')).toBeNull()
+ await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+ expect(screen.getByText('12 MB/s')).toBeTruthy()
 })

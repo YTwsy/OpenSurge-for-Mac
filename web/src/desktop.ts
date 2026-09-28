@@ -19,6 +19,12 @@ export function controlEventsURL(): string {
 
 export function isDesktop(): boolean { return Boolean(desktopSession()) }
 
+export function markUIReady() {
+  document.documentElement.dataset.uiReady = 'true'
+  const bridge = (window as Window & { webkit?: { messageHandlers?: { opensurgeUIReady?: { postMessage: (value: string) => void } } } }).webkit
+  if (isDesktop()) bridge?.messageHandlers?.opensurgeUIReady?.postMessage('ready')
+}
+
 // WKWebView can permanently close EventSource when the private transport returns
 // a reconnect error. Recreate it explicitly; never reload the page to reconnect.
 export function watchControlEvents(onState: () => void): () => void {

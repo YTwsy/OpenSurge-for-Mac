@@ -62,9 +62,8 @@ func (h *desktopHost) uninstall(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, uninstallError(err)
 	}
-	h.popup.Hide()
 	selected := make(chan uninstall.Mode, 1)
-	dialog := h.app.Dialog.Warning().SetTitle(h.text("卸载 OpenSurge？", "Uninstall OpenSurge?"))
+	dialog, restore := h.foregroundWarning(h.text("卸载 OpenSurge？", "Uninstall OpenSurge?"), "")
 	dialog.SetMessage(h.text("将移除 OpenSurge App、用户级 Control Service 与 root Helper。\n\n保留数据会保留配置、订阅、凭据、策略、运行记录和日志；彻底卸载会一并删除这些数据。\n\n系统 IPv4 forwarding 状态不会被修改。尚未完成的路由器 DHCP 与 Mac 网络恢复步骤仍需手动完成。", "Remove the OpenSurge App, user Control Service and root Helper.\n\nKeeping data preserves configuration, subscriptions, credentials, policies, runtime records and logs. Removing all data deletes them.\n\nSystem IPv4 forwarding is unchanged. Any remaining router DHCP and Mac network recovery steps must still be completed manually."))
 	dialog.AddButton(h.text("保留数据并卸载", "Uninstall and Keep Data")).OnClick(func() { selected <- uninstall.KeepData })
 	dialog.AddButton(h.text("彻底卸载", "Remove All Data")).OnClick(func() { selected <- uninstall.RemoveAll })
@@ -72,6 +71,7 @@ func (h *desktopHost) uninstall(ctx context.Context) (bool, error) {
 	dialog.Show()
 	mode := <-selected
 	if mode == "" {
+		restore()
 		return false, nil
 	}
 	checkCtx, cancel = context.WithTimeout(ctx, 8*time.Second)

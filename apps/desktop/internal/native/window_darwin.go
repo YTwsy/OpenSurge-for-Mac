@@ -13,6 +13,8 @@ bool openSurgeExternalURLAllowed(const char *url);
 bool openSurgeSystemUsesEnglish(void);
 void setOpenSurgeWindowAppearance(void *window, bool dark);
 void configureOpenSurgeMenuBarIcon(void);
+void setOpenSurgeDockVisible(bool visible);
+void presentOpenSurgeWindow(void *window);
 */
 import "C"
 
@@ -50,4 +52,14 @@ func SetAppearance(window *application.WebviewWindow, theme string) {
 
 func ConfigureMenuBarIcon() {
 	C.configureOpenSurgeMenuBarIcon()
+}
+
+func SetDockVisible(visible bool) {
+	application.InvokeSync(func() { C.setOpenSurgeDockVisible(C.bool(visible)) })
+}
+
+// Present is only for explicit launch, reopen and user-triggered dialogs. It does
+// not make the main window permanently floating or reactivate background polls.
+func Present(window *application.WebviewWindow) {
+	application.InvokeSync(func() { C.presentOpenSurgeWindow(window.NativeWindow()) })
 }

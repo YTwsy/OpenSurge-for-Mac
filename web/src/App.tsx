@@ -80,6 +80,7 @@ export function App() {
   const connectionRefreshSuggestionID = useRef(0)
   const sleepPreventionGeneration = useRef(0)
   const languageGeneration = useRef(0)
+  const languagePending = useRef(false)
   const policiesScrollPosition = useRef<number | null>(null)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
@@ -94,8 +95,9 @@ export function App() {
 
   useEffect(() => watchDesktopLinks(setError), [])
 
-  const commitLanguage = useCallback(async (nextLanguage: RequestedLanguage) => {
+  const commitLanguage = useCallback(async (nextLanguage: RequestedLanguage, generation = languageGeneration.current) => {
     await prepareLanguage(nextLanguage)
+    if (generation !== languageGeneration.current) return
     activateLanguage(nextLanguage)
     setLanguage(nextLanguage)
   }, [])
@@ -109,8 +111,8 @@ export function App() {
         ? nextOverview
         : { ...nextOverview, sleep_prevention: current.sleep_prevention })
       setError('')
-      if (requestedLanguageGeneration === languageGeneration.current && isRequestedLanguage(nextOverview.ui_preferences?.language)) {
-        await commitLanguage(nextOverview.ui_preferences.language)
+      if (!languagePending.current && requestedLanguageGeneration === languageGeneration.current && isRequestedLanguage(nextOverview.ui_preferences?.language)) {
+        await commitLanguage(nextOverview.ui_preferences.language, requestedLanguageGeneration)
       }
     } catch (cause) {
       if (cause instanceof RequestError && cause.status === 401) {
@@ -123,9 +125,10 @@ export function App() {
   }, [commitLanguage])
 
   const changeLanguage = async (nextLanguage: RequestedLanguage) => {
-    if (languageChanging || nextLanguage === language) return
+    if (languagePending.current || nextLanguage === language) return
     const previousLanguage = language
     languageGeneration.current += 1
+    languagePending.current = true
     setLanguageChanging(true)
     try {
       await commitLanguage(nextLanguage)
@@ -138,6 +141,7 @@ export function App() {
       await commitLanguage(previousLanguage)
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
+      languagePending.current = false
       setLanguageChanging(false)
     }
   }

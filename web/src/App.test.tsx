@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { selectOption } from './test/select'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -270,12 +271,34 @@ describe('OpenSurge app shell', () => {
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
 
     const selector = screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' })
-    await userEvent.selectOptions(selector, 'en')
+    await selectOption(selector, 'en')
 
     await screen.findByRole('heading', { name: 'Your whole-home gateway at a glance' })
     expect(api.setUIPreferences).toHaveBeenCalledWith({ language: 'en' })
     expect(document.documentElement.lang).toBe('en')
     await waitFor(() => expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en'))
+  })
+
+  it('does not restore a stale language while a language save is pending', async () => {
+    let stateListener: EventListener | undefined
+    class TestEventSource {
+      addEventListener(type: string, listener: EventListener) { if (type === 'state') stateListener = listener }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', TestEventSource)
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, ui_preferences: { schema_version: 1, language: 'zh-Hans' } })
+    let saved!: (value: { schema_version: number; language: 'en' }) => void
+    vi.mocked(api.setUIPreferences).mockImplementationOnce(() => new Promise(resolve => { saved = resolve }))
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await selectOption(screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' }), 'en')
+    await screen.findByRole('heading', { name: 'Your whole-home gateway at a glance' })
+    await act(async () => stateListener?.(new Event('state')))
+    expect(screen.getByRole('heading', { name: 'Your whole-home gateway at a glance' })).toBeTruthy()
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, ui_preferences: { schema_version: 1, language: 'en' } })
+    await act(async () => saved({ schema_version: 1, language: 'en' }))
+    await waitFor(() => expect(screen.getByRole('combobox').hasAttribute('disabled')).toBe(false))
+    expect(document.documentElement.lang).toBe('en')
   })
 
   it('keeps network drafts mounted through desktop service loss and reconnect', async () => {
@@ -644,14 +667,15 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     expect((await screen.findByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.20')
-    const prefixSelect = screen.getByLabelText('下游 LAN 子网前缀') as HTMLSelectElement
-    expect(Array.from(prefixSelect.options, option => Number(option.value))).toEqual(Array.from({ length: 23 }, (_, index) => index + 8))
+    const prefixSelect = screen.getByLabelText('下游 LAN 子网前缀') as HTMLButtonElement
+    await userEvent.click(prefixSelect)
+    expect(screen.getAllByRole('option').map(option => Number(option.dataset.value))).toEqual(Array.from({ length: 23 }, (_, index) => index + 8))
     expect(screen.getByRole('option', { name: '/19（255.255.224.0）' })).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '根据当前网络重新填入' }))
 
     await waitFor(() => expect(api.networkDefaults).toHaveBeenCalledWith('same_wifi_dhcp'))
     await waitFor(() => expect((screen.getByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('10.0.8.20'))
-    expect((screen.getByLabelText('下游 LAN 子网前缀') as HTMLSelectElement).value).toBe('22')
+    expect((screen.getByLabelText('下游 LAN 子网前缀') as HTMLButtonElement).value).toBe('22')
     expect((screen.getByLabelText('DHCP 地址池起点') as HTMLInputElement).value).toBe('10.0.8.100')
     expect(api.saveConfig).not.toHaveBeenCalled()
   })
@@ -835,12 +859,12 @@ describe('OpenSurge app shell', () => {
     expect(window.location.pathname).toBe('/connections')
     await userEvent.click(await screen.findByRole('button', { name: '查看 本机 Mac 的连接' }))
     await userEvent.type(screen.getByRole('searchbox'), 'example')
-    fireEvent.change(screen.getByLabelText('来源地址族'), { target: { value: 'ipv6' } })
+    await selectOption(screen.getByLabelText('来源地址族'), 'ipv6')
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 420 })
     await userEvent.click(screen.getByRole('button', { name: '总览' }))
     await userEvent.click(screen.getByRole('button', { name: '连接' }))
     expect((await screen.findByRole('searchbox') as HTMLInputElement).value).toBe('example')
-    expect((screen.getByLabelText('来源地址族') as HTMLSelectElement).value).toBe('ipv6')
+    expect((screen.getByLabelText('来源地址族') as HTMLButtonElement).value).toBe('ipv6')
     expect(screen.getByRole('button', { name: '查看 本机 Mac 的连接' }).getAttribute('aria-pressed')).toBe('true')
     expect(new URLSearchParams(window.location.search).get('owner')).toBe('gateway-local')
     await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 420, behavior: 'instant' }))

@@ -54,6 +54,25 @@ architectures with `OPENSURGE_DESKTOP_ARCH=arm64 make desktop-build` and
 `OPENSURGE_DESKTOP_ARCH=x86_64 make desktop-build`. Restore the host architecture
 before launching; a successful cross-build does not establish Intel UI behavior.
 
+## Main window appearance and lifecycle
+
+In both themes, open a connection filter and the language picker. Confirm themed
+options and checkmarks, a thin green-grey scrollbar, and readable green text selection
+in a search field. Exercise Arrow keys, Home/End, typeahead, Enter and Escape; Escape
+must retain the previous selection, and clicking outside must close the menu.
+Switch languages, allow background refreshes, and reopen the main window to confirm
+the saved language and native menus agree. A failed save must restore the prior choice.
+
+Close the main window and confirm the Dock entry disappears while the tray remains.
+Reopen from the tray and a second launch; both restore Dock presence and the current
+page. Cmd-H also hides Dock presence. Covering the main window with another app must
+not hide the Dock entry; minimisation retains the usual Dock restore path.
+
+Launch with `--smoke-actions --smoke-startup-delay 3s` in the isolated fixture to
+inspect cold loading. Before React appears, the native window shows a light mint
+gradient and the OpenSurge icon, with no black frame. The normal host has no artificial
+delay. Logs distinguish native-placeholder installation from the first React frame.
+
 ## Menu-bar popup
 
 Open the native tray popup (or use `⌘⇧M`). Verify its compact layout without the
@@ -67,7 +86,8 @@ Set `recovery: true` and `recovery_stage: gateway_stopped_waiting_router_dhcp` i
 the fixture scenario to exercise recovery priority. Use `offline: true` to verify
 unreachable status clears stale values and disables the sleep control; restore it
 and increment `generation` to test reauthentication. With both windows hidden,
-only the native 15-second menu-bar monitor should keep polling; the main-window
+the native 15-second menu-bar status monitor keeps polling; a running/degraded
+gateway also keeps its native two-second traffic observation loop. The main-window
 reads and SSE remain stopped. This fixture never wakes or stops an installed service.
 
 The overview additionally needs a running fixture with `traffic` and `routing`
@@ -77,7 +97,10 @@ inactive inventory row, and a separate `gateway_local`. Verify Mac-first rows, a
 counts and rates after two samples. Routing and device rows must expand in place;
 only their explicit desktop links navigate, retaining the selected connection owner. Set
 `traffic_unavailable: true` to confirm old rates disappear; hide both windows for
-more than six seconds to confirm traffic reads stop and the chart restarts on reopen.
+more than twenty seconds, confirm native traffic reads continue while main UI/SSE
+reads stop, then reopen only the popup. Its retained curve/rates should display
+immediately, without waiting for a second renderer sample. A slow local-routing
+response must not delay traffic. Stopping the gateway must stop native traffic reads.
 Compare native light/dark backgrounds over another window, keyboard focus, and
 reduced transparency/contrast. The menu icon must use the original image at 18 points.
 Expand and collapse Network status repeatedly, including by keyboard: the disclosure
@@ -103,6 +126,11 @@ With a stopped fixture, open its confirmation, change the scenario to running, a
 confirm: the App must stay open and record no `bootout`. Reset to stopped, confirm
 again, and verify exactly one `bootout gui/<uid>/com.opensurge.control` followed by
 App exit. Cancellation must restore the popup. Test Cmd-Q as the UI-only route.
+Launch/reopen from behind another application and repeat after hiding/minimising
+the main window: the main window must come forward without becoming always-on-top.
+Start exit from the tray with the main window closed and another App in front. Its
+confirmation must be a visible sheet on the foreground main window; cancellation
+restores the hidden main window and popup. No lifecycle command may run on cancel.
 
 ## Login items and updates
 

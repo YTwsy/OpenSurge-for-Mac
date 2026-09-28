@@ -7,6 +7,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"open-mihomo-gateway/apps/desktop/internal/menustatus"
+	"open-mihomo-gateway/apps/desktop/internal/native"
 	"open-mihomo-gateway/apps/desktop/internal/servicelife"
 	"open-mihomo-gateway/apps/desktop/internal/uninstall"
 )
@@ -47,14 +48,31 @@ func (h *desktopHost) reconnect(ctx context.Context) error {
 	return nil
 }
 
+func (h *desktopHost) foregroundWarning(title, message string) (*application.MessageDialog, func()) {
+	visible, minimised := h.main.IsVisible(), h.main.IsMinimised()
+	h.show("")
+	restore := func() {
+		if minimised {
+			h.main.Minimise()
+		} else if !visible {
+			h.main.Hide()
+			native.SetDockVisible(false)
+		}
+	}
+	return h.app.Dialog.Warning().SetTitle(title).SetMessage(message).AttachToWindow(h.main), restore
+}
+
 func (h *desktopHost) confirm(title, message, accept string) bool {
-	h.popup.Hide()
 	result := make(chan bool, 1)
-	dialog := h.app.Dialog.Warning().SetTitle(title).SetMessage(message)
+	dialog, restore := h.foregroundWarning(title, message)
 	dialog.AddButton(accept).OnClick(func() { result <- true })
 	dialog.AddButton(h.text("取消", "Cancel")).SetAsCancel().SetAsDefault().OnClick(func() { result <- false })
 	dialog.Show()
-	return <-result
+	accepted := <-result
+	if !accepted {
+		restore()
+	}
+	return accepted
 }
 func (h *desktopHost) quit(ctx context.Context, full bool) (bool, error) {
 	if !h.quitBusy.CompareAndSwap(false, true) {
@@ -115,9 +133,8 @@ func (h *desktopHost) quitFromMenu(full bool) {
 			return
 		}
 		if err != nil && !h.quitting.Load() {
-			h.popup.Hide()
-			dialog := h.app.Dialog.Warning().SetTitle("OpenSurge").SetMessage(h.text("未能退出。请重新连接后台服务，并确认已在网络设置中停止网关、完成恢复。", "Could not quit. Reconnect to the service, stop the gateway and complete recovery in Network Settings."))
-			dialog.AddButton(h.text("好", "OK")).SetAsDefault()
+			dialog, restore := h.foregroundWarning("OpenSurge", h.text("未能退出。请重新连接后台服务，并确认已在网络设置中停止网关、完成恢复。", "Could not quit. Reconnect to the service, stop the gateway and complete recovery in Network Settings."))
+			dialog.AddButton(h.text("好", "OK")).SetAsDefault().OnClick(restore)
 			dialog.Show()
 		}
 	}()
