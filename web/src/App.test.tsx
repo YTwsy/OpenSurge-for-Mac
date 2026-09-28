@@ -275,7 +275,7 @@ describe('OpenSurge app shell', () => {
     await screen.findByRole('heading', { name: 'Your whole-home gateway at a glance' })
     expect(api.setUIPreferences).toHaveBeenCalledWith({ language: 'en' })
     expect(document.documentElement.lang).toBe('en')
-    expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en')
+    await waitFor(() => expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en'))
   })
 
   it('keeps network drafts mounted through desktop service loss and reconnect', async () => {
