@@ -152,6 +152,11 @@ These choices follow Apple's [materials](https://developer.apple.com/design/huma
 [typography](https://developer.apple.com/design/human-interface-guidelines/typography)
 guidance rather than sampling screenshot colours.
 
+The popup's active-device **View all** action targets `dashboard#active-devices`;
+the native navigation capability only accepts this section on Dashboard. React
+scrolls and focuses the section after rendering, even for repeated requests while
+Dashboard is already open. Individual device links retain Connections owner filters.
+
 The popup fits its content instead of scrolling inside a fixed-height window.
 Network details use a 220 ms disclosure transition and the historical Swift Grid's
 leading columns, 14-point column gap, 7-point row gap and caption text. A tray-only

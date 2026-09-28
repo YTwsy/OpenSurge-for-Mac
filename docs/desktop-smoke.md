@@ -95,8 +95,15 @@ objects in `scenario.json` (merged into their existing API responses). Use RFC 3
 sample timestamps supplied by the fixture, three downstream devices including one
 inactive inventory row, and a separate `gateway_local`. Verify Mac-first rows, active
 counts and rates after two samples. Routing and device rows must expand in place;
-only their explicit desktop links navigate, retaining the selected connection owner. Set
-`traffic_unavailable: true` to confirm old rates disappear; hide both windows for
+only their explicit desktop links navigate, retaining the selected connection owner.
+The active-device heading's **View all** opens the main Dashboard and scrolls/focuses
+its **Active devices** section, including when Dashboard is already open. It does
+not open Connections; each device's explicit connection link still does.
+In Diagnostics, set `logs` in `scenario.json` to a process-name-to-lines object with
+a long unbroken log line and confirm only its Recent logs region
+scrolls horizontally, with no page-wide horizontal scrollbar; check keyboard access
+to the log region as well as trackpad scrolling.
+Set `traffic_unavailable: true` to confirm old rates disappear; hide both windows for
 more than twenty seconds, confirm native traffic reads continue while main UI/SSE
 reads stop, then reopen only the popup. Its retained curve/rates should display
 immediately, without waiting for a second renderer sample. A slow local-routing

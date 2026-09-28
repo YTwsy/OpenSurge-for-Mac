@@ -4,8 +4,8 @@ html[data-theme="light"]{color-scheme:light;background:radial-gradient(circle at
 body{margin:0;min-width:1080px;min-height:100vh;background:transparent;color:#eaf2ee}
 button,input,:is(select,.select-control){font:inherit}
 button{cursor:pointer}
-:where(button,input,:is(select,.select-control),summary):focus-visible{outline:3px solid #72e1b0;outline-offset:2px}
-.app-shell{display:grid;grid-template-columns:238px 1fr;min-height:100vh}
+:where(button,input,:is(select,.select-control),summary,.recent-logs pre):focus-visible{outline:3px solid #72e1b0;outline-offset:2px}
+.app-shell{display:grid;grid-template-columns:238px minmax(0,1fr);min-height:100vh}
 .sidebar{position:fixed;inset:0 auto 0 0;width:238px;padding:28px 18px;border-right:1px solid #20302b;background:#091512cc;backdrop-filter:blur(24px);display:flex;flex-direction:column}
 .brand{display:flex;align-items:center;gap:12px;padding:0 10px 32px}
 .brand-mark{width:42px;height:42px;display:block;object-fit:contain;flex:0 0 auto}
@@ -20,7 +20,7 @@ button{cursor:pointer}
 .sidebar-status strong,.sidebar-status small{display:block}
 .sidebar-status strong{font-size:13px}
 .sidebar-status small{color:#71847d;font-size:11px;font-weight:400;margin-top:3px;white-space:nowrap}
-.workspace{grid-column:2;padding:42px 54px 72px;max-width:1500px;width:100%;margin:auto}
+.workspace{grid-column:2;padding:42px 54px 72px;min-width:0;max-width:1500px;width:100%;margin:auto}
 .page-header{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:34px}
 .page-header small,.gateway-card small,.metric small,.source-card small,.device-card small,.this-mac small,.policy-list small{letter-spacing:.14em;color:#79e6b3;font-weight:700}
 .page-header h1{font-size:34px;margin:7px 0 8px;letter-spacing:-.035em}
@@ -42,6 +42,7 @@ button{cursor:pointer}
 .section{padding:25px;margin-top:18px}
 .section-title h2{font-size:18px;margin:0}
 .section-title p{margin:5px 0 18px;color:#758a82;font-size:13px}
+.recent-logs pre{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
 .diagnostic-doctor-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.diagnostic-doctor-head>.section-title{min-width:0}.diagnostic-doctor-head>button{display:flex;align-items:center;justify-content:center;gap:8px;flex:0 0 auto}.diagnostic-doctor-head>button:disabled{opacity:.55;cursor:not-allowed}
 .service-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .service{border:1px solid #1d302a;border-radius:12px;padding:15px;display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center}
@@ -97,7 +98,7 @@ button{cursor:pointer}
 .trend-chart{margin-top:5px}.trend-chart svg{display:block;width:100%;height:150px;overflow:visible}.gateway-trend-card .trend-chart svg{height:112px}.chart-grid-line{stroke:#375047;stroke-width:.28;opacity:.38}.trend-line{fill:none;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}.trend-line.upload{stroke:#8c7cf5}.trend-line.download{stroke:#58bce8}
 .trend-axis{display:flex;justify-content:space-between;margin-top:-5px;color:#586d65;font-size:8px}
 @keyframes traffic-live-pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 3px #69dfa712}50%{transform:scale(1.18);box-shadow:0 0 0 6px #69dfa706}}
-.traffic-section{overflow:hidden;overflow-anchor:none}
+.traffic-section{overflow:hidden;overflow-anchor:none;scroll-margin-top:72px}
 .traffic-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}.traffic-section-heading h2{margin:0;font-size:18px}.traffic-section-heading p{margin:5px 0 0;color:#758a82;font-size:12px}.traffic-section-heading button{border:1px solid #2b493e;border-radius:8px;background:#132720;color:#a7bab2;padding:7px 10px;font-size:10px;font-weight:750}
 .device-traffic-layout{display:grid;grid-template-columns:minmax(0,1fr) 0fr;gap:0;align-items:stretch;transition:grid-template-columns .46s cubic-bezier(.22,1,.36,1),gap .46s cubic-bezier(.22,1,.36,1)}
 .device-traffic-layout.expanded{grid-template-columns:minmax(0,1.22fr) minmax(330px,.78fr);gap:16px}

@@ -35,6 +35,9 @@ it('shows live rates, counts active downstream devices, and expands details befo
  expect(screen.queryByText('Idle phone')).toBeNull()
  const devices = screen.getAllByRole('button', { name: /^Device details: / })
  expect(devices[0].textContent).toContain('This Mac')
+ fireEvent.click(screen.getByRole('button', { name: /View all/ }))
+ expect(open).toHaveBeenCalledWith('dashboard', { section: 'active-devices' })
+ open.mockClear()
  fireEvent.click(screen.getByRole('button', { name: /This Mac’s routing/ }))
  expect(open).not.toHaveBeenCalled()
  expect(screen.getByText('Applies to this Mac only. LAN devices keep their own routing settings.')).toBeTruthy()
@@ -45,7 +48,7 @@ it('shows live rates, counts active downstream devices, and expands details befo
  expect(open).not.toHaveBeenCalled()
  expect(screen.queryByRole('button', { name: 'Configure in desktop window' })).toBeNull()
  fireEvent.click(screen.getByRole('button', { name: /connections for Apple TV/ }))
- expect(open).toHaveBeenCalledWith('connections', 'device:tv')
+ expect(open).toHaveBeenCalledWith('connections', { owner: 'device:tv' })
  expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
 })
 
