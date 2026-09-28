@@ -851,6 +851,30 @@ describe('OpenSurge app shell', () => {
     expect(window.location.pathname).toBe('/connectivity')
   })
 
+  it('targets active devices from the tray, including repeated navigation, while retaining per-device connection links', async () => {
+    const traffic = await api.deviceTraffic()
+    vi.mocked(api.connections).mockResolvedValue({ ...traffic, gateway_totals: traffic.totals, unclassified: { ...traffic.gateway_local, key: 'unclassified', identity_source: 'unclassified' }, connections: [] })
+    window.history.replaceState({}, '', '/diagnostics')
+    render(<App />)
+    await screen.findByRole('heading', { name: '诊断与 Provider' })
+
+    fireEvent(window, new CustomEvent('opensurge:navigate', { detail: 'dashboard#active-devices' }))
+    const devices = await screen.findByRole('region', { name: '活跃设备' })
+    await waitFor(() => expect(document.activeElement).toBe(devices))
+    expect(window.location.pathname + window.location.hash).toBe('/dashboard#active-devices')
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', block: 'start' })
+
+    scrollIntoView.mockClear()
+    fireEvent(window, new CustomEvent('opensurge:navigate', { detail: 'dashboard#active-devices' }))
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledOnce())
+    expect(document.activeElement).toBe(devices)
+
+    fireEvent(window, new CustomEvent('opensurge:navigate', { detail: 'connections?owner=gateway-local' }))
+    await waitFor(() => expect(window.location.pathname).toBe('/connections'))
+    expect(new URLSearchParams(window.location.search).get('owner')).toBe('gateway-local')
+    expect((await screen.findByRole('button', { name: '查看 本机 Mac 的连接' })).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('opens Connections from the dashboard and preserves its device, filters and scroll when returning', async () => {
     const traffic = await api.deviceTraffic()
     vi.mocked(api.connections).mockResolvedValue({ ...traffic, gateway_totals: traffic.totals, unclassified: { ...traffic.gateway_local, key: 'unclassified', identity_source: 'unclassified' }, connections: [] })

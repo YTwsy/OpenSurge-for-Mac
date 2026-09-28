@@ -63,6 +63,7 @@ function networkNavigationHash(target: NetworkNavigationTarget) {
 
 export function App() {
   const [page, setPage] = useState<Page>(currentPage)
+  const [dashboardNavigationRequest, setDashboardNavigationRequest] = useState(0)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [error, setError] = useState('')
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
@@ -199,12 +200,25 @@ export function App() {
   const goRef = useRef(go)
   goRef.current = go
   useEffect(() => {
+    if (page !== 'dashboard' || window.location.hash !== '#active-devices') return
+    const section = document.getElementById('active-devices')
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    section?.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
+    section?.focus({ preventScroll: true })
+  }, [page, dashboardNavigationRequest, authenticationRequired])
+
+  useEffect(() => {
     const navigate = (event: Event) => {
       const path = (event as CustomEvent<string>).detail
       if (typeof path !== 'string') return
-      const [page, query = ''] = path.split('?')
+      const [route, section = ''] = path.split('#')
+      const [page, query = ''] = route.split('?')
       if (!nav.some(item => item.id === page)) return
       if (!goRef.current(page as Page, page === 'network' ? 'control' : 'none')) return
+      if (page === 'dashboard' && section === 'active-devices') {
+        history.replaceState({}, '', '/dashboard#active-devices')
+        setDashboardNavigationRequest(request => request + 1)
+      }
       if (page === 'connections') {
         const owner = new URLSearchParams(query).get('owner') || 'all'
         setConnectionsView({ ...initialConnectionsView(), owner })

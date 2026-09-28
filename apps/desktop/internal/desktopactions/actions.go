@@ -44,6 +44,7 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Language string `json:"language"`
 		Page     string `json:"page"`
 		Owner    string `json:"owner"`
+		Section  string `json:"section"`
 		Theme    string `json:"theme"`
 		Refresh  bool   `json:"refresh"`
 		Enabled  *bool  `json:"enabled"`
@@ -96,6 +97,10 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unsupported connection owner", http.StatusBadRequest)
 			return
 		}
+		if payload.Section != "" && (payload.Page != "dashboard" || payload.Section != "active-devices") {
+			http.Error(w, "unsupported page section", http.StatusBadRequest)
+			return
+		}
 		target := payload.Page
 		if payload.Page == "connections" {
 			owner := payload.Owner
@@ -103,6 +108,9 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				owner = "all"
 			}
 			target += "?owner=" + url.QueryEscape(owner)
+		}
+		if payload.Section != "" {
+			target += "#" + payload.Section
 		}
 		a.ShowMain(target)
 	case "/desktop/v1/sleep-prevention":

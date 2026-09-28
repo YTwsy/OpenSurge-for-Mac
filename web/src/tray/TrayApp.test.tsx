@@ -22,6 +22,8 @@ it('opens the existing main window and copies a credential-free diagnostic summa
  await screen.findByText('192.0.2.10', { selector: '.tray-subtitle span' })
  await userEvent.click(screen.getByRole('button', { name: /Open OpenSurge/ }))
  expect(desktopAction).toHaveBeenCalledWith('show-main', { page: 'dashboard' })
+ await userEvent.click(screen.getByRole('button', { name: /View all/ }))
+ expect(desktopAction).toHaveBeenCalledWith('show-main', { page: 'dashboard', section: 'active-devices' })
  await userEvent.click(screen.getByLabelText('More actions'))
  await userEvent.click(screen.getByRole('button', { name: 'Copy diagnostic summary' }))
  expect(copyText).toHaveBeenCalledWith(diagnosticSummary(fixture.status))

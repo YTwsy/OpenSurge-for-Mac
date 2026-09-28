@@ -38,23 +38,31 @@ func TestTrayNavigationAndAppearance(t *testing.T) {
 	for _, test := range []struct {
 		action, body string
 		want         int
+		wantTarget   string
 	}{
-		{"show-main", `{"page":"devices"}`, 200},
-		{"show-main", `{"page":"connections","owner":"device:tv & family"}`, 200},
-		{"show-main", `{"page":"https://example.com"}`, 400},
-		{"show-main", `{"page":"network","owner":"device:tv"}`, 400},
-		{"show-main", `{"page":"connections","owner":"bad\nowner"}`, 400},
-		{"tray-appearance", `{"theme":"light"}`, 200},
-		{"tray-appearance", `{"theme":"dark"}`, 200},
-		{"tray-appearance", `{"theme":"arbitrary"}`, 400},
+		{"show-main", `{"page":"devices"}`, 200, "devices"},
+		{"show-main", `{"page":"dashboard","section":"active-devices"}`, 200, "dashboard#active-devices"},
+		{"show-main", `{"page":"connections","owner":"device:tv & family"}`, 200, "connections?owner=device%3Atv+%26+family"},
+		{"show-main", `{"page":"https://example.com"}`, 400, ""},
+		{"show-main", `{"page":"network","owner":"device:tv"}`, 400, ""},
+		{"show-main", `{"page":"connections","owner":"bad\nowner"}`, 400, ""},
+		{"show-main", `{"page":"network","section":"active-devices"}`, 400, ""},
+		{"show-main", `{"page":"dashboard","section":"active-devices?owner=all"}`, 400, ""},
+		{"tray-appearance", `{"theme":"light"}`, 200, ""},
+		{"tray-appearance", `{"theme":"dark"}`, 200, ""},
+		{"tray-appearance", `{"theme":"arbitrary"}`, 400, ""},
 	} {
+		target = ""
 		w := httptest.NewRecorder()
 		a.ServeHTTP(w, httptest.NewRequest("POST", "/desktop/v1/"+test.action, strings.NewReader(test.body)))
 		if w.Code != test.want {
 			t.Fatalf("%s: got %d: %s", test.body, w.Code, w.Body.String())
 		}
+		if target != test.wantTarget {
+			t.Fatalf("%s: target=%q, want %q", test.body, target, test.wantTarget)
+		}
 	}
-	if target != "connections?owner=device%3Atv+%26+family" || theme != "dark" {
+	if theme != "dark" {
 		t.Fatalf("target=%q theme=%q", target, theme)
 	}
 }

@@ -76,7 +76,7 @@ export function TrayApp() {
   setError('')
   try { await action() } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : String(cause)) }
  }
- const show = (page: string, owner?: string) => void run(() => desktopAction('show-main', owner ? { page, owner } : { page }))
+ const show = (page: string, options?: { owner?: string; section?: 'active-devices' }) => void run(() => desktopAction('show-main', { page, ...options }))
  const serviceAction = async (action: 'reconnect' | 'quit', full = false) => {
   if (serviceBusy) return
   setServiceBusy(true)

@@ -5,7 +5,7 @@ import { buildSmoothChart } from '../trafficChart'
 import { formatRate } from '../trafficFormat'
 import { useTrayActivity } from './useTrayActivity'
 
-export function TrayActivity({ gateway, onOpen }: { gateway?: string; onOpen: (page: string, owner?: string) => void }) {
+export function TrayActivity({ gateway, onOpen }: { gateway?: string; onOpen: (page: string, options?: { owner?: string; section?: 'active-devices' }) => void }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const detailID = useId()
   const toggle = (key: string) => setExpanded(current => current === key ? null : key)
@@ -48,7 +48,7 @@ export function TrayActivity({ gateway, onOpen }: { gateway?: string; onOpen: (p
       </div></div></div>
     </div>
     <section className="tray-devices" aria-label={t('活跃设备')}>
-      <div className="tray-section-heading"><h2>{t('活跃设备')}</h2><button className="tray-text-button" onClick={() => onOpen('connections', 'all')}>{t('查看全部')} <span aria-hidden="true">›</span></button></div>
+      <div className="tray-section-heading"><h2>{t('活跃设备')}</h2><button className="tray-text-button" onClick={() => onOpen('dashboard', { section: 'active-devices' })}>{t('查看全部')} <span aria-hidden="true">›</span></button></div>
       {devices.length ? <div className="tray-device-list">{devices.map((device, index) => {
         const key = connectionOwnerKey(device)
         const name = index === 0 ? t('本机 Mac') : connectionDeviceName(device)
@@ -64,7 +64,7 @@ export function TrayActivity({ gateway, onOpen }: { gateway?: string; onOpen: (p
           <div><dt>{t('下载')}</dt><dd>{sampled ? formatRate(device.download_rate) : '—'}</dd></div>
           {device.primary_egress && <div><dt>{t('当前出口')}</dt><dd title={device.primary_egress}>{device.primary_egress}</dd></div>}
         </dl>
-        <button className="tray-text-button" onClick={() => onOpen('connections', key)} aria-label={t('查看 {{name}} 的连接', { name })}>{t('在桌面窗口中查看连接')} <span aria-hidden="true">↗</span></button>
+        <button className="tray-text-button" onClick={() => onOpen('connections', { owner: key })} aria-label={t('查看 {{name}} 的连接', { name })}>{t('在桌面窗口中查看连接')} <span aria-hidden="true">↗</span></button>
       </div></div></div></div>
       })}</div> : <p className="tray-empty">{t(!running ? '启动网关后显示活跃设备' : trafficFailed ? '设备流量暂不可用' : '正在读取活跃设备…')}</p>}
       <p className="tray-caption">{traffic ? t('活跃下游 {{devices}} 台 · 总连接 {{connections}}', { devices: activeDevices, connections }) : t('本机 Mac 与下游设备分别统计')}</p>
