@@ -51,10 +51,23 @@ confirmation, then delegates to the existing installed script. The preview ident
 cannot uninstall a production installation; smoke mode records fixture actions only.
 Run the native client and host boundary tests with `make desktop-test`.
 
-This preview has a separate bundle identifier and output path; production
-PKG builds continue to use the existing menu-bar application until the installation
-cutover is independently reviewed. The local bundle is ad-hoc signed, not Developer
-ID signed or notarized.
+`make desktop-production-build` builds `bin/OpenSurge.app` with the existing
+installed identity `com.opensurge.menubar` and the new `OpenSurgeDesktop` executable.
+It accepts `OPENSURGE_APP_ARCH`, `OPENSURGE_VERSION`, `OPENSURGE_BUILD_NUMBER` and
+`OPENSURGE_RELEASE_TAG`; version and tag must agree. Both variants are built in a
+clean staging bundle and verified for metadata, architecture, macOS 13 deployment
+target and ad-hoc signature. Rebuilding a running output is refused.
+
+Only the production identity at `/Applications/OpenSurge.app`, using the default
+Control Service directory, wakes the installed user service once on launch. It does
+not restart an already running service or start the gateway. A failed wake leaves
+the UI available for explicit reconnect. A custom directory never operates the real
+job; production `--smoke-actions` exercises launch wake with a fixture runner.
+Preview and production single-instance identities are separate.
+
+The preview retains its separate identifier and output. PKG builds still ship Swift
+until the installer cutover PR. Local bundles are ad-hoc signed, not Developer ID
+signed or notarized.
 
 See [the migration plan](../../docs/desktop-migration.md) and
 [the desktop host contract](../../docs/agent-wiki/wiki/concepts/desktop-host.md).

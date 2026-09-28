@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -20,6 +21,10 @@ import (
 	"open-mihomo-gateway/apps/desktop/internal/servicelife"
 	"open-mihomo-gateway/internal/webui"
 )
+
+// Stamped together with Info.plist by the bundle builder. Preview and installed
+// hosts must not forward launch requests to one another.
+var bundleIdentifier = "com.opensurge.desktop.preview"
 
 func main() {
 	directory, err := controlclient.DefaultDirectory()
@@ -78,7 +83,7 @@ func main() {
 		OnShutdown: cancel,
 		ShouldQuit: host.shouldQuit,
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: fmt.Sprintf("com.opensurge.desktop.preview.%x", sha256.Sum256([]byte(directory))),
+			UniqueID: fmt.Sprintf("%s.%x", bundleIdentifier, sha256.Sum256([]byte(directory))),
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
 				go func() { <-ready; host.show("") }()
 			},
@@ -102,7 +107,18 @@ func main() {
 			native.SetLanguage(window, language == "en")
 		}
 		close(ready)
-		go host.status.Run(lifetime)
+		go func() {
+			// Only the installed bundle wakes the installed user job on launch.
+			// Production smoke acceptance uses the same path with a fake runner.
+			if (directory == defaultDirectory && native.IsInstalledApp()) || (*smokeActions && bundleIdentifier == "com.opensurge.menubar") {
+				ctx, done := context.WithTimeout(lifetime, 20*time.Second)
+				if err := host.reconnect(ctx); err != nil {
+					log.Print("Control Service could not be woken; use Reconnect to retry")
+				}
+				done()
+			}
+			host.status.Run(lifetime)
+		}()
 		go host.updates.Run(lifetime)
 	})
 	host.setMenu(false)

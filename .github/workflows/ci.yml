@@ -52,3 +52,10 @@ jobs:
         env:
           OPENSURGE_DESKTOP_ARCH: ${{ matrix.arch }}
         run: make desktop-build
+      - name: Build production desktop bundle
+        env:
+          OPENSURGE_APP_ARCH: ${{ matrix.arch }}
+          OPENSURGE_VERSION: 0.2.4
+          OPENSURGE_BUILD_NUMBER: 42
+          OPENSURGE_RELEASE_TAG: v0.2.4-next
+        run: ./scripts/build-desktop-app.sh production

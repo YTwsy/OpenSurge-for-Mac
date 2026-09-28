@@ -50,7 +50,7 @@ unacknowledged privileged mutation.
 
 The main window persists its frame, hides on close, and reopens through Dock or a
 second launch without replacing its React tree. Single-instance scope includes the
-canonical discovery directory so fixture acceptance cannot redirect an installed host.
+absolute discovery directory so fixture acceptance cannot redirect an installed host.
 Native View-menu navigation preserves React's existing dirty-device guard; refresh
 requests state without reloading. The host loads the pinned Wails runtime explicitly
 so native-to-renderer events are delivered through the supported bridge.
@@ -65,8 +65,10 @@ bounded native actions: external links, clipboard, language, recovery-card savin
 window navigation and the status/lifecycle/settings capabilities described below.
 Browser file/link behavior remains supported.
 
-The preview bundle uses a distinct identifier and build output. Production identity,
-launchd and installer sequencing are a separate migration stage. Development preview
+The preview bundle uses a distinct identifier and build output. The production build
+uses `com.opensurge.menubar` at `bin/OpenSurge.app` with `OpenSurgeDesktop` as its
+executable. Version/build/tag are stamped and verified together. Single-instance
+scope includes both the bundle identity and discovery directory. Development preview
 builds must not register login items or change installed network services on launch.
 
 The menu-bar window uses a separate frontend entry and stylesheet; it does not load
@@ -88,7 +90,9 @@ loss, and opens the existing main window for panel/recovery/diagnostic actions.
 
 Service lifecycle uses a closed native capability. Explicit reconnect checks the
 fixed user LaunchAgent, bootstraps its installed plist if needed, and kickstarts it
-without `-k`; launch itself never wakes it. Custom discovery directories cannot
+without `-k`. The production identity at `/Applications/OpenSurge.app` wakes that
+job once on launch when using the default discovery directory; preview launch does
+not. Failure leaves explicit reconnect available. Custom discovery directories cannot
 operate launchd. A serial coordinator prevents reconnect from resurrecting a service
 during exit. UI-only exit (including Cmd-Q and Dock Quit) confirms that the gateway
 and Control Service continue. Full exit requires the existing `can_quit` contract
