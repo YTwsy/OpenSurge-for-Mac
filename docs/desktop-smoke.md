@@ -8,7 +8,7 @@ Swift host. The shared frontend identifies an unversioned Next build as
 Use the isolated fixture for actions, restart and failure tests:
 
 ```sh
-python3 scripts/desktop-smoke-service.py /private/tmp/opensurge-desktop-smoke
+python3 scripts/desktop-smoke-service.py /private/tmp/opensurge-desktop-smoke --web-root internal/webui/dist
 # In another terminal:
 "bin/OpenSurge Desktop Preview.app/Contents/MacOS/OpenSurgeDesktop" \
   --control-dir /private/tmp/opensurge-desktop-smoke
@@ -109,7 +109,20 @@ reads stop, then reopen only the popup. Its retained curve/rates should display
 immediately, without waiting for a second renderer sample. A slow local-routing
 response must not delay traffic. Stopping the gateway must stop native traffic reads.
 Compare native light/dark backgrounds over another window, keyboard focus, and
-reduced transparency/contrast. The menu icon must use the original image at 18 points.
+reduced transparency/contrast. The menu icon must use the original image at 18 points:
+stopped at 55% opacity, unreachable at 35%, connecting at 75%, and running at 100%,
+without adjacent text badges. Check degraded/recovery warning symbols and returning
+to the brand image afterward. Smoke logs report the actual native size and opacity.
+Opening the popup must not put a blue ring on More actions. Press Tab to reach More
+and confirm a visible keyboard focus ring, Enter/Space to open, and Escape to dismiss
+the popup. Repeat after hiding/reopening and after a pointer click.
+
+From More actions, choose **Open in browser**. With `--web-root` above, the system
+browser must reach the shared Dashboard using the fixture's HttpOnly session; the
+desktop must stay on its existing page. Repeat after changing fixture `generation`
+or restarting its port, and verify an offline failure remains retryable without
+opening a stale link. Inspect only synthetic fixture requests; no real credentials
+or bootstrap grants should appear in UI errors or request logs.
 Expand and collapse Network status repeatedly, including by keyboard: the disclosure
 and native window must animate together, keep the top edge anchored and show no right
 scrollbar. Values align at the start of the second column as in the Swift Grid.

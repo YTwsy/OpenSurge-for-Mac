@@ -88,6 +88,24 @@ func (c *Client) BootstrapURL(ctx context.Context, path string) (string, error) 
 	return c.bootstrapURL(ctx, discovery, path)
 }
 
+// OpenBrowser mints a separate dashboard grant on each explicit request. The
+// validated URL goes straight to the native opener, never to the renderer or
+// through the desktop session exchange (which would consume the browser grant).
+func (c *Client) OpenBrowser(ctx context.Context, openURL func(string) error) error {
+	location, err := c.BootstrapURL(ctx, "dashboard")
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := openURL(location); err != nil {
+		// Native opener errors can include the one-time URL.
+		return errors.New("could not open browser")
+	}
+	return nil
+}
+
 type discovery struct {
 	base     *url.URL
 	token    string

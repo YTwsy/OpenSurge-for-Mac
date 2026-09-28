@@ -101,6 +101,13 @@ bounded native actions: external links, clipboard, language, recovery-card savin
 window navigation and the status/lifecycle/settings capabilities described below.
 Browser file/link behavior remains supported.
 
+The popup's **Open in browser** action is a separate, argument-free native
+capability. It rereads Control Service discovery/credentials, obtains a fresh
+Dashboard bootstrap grant and passes the validated loopback URL directly to the
+system browser. It does not consume the grant through the desktop relay or return
+the URL/cookie/credential to JavaScript. Failure keeps the action available for an
+explicit retry; it neither starts a gateway nor replays a previous request.
+
 The preview bundle uses a distinct identifier and build output. The production build
 uses `com.opensurge.menubar` at `bin/OpenSurge.app` with `OpenSurgeDesktop` as its
 executable. Version/build/tag are stamped and verified together. Single-instance
@@ -175,7 +182,18 @@ resize the image. Before tray creation, the native adapter installs a process-lo
 `NSStatusBarButton.setImage:` adaptation, gated to Wails' `StatusItemController` target.
 It restores the 18-point template size on every image assignment, without raster
 resampling or changing the superclass `NSButton` setter. Recheck this adaptation when
-upgrading Wails; smoke mode logs the actual assigned image dimensions.
+upgrading Wails; smoke mode logs the actual assigned image dimensions and opacity.
+Match the Swift host's state appearance: brand image at 0.75 opacity while connecting,
+0.55 when stopped, 0.35 when unreachable, and 1.0 while running. Degraded/recovery
+use the original AppKit warning symbols at full opacity. Do not append text badges
+that widen the status item. Keep the brand source separate from rendered warning images.
+The adapter also applies the localised tooltip/accessibility label; the pinned Wails
+macOS `SetTooltip` implementation is a no-op.
+
+On opening, the popup focuses its non-tabbable main panel instead of letting WebKit
+automatically highlight the first **More actions** control. Tab enters the controls
+normally with visible keyboard focus; native Escape dismissal still hides the popup. Pointer
+focus does not acquire the browser's fallback focus outline.
 
 Both desktop windows route explicit sleep-prevention changes through the existing
 Control API using one native serialisation boundary shared with menu-bar reads.

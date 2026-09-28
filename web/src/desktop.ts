@@ -65,6 +65,7 @@ export async function desktopAction<T = { ok: boolean }>(action: string, body: R
   if (!response.ok) {
     const failure = await response.json().catch(() => null) as { error?: { code?: string } } | null
     const messages: Record<string, string> = {
+      desktop_browser_failed: '无法在浏览器中打开。请确认后台服务可用后重试。',
       desktop_exit_unsafe: '请先在网络设置中停止网关并完成恢复。',
       desktop_uninstall_unsafe: '请先在网络设置中停止网关，再卸载 OpenSurge。',
       desktop_uninstall_unavailable: '当前 App 无法卸载已安装的 OpenSurge。',
