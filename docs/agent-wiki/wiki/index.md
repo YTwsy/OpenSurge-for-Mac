@@ -26,8 +26,8 @@
   所有权恢复、独立的 host IPv6 路由与真实系统解析验收。
 - [Tailscale 出站](concepts/tailscale-outbound.md)：托管节点身份、目标范围、
   subnet route、Exit Node 与 outbound-only 边界。
-- [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、SwiftUI 菜单栏
-  launcher、本地 API 与恢复状态的职责边界。
+- [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、Wails 桌面
+  宿主、本地 API 与恢复状态的职责边界。
 - [桌面宿主迁移](concepts/desktop-host.md)：Next 分支的 Wails 宿主、React 界面复用、
   独立后台服务与桌面生命周期契约。
 - [合盖运行临时接管](../sources/decisions/lid-closed-sleep-prevention.md)：为什么
@@ -44,8 +44,8 @@ mihomo 提供代理行为，macOS pf/sysctl 提供 IPv4 NAT 和 forwarding。实
 下游 IPv6 通过 dnsmasq RA/SLAAC/RDNSS 或手工 ULA 接入，再由 macOS BPF broker
 与本项目补丁构建的 mihomo 用户态数据面接管。
 
-当前面向操作者的主要控制面是 React Web GUI。SwiftUI 菜单栏 App 显示网关状态、
-恢复提醒并打开 Web GUI；loopback Control API 连接界面与 Go 业务规则，root Helper
+Next 面向操作者的主要控制面是 Wails 系统 WebView 内的 React 主窗口；菜单栏
+面板显示网关状态、恢复提醒并打开同一个主窗口。浏览器 Web GUI 继续受支持；loopback Control API 连接界面与 Go 业务规则，root Helper
 执行固定的特权动作。`omg` CLI 不再代表产品形态，但仍是受支持的运维、诊断、
 自动化和恢复接口。
 
@@ -63,7 +63,7 @@ leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo AP
 
 - 公开范围与 App/CLI 工作流：`README.md`
 - 示例配置：`examples/config.example.yaml`
-- GUI 控制面：`internal/controlapi/`、`web/`、`apps/menubar/` 和
+- GUI 控制面：`internal/controlapi/`、`web/`、`apps/desktop/` 和
   `concepts/gui-control-plane.md`
 - 生命周期代码：`internal/gateway/manager.go`
 - 配置验证：`internal/config/validator.go`

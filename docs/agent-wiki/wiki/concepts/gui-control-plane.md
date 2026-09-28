@@ -1,24 +1,25 @@
 # GUI 控制面
 
-OpenSurge 的完整 GUI 是 `web/` 中的 React 应用，菜单栏 App 是
-`apps/menubar/` 中由 AppKit 管理生命周期和状态项、由 SwiftUI 渲染状态面板的轻量
-launcher。两者都只访问 `cmd/opensurge-control` 提供的 loopback API；业务规则继续位于
-Go gateway、device、mihomo 和 runtime 包中。
+Next 的完整 GUI 是 `web/` 中的 React 应用，由 `apps/desktop/` 中的 Wails +
+系统 WebView 承载主窗口和菜单栏面板；浏览器入口继续可用。两者都只访问
+`cmd/opensurge-control` 的 loopback API，Go 业务规则与 root Helper 保持独立。
+当前宿主、认证和安装器契约见 [Desktop host](desktop-host.md)。下文涉及 Swift/AppKit
+旧宿主的具体实现和故障记录仅供 v0.2.4 维护参考，不是 Next 的实现要求。
 
-原生应用图标由 `apps/menubar/Resources/OpenSurgeAppIcon.png` 经
-`scripts/build-menubar-app.sh` 等比生成各档 `.icns` 资源。1024 × 1024 源图已包含
+原生应用图标由 `apps/desktop/Resources/OpenSurgeAppIcon.png` 经
+`scripts/build-desktop-app.sh` 等比生成各档 `.icns` 资源。1024 × 1024 源图已包含
 透明留白：白色底板主体宽约 824 px、每侧留白约 100 px；构建时不要再次补同样的边距。
 此比例用于传统 `.icns` 的视觉对齐，不是所有 macOS 图标格式的通用尺寸契约。
 未来采用 Icon Composer 时应按其模板重新校准并验证系统实际渲染。菜单栏状态项使用
 独立的 `OpenSurgeMenuBarIcon.png`，显示尺寸为 18 × 18 pt，不跟随应用图标的留白调整。
 
 菜单栏 App 不提供 start/stop 或策略切换。它只消费 `/api/v1/menubar`，显示网关、
-客户端、drift 和恢复状态，并通过一次性 bootstrap URL 打开 Web GUI。唯一独立动作是
+客户端、drift 和恢复状态，并恢复同一个桌面主窗口。唯一独立的网关相关动作是
 与网关状态无关的临时“合盖保持运行”开关；不要借此把菜单栏演变成第二套网关控制面。
 
 界面语言同样保持单一设置入口：Web GUI 的侧栏提供“跟随系统 / 简体中文 / English”，
 菜单栏面板不再增加第二个选择器。默认值是 `system`；用户没有选择过语言时，Web 按浏览器
-第一语言、菜单栏按 `Locale.preferredLanguages` 的第一项决定显示语言，所有 `zh-*` 偏好
+第一语言、原生菜单按 macOS 首选语言的第一项决定显示语言，所有 `zh-*` 偏好
 使用简体中文，其他语言回退到 English。Web 通过受认证的
 `GET/PUT /api/v1/ui-preferences` 保存 `system | zh-Hans | en`，Control Service 将该偏好以
 `0600` 写入用户数据目录的 `preferences.json`，并在 overview、menubar 与 state event 中
@@ -53,7 +54,10 @@ PKG、不请求管理员权限，也不触发 gateway、Control Service 或 Help
 `0.1.24-rc.1 < 0.1.24`，因此 RC 不会降级到旧 stable，同版本 stable 发布后仍会提示。
 旧包没有该 key 时才回退到 `CFBundleShortVersionString`。
 
-菜单栏 App 使用纯 AppKit `NSApplication` 生命周期，不声明占位的 SwiftUI `Settings`
+<details>
+<summary>历史 Swift 宿主的 AppKit 面板经验（仅适用于 v0.2.4）</summary>
+
+旧菜单栏 App 使用纯 AppKit `NSApplication` 生命周期，不声明占位的 SwiftUI `Settings`
 Scene；否则这个由系统管理、可恢复的空窗口可能在部分 macOS 环境中被显示。状态面板使用
 AppKit `NSStatusItem` + `NSPopover` 承载现有 SwiftUI `MenuContentView`。状态栏图标点击
 与用户从 Finder/Launchpad 再次打开
@@ -81,6 +85,8 @@ pending，不能留下永久卡住状态。macOS 13 仅保留兼容的旧 activa
 `makeKeyAndOrderFront`。它们都没有修复实际报告的展开异常，反而引入了新的问题，已被
 整体回退到 `0932641`。若要重开这个方向，先给出可复现的 WindowServer 级证据和真机
 验收，不要只依赖单元测试与 `scripts/check-menubar.sh`。
+
+</details>
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用
 gateway start/stop API。真实生命周期动作留在网络页，使 topology、plan blocker、DHCP
@@ -131,17 +137,17 @@ Doctor 包含真实 `mihomo -t`，单次配置验证最长可到 90 秒，因此
 执行各自的真实预检与 TUN readiness，不能用历史 Doctor 成功结果替代。
 
 进程刚启动且尚未取得第一份状态时使用独立的 connecting 状态和 OpenSurge 品牌图标；真实
-请求失败后进入 unreachable，但仍使用更低透明度的品牌图标和明确的无障碍文案区分。初装
-期间不能因为 Control Service 启动稍慢而退回看起来像旧版图标的 `network.slash`。
+请求失败后进入 unreachable。Next 使用状态符号、tooltip 和面板文案区分各状态，不沿用
+旧 Swift 宿主的图标透明度约定；Control Service 尚未准备好不表示网关已经停止。
 
-“只退出菜单栏 App”只终止菜单栏图标，不会停止用户级 Control Service，也不会停止正在
+“只退出桌面 App”关闭主窗口和菜单栏，不会停止用户级 Control Service，也不会停止正在
 运行的 DHCP/DNS、mihomo、PF 或 forwarding。该按钮必须先显示状态感知的二次确认；
 网关运行时应明确列出仍会继续的服务，状态不可达时应提示先检查，而不是暗示后台已退出。
 
 “退出 OpenSurge”是独立的近期退出层级：只有网关数据面已经停止且没有待处理网络恢复时
-可用，并同时结束菜单栏 App 与用户级 Control Service。它不 bootout 系统 launchd 托管的
-root Helper；Helper 保持空闲加载，因此重新打开 App 或重启电脑都不要求再次授权。菜单栏
-重新打开时必须能从已安装的 LaunchAgent plist bootstrap 此前被 bootout 的 Control
+可用，并同时结束桌面 App 与用户级 Control Service。它不 bootout 系统 launchd 托管的
+root Helper；Helper 保持空闲加载，因此重新打开 App 或重启电脑都不要求再次授权。正式安装的
+App 重新打开时必须能从已安装的 LaunchAgent plist bootstrap 此前被 bootout 的 Control
 Service。只有卸载、重新安装或修改系统级 Helper 才进入需要管理员授权的边界。
 
 宿主 `net.inet.ip.forwarding` 是全局状态；用户可能在 OpenSurge 启动前已经启用它。
@@ -161,15 +167,14 @@ recovery 阶段影响；确认窗口允许保留配置/订阅/策略数据或彻
 stopped，再移除用户 Control Service、系统 Helper、App 和 receipt。升级继续使用 pkg
 preinstall 的严格 recovery 与 stop 顺序，不能与产品卸载门禁混为一谈。
 
-菜单栏退出确认使用同步的 AppKit `NSAlert.runModal()`，并直接根据返回值执行退出动作。
-不要把这个关键进程动作依赖于 SwiftUI alert 的 `isPresented` / item 清理时序；早期
-`MenuBarExtra` window 中已经实际观察到确认按钮关闭 alert 后没有进入退出动作的情况。
-完整退出必须在确认动作返回前同步进入 quitting 状态，阻止 `onDisappear` 发起新的刷新；
-Control Service 的 wake 与 bootout 也必须串行化，确保退出路径的最终生命周期动作是 bootout。
+桌面退出使用原生确认，完整退出在确认后再次检查最新状态。退出流程必须阻止并发重新
+连接；Control Service 的 wake 与 bootout 串行化，确保退出路径的最终生命周期动作是 bootout。
+旧 Swift 宿主使用同步 `NSAlert.runModal()`，是为了避开已观察到的 SwiftUI alert 回调丢失；
+这段历史不要求 Wails 沿用 SwiftUI 或同一个确认实现。
 
-菜单栏打开 Web GUI 时先调用 `NSWorkspace.shared.open`，检查其返回值；失败后回退到
-`/usr/bin/open`，并在窗口内显示错误。不要把一次性 bootstrap URL 写入错误信息或长期
-日志。
+旧 Swift 菜单栏通过 `NSWorkspace.shared.open` 打开浏览器，失败后回退 `/usr/bin/open`。
+Next 的菜单栏直接恢复主窗口；native relay 负责会话交换，不将 bearer token 或 cookie
+交给 JavaScript。任何宿主都不能把一次性 bootstrap URL 写入错误信息或长期日志。
 
 Control API 的 bootstrap `expires_at` 来自 Go `time.Time`，可能包含 RFC3339 小数秒；
 菜单栏客户端必须同时接受带小数秒和不带小数秒的时间格式，不能把该解码失败误判为浏览器
@@ -184,8 +189,9 @@ Web GUI 从一次性 bootstrap 链接换取的 HttpOnly 会话使用 12 小时�
 菜单栏的 Control API bearer token 只从用户应用支持目录内权限为 `0600` 的
 `control-token` 读取，不复制到 Keychain，也不回退到可能过期的旧 Keychain 副本。文件
 缺失与 endpoint 尚未生成都表示用户级 Control Service 尚未准备好：先轻量 kickstart 并
-重试，仍失败才显示友好错误和“重新连接”。用户主动重新连接可用 `kickstart -k` 重启
-Control Service，但不能停止或重置 DHCP/DNS、mihomo、PF、forwarding 等网关数据面。
+重试，仍失败才显示友好错误和“重新连接”。Next 的启动与显式重新连接都不使用
+`kickstart -k`，只唤醒已有服务，不强制重启 Control Service 或操作网关数据面。
+Preview 默认不管理已安装服务；旧 Swift 的重启实现只供历史版本维护。
 
 局域网 DHCP 接管的恢复状态、source snapshots 和 operation records 保存在用户的
 `~/Library/Application Support/OpenSurge/`。`same_wifi_dhcp` start 需要持久化的路由器
@@ -441,14 +447,15 @@ Proxy/内容过滤等已知用途、只覆盖遵循系统代理的 Mac 应用、
 用户可见产品文案把 `same_wifi_dhcp` 称为“局域网 DHCP 接管”，因为该协作式二层
 拓扑可由 Wi-Fi 或以太网承载；`same_wifi_dhcp` 仅作为现有配置枚举和 runner 名称保留。
 
-生产 pkg 使用固定 `/` install location 和不可 relocatable 的菜单栏 bundle，把 App 安装
+生产 pkg 使用固定 `/` install location 和不可 relocatable 的桌面 bundle，把 App 安装
 到 `/Applications/OpenSurge.app`；否则 macOS Installer 可能把它 relocate 回构建工作区的
 `payload/Applications`。升级的 postinstall 在新 payload 落盘后清理旧的
-`/Applications/OpenSurge Menu Bar.app`，避免 Launchpad 出现重复入口。内部 executable、
-bundle identifier 与 launchd label 保持既有技术命名。生产 pkg 把 applied config、mihomo/dnsmasq、runtime 和 helper 放在 root-owned 的
+`/Applications/OpenSurge Menu Bar.app`，避免 Launchpad 出现重复入口。主程序在 Next 改为
+`OpenSurgeDesktop`，bundle identifier 与 launchd label 保持既有技术命名。
+生产 pkg 把 applied config、mihomo/dnsmasq、runtime 和 helper 放在 root-owned 的
 `/Library/Application Support/OpenSurge` / `PrivilegedHelperTools` 下；用户级 Control
 Service 只通过 admin 组只读访问 applied 状态，通过 helper 执行固定 privileged 动作。
-打包时 `OPENSURGE_VERSION` 必须同时写入 pkg receipt 与菜单栏 App 的 short version，
+打包时 `OPENSURGE_VERSION` 必须同时写入 pkg receipt 与桌面 App 的 short version，
 `OPENSURGE_BUILD_NUMBER` 写入 App build number，`OPENSURGE_RELEASE_TAG` 写入完整 stable/RC
 tag；tag 的基础版本必须与 pkg 版本一致，避免新安装包继续携带旧的 bundle 版本标识，或让
 RC 丢失其预发布身份。
@@ -469,5 +476,5 @@ Control Service 并重新扫描已安装可执行文件；等待期间新出现�
 静态 IPv4 的终态，不应被误判为恢复未完成。postinstall 不得覆盖已有 `config.yaml`，导入源、
 设备策略和 runtime 记录也必须跨升级保留。
 
-开发期用 `make web-build`、`make menubar-build` 和 `make test`。这些检查不证明真实
+开发期用 `make web-build`、`make desktop-production-build` 和 `make test`。这些检查不证明真实
 DHCP、TUN 或 per-device 数据面；网络声明仍服从 validation-gates 页面。
