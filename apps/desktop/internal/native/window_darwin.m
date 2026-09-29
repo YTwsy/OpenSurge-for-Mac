@@ -174,6 +174,8 @@ void refreshOpenSurgeDockVisibility(void) {
 }
 - (void)publishVisibility:(NSNotification *)notification {
     NSWindow *window = self.webView.window;
+    if (smokeActions()) NSLog(@"OpenSurge window visibility: title=%@ visible=%d minimised=%d",
+        self.tray ? @"menu-bar" : window.title, window.isVisible, window.isMiniaturized);
     // Occlusion pauses polling but must not remove a covered window from Dock.
     // A minimised window keeps its Dock entry so the normal restore path works.
     if (!self.tray) refreshOpenSurgeDockVisibility();

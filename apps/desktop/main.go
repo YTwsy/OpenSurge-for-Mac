@@ -139,7 +139,13 @@ func main() {
 	host.createTray()
 	host.createSettings()
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide(); native.RefreshDockVisibility() })
-	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { host.show("") })
+	app.Event.RegisterApplicationEventHook(events.Mac.ApplicationShouldHandleReopen, func(event *application.ApplicationEvent) {
+		// Wails beta.26 otherwise shows every hidden window when the app has
+		// no visible windows, including Settings and the menu-bar popup. Cancel
+		// before its listeners run so only the main window is presented.
+		event.Cancel()
+		host.show("")
+	})
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		native.Configure(window, true)
 		native.Configure(host.popup, false)
