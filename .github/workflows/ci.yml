@@ -57,7 +57,7 @@ jobs:
           OPENSURGE_APP_ARCH: ${{ matrix.arch }}
           OPENSURGE_VERSION: 0.3.0
           OPENSURGE_BUILD_NUMBER: 42
-          OPENSURGE_RELEASE_TAG: v0.3.0-rc.2
+          OPENSURGE_RELEASE_TAG: v0.3.0-rc.3
         run: ./scripts/build-desktop-app.sh production
       - name: Verify GUI packaging contracts
         if: matrix.arch == 'arm64'

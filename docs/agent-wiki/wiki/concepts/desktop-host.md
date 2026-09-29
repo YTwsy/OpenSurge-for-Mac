@@ -274,7 +274,7 @@ Semantic version comparison includes Next and release-candidate builds. Checks r
 at launch and every 24 hours (15-minute retry after failure), deduplicate concurrent
 requests and clear obsolete download links on failure. The host only opens the
 validated page on explicit action; download/install remain user actions. Both builds
-take their version from `OPENSURGE_RELEASE_TAG`, defaulting to `v0.2.4-next`.
+take their version from `OPENSURGE_RELEASE_TAG`, defaulting to `v0.3.0-rc.3`.
 
 Uninstall is a closed native capability with two fixed modes. Production execution
 requires the installed App identity/path and a root-owned, non-writable script and

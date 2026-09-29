@@ -1,18 +1,19 @@
 [简体中文](#简体中文) · [English](#english)
 
-> **v0.3 系列代号：Verdilion · 第二个候选版本**<br>
-> **v0.3 series codename: Verdilion · Second release candidate**
+> **v0.3 系列代号：Verdilion · 第三个候选版本**<br>
+> **v0.3 series codename: Verdilion · Third release candidate**
 
 ## 简体中文
 
-### v0.3.0-rc.2 主要变化（相对 v0.2.4）
+### v0.3.0-rc.3 主要变化（相对 v0.2.4）
 
-Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。本次是基于 `Next` 的第二个 v0.3 候选版本，面向愿意提前体验并反馈问题的用户；以下主要变化以 v0.2.4 为基准，稳定版仍为 v0.2.4。
+Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。本次是基于 `Next` 的第三个 v0.3 候选版本，面向愿意提前体验并反馈问题的用户；以下主要变化以 v0.2.4 为基准，稳定版仍为 v0.2.4。
 
 - **完整的桌面操作入口**：OpenSurge 现在直接在独立桌面窗口中展示总览、网络设置、设备、连接、策略和诊断。窗口支持原生菜单、快捷键、文件选择与保存；隐藏后重新打开会保留当前页面和草稿。菜单栏也保留「在浏览器中打开」入口。
 - **更实用的菜单栏状态面板**：集中展示上传下载速率、近 60 秒趋势、本机出口和活跃设备。网络状态、本机出口与具体设备可在面板内展开；窗口随内容调整大小，并提供展开过渡。网关停止时收起流量曲线，显示紧凑提示；桌面窗口隐藏后，菜单栏仍独立采样流量。
 - **统一的设置入口与外观**：通过「OpenSurge → 设置…」、`⌘,` 或侧栏快捷设置进入独立设置窗口，管理语言、外观、登录时显示、临时合盖保持运行与更新，并提供退出和卸载入口。设置顶部新增「GitHub 仓库」和「文档」链接，点击后在系统浏览器中打开。侧栏底部保留扁平状态样式，齿轮可展开快捷设置；标题栏、列表、滚动条与文字选择统一使用 OpenSurge 的界面风格。
 - **更连贯的窗口体验**：Dock 图标跟随桌面和设置窗口的显示状态；启动加载阶段展示浅色渐变与 OpenSurge 图标。App 在后台运行且窗口已关闭时，再次点击图标会重新显示主窗口，修复设置窗口被一同打开、菜单栏面板闪现的问题。同步改善退出和卸载确认窗口的前台显示，以及与后台服务断开后的重连和状态保留。
+- **登录项可以重新注册**：修复更新 App 后「登录时显示」开关被禁用、误提示需要打开已安装 App 的问题。当前版本的登录项缺失时，可在设置中重新开启；等待 macOS 批准或注册失败会显示真实状态和错误，不会把点击开关当作注册成功。
 - **节点检测逐项显示结果**：策略页每完成一个节点的检测就更新该节点结果，无需等待整批完成。同步改善连通性页面文字对比度、策略页控件对齐、菜单栏设备跳转，以及诊断日志的局部横向滚动。
 
 ### 候选版本说明
@@ -20,7 +21,7 @@ Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状�
 - 本次以 GitHub Pre-release 发布，不替代 v0.2.4 的稳定版 Latest，也不合入 `master`。
 - 更新检查继续只发现稳定版；安装本候选版本后，后续 RC 需要从 GitHub Releases 手动获取。
 - 网关规则、配置与网络数据面沿用 v0.2.4 的实现边界。下游 IPv6 仍为实验性能力，适用拓扑与验证范围见项目文档。
-- 本次完成 Web/Go/桌面端测试、安装器契约检查、隔离界面检查和双架构打包校验；未为本 RC 重新运行 Virtual Lab 或真实网关网络验收。隔离界面检查不等于真实安装升级或 Intel 实机界面验收。
+- 本次完成 Web/Go/桌面端测试、安装器契约检查、macOS 临时 App 登录项注册恢复验证和双架构打包校验；未为本 RC 重新运行 Virtual Lab 或真实网关网络验收。临时 App 验证不等于真实 PKG 升级后重新登录验收，也不代表 Intel 实机界面验收。
 
 ### 选择安装包
 
@@ -68,14 +69,15 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ## English
 
-### v0.3.0-rc.2 highlights since v0.2.4
+### v0.3.0-rc.3 highlights since v0.2.4
 
-Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. This is the second v0.3 release candidate based on `Next`, intended for users who want to try the new experience and report issues. The highlights below compare against v0.2.4, which remains the stable release.
+Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. This is the third v0.3 release candidate based on `Next`, intended for users who want to try the new experience and report issues. The highlights below compare against v0.2.4, which remains the stable release.
 
 - **A complete desktop entry point:** Overview, network settings, devices, connections, policies and diagnostics now open in a dedicated desktop window with native menus, shortcuts, file selection and saving. Hiding and reopening the window preserves the current page and drafts. The menu bar retains an Open in Browser action.
 - **A more useful menu-bar panel:** Upload/download rates, a 60-second traffic trend, local egress and active devices are available at a glance. Network details, local egress and individual devices expand inside the panel, with transitions and content-driven window sizing. Stopping the gateway replaces empty charts with a compact status; menu-bar traffic sampling continues independently while the desktop window is hidden.
 - **Unified settings and appearance:** OpenSurge → Settings…, `⌘,` and the sidebar lead to the same separate settings window for language, appearance, login display, temporary lid-closed operation and updates, with quit and uninstall actions. New GitHub repository and Documentation links open in the system browser from the top of Settings. The flat sidebar status area expands quick settings through a gear icon. Title bars, selects, scrollbars and text selection follow the OpenSurge visual style.
 - **Smoother window behavior:** Dock visibility follows the desktop and settings windows. A light gradient and the OpenSurge icon cover startup loading. Clicking the app icon while the app runs in the background with its windows closed reopens the main window, fixing an unwanted Settings window and a briefly flashing menu-bar panel. Quit/uninstall confirmations come to the foreground more reliably, with service reconnection and UI state preservation.
+- **Recoverable login registration:** Fixes Show at login becoming disabled after an app update and incorrectly asking users to open the installed app. A missing login item for the current version can be registered again from Settings. Approval requirements and registration errors reflect the actual macOS result instead of assuming the switch change succeeded.
 - **Node test results as they finish:** Each completed node test updates its result without waiting for the batch. This release also improves connectivity text contrast, policy control alignment, device navigation from the menu bar and horizontal scrolling within diagnostic logs.
 
 ### Release-candidate notes
@@ -83,7 +85,7 @@ Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar st
 - Published as a GitHub Pre-release, without replacing v0.2.4 as the stable Latest release or merging into `master`.
 - Update checks still discover stable releases only. Subsequent RCs must be downloaded manually from GitHub Releases.
 - Gateway rules, configuration and the network data plane retain their v0.2.4 implementation boundaries. Downstream IPv6 remains experimental; supported topologies and validation limits are documented in the project.
-- Validation covers Web/Go/desktop tests, installer contracts, isolated UI checks and both architecture packages. Virtual Lab and real gateway/network acceptance were not rerun for this RC. Isolated UI checks do not establish a real installation/upgrade or Intel hardware UI acceptance.
+- Validation covers Web/Go/desktop tests, installer contracts, login registration recovery with a temporary macOS app, and both architecture packages. Virtual Lab and real gateway/network acceptance were not rerun for this RC. The temporary-app check does not establish login continuity after a real PKG upgrade or Intel hardware UI acceptance.
 
 ### Choose a package
 
