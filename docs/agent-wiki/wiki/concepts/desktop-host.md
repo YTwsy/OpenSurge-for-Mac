@@ -70,6 +70,11 @@ that event also represents occlusion by another window.
 
 Explicit launch/reopen requests use one native presentation path: restore Dock
 presence, unhide/activate the application and order the main window to the front.
+The macOS reopen event is intercepted by a cancellable application hook. Wails
+beta.26 otherwise shows every hidden window when none are visible; an ordinary
+listener races that default and can reveal Settings and briefly flash the tray.
+Cancel before those listeners run, then present only the main window. Reopen must
+leave closed Settings hidden and must not close Settings that are already visible.
 Ignore intermediate visibility notifications during that activation-policy change,
 and finish ordering on the next AppKit turn. Background status refreshes never
 activate the application. Exit/uninstall warnings attach as sheets to the focused

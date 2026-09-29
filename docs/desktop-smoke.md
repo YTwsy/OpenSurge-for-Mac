@@ -69,6 +69,15 @@ Reopen from the tray and a second launch; both restore Dock presence and the cur
 page. Cmd-H also hides Dock presence. Covering the main window with another app must
 not hide the Dock entry; minimisation retains the usual Dock restore path.
 
+With `--smoke-actions`, repeat close/reopen from the App icon after never opening
+Settings and after explicitly opening and closing Settings. Only the main window
+must appear; Settings stays hidden and the menu-bar popup must not flash. Native
+window-visibility logs must show no Settings or menu-bar `visible=1` transition
+during reopen. Also repeat with Settings left open: it stays open, while the main
+window becomes key and retains its page. Check minimised-main restore, Cmd-H/unhide,
+and directly launching the executable a second time with the same `--control-dir`.
+Explicit Settings and tray shortcuts must still open their respective windows.
+
 Launch with `--smoke-actions --smoke-startup-delay 3s` in the isolated fixture to
 inspect cold loading. Before React appears, the native window shows a light mint
 gradient and the OpenSurge icon, with no black frame. The normal host has no artificial

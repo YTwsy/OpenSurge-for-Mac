@@ -1,11 +1,15 @@
 html, body, #root { min-width: 0; min-height: 100%; }
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-.settings-app { --settings-text: #e2eee8; --settings-muted: #9cafaa; --settings-line: #314a40; --settings-surface: #152a21; padding: 54px 24px 24px; color: var(--settings-text); font-size: 13px; }
-html[data-theme="light"] .settings-app { --settings-text: #253c31; --settings-muted: #647b6d; --settings-line: #cfdfd5; --settings-surface: #fff; }
-.settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+.settings-app { --settings-text: #e2eee8; --settings-muted: #9cafaa; --settings-link: #82d9af; --settings-line: #314a40; --settings-surface: #152a21; padding: 54px 24px 24px; color: var(--settings-text); font-size: 13px; }
+html[data-theme="light"] .settings-app { --settings-text: #253c31; --settings-muted: #647b6d; --settings-link: #24704e; --settings-line: #cfdfd5; --settings-surface: #fff; }
+.settings-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
 .settings-header img { width: 42px; height: 42px; }
 .settings-header h1 { font-size: 19px; line-height: 1.3; margin: 0 0 5px; }
 .settings-header p { color: var(--settings-muted); font-size: 12px; margin: 0; }
+.settings-project-links { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; }
+.settings-project-links a { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; color: var(--settings-link); font-size: 12px; font-weight: 500; text-decoration: none; border-radius: 3px; }
+.settings-project-links a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.settings-project-links a:focus-visible { outline: 2px solid var(--settings-link); outline-offset: 3px; }
 .settings-section { padding: 4px 16px; margin-bottom: 14px; background: var(--settings-surface); border: 1px solid var(--settings-line); border-radius: 10px; }
 .settings-row { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 20px; }
 .settings-row ~ .settings-row { border-top: 1px solid var(--settings-line); }
