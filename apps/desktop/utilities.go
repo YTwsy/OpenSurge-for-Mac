@@ -11,7 +11,7 @@ import (
 )
 
 // The same release tag is passed to the native and frontend builds.
-var releaseTag = "v0.3.0-rc.1"
+var releaseTag = "v0.3.0-rc.2"
 
 type utilitySnapshot struct {
 	Login     loginitem.Snapshot `json:"login"`
