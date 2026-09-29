@@ -1,14 +1,32 @@
 #import <ServiceManagement/ServiceManagement.h>
 #include <stdbool.h>
+#include <string.h>
 
-int openSurgeLoginStatus(void) {
-    @autoreleasepool { return (int)SMAppService.mainAppService.status; }
-}
-bool setOpenSurgeLogin(bool enabled) {
+const char *openSurgeLoginStatus(void) {
     @autoreleasepool {
+        switch (SMAppService.mainAppService.status) {
+            case SMAppServiceStatusNotRegistered: return "disabled";
+            case SMAppServiceStatusEnabled: return "enabled";
+            case SMAppServiceStatusRequiresApproval: return "approval";
+            // This also occurs for a new or replaced ad-hoc-signed bundle.
+            // An explicit register request can recover it.
+            case SMAppServiceStatusNotFound: return "not_found";
+            default: return "unavailable";
+        }
+    }
+}
+bool setOpenSurgeLogin(bool enabled, char **message) {
+    @autoreleasepool {
+        *message = NULL;
         NSError *error = nil;
-        return enabled ? [SMAppService.mainAppService registerAndReturnError:&error]
-                       : [SMAppService.mainAppService unregisterAndReturnError:&error];
+        BOOL ok = enabled ? [SMAppService.mainAppService registerAndReturnError:&error]
+                          : [SMAppService.mainAppService unregisterAndReturnError:&error];
+        if (!ok && error) {
+            NSString *detail = [NSString stringWithFormat:@"%@: %@ (%ld)",
+                error.domain, error.localizedDescription, (long)error.code];
+            *message = strdup(detail.UTF8String);
+        }
+        return ok;
     }
 }
 void openSurgeLoginSettings(void) { [SMAppService openSystemSettingsLoginItems]; }

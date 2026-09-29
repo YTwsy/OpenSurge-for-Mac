@@ -1560,6 +1560,7 @@ export const englishMessages: Record<string, string> = {
   '有可用的稳定版更新': 'A stable release update is available',
   '等待 macOS 批准登录项。': 'Waiting for macOS approval of the login item.',
   '打开登录项设置': 'Open Login Items settings',
+  'macOS 未找到当前版本的登录项。开启“登录时显示”可重新注册。': 'macOS could not find a login item for this version. Turn on Show at login to register it again.',
   '当前 App 无法管理登录项。请从已安装的应用中设置。': 'This App cannot manage login items. Configure them from the installed application.',
   '登录项未能更新，已保留 macOS 的实际状态。': 'Could not update the login item. The actual macOS state is preserved.',
   '无法检查更新，请稍后重试。': 'Could not check for updates. Please try again later.',

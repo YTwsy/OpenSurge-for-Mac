@@ -99,6 +99,44 @@ it('uses the native quit and uninstall confirmations only on explicit clicks', a
  expect(desktopAction).toHaveBeenCalledWith('uninstall')
 })
 
+it('lets a missing login item retry registration and shows the native failure without claiming success', async () => {
+ let attempt = 0
+ vi.mocked(desktopAction).mockImplementation(async action => {
+  if (action === 'utilities') return { ...initial, login: { state: 'not_found', sequence: 1, failed: false } }
+  if (action === 'menubar-status') return runtime
+  if (action === 'login-item') return ++attempt === 1
+   ? { state: 'not_found', sequence: 2, failed: true, error: 'SMAppServiceErrorDomain: Permission denied (11)' }
+   : { state: 'approval', sequence: 3, failed: false }
+  return {}
+ })
+ render(<SettingsApp />)
+ await screen.findByText('macOS could not find a login item for this version. Turn on Show at login to register it again.')
+ const toggle = screen.getByRole('switch', { name: 'Show at login' }) as HTMLInputElement
+ expect(toggle.disabled || toggle.checked).toBe(false)
+ expect(attempt).toBe(0)
+ expect(screen.queryByText('This App cannot manage login items. Configure them from the installed application.')).toBeNull()
+ await userEvent.click(toggle)
+ expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Could not update the login item. The actual macOS state is preserved. SMAppServiceErrorDomain: Permission denied (11)')
+ expect(toggle.checked).toBe(false)
+ await userEvent.click(screen.getByRole('button', { name: 'Open Login Items settings' }))
+ expect(desktopAction).toHaveBeenCalledWith('login-settings', {})
+ await userEvent.click(toggle)
+ await screen.findByText('Waiting for macOS approval of the login item.')
+ expect(toggle.checked).toBe(true)
+ expect(attempt).toBe(2)
+ expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('keeps login management disabled when the host does not provide it', async () => {
+ vi.mocked(desktopAction).mockImplementation(async action => action === 'utilities'
+  ? { ...initial, login: { state: 'unavailable', sequence: 1, failed: false } }
+  : action === 'menubar-status' ? runtime : {})
+ render(<SettingsApp />)
+ await screen.findByText('This App cannot manage login items. Configure them from the installed application.')
+ expect((screen.getByRole('switch', { name: 'Show at login' }) as HTMLInputElement).disabled).toBe(true)
+ expect(vi.mocked(desktopAction).mock.calls.some(([action]) => action === 'login-item')).toBe(false)
+})
+
 it('disables full quit and uninstall when native eligibility is lost or unavailable', async () => {
  let status: TraySnapshot | null = runtime
  vi.mocked(desktopAction).mockImplementation(async action => {

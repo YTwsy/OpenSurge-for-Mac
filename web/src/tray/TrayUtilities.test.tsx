@@ -41,6 +41,21 @@ it('opens the validated stable release and clears it when a later check fails', 
  expect(await screen.findByRole('status')).toHaveProperty('textContent', 'Could not check for updates. Please try again later.')
 })
 
+it('recovers a missing login item only after the user turns on Show at login', async () => {
+ vi.mocked(desktopAction).mockImplementation(async action => action === 'login-item'
+  ? { state: 'enabled', sequence: 2, failed: false }
+  : { ...initial, login: { state: 'not_found', sequence: 1, failed: false } })
+ render(<TrayUtilities />)
+ await screen.findByText('macOS could not find a login item for this version. Turn on Show at login to register it again.')
+ const toggle = screen.getByRole('switch', { name: 'Show at login' }) as HTMLInputElement
+ expect(toggle.disabled || toggle.checked).toBe(false)
+ expect(vi.mocked(desktopAction).mock.calls.some(([action]) => action === 'login-item')).toBe(false)
+ await userEvent.click(toggle)
+ await waitFor(() => expect(toggle.checked).toBe(true))
+ expect(vi.mocked(desktopAction).mock.calls.filter(([action]) => action === 'login-item')).toEqual([['login-item', { enabled: true }]])
+ expect(screen.queryByText(/macOS could not find a login item/)).toBeNull()
+})
+
 it('keeps preview uninstall disabled and routes eligible installed actions to native confirmation', async () => {
  vi.mocked(desktopAction).mockResolvedValue({ ...initial, uninstall: 'preview' })
  const view = render(<TrayUtilities canUninstall />)

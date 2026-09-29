@@ -3,7 +3,7 @@ import { desktopAction } from '../desktop'
 import { t } from '../i18n'
 import { watchVisibleRefresh } from '../visibility'
 
-type Login = { state: 'enabled' | 'disabled' | 'approval' | 'unavailable', sequence: number, failed: boolean }
+export type Login = { state: 'enabled' | 'disabled' | 'approval' | 'not_found' | 'unavailable', sequence: number, failed: boolean, error?: string }
 type Update = { current: string, version?: string, url?: string, checking: boolean, checked: boolean, failed: boolean, sequence: number }
 type Utilities = { login: Login, update: Update, uninstall?: 'available' | 'preview' | 'missing' }
 

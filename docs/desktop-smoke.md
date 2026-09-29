@@ -2,7 +2,7 @@
 
 Build with `make web-build desktop-test desktop-build`. The preview bundle is
 `bin/OpenSurge Desktop Preview.app`; it has a separate identity from the installed
-Swift host. The shared frontend defaults to the current candidate, `v0.3.0-rc.2`;
+Swift host. The shared frontend defaults to the current candidate, `v0.3.0-rc.3`;
 release builds override `OPENSURGE_RELEASE_TAG`. The shared series catalog
 `packaging/release-codenames.json` supplies Verdilion for v0.3 builds.
 
@@ -99,6 +99,26 @@ must release the native override so subsequent macOS changes apply. Use the fixt
 `login_approval`, `login_failure` and `update_failure` scenarios to verify authoritative
 login state and honest update failures. Check exactly one fixture mutation per click;
 none of these tests may register a real login item or operate installed services.
+
+Start a fresh fixture with `login_initial: "not_found"` to model a missing login
+record after an update. Settings and the tray must show the registration hint and
+an enabled, unchecked switch. Polling must not write anything. Enabling registers
+exactly once and uses the fixture's actual enabled/approval result; `login_failure`
+must leave the switch unchecked, show the error and allow another explicit attempt.
+Preview bundles without smoke actions keep real login management unavailable.
+
+For the actual macOS ServiceManagement bridge, run separately as the logged-in user:
+
+```sh
+python3 tests/desktop/test_login_item.py
+```
+
+This creates a uniquely identified, temporary test App, registers it, replaces its
+ad-hoc-signed executable, verifies explicit recovery and disabled state, then
+unregisters both test signatures and removes the test bundle. Cleanup failure keeps
+the test files and fails the gate. It does not touch `/Applications/OpenSurge.app`,
+its login item, background services or the gateway. It proves registration recovery
+on the current host, not PKG upgrade continuity or launch after a real login.
 
 ## Menu-bar popup
 
