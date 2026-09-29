@@ -55,9 +55,9 @@ jobs:
       - name: Build production desktop bundle
         env:
           OPENSURGE_APP_ARCH: ${{ matrix.arch }}
-          OPENSURGE_VERSION: 0.2.4
+          OPENSURGE_VERSION: 0.3.0
           OPENSURGE_BUILD_NUMBER: 42
-          OPENSURGE_RELEASE_TAG: v0.2.4-next
+          OPENSURGE_RELEASE_TAG: v0.3.0-rc.1
         run: ./scripts/build-desktop-app.sh production
       - name: Verify GUI packaging contracts
         if: matrix.arch == 'arm64'

@@ -2,8 +2,9 @@
 
 Build with `make web-build desktop-test desktop-build`. The preview bundle is
 `bin/OpenSurge Desktop Preview.app`; it has a separate identity from the installed
-Swift host. The shared frontend identifies an unversioned Next build as
-`v0.2.4-next`; release builds override `OPENSURGE_RELEASE_TAG`.
+Swift host. The shared frontend defaults to the current candidate, `v0.3.0-rc.1`;
+release builds override `OPENSURGE_RELEASE_TAG`. The shared series catalog
+`packaging/release-codenames.json` supplies Verdilion for v0.3 builds.
 
 Use the isolated fixture for actions, restart and failure tests:
 

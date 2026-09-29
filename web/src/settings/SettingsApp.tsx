@@ -1,3 +1,4 @@
+import { releaseDisplayVersion } from '../release'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Select } from '../components/Select'
@@ -51,7 +52,7 @@ export function SettingsApp() {
    {sleep?.error && <p role="alert" className="settings-error">{sleep.error}</p>}
   </section>
   <section className="settings-section" aria-label={t('软件更新')}>
-   <div className="settings-row"><span>{t('软件更新')}<small>{update?.current || import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</small></span><button disabled={!update || update.checking} onClick={() => { setUtilityError(''); void check() }}>{t(update?.checking ? '正在检查…' : '检查更新')}</button></div>
+   <div className="settings-row"><span>{t('软件更新')}<small>{releaseDisplayVersion(update?.current || import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</small></span><button disabled={!update || update.checking} onClick={() => { setUtilityError(''); void check() }}>{t(update?.checking ? '正在检查…' : '检查更新')}</button></div>
    {!update?.checking && (update?.failed ? <p role="status" className="settings-hint">{t('无法检查更新，请稍后重试。')}</p> : update?.version && update.url ? <p className="settings-hint"><button onClick={() => openLink('open-external', { url: update.url })}>{t('打开稳定版 {{version}} 下载页', { version: update.version })}</button></p> : update?.checked && <p role="status" className="settings-hint">{t('没有更新的稳定版')}</p>)}
   </section>
   <section className="settings-section settings-lifecycle" aria-label={t('退出与卸载')}>

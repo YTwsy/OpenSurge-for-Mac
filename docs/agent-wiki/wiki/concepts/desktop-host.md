@@ -304,3 +304,15 @@ installed acceptance, not a bundle-ID or fixture assertion. The uninstaller reta
 its fixed path and data modes, and waits for its caller to exit itself on success.
 `tests/packaging/test_installer.py` exercises script ordering/retention in temporary
 roots with mocked system commands. It cannot establish host-network cleanup.
+
+## Release identity
+
+The v0.3 candidate starts at `v0.3.0-rc.1` (Verdilion) from `Next`; publication
+uses `codex/release-v0.3.0` and does not imply a merge to `master`.
+`packaging/release-codenames.json` is the series-codename source for the current
+Web/desktop/tray UI, native bundle metadata and GitHub Release title. Unknown
+series display the version without inheriting a previous codename. The retained
+Swift host is the v0.2 maintenance reference and is not included in Next packages.
+`OPENSURGE_RELEASE_TAG` carries the full candidate tag; the macOS numeric bundle
+and package version remain `0.3.0`. Update discovery still accepts stable releases
+only, so RC-to-RC updates require a manual download.

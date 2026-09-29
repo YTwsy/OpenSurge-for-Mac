@@ -11,7 +11,7 @@ import type { TraySnapshot } from '../tray/types'
 
 vi.mock('../api', () => ({ api: { uiPreferences: vi.fn(), setUIPreferences: vi.fn() } }))
 vi.mock('../desktop', () => ({ isDesktop: () => true, desktopAction: vi.fn() }))
-const initial = { login: { state: 'disabled', sequence: 1, failed: false }, update: { current: 'v0.2.4-next', checking: false, checked: false, failed: false, sequence: 1 }, uninstall: 'available' }
+const initial = { login: { state: 'disabled', sequence: 1, failed: false }, update: { current: 'v0.3.0-rc.1', checking: false, checked: false, failed: false, sequence: 1 }, uninstall: 'available' }
 const runtime: TraySnapshot = { indicator: 'stopped', sequence: 1, can_quit: true, can_uninstall: true, service_actions: true, status: {
  schema_version: 1, revision: 'test', gateway: 'stopped', topology: 'same_lan', lan_ip: '192.0.2.10', dhcp: 'stopped', mihomo: 'stopped', tun: 'stopped', pf_anchor: 'unloaded', forwarding: 'disabled', ipv4_takeover: 'stopped', ipv6_takeover: 'disabled', client_count: 0, drift: false, doctor_healthy: true, recovery_required: false, warnings: [], sleep_prevention: { enabled: false, active: false }, ui_preferences: { schema_version: 1, language: 'en' },
 } }

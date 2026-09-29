@@ -1,23 +1,26 @@
 [简体中文](#简体中文) · [English](#english)
 
-> **v0.2 系列代号：Wind Rose**<br>
-> **v0.2 series codename: Wind Rose**
+> **v0.3 系列代号：Verdilion · 首个候选版本**<br>
+> **v0.3 series codename: Verdilion · First release candidate**
 
 ## 简体中文
 
-### v0.2.4 主要变化（相对 v0.2.3）
+### v0.3.0-rc.1 主要变化（相对 v0.2.4）
 
-v0.2.4 重点修复 Mac 本机的 DNS 与 IPv6 TUN 捕获路径，并补齐共享策略组切换节点后的连接刷新。下游设备仍使用各自的策略和 IPv6 packet 路径。
+Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。本次是基于 `Next` 的首个 v0.3 候选版本，面向愿意提前体验并反馈问题的用户；稳定版仍为 v0.2.4。
 
-- **Mac 系统 DNS 随 TUN 协同**：在 TUN 自动路由就绪后，默认将上游网络服务的系统 DNS 设置到可被 mihomo 劫持的路径，减少本机查询绕过 TUN、连接失去域名或 fake-IP 上下文的情况。停止、回滚和代理引擎重启时按所有权恢复原设置，保留其他软件后续作出的修改；可在 Web GUI 中关闭。协同开启时，导入配置需使用显式解析器，避免 `system` 解析循环。
-- **补全独立的 Mac IPv6 TUN 路由**：Mac 的系统 TUN 同时覆盖公网 IPv6、完整 fake IPv6 地址池和 Tailnet 精确路由，不再因下游 IPv6 接管开关或一条自定义精确路由而漏掉本机流量。本机规则仍只匹配系统 TUN 的精确身份，不改变下游设备的 IPv6 packet 路径。
-- **共享策略组的连接刷新提示**：在「策略与节点健康」中成功切换普通策略组节点后，界面会说明新选择只影响后续连接，并邀请用户手动刷新。刷新按实际连接链中的策略组精确匹配，可涵盖 Mac、跟随网关规则或经其他策略组引用它的下游设备，同时保留不经过该组的连接；执行前会提示下载、通话等活动可能中断。切换节点本身不会自动关闭旧连接。
+- **完整的桌面操作入口**：OpenSurge 现在直接在独立桌面窗口中展示总览、网络设置、设备、连接、策略和诊断。窗口支持原生菜单、快捷键、文件选择与保存；隐藏后重新打开会保留当前页面和草稿。菜单栏也保留「在浏览器中打开」入口。
+- **更实用的菜单栏状态面板**：集中展示上传下载速率、近 60 秒趋势、本机出口和活跃设备。网络状态、本机出口与具体设备可在面板内展开；窗口随内容调整大小，并提供展开过渡。网关停止时收起流量曲线，显示紧凑提示；桌面窗口隐藏后，菜单栏仍独立采样流量。
+- **统一的设置入口与外观**：通过「OpenSurge → 设置…」、`⌘,` 或侧栏快捷设置进入独立设置窗口，管理语言、外观、登录时显示、临时合盖保持运行与更新，并提供退出和卸载入口。侧栏底部保留扁平状态样式，齿轮可展开快捷设置；标题栏、列表、滚动条与文字选择统一使用 OpenSurge 的界面风格。
+- **更连贯的窗口体验**：Dock 图标跟随桌面和设置窗口的显示状态；启动加载阶段展示浅色渐变与 OpenSurge 图标。改善再次打开 App、退出和卸载确认窗口的前台显示，以及与后台服务断开后的重连和状态保留。
+- **节点检测逐项显示结果**：策略页每完成一个节点的检测就更新该节点结果，无需等待整批完成。同步改善连通性页面文字对比度、策略页控件对齐、菜单栏设备跳转，以及诊断日志的局部横向滚动。
 
-### 开发幕后：Team Cross
+### 候选版本说明
 
-OpenSurge 的开发常要在 Mac 与多台下游设备上验证网络路径；调查和修复也可能跨越多台机器、多个 Agent Session，测试证据、关键判断和后续任务需要在这些会话之间持续传递。最初，我为自己的工作流做了一个多 Agent 协作工具。看到它在 OpenSurge 开发中显著提升了开发效率后，我意识到同样的痛点也存在于团队协作、产研协同等更广泛的场景。于是，我结合一线开发团队中积累的经验，围绕会话分享、证据讨论和任务交接重新设计这个工具，将它的能力扩展到真实的团队协作场景上；最终将它发展为独立的开源项目 [Team Cross](https://github.com/YTwsy/Team-Cross)。
-
-Team Cross 让团队成员和各自的 Agent 预览并分享选定的 Codex、Claude Code 会话材料，在原文旁批注和引用；需要共同执行时，再明确开放访问，并交接或收回共享会话的输入权。在最近几个版本的 OpenSurge 开发中，它帮助我把多设备测试的上下文带入需求推进、问题排查和 PR 代码审查，减少反复解释背景与重新定位结论的工作，让这些任务更快接续和推进。
+- 本次以 GitHub Pre-release 发布，不替代 v0.2.4 的稳定版 Latest，也不合入 `master`。
+- 更新检查继续只发现稳定版；安装本候选版本后，后续 RC 需要从 GitHub Releases 手动获取。
+- 网关规则、配置与网络数据面沿用 v0.2.4 的实现边界。下游 IPv6 仍为实验性能力，适用拓扑与验证范围见项目文档。
+- 本次完成 Web/Go/桌面端测试、安装器契约检查、隔离界面检查和双架构打包校验；未为本 RC 重新运行 Virtual Lab 或真实网关网络验收。隔离界面检查不等于真实安装升级或 Intel 实机界面验收。
 
 ### 选择安装包
 
@@ -26,7 +29,7 @@ Team Cross 让团队成员和各自的 Agent 预览并分享选定的 Codex、Cl
 | Apple Silicon（M1 及更新芯片） | `arm64-unsigned.pkg` | macOS 13+ |
 | Intel Mac | `x86_64-unsigned.pkg` | macOS 13+ |
 
-> 安装包未进行 Developer ID 签名或 notarization。正式 Release 会同时提供 `SHA256SUMS` 和 GitHub build provenance，供下载后核验。
+> 安装包未进行 Developer ID 签名或 notarization。此 Pre-release 同时提供 `SHA256SUMS` 和 GitHub build provenance，供下载后核验。
 
 ### 安装
 
@@ -65,19 +68,22 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ## English
 
-### v0.2.4 highlights since v0.2.3
+### v0.3.0-rc.1 highlights since v0.2.4
 
-v0.2.4 focuses on the local Mac's DNS and IPv6 TUN capture paths and completes connection refresh after changing a shared policy group. Downstream devices keep their own policies and IPv6 packet path.
+Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. This is the first v0.3 release candidate based on `Next`, intended for users who want to try the new experience and report issues. v0.2.4 remains the stable release.
 
-- **Mac system DNS coordination with TUN:** Once TUN auto-routing is ready, OpenSurge now sets the upstream network service's system DNS to a path Mihomo can intercept by default. This reduces local queries bypassing TUN and connections losing domain or fake-IP context. Stop, rollback, and engine restart restore the original setting according to ownership while preserving later changes by other software; the Web GUI can disable the feature. Imported profiles need explicit resolvers while it is enabled, avoiding a `system` resolver loop.
-- **Complete, independent Mac IPv6 TUN routes:** The system TUN covers public IPv6, the full fake IPv6 pool, and precise Tailnet routes. Local capture no longer depends on downstream IPv6 takeover or disappears when a custom precise route is present. Mac-local rules still match only the system TUN's exact identity; downstream devices keep their separate IPv6 packet path.
-- **Connection refresh for shared policy groups:** After a successful node change in Policies & Node Health, the UI explains that the new selection affects new connections and offers an explicit refresh. It matches the policy group's exact name in active connection chains, including connections from the Mac and downstream devices following gateway rules or referencing the group through another policy, while leaving unrelated connections alone. Possible interruptions to downloads or calls are disclosed before refresh; changing the node itself does not close existing connections.
+- **A complete desktop entry point:** Overview, network settings, devices, connections, policies and diagnostics now open in a dedicated desktop window with native menus, shortcuts, file selection and saving. Hiding and reopening the window preserves the current page and drafts. The menu bar retains an Open in Browser action.
+- **A more useful menu-bar panel:** Upload/download rates, a 60-second traffic trend, local egress and active devices are available at a glance. Network details, local egress and individual devices expand inside the panel, with transitions and content-driven window sizing. Stopping the gateway replaces empty charts with a compact status; menu-bar traffic sampling continues independently while the desktop window is hidden.
+- **Unified settings and appearance:** OpenSurge → Settings…, `⌘,` and the sidebar lead to the same separate settings window for language, appearance, login display, temporary lid-closed operation and updates, with quit and uninstall actions. The flat sidebar status area expands quick settings through a gear icon. Title bars, selects, scrollbars and text selection follow the OpenSurge visual style.
+- **Smoother window behavior:** Dock visibility follows the desktop and settings windows. A light gradient and the OpenSurge icon cover startup loading. App reopening and quit/uninstall confirmations come to the foreground more reliably, with service reconnection and UI state preservation.
+- **Node test results as they finish:** Each completed node test updates its result without waiting for the batch. This release also improves connectivity text contrast, policy control alignment, device navigation from the menu bar and horizontal scrolling within diagnostic logs.
 
-### Behind the development: Team Cross
+### Release-candidate notes
 
-OpenSurge development often requires validating the same network path on a Mac and multiple downstream devices. Investigations and fixes can span several machines and Agent Sessions, so test evidence, key findings, and next steps need to travel between them. I initially built a multi-agent collaboration tool for my own workflow. Seeing how much it accelerated OpenSurge development made me realize that teams face the same challenges when working together across product and engineering. Drawing on my experience in development teams, I redesigned and rebuilt the tool around sharing sessions, discussing evidence, and handing off tasks. What began as a personal tool became the independent open-source project [Team Cross](https://github.com/YTwsy/Team-Cross).
-
-Team Cross lets teammates and their agents preview and share selected Codex and Claude Code session material, annotate and cite passages alongside the original, and explicitly grant access when they need to work together. They can hand over or reclaim input control of a shared session. In recent OpenSurge versions, it has helped me carry multi-device test context into feature development, troubleshooting, and PR code review. That reduces repeated explanations and the need to rediscover conclusions, helping these tasks continue and move forward faster.
+- Published as a GitHub Pre-release, without replacing v0.2.4 as the stable Latest release or merging into `master`.
+- Update checks still discover stable releases only. Subsequent RCs must be downloaded manually from GitHub Releases.
+- Gateway rules, configuration and the network data plane retain their v0.2.4 implementation boundaries. Downstream IPv6 remains experimental; supported topologies and validation limits are documented in the project.
+- Validation covers Web/Go/desktop tests, installer contracts, isolated UI checks and both architecture packages. Virtual Lab and real gateway/network acceptance were not rerun for this RC. Isolated UI checks do not establish a real installation/upgrade or Intel hardware UI acceptance.
 
 ### Choose a package
 
@@ -86,7 +92,7 @@ Team Cross lets teammates and their agents preview and share selected Codex and 
 | Apple Silicon (M1 or newer) | `arm64-unsigned.pkg` | macOS 13+ |
 | Intel Mac | `x86_64-unsigned.pkg` | macOS 13+ |
 
-> The installers are not Developer ID signed or notarized. The stable Release will also provide `SHA256SUMS` and GitHub build provenance for post-download verification.
+> The installers are not Developer ID signed or notarized. This Pre-release provides `SHA256SUMS` and GitHub build provenance for post-download verification.
 
 ### Install
 

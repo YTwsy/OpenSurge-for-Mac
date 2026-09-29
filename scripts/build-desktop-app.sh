@@ -11,7 +11,7 @@ case "$VARIANT" in
   production) APP_NAME=OpenSurge; BUNDLE_ID=com.opensurge.menubar ;;
   *) echo "usage: $0 [preview|production]" >&2; exit 2 ;;
 esac
-RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v0.2.4-next}"
+RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v0.3.0-rc.1}"
 [[ "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]] || { echo "invalid desktop release tag" >&2; exit 1; }
 RELEASE_VERSION="${RELEASE_TAG#v}"
 RELEASE_VERSION="${RELEASE_VERSION%%[-+]*}"
@@ -52,6 +52,7 @@ PLIST="$BUNDLE/Contents/Info.plist"
 /usr/bin/plutil -replace CFBundleName -string "$APP_NAME" "$PLIST"
 /usr/bin/plutil -replace CFBundleDisplayName -string "$APP_NAME" "$PLIST"
 /usr/bin/plutil -insert OpenSurgeReleaseTag -string "$RELEASE_TAG" "$PLIST"
+/usr/bin/plutil -insert OpenSurgeReleaseCodename -string "$(python3 "$ROOT/scripts/release-codename.py" "$RELEASE_TAG")" "$PLIST"
 /usr/bin/plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
 /usr/bin/plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$PLIST"
 ICONSET="$STAGING/OpenSurgeAppIcon.iconset"

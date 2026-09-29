@@ -6,7 +6,7 @@ import { desktopAction } from '../desktop'
 import { activateLanguage, prepareLanguage } from '../i18n'
 import { TrayUtilities } from './TrayUtilities'
 vi.mock('../desktop', () => ({ desktopAction: vi.fn() }))
-const initial = { login: { state: 'disabled', sequence: 1, failed: false }, update: { current: 'v0.2.4-next', checking: false, checked: false, failed: false, sequence: 1 } }
+const initial = { login: { state: 'disabled', sequence: 1, failed: false }, update: { current: 'v0.3.0-rc.1', checking: false, checked: false, failed: false, sequence: 1 } }
 beforeEach(async () => { await prepareLanguage('en'); activateLanguage('en'); vi.mocked(desktopAction).mockResolvedValue(initial) })
 afterEach(() => { cleanup(); vi.resetAllMocks(); activateLanguage('zh-Hans') })
 it('shows pending approval and preserves the OS state after a failed change', async () => {

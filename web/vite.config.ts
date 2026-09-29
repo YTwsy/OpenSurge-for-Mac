@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '')
-  const releaseTag = env.OPENSURGE_RELEASE_TAG?.trim() || 'v0.2.4-next'
+  const releaseTag = env.OPENSURGE_RELEASE_TAG?.trim() || 'v0.3.0-rc.1'
 
   return {
     plugins: [react()],
