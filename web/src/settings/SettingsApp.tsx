@@ -35,7 +35,13 @@ export function SettingsApp() {
  }, [beginLanguageRefresh])
  return <main className="settings-app">
   <div className="desktop-titlebar" aria-hidden="true" />
-  <header className="settings-header"><img src="/opensurge-icon.png" alt="" /><div><h1>{t('OpenSurge 设置')}</h1><p>{t('个性化你的 OpenSurge 使用体验。')}</p></div></header>
+  <header className="settings-header"><img src="/opensurge-icon.png" alt="" /><div>
+   <h1>{t('OpenSurge 设置')}</h1><p>{t('个性化你的 OpenSurge 使用体验。')}</p>
+   <nav className="settings-project-links" aria-label={t('项目链接')}>
+    <a href="https://github.com/YTwsy/OpenSurge-for-Mac" target="_blank" rel="noreferrer" onClick={event => { event.preventDefault(); setUtilityError(''); openLink('open-external', { url: event.currentTarget.href }) }}>{t('GitHub 仓库')}<span aria-hidden="true">↗</span></a>
+    <a href="https://opensurge.pages.dev/" target="_blank" rel="noreferrer" onClick={event => { event.preventDefault(); setUtilityError(''); openLink('open-external', { url: event.currentTarget.href }) }}>{t('文档')}<span aria-hidden="true">↗</span></a>
+   </nav>
+  </div></header>
   <section className="settings-section" aria-label={t('界面')}>
    <div className="settings-row"><label htmlFor="settings-language">{t('界面语言')}</label><Select id="settings-language" aria-label={t('界面语言')} value={language} disabled={languageChanging} onChange={value => { setError(''); void changeLanguage(value as RequestedLanguage) }}><option value="system">{t('跟随系统')}</option><option value="zh-Hans">简体中文</option><option value="en">English</option></Select></div>
    {languageChanging && <p className="settings-hint" role="status">{t('正在保存语言…')}</p>}
