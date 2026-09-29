@@ -266,10 +266,31 @@ describe('OpenSurge app shell', () => {
     await waitFor(() => expect(close).toHaveBeenCalled())
   })
 
+  it('keeps flat status visible and exposes quick controls only when expanded', async () => {
+    render(<App />)
+    const disclosure = await screen.findByRole('button', { name: /^快捷设置：/ })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(disclosure.textContent).toContain(`${import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose`)
+    expect(screen.queryByRole('checkbox', { name: /合盖保持运行/ })).toBeNull()
+    expect(screen.queryByRole('combobox')).toBeNull()
+    disclosure.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('checkbox', { name: /合盖保持运行/ })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: '深色模式' })).toBeTruthy()
+    await userEvent.click(disclosure)
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('checkbox', { name: /合盖保持运行/ })).toBeNull()
+    expect(api.setSleepPrevention).not.toHaveBeenCalled()
+    expect(api.setUIPreferences).not.toHaveBeenCalled()
+  })
+
   it('changes the shared interface language from the polished Web GUI selector', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
 
+    await userEvent.click(screen.getByRole('button', { name: /^快捷设置：/ }))
     const selector = screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' })
     await selectOption(selector, 'en')
 
@@ -291,6 +312,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.setUIPreferences).mockImplementationOnce(() => new Promise(resolve => { saved = resolve }))
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: /^快捷设置：/ }))
     await selectOption(screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' }), 'en')
     await screen.findByRole('heading', { name: 'Your whole-home gateway at a glance' })
     await act(async () => stateListener?.(new Event('state')))
@@ -359,6 +381,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.setSleepPrevention).mockResolvedValue(enabled.sleep_prevention)
     vi.mocked(api.overview).mockResolvedValueOnce(overview).mockImplementation(() => new Promise(resolve => { finishRefresh = resolve }))
     render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: /^快捷设置：/ }))
     const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
     expect((toggle as HTMLInputElement).checked).toBe(false)
     await userEvent.click(toggle)
@@ -389,6 +412,7 @@ describe('OpenSurge app shell', () => {
       .mockResolvedValue(enabled)
 
     render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: /^快捷设置：/ }))
     const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
     await userEvent.click(toggle)
     await waitFor(() => expect(api.setSleepPrevention).toHaveBeenCalledWith(true))
@@ -989,11 +1013,13 @@ describe('OpenSurge app shell', () => {
 
   it('switches between dark and light backgrounds and remembers the choice', async () => {
     render(<App />)
-    const toggle = await screen.findByRole('button', { name: '切换为浅色模式' })
+    await userEvent.click(await screen.findByRole('button', { name: /^快捷设置：/ }))
+    const toggle = await screen.findByRole('checkbox', { name: '深色模式' }) as HTMLInputElement
+    expect(toggle.checked).toBe(true)
     await userEvent.click(toggle)
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(window.localStorage.getItem('opensurge-theme')).toBe('light')
-    expect(screen.getByRole('button', { name: '切换为深色模式' })).toBeTruthy()
+    expect(toggle.checked).toBe(false)
   })
 
   it('requires saving corrected configuration before the prepared recovery can advance', async () => {

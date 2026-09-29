@@ -114,28 +114,30 @@ type HelperClient struct {
 }
 
 type HelperRequest struct {
-	Action         string                     `json:"action"`
-	ConfigPath     string                     `json:"config_path"`
-	Manual         *macosnetwork.ManualConfig `json:"manual,omitempty"`
-	NetworkService string                     `json:"network_service,omitempty"`
-	Interface      string                     `json:"interface,omitempty"`
-	TimeoutMillis  int                        `json:"timeout_millis,omitempty"`
-	Revision       string                     `json:"revision,omitempty"`
-	Payload        []byte                     `json:"payload,omitempty"`
-	SourceDigest   string                     `json:"source_digest,omitempty"`
-	OverlayDigest  string                     `json:"overlay_digest,omitempty"`
-	WatchProgress  bool                       `json:"watch_progress,omitempty"`
-	Workspace      *PolicyWorkspaceInput      `json:"workspace,omitempty"`
+	Action             string                     `json:"action"`
+	ConfigPath         string                     `json:"config_path"`
+	Manual             *macosnetwork.ManualConfig `json:"manual,omitempty"`
+	NetworkService     string                     `json:"network_service,omitempty"`
+	Interface          string                     `json:"interface,omitempty"`
+	TimeoutMillis      int                        `json:"timeout_millis,omitempty"`
+	Revision           string                     `json:"revision,omitempty"`
+	Payload            []byte                     `json:"payload,omitempty"`
+	SourceDigest       string                     `json:"source_digest,omitempty"`
+	OverlayDigest      string                     `json:"overlay_digest,omitempty"`
+	WatchProgress      bool                       `json:"watch_progress,omitempty"`
+	WatchPolicyResults bool                       `json:"watch_policy_results,omitempty"`
+	Workspace          *PolicyWorkspaceInput      `json:"workspace,omitempty"`
 }
 
 type HelperResponse struct {
-	OK          bool                     `json:"ok"`
-	Error       string                   `json:"error,omitempty"`
-	DHCPServers []string                 `json:"dhcp_servers,omitempty"`
-	Revision    string                   `json:"revision,omitempty"`
-	Reloaded    bool                     `json:"reloaded,omitempty"`
-	Progress    *gateway.Progress        `json:"progress,omitempty"`
-	Workspace   *PolicyWorkspaceResponse `json:"workspace,omitempty"`
+	OK           bool                     `json:"ok"`
+	Error        string                   `json:"error,omitempty"`
+	DHCPServers  []string                 `json:"dhcp_servers,omitempty"`
+	Revision     string                   `json:"revision,omitempty"`
+	Reloaded     bool                     `json:"reloaded,omitempty"`
+	Progress     *gateway.Progress        `json:"progress,omitempty"`
+	Workspace    *PolicyWorkspaceResponse `json:"workspace,omitempty"`
+	PolicyResult *mihomo.ProxyDelayResult `json:"policy_result,omitempty"`
 }
 
 func (c HelperClient) Run(ctx context.Context, action, configPath string) error {
@@ -200,6 +202,8 @@ func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperRe
 	_ = conn.SetDeadline(time.Now().Add(helperConnectionTimeout))
 	report := gateway.ProgressReporter(ctx)
 	request.WatchProgress = report != nil
+	reportPolicy := policyWorkspaceResultReporter(ctx)
+	request.WatchPolicyResults = reportPolicy != nil
 	if err := json.NewEncoder(conn).Encode(request); err != nil {
 		return HelperResponse{}, err
 	}
@@ -215,6 +219,12 @@ func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperRe
 		if response.Progress != nil {
 			if report != nil {
 				report(*response.Progress)
+			}
+			continue
+		}
+		if response.PolicyResult != nil {
+			if reportPolicy != nil {
+				reportPolicy(*response.PolicyResult)
 			}
 			continue
 		}
@@ -425,6 +435,9 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 				var result PolicyWorkspaceResponse
 				workspaceCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 				defer cancel()
+				if request.WatchPolicyResults && request.Workspace.Request.Action == "test" {
+					workspaceCtx = withHelperPolicyResults(workspaceCtx, conn, cancel)
+				}
 				result, err = policyManager.run(cfg, func() (PolicyWorkspaceResponse, error) {
 					return runner.PolicyWorkspace(workspaceCtx, configPath, *request.Workspace)
 				})

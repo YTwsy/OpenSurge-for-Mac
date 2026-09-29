@@ -49,6 +49,10 @@ func (h *desktopHost) reconnect(ctx context.Context) error {
 }
 
 func (h *desktopHost) foregroundWarning(title, message string) (*application.MessageDialog, func()) {
+	if h.settings != nil && h.settings.IsVisible() && (h.settings.IsFocused() || !h.main.IsVisible()) {
+		native.Present(h.settings)
+		return h.app.Dialog.Warning().SetTitle(title).SetMessage(message).AttachToWindow(h.settings), func() {}
+	}
 	visible, minimised := h.main.IsVisible(), h.main.IsMinimised()
 	h.show("")
 	restore := func() {

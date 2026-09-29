@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { api } from '../api'
+import { api, type PolicyTestObserver } from '../api'
 import { watchVisibleRefresh } from '../visibility'
 import type { PolicyWorkspaceRequest, PolicyWorkspaceSnapshot } from '../types'
 
@@ -24,6 +24,8 @@ export function usePolicyWorkspace(refreshKey: string) {
   const pendingMutations = useRef(0)
   const refreshPending = useRef(false)
   const mutationQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const testControllers = useRef(new Set<AbortController>())
+  const testOwners = useRef(new Map<string, symbol>())
 
   const refresh = useCallback(async () => {
     if (pendingMutations.current) {
@@ -52,7 +54,11 @@ export function usePolicyWorkspace(refreshKey: string) {
 
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false; readVersion.current += 1 }
+    return () => {
+      mounted.current = false
+      readVersion.current += 1
+      testControllers.current.forEach(controller => controller.abort())
+    }
   }, [])
 
   useEffect(() => { void refresh() }, [refresh, refreshKey])
@@ -63,11 +69,12 @@ export function usePolicyWorkspace(refreshKey: string) {
     }, 5000, false)
   }, [refresh])
 
-  const mutate = useCallback((request: Exclude<PolicyWorkspaceRequest, { action: 'read' }>) => {
+  const mutate = useCallback((request: Exclude<PolicyWorkspaceRequest, { action: 'read' }>, observer?: PolicyTestObserver) => {
     pendingMutations.current += 1
     readVersion.current += 1
     const operation = mutationQueue.current.then(async () => {
-      const response = await api.policyWorkspace(request)
+      if (observer?.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      const response = await (observer ? api.policyWorkspace(request, observer) : api.policyWorkspace(request))
       if (mounted.current) {
         setSnapshot(normalizeSnapshot(response))
         setError('')
@@ -76,7 +83,7 @@ export function usePolicyWorkspace(refreshKey: string) {
       return response
     }).catch(cause => {
       if (mounted.current) {
-        setSnapshot(null)
+        if (request.action !== 'test') setSnapshot(null)
         setError(cause instanceof Error ? cause.message : String(cause))
       }
       throw cause
@@ -97,22 +104,47 @@ export function usePolicyWorkspace(refreshKey: string) {
   const select = useCallback((group: string, policy: string) => mutate({ action: 'select', group, policy }), [mutate])
 
   const test = useCallback(async (names: string[]) => {
-    const unique = [...new Set(names.filter(Boolean))]
+    const unique = [...new Set(names.filter(name => name && !testOwners.current.has(name)))]
     if (!unique.length) return
+    const owner = Symbol('policy-test')
+    unique.forEach(name => testOwners.current.set(name, owner))
+    const controller = new AbortController()
+    testControllers.current.add(controller)
     setTesting(current => new Set([...current, ...unique]))
     setError('')
+    const finished = (names: string[]) => {
+      const owned = names.filter(name => testOwners.current.get(name) === owner)
+      owned.forEach(name => testOwners.current.delete(name))
+      if (mounted.current) setTesting(current => {
+        const next = new Set(current)
+        owned.forEach(name => next.delete(name))
+        return next
+      })
+    }
     try {
       for (let offset = 0; offset < unique.length; offset += 120) {
-        await mutate({ action: 'test', names: unique.slice(offset, offset + 120) })
+        if (controller.signal.aborted) break
+        const batch = unique.slice(offset, offset + 120)
+        await mutate({ action: 'test', names: batch }, {
+          signal: controller.signal,
+          onResult: result => {
+            if (!mounted.current || controller.signal.aborted || !batch.includes(result.name) || testOwners.current.get(result.name) !== owner) return
+            setSnapshot(current => current && ({
+              ...current,
+              health: { ...current.health, proxies: current.health.proxies.map(proxy => proxy.name === result.name ? {
+                ...proxy, status: result.status, delay_ms: result.delay_ms, tested_at: result.tested_at, error: result.error,
+              } : proxy) },
+            }))
+            finished([result.name])
+          },
+        })
+        finished(batch)
       }
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (mounted.current) setTesting(current => {
-        const next = new Set(current)
-        unique.forEach(name => next.delete(name))
-        return next
-      })
+      testControllers.current.delete(controller)
+      finished(unique)
     }
   }, [mutate])
 
