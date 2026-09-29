@@ -33,7 +33,7 @@ export function TrayApp() {
   document.addEventListener('visibilitychange', focusPanel)
   return () => document.removeEventListener('visibilitychange', focusPanel)
  }, [])
- const [theme] = useTheme()
+ const [, , theme] = useTheme()
  useEffect(() => { void desktopAction('tray-appearance', { theme }).catch(() => {}) }, [theme])
  const more = useRef<HTMLDetailsElement>(null)
  useEffect(() => {

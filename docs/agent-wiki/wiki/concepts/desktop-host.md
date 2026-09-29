@@ -60,9 +60,10 @@ Native View-menu navigation preserves React's existing dirty-device guard; refre
 requests state without reloading. The host loads the pinned Wails runtime explicitly
 so native-to-renderer events are delivered through the supported bridge.
 
-Dock presence follows the main window, using AppKit's regular/accessory activation
-policies. Closing or hiding the main UI removes its Dock entry; reopening from the
-menu bar or a second launch restores it. A covered window stays in Dock, and a
+Dock presence follows the main and Settings windows, using AppKit's regular/accessory
+activation policies. Closing the last visible desktop window removes its Dock entry;
+reopening from the menu bar or a second launch restores it. Closing the main window
+while Settings is visible must retain Dock presence. A covered window stays in Dock, and a
 minimised window retains its normal Dock restore path. Tray visibility does not
 control Dock presence. Do not use Wails WindowHide alone for this decision: on macOS
 that event also represents occlusion by another window.
@@ -90,6 +91,18 @@ scrollbar track; thumbs use a low-opacity neutral green, including on hover.
 Language saves fence background preference refreshes until the
 mutation completes; async catalog preparation must recheck the request generation
 before updating the rendered language.
+
+App-wide preferences live in one reusable `/desktop-settings` window, opened by
+**OpenSurge → Settings…**, `⌘,`, or the desktop sidebar. It hides on close, has no
+minimise/maximise/fullscreen controls, and does not replace the main window or its
+drafts. Browser users retain their existing sidebar language/appearance controls.
+Language uses the existing Control API preference; Settings publishes changes only
+after a successful save. Shared hooks fence late reads and synchronise windows through
+the same-origin storage event. Appearance stores Light, Dark, or System locally; System
+clears native appearance overrides and follows subsequent macOS changes. Login at
+startup and stable-release checks reuse the tray's sequence-ordered native managers.
+The tray's settings remain flat. Opening Settings neither starts a gateway nor
+registers a login item; only an explicit switch change requests the latter.
 
 A small AppKit/WKWebView delegate adapter supplies native JavaScript confirmation
 sheets, external-navigation confinement, and actual NSWindow visibility. It forwards
@@ -146,6 +159,13 @@ slow routing query cannot stall rates. Hidden popups pause renderer reads, retai
 native history for immediate display on reopen. Failed reads clear observations;
 sleep/service gaps over the Control API's 15-second validity window require a new
 baseline. The first sample is not shown as a zero rate.
+
+Stopped gateways collapse the rate figures and chart into a compact start hint.
+Its link opens the existing Network page, without issuing a start command. Unknown
+status and initial sampling also use compact text rather than an empty chart; only
+valid sample history expands the chart, including when the measured rates are zero.
+The intrinsic-height transition shares the popup's native sizing bridge and respects
+Reduced Motion, so its top remains anchored while the lower edge moves.
 
 The background is AppKit `NSVisualEffectMaterialPopover` with behind-window
 blending beneath a transparent WKWebView, enabled by Wails' `MacBackdropTranslucent`

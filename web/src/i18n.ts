@@ -1,7 +1,7 @@
 export type RequestedLanguage = 'system' | 'zh-Hans' | 'en'
 export type ResolvedLanguage = 'zh-Hans' | 'en'
 
-const languageCacheKey = 'opensurge-ui-language'
+export const languageCacheKey = 'opensurge-ui-language'
 
 const english: Record<string, string> = {
   '语言': 'Language',

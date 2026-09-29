@@ -44,6 +44,7 @@ async function operationStatusRequest<T>(path: string): Promise<T> {
 export const api = {
   recoveryCard: async () => (await controlResponse('/api/v1/recovery/card')).text(),
   overview: () => request<Overview>('/api/v1/overview'),
+  uiPreferences: () => request<UIPreferences>('/api/v1/ui-preferences'),
   config: () => request<ControlConfig>('/api/v1/config'),
   networkInterfaces: () => request<NetworkInterfacesResponse>('/api/v1/network/interfaces'),
   networkDefaults: (mode: NetworkDefaults['mode']) => request<NetworkDefaults>(`/api/v1/network/defaults?mode=${encodeURIComponent(mode)}`),

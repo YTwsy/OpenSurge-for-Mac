@@ -503,6 +503,9 @@ html[data-theme="light"] .connection-refresh-prompt{background:#fffffff5;border-
 .theme-toggle{border:1px solid #2b433b;background:#12241e;color:#cfe0d9;border-radius:10px;padding:10px 12px;text-align:left;display:flex;align-items:center;gap:10px;font-weight:700}
 .theme-toggle:hover{border-color:#6fcfa6;background:#172f27}
 .theme-toggle span{width:20px;text-align:center}
+.desktop-settings-link{justify-content:space-between}
+.desktop-settings-link span{width:auto;text-align:left}
+.desktop-settings-link kbd{font:inherit;font-weight:400;opacity:.65}
 .sidebar-status{margin-top:12px}
 .router-link{color:#8ce9bd;text-decoration-color:#4f9d7b;text-underline-offset:3px}
 .router-link:hover{color:#c0f7dc}

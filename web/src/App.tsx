@@ -3,6 +3,7 @@ import { api, authenticationRequiredEvent, RequestError } from './api'
 import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from './desktop'
 import { watchVisibleRefresh } from './visibility'
 import { useTheme } from './hooks/useTheme'
+import { useInterfaceLanguage } from './hooks/useInterfaceLanguage'
 import './styles.css'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { ConnectionRefreshPrompts, queueConnectionRefreshSuggestion, type ConnectionRefreshSuggestion, type ConnectionRefreshSuggestionItem } from './components/ConnectionRefreshPrompts'
@@ -22,7 +23,7 @@ import { SourcesPage } from './pages/SourcesPage'
 import { needsNetworkRecoveryWarning, statusLabel } from './status'
 import { operationStatusUnknownMessage } from './operations'
 import type { Overview } from './types'
-import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, resolveLanguage, t, type RequestedLanguage } from './i18n'
+import { t } from './i18n'
 
 type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connections' | 'connectivity' | 'diagnostics'
 type NetworkNavigationTarget = 'none' | 'control' | 'bottom'
@@ -68,8 +69,7 @@ export function App() {
   const [error, setError] = useState('')
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
   const [theme, setTheme] = useTheme()
-  const [language, setLanguage] = useState<RequestedLanguage>(initialRequestedLanguage)
-  const [languageChanging, setLanguageChanging] = useState(false)
+  const { language, languageChanging, changeLanguage, beginLanguageRefresh } = useInterfaceLanguage(setError)
   const [devicesDirty, setDevicesDirty] = useState(false)
   const [connectionsView, setConnectionsView] = useState<ConnectionsViewState>(initialConnectionsView)
   const connectionsScroll = useRef<number | null>(null)
@@ -80,41 +80,24 @@ export function App() {
   const notificationID = useRef(0)
   const connectionRefreshSuggestionID = useRef(0)
   const sleepPreventionGeneration = useRef(0)
-  const languageGeneration = useRef(0)
-  const languagePending = useRef(false)
   const policiesScrollPosition = useRef<number | null>(null)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
   pageRef.current = page
   devicesDirtyRef.current = devicesDirty
 
-  useEffect(() => {
-    activateLanguage(language)
-    cacheRequestedLanguage(language)
-    if (isDesktop()) void desktopAction('language', { language: resolveLanguage(language) }).catch(() => {})
-  }, [language])
-
   useEffect(() => watchDesktopLinks(setError), [])
-
-  const commitLanguage = useCallback(async (nextLanguage: RequestedLanguage, generation = languageGeneration.current) => {
-    await prepareLanguage(nextLanguage)
-    if (generation !== languageGeneration.current) return
-    activateLanguage(nextLanguage)
-    setLanguage(nextLanguage)
-  }, [])
 
   const refresh = useCallback(async () => {
     const sleepGeneration = sleepPreventionGeneration.current
-    const requestedLanguageGeneration = languageGeneration.current
+    const acceptLanguage = beginLanguageRefresh()
     try {
       const nextOverview = await api.overview()
       setOverview(current => sleepGeneration === sleepPreventionGeneration.current || !current
         ? nextOverview
         : { ...nextOverview, sleep_prevention: current.sleep_prevention })
       setError('')
-      if (!languagePending.current && requestedLanguageGeneration === languageGeneration.current && isRequestedLanguage(nextOverview.ui_preferences?.language)) {
-        await commitLanguage(nextOverview.ui_preferences.language, requestedLanguageGeneration)
-      }
+      await acceptLanguage(nextOverview.ui_preferences?.language)
     } catch (cause) {
       if (cause instanceof RequestError && cause.status === 401) {
         setAuthenticationRequired(true)
@@ -123,29 +106,7 @@ export function App() {
       }
       setError(cause instanceof Error ? cause.message : String(cause))
     }
-  }, [commitLanguage])
-
-  const changeLanguage = async (nextLanguage: RequestedLanguage) => {
-    if (languagePending.current || nextLanguage === language) return
-    const previousLanguage = language
-    languageGeneration.current += 1
-    languagePending.current = true
-    setLanguageChanging(true)
-    try {
-      await commitLanguage(nextLanguage)
-      const preferences = await api.setUIPreferences({ language: nextLanguage })
-      languageGeneration.current += 1
-      await commitLanguage(preferences.language)
-      await refresh()
-    } catch (cause) {
-      languageGeneration.current += 1
-      await commitLanguage(previousLanguage)
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      languagePending.current = false
-      setLanguageChanging(false)
-    }
-  }
+  }, [beginLanguageRefresh])
 
   useEffect(() => {
     const requireAuthentication = () => {
@@ -303,8 +264,10 @@ export function App() {
       <div className="sidebar-controls">
         <label className={`sidebar-switch ${overview?.sleep_prevention?.active ? 'active' : ''}`} title={t('阻止空闲睡眠和合盖睡眠。合盖运行可能明显增加耗电与发热，请勿放入不通风的包内。')}><input type="checkbox" checked={overview?.sleep_prevention?.active ?? false} disabled={!overview || sleepPreventionChanging} onChange={event => void setSleepPrevention(event.target.checked)} /><span><strong>{t(sleepPreventionChanging ? '正在切换…' : '合盖保持运行')}</strong><small>{t(overview?.sleep_prevention?.active ? '系统睡眠已临时禁用' : '默认关闭 · 本次运行有效')}</small></span></label>
         {overview?.sleep_prevention?.error && <small className="sidebar-control-error" role="status">{overview.sleep_prevention.error}</small>}
-        <LanguageSelector language={language} changing={languageChanging} onChange={next => void changeLanguage(next)} />
+        {isDesktop() ? <button type="button" className="theme-toggle desktop-settings-link" onClick={() => { void desktopAction('show-settings').catch(cause => setError(cause instanceof Error ? cause.message : String(cause))) }}><span>{t('设置…')}</span><kbd>⌘,</kbd></button> : <>
+        <LanguageSelector language={language} changing={languageChanging} onChange={next => { void changeLanguage(next).then(changed => { if (changed) void refresh() }) }} />
         <button type="button" className="theme-toggle" aria-pressed={theme === 'light'} aria-label={t(theme === 'dark' ? '切换为浅色模式' : '切换为深色模式')} onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}><span aria-hidden="true">{theme === 'dark' ? '☀' : '◐'}</span>{t(theme === 'dark' ? '浅色模式' : '深色模式')}</button>
+        </>}
       </div>
       <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway, overview?.status.runtime_state)}</strong><small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose</small></div></div>
     </aside>

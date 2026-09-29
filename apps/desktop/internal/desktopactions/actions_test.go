@@ -96,3 +96,30 @@ func TestTrayNavigationAndAppearance(t *testing.T) {
 		t.Fatalf("target=%q theme=%q", target, theme)
 	}
 }
+
+func TestSettingsCapabilities(t *testing.T) {
+	calls, theme := 0, ""
+	a := &Actions{ShowSettings: func() { calls++ }, SetSettingsAppearance: func(value string) { theme = value }}
+	for _, test := range []struct {
+		action, body string
+		want         int
+	}{
+		{"show-settings", `{}`, 200},
+		{"show-settings", `{"page":"dashboard"}`, 400},
+		{"show-settings", `{"url":"https://example.com"}`, 400},
+		{"show-settings", `{"enabled":true}`, 400},
+		{"settings-appearance", `{"theme":"dark"}`, 200},
+		{"settings-appearance", `{"theme":"light"}`, 200},
+		{"settings-appearance", `{"theme":"system"}`, 200},
+		{"settings-appearance", `{"theme":"arbitrary"}`, 400},
+	} {
+		w := httptest.NewRecorder()
+		a.ServeHTTP(w, httptest.NewRequest("POST", "/desktop/v1/"+test.action, strings.NewReader(test.body)))
+		if w.Code != test.want {
+			t.Fatalf("%s: %s: got %d", test.action, test.body, w.Code)
+		}
+	}
+	if calls != 1 || theme != "system" {
+		t.Fatalf("calls=%d theme=%q", calls, theme)
+	}
+}

@@ -25,6 +25,7 @@ import (
 type desktopHost struct {
 	app           *application.App
 	main          *application.WebviewWindow
+	settings      *application.WebviewWindow
 	client        *controlclient.Client
 	mu            sync.Mutex
 	language      string
@@ -82,15 +83,17 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 			}
 			return nil
 		},
-		SaveRecovery:      h.saveRecovery,
-		SetLanguage:       h.setLanguage,
-		SetTrayAppearance: func(theme string) { native.SetAppearance(h.popup, theme) },
-		ShowMain:          h.show,
-		MenuStatus:        h.menuSnapshot,
-		TrayActivity:      func() any { return h.activity.Snapshot() },
-		Reconnect:         h.reconnect,
-		Utilities:         h.utilities,
-		Uninstall:         h.uninstall,
+		SaveRecovery:          h.saveRecovery,
+		SetLanguage:           h.setLanguage,
+		SetTrayAppearance:     func(theme string) { native.SetAppearance(h.popup, theme) },
+		SetSettingsAppearance: func(theme string) { native.SetAppearance(h.settings, theme) },
+		ShowSettings:          h.showSettings,
+		ShowMain:              h.show,
+		MenuStatus:            h.menuSnapshot,
+		TrayActivity:          func() any { return h.activity.Snapshot() },
+		Reconnect:             h.reconnect,
+		Utilities:             h.utilities,
+		Uninstall:             h.uninstall,
 		SetLogin: func(enabled bool) (any, error) {
 			if !h.quitBusy.CompareAndSwap(false, true) {
 				return nil, servicelife.ErrQuitting
@@ -149,6 +152,14 @@ func (h *desktopHost) setLanguage(language string) {
 	if h.popup != nil {
 		native.SetLanguage(h.popup, language == "en")
 	}
+	if h.settings != nil {
+		native.SetLanguage(h.settings, language == "en")
+		title := "OpenSurge 设置"
+		if language == "en" {
+			title = "OpenSurge Settings"
+		}
+		h.settings.SetTitle(title)
+	}
 	h.setMenu(language == "en")
 }
 
@@ -162,9 +173,10 @@ func (h *desktopHost) setMenu(english bool) {
 	menu := h.app.Menu.New()
 	appMenu := menu.AddSubmenu("OpenSurge")
 	appMenu.Add(t("关于 OpenSurge", "About OpenSurge")).SetRole(application.About)
+	appMenu.Add(t("设置…", "Settings…")).SetAccelerator("CmdOrCtrl+,").OnClick(func(*application.Context) { h.showSettings() })
 	appMenu.Add(t("检查更新…", "Check for Updates…")).OnClick(func(*application.Context) {
-		h.showTray()
-		h.popup.ExecJS(`window.dispatchEvent(new Event('opensurge:check-update'));`)
+		h.showSettings()
+		go h.updates.Check(context.Background())
 	})
 	appMenu.AddSeparator()
 	appMenu.Add(t("隐藏 OpenSurge", "Hide OpenSurge")).SetRole(application.Hide).SetAccelerator("CmdOrCtrl+h")

@@ -99,6 +99,16 @@ static WKWebView *findWebView(NSView *view) {
 - (void)finishStartup;
 @end
 
+void refreshOpenSurgeDockVisibility(void) {
+    if (presentingMainWindow) return;
+    BOOL visible = NO;
+    for (NSWindow *window in NSApp.windows) {
+        OpenSurgeWebViewGuard *guard = objc_getAssociatedObject(findWebView(window.contentView), &guardKey);
+        if (guard && !guard.tray && (window.isVisible || window.isMiniaturized)) { visible = YES; break; }
+    }
+    setOpenSurgeDockVisible(visible && !NSApp.isHidden);
+}
+
 @implementation OpenSurgeWebViewGuard
 - (void)showStartup {
     if (self.tray || self.startup) return;
@@ -166,7 +176,7 @@ static WKWebView *findWebView(NSView *view) {
     NSWindow *window = self.webView.window;
     // Occlusion pauses polling but must not remove a covered window from Dock.
     // A minimised window keeps its Dock entry so the normal restore path works.
-    if (!self.tray && !presentingMainWindow) setOpenSurgeDockVisible((window.isVisible || window.isMiniaturized) && !NSApp.isHidden);
+    if (!self.tray) refreshOpenSurgeDockVisibility();
     BOOL visible = window.isVisible && !window.isMiniaturized && (window.occlusionState & NSWindowOcclusionStateVisible);
     NSString *script = [NSString stringWithFormat:@"window.__opensurgeWindowVisible=%@;document.dispatchEvent(new Event('visibilitychange'));", visible ? @"true" : @"false"];
     [self.webView evaluateJavaScript:script completionHandler:nil];
@@ -243,13 +253,13 @@ static WKWebView *findWebView(NSView *view) {
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 @end
 
-void configureOpenSurgeWindow(void *pointer, bool rememberFrame) {
+void configureOpenSurgeWindow(void *pointer, bool rememberFrame, bool tray) {
     NSWindow *window = (__bridge NSWindow *)pointer;
     WKWebView *webView = findWebView(window.contentView);
     if (!webView || objc_getAssociatedObject(webView, &guardKey)) return;
     OpenSurgeWebViewGuard *guard = [OpenSurgeWebViewGuard new];
     guard.webView = webView;
-    guard.tray = !rememberFrame;
+    guard.tray = tray;
     if (guard.tray) {
         // Wails owns the effect view and transparent WKWebView. Use the AppKit
         // popover material rather than a fixed web colour or Liquid Glass.
@@ -305,9 +315,11 @@ void setOpenSurgeWindowLanguage(void *pointer, bool english) {
     guard.english = english;
 }
 
-void setOpenSurgeWindowAppearance(void *pointer, bool dark) {
+void setOpenSurgeWindowAppearance(void *pointer, int preference) {
     NSWindow *window = (__bridge NSWindow *)pointer;
-    window.appearance = [NSAppearance appearanceNamed:dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
+    // System must clear the override, so WebKit's matchMedia can observe macOS
+    // again after an explicit light/dark choice.
+    window.appearance = preference == 0 ? nil : [NSAppearance appearanceNamed:preference == 2 ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
     WKWebView *webView = findWebView(window.contentView);
     OpenSurgeWebViewGuard *guard = objc_getAssociatedObject(webView, &guardKey);
     [guard publishAppearance:nil];
