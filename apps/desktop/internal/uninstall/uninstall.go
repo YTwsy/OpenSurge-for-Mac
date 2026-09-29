@@ -78,7 +78,7 @@ func (m *Manager) Run(ctx context.Context, mode Mode) error {
 		return err
 	}
 	login := m.login.Snapshot()
-	if login.State == "unavailable" {
+	if login.State != "enabled" && login.State != "approval" && login.State != "disabled" {
 		return ErrLogin
 	}
 	restore := login.State == "enabled" || login.State == "approval"

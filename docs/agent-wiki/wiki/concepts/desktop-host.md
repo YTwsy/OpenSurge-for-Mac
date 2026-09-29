@@ -255,8 +255,16 @@ mutations; cancellation returns to the popup without replacing the main React tr
 The native login-item manager uses `SMAppService.mainAppService` and serialises
 status reads and explicit changes. The returned OS status is authoritative; approval
 required and failed registration must never be presented as successful enablement.
-No automatic registration occurs. Custom discovery directories disable real login
-management, while smoke mode supplies a fixture provider. Settings and update results
+No automatic registration occurs. `SMAppServiceStatusNotFound` is reported as
+`not_found`, not `unavailable`: it can occur for a new ad-hoc-signed bundle or after
+an update changes its code signature. The installed App keeps the switch available
+so an explicit enable can register the current bundle. Only the subsequent OS status
+can show enabled or approval; native error domain, code and description survive a
+failed change. Settings and the tray share this feedback. Missing registration must
+not silently bypass the uninstaller's login-cleanup guard.
+Only the production bundle at `/Applications/OpenSurge.app` with the default
+discovery directory can manage real login items; smoke mode supplies a fixture
+provider. Settings and update results
 have independent monotonic sequences so a late poll cannot overwrite a newer result.
 
 The native update checker contacts only the official GitHub latest-release API,
@@ -305,7 +313,12 @@ no confirmation; interactive quit retains its confirmation and safety gates.
 
 The installer does not register or unregister login items. The OS-reported state
 remains authoritative after upgrade. Real login continuity and authorization require
-installed acceptance, not a bundle-ID or fixture assertion. The uninstaller retains
+installed acceptance, not a bundle-ID or fixture assertion. A missing current-bundle
+record has an explicit registration path; never reset the background-task database
+or infer automatic enablement from a stale entry. The isolated macOS gate in
+`tests/desktop/test_login_item.py` checks the actual ServiceManagement bridge across
+two ad-hoc signatures and unregisters both test identities. It does not establish
+installed PKG migration or launch after a real logout/login. The uninstaller retains
 its fixed path and data modes, and waits for its caller to exit itself on success.
 `tests/packaging/test_installer.py` exercises script ordering/retention in temporary
 roots with mocked system commands. It cannot establish host-network cleanup.

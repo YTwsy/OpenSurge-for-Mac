@@ -25,7 +25,8 @@ func (h *desktopHost) utilities() any {
 func (h *desktopHost) initUtilities(installedDirectory, smoke bool) {
 	var provider loginitem.Provider
 	fetch := updates.FetchLatest
-	if installedDirectory {
+	installedApp := installedDirectory && native.IsInstalledApp()
+	if installedApp {
 		provider = native.LoginItem{}
 	}
 	if smoke {
@@ -39,7 +40,7 @@ func (h *desktopHost) initUtilities(installedDirectory, smoke bool) {
 	h.login = loginitem.New(provider)
 	h.updates = updates.New(releaseTag, fetch)
 	h.loginSettings = func() error { native.OpenLoginSettings(); return nil }
-	if !installedDirectory {
+	if !installedApp {
 		h.loginSettings = func() error { return nil }
 	}
 }
