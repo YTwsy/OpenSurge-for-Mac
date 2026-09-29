@@ -20,16 +20,16 @@ export function TrayActivity({ gateway, onOpen }: { gateway?: string; onOpen: (p
   const activeDevices = traffic?.devices.filter(device => device.active_connections > 0).length ?? 0
   const connections = traffic ? traffic.gateway_local.active_connections + traffic.totals.active_connections + (traffic.unclassified_connections ?? 0) : 0
   return <>
-    <section className="tray-traffic" aria-label={t('经 OpenSurge 的实时流量')}>
-      <div className="tray-rates">
+    <section className={`tray-traffic ${running && sampled ? 'expanded' : ''}`} aria-label={t('经 OpenSurge 的实时流量')}>
+      <div className="tray-traffic-reveal" aria-hidden={!running || !sampled}><div className="tray-detail-inner"><div className="tray-rates">
         <div><span><i className="download-key" />{t('下载')}</span><strong>{sampled ? formatRate(traffic!.gateway_rates.download) : '—'}</strong></div>
         <div><span><i className="upload-key" />{t('上传')}</span><strong>{sampled ? formatRate(traffic!.gateway_rates.upload) : '—'}</strong></div>
       </div>
       <svg className="tray-chart" viewBox="0 0 100 50" preserveAspectRatio="none" aria-hidden="true">
         <path className="chart-baseline" d="M 0 46 H 100" />
         {sampled && <><path className="download-area" d={download.areaPath} /><path className="download-line" d={download.linePath} /><path className="upload-line" d={upload.linePath} /></>}
-      </svg>
-      <p className="tray-caption">{t(!running ? '网关未运行' : trafficFailed ? '流量暂不可用' : !sampled ? '正在采样流量…' : '近 60 秒 · 经 OpenSurge 的流量')}</p>
+      </svg></div></div>
+      <div className="tray-traffic-caption"><p className="tray-caption" role="status">{t(gateway === 'stopped' ? '启动网关后显示实时流量' : !running ? '等待网关状态…' : trafficFailed ? '流量暂不可用' : !sampled ? '正在采样流量…' : '近 60 秒 · 经 OpenSurge 的流量')}</p>{gateway === 'stopped' && <button className="tray-text-button" onClick={() => onOpen('network')}>{t('前往启动')} <span aria-hidden="true">›</span></button>}</div>
     </section>
     <div className={`tray-routing-group ${expanded === 'routing' ? 'expanded' : ''}`}>
       <button className="tray-link-row tray-routing" aria-expanded={expanded === 'routing'} aria-controls={`${detailID}-routing`} onClick={() => toggle('routing')}>

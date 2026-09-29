@@ -13,23 +13,25 @@ import (
 )
 
 type Actions struct {
-	OpenExternal      func(string) error
-	OpenBrowser       func(context.Context) error
-	CopyText          func(string) error
-	SaveRecovery      func(context.Context) (bool, error)
-	SetLanguage       func(string)
-	SetTrayAppearance func(string)
-	MenuStatus        func(context.Context, bool) any
-	TrayActivity      func() any
-	ShowMain          func(string)
-	SetSleep          func(context.Context, bool) (any, error)
-	Reconnect         func(context.Context) error
-	Quit              func(context.Context, bool) (bool, error)
-	Utilities         func() any
-	SetLogin          func(bool) (any, error)
-	LoginSettings     func() error
-	CheckUpdates      func(context.Context) any
-	Uninstall         func(context.Context) (bool, error)
+	OpenExternal          func(string) error
+	OpenBrowser           func(context.Context) error
+	CopyText              func(string) error
+	SaveRecovery          func(context.Context) (bool, error)
+	SetLanguage           func(string)
+	SetTrayAppearance     func(string)
+	SetSettingsAppearance func(string)
+	ShowSettings          func()
+	MenuStatus            func(context.Context, bool) any
+	TrayActivity          func() any
+	ShowMain              func(string)
+	SetSleep              func(context.Context, bool) (any, error)
+	Reconnect             func(context.Context) error
+	Quit                  func(context.Context, bool) (bool, error)
+	Utilities             func() any
+	SetLogin              func(bool) (any, error)
+	LoginSettings         func() error
+	CheckUpdates          func(context.Context) any
+	Uninstall             func(context.Context) (bool, error)
 }
 
 func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +63,12 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var result any = map[string]any{"ok": true}
 	switch r.URL.Path {
+	case "/desktop/v1/show-settings":
+		if payload != (request{}) {
+			http.Error(w, "settings action takes no arguments", http.StatusBadRequest)
+			return
+		}
+		a.ShowSettings()
 	case "/desktop/v1/open-browser":
 		if payload != (request{}) {
 			http.Error(w, "browser action takes no arguments", http.StatusBadRequest)
@@ -90,12 +98,16 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result = a.MenuStatus(r.Context(), payload.Refresh)
 	case "/desktop/v1/tray-activity":
 		result = a.TrayActivity()
-	case "/desktop/v1/tray-appearance":
-		if payload.Theme != "light" && payload.Theme != "dark" {
+	case "/desktop/v1/tray-appearance", "/desktop/v1/settings-appearance":
+		if payload.Theme != "light" && payload.Theme != "dark" && payload.Theme != "system" {
 			http.Error(w, "unsupported appearance", http.StatusBadRequest)
 			return
 		}
-		a.SetTrayAppearance(payload.Theme)
+		if r.URL.Path == "/desktop/v1/settings-appearance" {
+			a.SetSettingsAppearance(payload.Theme)
+		} else {
+			a.SetTrayAppearance(payload.Theme)
+		}
 	case "/desktop/v1/show-main":
 		if payload.Page != "dashboard" && payload.Page != "network" && payload.Page != "diagnostics" && payload.Page != "devices" && payload.Page != "connections" {
 			http.Error(w, "unsupported page", http.StatusBadRequest)

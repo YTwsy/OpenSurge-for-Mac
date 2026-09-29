@@ -56,7 +56,10 @@ h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.2px; }
 .tray-subtitle { margin: 9px 0 4px; color: var(--tray-secondary); font-size: 11px; line-height: 1.4; }
 .tray-content { min-height: 0; overflow-y: auto; scrollbar-width: none; flex: 0 1 auto; padding: 2px; margin: 0 -2px; }
 .tray-content::-webkit-scrollbar, .tray-more-panel::-webkit-scrollbar { display: none; }
-.tray-traffic { padding: 14px 0 10px; }
+.tray-traffic { padding: 8px 0; transition: padding 220ms ease; }
+.tray-traffic.expanded { padding: 14px 0 10px; }
+.tray-traffic-caption { display: flex; min-height: 20px; align-items: center; justify-content: space-between; gap: 8px; }
+.tray-traffic-caption .tray-caption { margin: 0; }
 .tray-rates { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .tray-rates span { display: flex; align-items: center; gap: 5px; color: var(--tray-secondary); font-size: 11px; }
 .tray-rates i { width: 5px; height: 5px; border-radius: 50%; }
@@ -93,8 +96,8 @@ button.tray-device:hover, .tray-more summary:hover { background: color-mix(in sr
 .tray-network-toggle .tray-caption { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 11px; }
 .tray-disclosure { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; transition: transform 220ms ease; }
 .tray-network.expanded > .tray-network-toggle .tray-disclosure, .tray-routing-group.expanded > .tray-routing .tray-disclosure, .tray-device-group.expanded > .tray-device .tray-disclosure { transform: rotate(90deg); }
-.tray-network-reveal, .tray-detail-reveal { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 220ms ease, opacity 160ms ease; }
-.expanded > .tray-network-reveal, .expanded > .tray-detail-reveal { grid-template-rows: 1fr; opacity: 1; }
+.tray-network-reveal, .tray-detail-reveal, .tray-traffic-reveal { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 220ms ease, opacity 160ms ease; }
+.expanded > .tray-network-reveal, .expanded > .tray-detail-reveal, .expanded > .tray-traffic-reveal { grid-template-rows: 1fr; opacity: 1; }
 .tray-network-inner, .tray-detail-inner { min-height: 0; overflow: hidden; }
 /* Match the historical Swift Grid: caption text, leading values, 14 pt between
    columns and 7 pt between rows. The label column fits its longest label. */
@@ -140,6 +143,6 @@ input:disabled { opacity: .45; }
 .tray-routing-details { padding: 0 0 10px; border-bottom: 1px solid var(--tray-separator); }
 .tray-routing-group.expanded .tray-routing { border-bottom-color: transparent; }
 .tray-detail-actions { display: flex; gap: 12px; }
-@media (prefers-reduced-motion: reduce) { input[role="switch"]::before, .tray-disclosure, .tray-network-reveal, .tray-detail-reveal { transition: none; } }
+@media (prefers-reduced-motion: reduce) { input[role="switch"]::before, .tray-disclosure, .tray-network-reveal, .tray-detail-reveal, .tray-traffic, .tray-traffic-reveal { transition: none; } }
 @media (prefers-reduced-transparency: reduce) { .tray-app { background: var(--tray-solid); } }
 @media (prefers-contrast: more) { button { border-color: var(--tray-secondary); } .tray-caption { color: var(--tray-label); } }

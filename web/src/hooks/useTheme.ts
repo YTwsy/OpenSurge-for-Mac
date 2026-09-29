@@ -1,28 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type SetStateAction } from 'react'
 
 export type Theme = 'dark' | 'light'
+export type ThemePreference = Theme | 'system'
 const key = 'opensurge-theme'
+const valid = (value: unknown): value is ThemePreference => value === 'dark' || value === 'light' || value === 'system'
+const systemTheme = (): Theme => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 
-function initialTheme(): Theme {
+function initialPreference(): ThemePreference {
  const stored = window.localStorage.getItem(key)
- if (stored === 'dark' || stored === 'light') return stored
- return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+ return valid(stored) ? stored : 'system'
 }
 
-// Both native WebViews share the same origin and preference. The browser keeps
-// its existing preference, and changes in another window are applied live.
+// Native windows share an origin. Preserve explicit choices, and keep following
+// macOS when the user chooses System instead of freezing its current appearance.
 export function useTheme() {
- const [theme, setTheme] = useState<Theme>(initialTheme)
+ const [preference, setPreference] = useState<ThemePreference>(initialPreference)
+ const [system, setSystem] = useState(systemTheme)
+ const theme = preference === 'system' ? system : preference
  useEffect(() => {
   document.documentElement.dataset.theme = theme
-  window.localStorage.setItem(key, theme)
- }, [theme])
+  window.localStorage.setItem(key, preference)
+ }, [theme, preference])
  useEffect(() => {
+  const media = window.matchMedia?.('(prefers-color-scheme: light)')
+  const appearanceChanged = () => setSystem(systemTheme())
   const changed = (event: StorageEvent) => {
-   if (event.key === key && (event.newValue === 'dark' || event.newValue === 'light')) setTheme(event.newValue)
+   if (event.key === key && valid(event.newValue)) setPreference(event.newValue)
   }
+  media?.addEventListener('change', appearanceChanged)
   window.addEventListener('storage', changed)
-  return () => window.removeEventListener('storage', changed)
+  return () => { media?.removeEventListener('change', appearanceChanged); window.removeEventListener('storage', changed) }
  }, [])
- return [theme, setTheme] as const
+ const setTheme = (value: SetStateAction<Theme>) => setPreference(typeof value === 'function' ? value(theme) : value)
+ return [theme, setTheme, preference, setPreference] as const
 }

@@ -56,7 +56,7 @@ func (h *desktopHost) foregroundWarning(title, message string) (*application.Mes
 			h.main.Minimise()
 		} else if !visible {
 			h.main.Hide()
-			native.SetDockVisible(false)
+			native.RefreshDockVisibility()
 		}
 	}
 	return h.app.Dialog.Warning().SetTitle(title).SetMessage(message).AttachToWindow(h.main), restore

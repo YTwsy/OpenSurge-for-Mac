@@ -18,6 +18,8 @@ async function start() {
 
   const App = window.location.pathname === '/desktop-tray'
     ? (await import('./tray/TrayApp')).TrayApp
+    : window.location.pathname === '/desktop-settings'
+    ? (await import('./settings/SettingsApp')).SettingsApp
     : (await import('./App')).App
 
   createRoot(document.getElementById('root')!).render(

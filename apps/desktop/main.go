@@ -137,16 +137,19 @@ func main() {
 	host.main = window
 	native.ConfigureMenuBarIcon()
 	host.createTray()
-	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide(); native.SetDockVisible(false) })
+	host.createSettings()
+	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); window.Hide(); native.RefreshDockVisibility() })
 	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) { host.show("") })
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		native.Configure(window, true)
 		native.Configure(host.popup, false)
+		native.ConfigureSettings(host.settings)
 		host.mu.Lock()
 		language := host.language
 		host.mu.Unlock()
 		if language != "" {
 			native.SetLanguage(window, language == "en")
+			native.SetLanguage(host.settings, language == "en")
 		}
 		host.show("")
 		close(ready)

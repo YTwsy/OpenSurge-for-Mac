@@ -56,14 +56,14 @@ before launching; a successful cross-build does not establish Intel UI behavior.
 
 ## Main window appearance and lifecycle
 
-In both themes, open a connection filter and the language picker. Confirm themed
+In both themes, open a connection filter and the Settings language picker. Confirm themed
 options and checkmarks, a thin green-grey scrollbar, and readable green text selection
 in a search field. Exercise Arrow keys, Home/End, typeahead, Enter and Escape; Escape
 must retain the previous selection, and clicking outside must close the menu.
 Switch languages, allow background refreshes, and reopen the main window to confirm
 the saved language and native menus agree. A failed save must restore the prior choice.
 
-Close the main window and confirm the Dock entry disappears while the tray remains.
+Close both main and Settings windows and confirm the Dock entry disappears while the tray remains.
 Reopen from the tray and a second launch; both restore Dock presence and the current
 page. Cmd-H also hides Dock presence. Covering the main window with another app must
 not hide the Dock entry; minimisation retains the usual Dock restore path.
@@ -73,11 +73,28 @@ inspect cold loading. Before React appears, the native window shows a light mint
 gradient and the OpenSurge icon, with no black frame. The normal host has no artificial
 delay. Logs distinguish native-placeholder installation from the first React frame.
 
+## Unified Settings
+
+Use **OpenSurge → Settings…**, `⌘,`, and the desktop sidebar entry. Each must present
+the same small window without replacing the main page or losing a draft. Repeating
+the shortcut must not create another window. Minimise, maximise and fullscreen are
+disabled. Close the main window while Settings remains open: Dock must remain; close
+Settings too: Dock disappears, and the menu-bar popup can still reopen the main UI.
+
+Choose English and Simplified Chinese; allow refreshes, switch to the main window
+and reopen the tray to confirm the shared language and native menus agree. Set the
+fixture offline before a save to verify a visible failure and unchanged saved choice.
+Choose Light, Dark and System; all windows must follow, and switching back to System
+must release the native override so subsequent macOS changes apply. Use the fixture's
+`login_approval`, `login_failure` and `update_failure` scenarios to verify authoritative
+login state and honest update failures. Check exactly one fixture mutation per click;
+none of these tests may register a real login item or operate installed services.
+
 ## Menu-bar popup
 
 Open the native tray popup (or use `⌘⇧M`). Verify its compact layout without the
 main sidebar, focus-loss/Escape dismissal, and panel/network navigation reopening
-the existing main window. Change language and theme in the main window and verify
+the existing main window. Change language and theme in Settings and verify
 the popup follows. Copy the fixture diagnostic summary and check native clipboard
 paste. Toggle sleep prevention once from each window: each click records exactly
 one PUT and the other window must show the acknowledged result.
@@ -96,6 +113,13 @@ sample timestamps supplied by the fixture, three downstream devices including on
 inactive inventory row, and a separate `gateway_local`. Verify Mac-first rows, active
 counts and rates after two samples. Routing and device rows must expand in place;
 only their explicit desktop links navigate, retaining the selected connection owner.
+
+Start with `gateway: stopped`: rates and chart occupy no space, the compact prompt
+is visible, and **Open controls** only opens Network Settings. Change to `running`:
+show a compact sampling prompt until two valid samples, then expand rates/chart and
+the native window together, keeping its top anchored. Zero rates are valid data and
+must not collapse the chart. Stop again to verify animated shrinking. Unknown/offline
+status must not claim that the gateway is stopped. Reduced Motion skips the animation.
 The active-device heading's **View all** opens the main Dashboard and scrolls/focuses
 its **Active devices** section, including when Dashboard is already open. It does
 not open Connections; each device's explicit connection link still does.

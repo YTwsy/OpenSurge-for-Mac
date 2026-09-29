@@ -90,7 +90,32 @@ it('does not turn the first baseline sample into a zero rate', async () => {
  vi.mocked(desktopAction).mockResolvedValueOnce({ traffic: fixture, history: [{ time: Date.now(), upload: 0, download: 0 }], failed: false })
  await act(async () => { render(<TrayActivity gateway="running" onOpen={vi.fn()} />) })
  expect(screen.getByText('Sampling traffic…')).toBeTruthy()
+ expect(document.querySelector('.tray-traffic-reveal')?.getAttribute('aria-hidden')).toBe('true')
  expect(screen.queryByText('12 MB/s')).toBeNull()
  await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
  expect(screen.getByText('12 MB/s')).toBeTruthy()
+ expect(document.querySelector('.tray-traffic-reveal')?.getAttribute('aria-hidden')).toBe('false')
+})
+
+it('collapses stopped or unknown traffic without treating valid zero samples as missing', async () => {
+ const open = vi.fn()
+ const view = render(<TrayActivity gateway="stopped" onOpen={open} />)
+ expect(screen.getByText('Start the gateway to see live traffic')).toBeTruthy()
+ expect(document.querySelector('.tray-traffic')?.classList.contains('expanded')).toBe(false)
+ expect(desktopAction).not.toHaveBeenCalled()
+ fireEvent.click(screen.getByRole('button', { name: 'Open controls' }))
+ expect(open).toHaveBeenCalledWith('network')
+ view.rerender(<TrayActivity onOpen={open} />)
+ expect(screen.getByText('Waiting for gateway status…')).toBeTruthy()
+ expect(screen.queryByRole('button', { name: 'Open controls' })).toBeNull()
+ const idle = { ...fixture, gateway_rates: { upload: 0, download: 0 } }
+ vi.mocked(desktopAction).mockResolvedValue({ traffic: idle, failed: false, history: [
+  { time: Date.now() - 2000, upload: 0, download: 0 }, { time: Date.now(), upload: 0, download: 0 },
+ ] })
+ await act(async () => { view.rerender(<TrayActivity gateway="running" onOpen={open} />) })
+ expect(document.querySelector('.tray-traffic')?.classList.contains('expanded')).toBe(true)
+ expect(screen.getAllByText('0 B/s').length).toBeGreaterThanOrEqual(2)
+ view.rerender(<TrayActivity gateway="stopped" onOpen={open} />)
+ expect(document.querySelector('.tray-traffic-reveal')?.getAttribute('aria-hidden')).toBe('true')
+ expect(screen.getByText('Start the gateway to see live traffic')).toBeTruthy()
 })

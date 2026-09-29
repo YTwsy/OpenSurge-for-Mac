@@ -7,14 +7,15 @@ package native
 #cgo LDFLAGS: -framework Cocoa -framework WebKit
 #include <stdlib.h>
 #include <stdbool.h>
-void configureOpenSurgeWindow(void *window, bool rememberFrame);
+void configureOpenSurgeWindow(void *window, bool rememberFrame, bool tray);
 void setOpenSurgeWindowLanguage(void *window, bool english);
 bool openSurgeExternalURLAllowed(const char *url);
 bool openSurgeSystemUsesEnglish(void);
-void setOpenSurgeWindowAppearance(void *window, bool dark);
+void setOpenSurgeWindowAppearance(void *window, int preference);
 void configureOpenSurgeMenuBarIcon(void);
 void setOpenSurgeMenuBarIndicator(const char *indicator, const char *description);
 void setOpenSurgeDockVisible(bool visible);
+void refreshOpenSurgeDockVisibility(void);
 void presentOpenSurgeWindow(void *window);
 */
 import "C"
@@ -26,7 +27,17 @@ import (
 )
 
 func Configure(window *application.WebviewWindow, rememberFrame bool) {
-	application.InvokeSync(func() { C.configureOpenSurgeWindow(window.NativeWindow(), C.bool(rememberFrame)) })
+	application.InvokeSync(func() {
+		C.configureOpenSurgeWindow(window.NativeWindow(), C.bool(rememberFrame), C.bool(!rememberFrame))
+	})
+}
+
+func ConfigureSettings(window *application.WebviewWindow) {
+	application.InvokeSync(func() { C.configureOpenSurgeWindow(window.NativeWindow(), false, false) })
+}
+
+func RefreshDockVisibility() {
+	application.InvokeSync(func() { C.refreshOpenSurgeDockVisibility() })
 }
 
 func SetLanguage(window *application.WebviewWindow, english bool) {
@@ -46,9 +57,15 @@ func SystemLanguage() string {
 	return "zh-Hans"
 }
 
-// Appearance applies only to the popup; the main window retains its own styling.
+// Apply the popup/settings preference, including clearing overrides for System.
 func SetAppearance(window *application.WebviewWindow, theme string) {
-	application.InvokeSync(func() { C.setOpenSurgeWindowAppearance(window.NativeWindow(), C.bool(theme == "dark")) })
+	preference := C.int(0)
+	if theme == "light" {
+		preference = 1
+	} else if theme == "dark" {
+		preference = 2
+	}
+	application.InvokeSync(func() { C.setOpenSurgeWindowAppearance(window.NativeWindow(), preference) })
 }
 
 func ConfigureMenuBarIcon() {
