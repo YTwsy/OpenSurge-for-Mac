@@ -50,7 +50,6 @@ button.select-control:disabled { opacity: .5; }
 .select-option[aria-selected="true"] { color: var(--control-accent); font-weight: 650; }
 .select-option[aria-disabled="true"] { opacity: .4; }
 .select-check { width: 14px; flex-shrink: 0; font-weight: 700; }
-button.select-control.language-selector { display: grid; min-height: 58px; padding: 9px 10px; gap: 9px; border-radius: 11px; }
 @media (forced-colors: active) {
   .select-popup, button.select-control { border: 1px solid ButtonText; }
   .select-option.active { outline: 1px solid Highlight; }

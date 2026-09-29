@@ -1,6 +1,6 @@
 html, body, #root { min-width: 0; min-height: 100%; }
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-.settings-app { --settings-text: #e2eee8; --settings-muted: #9cafaa; --settings-line: #314a40; --settings-surface: #152a21; padding: 24px; color: var(--settings-text); font-size: 13px; }
+.settings-app { --settings-text: #e2eee8; --settings-muted: #9cafaa; --settings-line: #314a40; --settings-surface: #152a21; padding: 54px 24px 24px; color: var(--settings-text); font-size: 13px; }
 html[data-theme="light"] .settings-app { --settings-text: #253c31; --settings-muted: #647b6d; --settings-line: #cfdfd5; --settings-surface: #fff; }
 .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
 .settings-header img { width: 42px; height: 42px; }
@@ -8,11 +8,18 @@ html[data-theme="light"] .settings-app { --settings-text: #253c31; --settings-mu
 .settings-header p { color: var(--settings-muted); font-size: 12px; margin: 0; }
 .settings-section { padding: 4px 16px; margin-bottom: 14px; background: var(--settings-surface); border: 1px solid var(--settings-line); border-radius: 10px; }
 .settings-row { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 20px; }
-.settings-row + .settings-row { border-top: 1px solid var(--settings-line); }
+.settings-row ~ .settings-row { border-top: 1px solid var(--settings-line); }
 .settings-row small { display: block; color: var(--settings-muted); font-size: 11px; margin-top: 5px; }
 .settings-row .select-control { width: 210px; }
 .settings-app button:not(.select-control) { background: var(--settings-surface); border: 1px solid var(--settings-line); color: var(--settings-text); border-radius: 6px; padding: 5px 10px; font: inherit; }
 .settings-app button:disabled { opacity: .5; }
+.settings-app button:not(:disabled):hover { background: var(--control-hover); }
+.settings-lifecycle { padding-top: 14px; }
+.settings-lifecycle h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; }
+.settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.settings-uninstall { padding-top: 12px; border-top: 1px solid var(--settings-line); }
+.settings-uninstall .settings-hint { margin-top: 8px; }
+.settings-app .settings-danger:not(:disabled) { color: #ce564b; }
 .settings-hint, .settings-error { font-size: 12px; line-height: 1.5; margin: 4px 0 12px; overflow-wrap: anywhere; }
 .settings-hint { color: var(--settings-muted); }
 .settings-error { color: #ce564b; }

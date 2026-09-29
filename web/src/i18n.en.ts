@@ -1,4 +1,8 @@
 export const englishMessages: Record<string, string> = {
+  '运行偏好': 'Runtime preferences',
+  '退出与卸载': 'Quit and uninstall',
+  '只退出桌面 App 时，后台服务与网关会继续运行。': 'Quitting only the desktop App keeps the background service and gateway running.',
+  '卸载时可以选择保留配置与使用数据。': 'You can keep your configuration and data when uninstalling.',
   '在浏览器中打开': 'Open in browser',
   '正在打开浏览器…': 'Opening browser…',
   '无法在浏览器中打开。请确认后台服务可用后重试。': 'Could not open the browser. Check that the background service is available and try again.',
@@ -1535,6 +1539,8 @@ export const englishMessages: Record<string, string> = {
   '尚未选择 Tailnet 访问目标': 'No Tailnet access targets selected',
   'App 设置与更新': 'App settings and updates',
   '设置…': 'Settings…',
+  '快捷设置：{{status}}': 'Quick settings: {{status}}',
+  '节点检测连接已中断，请重试。': 'The node test connection was interrupted. Please retry.',
   'OpenSurge 设置': 'OpenSurge Settings',
   '个性化你的 OpenSurge 使用体验。': 'Make OpenSurge feel at home on your Mac.',
   '界面': 'Interface',

@@ -69,6 +69,7 @@ export function App() {
   const [error, setError] = useState('')
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
   const [theme, setTheme] = useTheme()
+  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false)
   const { language, languageChanging, changeLanguage, beginLanguageRefresh } = useInterfaceLanguage(setError)
   const [devicesDirty, setDevicesDirty] = useState(false)
   const [connectionsView, setConnectionsView] = useState<ConnectionsViewState>(initialConnectionsView)
@@ -261,15 +262,22 @@ export function App() {
       <nav aria-label="OpenSurge sections">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{t(item.label)}</button>)}
       </nav>
-      <div className="sidebar-controls">
-        <label className={`sidebar-switch ${overview?.sleep_prevention?.active ? 'active' : ''}`} title={t('阻止空闲睡眠和合盖睡眠。合盖运行可能明显增加耗电与发热，请勿放入不通风的包内。')}><input type="checkbox" checked={overview?.sleep_prevention?.active ?? false} disabled={!overview || sleepPreventionChanging} onChange={event => void setSleepPrevention(event.target.checked)} /><span><strong>{t(sleepPreventionChanging ? '正在切换…' : '合盖保持运行')}</strong><small>{t(overview?.sleep_prevention?.active ? '系统睡眠已临时禁用' : '默认关闭 · 本次运行有效')}</small></span></label>
+      <div className="sidebar-footer">
+      <button type="button" className="sidebar-status" aria-label={t('快捷设置：{{status}}', { status: statusLabel(overview?.status.gateway, overview?.status.runtime_state) })} aria-expanded={quickSettingsOpen} aria-controls="sidebar-quick-settings" onClick={() => setQuickSettingsOpen(open => !open)}><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><span className="sidebar-status-copy"><strong>{statusLabel(overview?.status.gateway, overview?.status.runtime_state)}</strong><small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose</small></span><svg className="sidebar-status-gear" viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M10 3h4l.5 2.3 1.3.8 2.2-.7 2 3.4-1.7 1.6v3.2l1.7 1.6-2 3.4-2.2-.7-1.3.8L14 21h-4l-.5-2.3-1.3-.8-2.2.7-2-3.4 1.7-1.6v-3.2L4 8.8l2-3.4 2.2.7 1.3-.8L10 3Zm5 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z" /></svg></button>
+      <div className={`sidebar-settings-reveal ${quickSettingsOpen ? 'expanded' : ''}`} id="sidebar-quick-settings" aria-hidden={!quickSettingsOpen} inert={!quickSettingsOpen}><div className="sidebar-settings-inner"><div className="sidebar-controls">
+        <label className="sidebar-control-row sidebar-switch" title={t('阻止空闲睡眠和合盖睡眠。合盖运行可能明显增加耗电与发热，请勿放入不通风的包内。')}>
+          <span className="sidebar-control-copy"><strong>{t(sleepPreventionChanging ? '正在切换…' : '合盖保持运行')}</strong><small>{t(overview?.sleep_prevention?.active ? '系统睡眠已临时禁用' : '默认关闭 · 本次运行有效')}</small></span>
+          <input type="checkbox" checked={overview?.sleep_prevention?.active ?? false} disabled={!overview || sleepPreventionChanging} onChange={event => void setSleepPrevention(event.target.checked)} />
+        </label>
         {overview?.sleep_prevention?.error && <small className="sidebar-control-error" role="status">{overview.sleep_prevention.error}</small>}
-        {isDesktop() ? <button type="button" className="theme-toggle desktop-settings-link" onClick={() => { void desktopAction('show-settings').catch(cause => setError(cause instanceof Error ? cause.message : String(cause))) }}><span>{t('设置…')}</span><kbd>⌘,</kbd></button> : <>
         <LanguageSelector language={language} changing={languageChanging} onChange={next => { void changeLanguage(next).then(changed => { if (changed) void refresh() }) }} />
-        <button type="button" className="theme-toggle" aria-pressed={theme === 'light'} aria-label={t(theme === 'dark' ? '切换为浅色模式' : '切换为深色模式')} onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}><span aria-hidden="true">{theme === 'dark' ? '☀' : '◐'}</span>{t(theme === 'dark' ? '浅色模式' : '深色模式')}</button>
-        </>}
+        <label className="sidebar-control-row sidebar-switch">
+          <span className="sidebar-control-copy"><strong>{t('深色模式')}</strong></span>
+          <input type="checkbox" checked={theme === 'dark'} onChange={event => setTheme(event.target.checked ? 'dark' : 'light')} />
+        </label>
+        {isDesktop() && <button type="button" className="sidebar-control-row desktop-settings-link" onClick={() => { void desktopAction('show-settings').catch(cause => setError(cause instanceof Error ? cause.message : String(cause))) }}><span className="sidebar-control-copy"><strong>{t('设置…')}</strong></span><kbd>⌘,</kbd></button>}
+      </div></div></div>
       </div>
-      <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway, overview?.status.runtime_state)}</strong><small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose</small></div></div>
     </aside>
     <main className="workspace">
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>{t('Web GUI 与 OpenSurge 的安全连接已过期')}</h1><p>{t('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。')}</p></div></section> : <>

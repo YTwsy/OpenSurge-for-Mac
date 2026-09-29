@@ -9,11 +9,14 @@ import (
 func (h *desktopHost) createSettings() {
 	h.settings = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "settings", Title: "OpenSurge 设置", URL: "/desktop-settings",
-		Width: 560, Height: 540, Hidden: true, DisableResize: true,
+		Width: 600, Height: 780, Hidden: true, DisableResize: true,
 		MinimiseButtonState: application.ButtonDisabled, MaximiseButtonState: application.ButtonDisabled,
 		FullscreenButtonState: application.ButtonDisabled,
 		BackgroundColour:      application.NewRGBA(242, 247, 244, 255),
-		Mac:                   application.MacWindow{TabbingMode: application.MacWindowTabbingModeDisallowed},
+		Mac: application.MacWindow{
+			TitleBar: application.MacTitleBarHiddenInset, InvisibleTitleBarHeight: 40,
+			TabbingMode: application.MacWindowTabbingModeDisallowed,
+		},
 	})
 	h.settings.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()

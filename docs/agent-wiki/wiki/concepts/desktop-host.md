@@ -72,8 +72,9 @@ Explicit launch/reopen requests use one native presentation path: restore Dock
 presence, unhide/activate the application and order the main window to the front.
 Ignore intermediate visibility notifications during that activation-policy change,
 and finish ordering on the next AppKit turn. Background status refreshes never
-activate the application. Exit/uninstall warnings attach as sheets to the foreground
-main window; cancelling restores its previous hidden/minimised state.
+activate the application. Exit/uninstall warnings attach as sheets to the focused
+Settings window when present, otherwise to the foreground main window; cancelling
+restores the main window's previous hidden/minimised state when it was summoned.
 
 The main window starts hidden until its native light-gradient/icon placeholder is
 installed. An HTML bootstrap uses the same light palette while loading React. The
@@ -95,7 +96,10 @@ before updating the rendered language.
 App-wide preferences live in one reusable `/desktop-settings` window, opened by
 **OpenSurge → Settings…**, `⌘,`, or the desktop sidebar. It hides on close, has no
 minimise/maximise/fullscreen controls, and does not replace the main window or its
-drafts. Browser users retain their existing sidebar language/appearance controls.
+drafts. In both desktop and browser views, the flat sidebar gateway-status row
+with a small settings gear expands the sleep-prevention, language, and appearance controls above it. It starts
+collapsed, keeps the status/version visible, and removes collapsed controls from
+keyboard navigation. Desktop views also retain the Settings shortcut in that area.
 Language uses the existing Control API preference; Settings publishes changes only
 after a successful save. Shared hooks fence late reads and synchronise windows through
 the same-origin storage event. Appearance stores Light, Dark, or System locally; System
@@ -103,6 +107,13 @@ clears native appearance overrides and follows subsequent macOS changes. Login a
 startup and stable-release checks reuse the tray's sequence-ordered native managers.
 The tray's settings remain flat. Opening Settings neither starts a gateway nor
 registers a login item; only an explicit switch change requests the latter.
+Settings also exposes the session-only sleep control, UI-only/full exit, and uninstall
+through the existing native capabilities. Status and action eligibility are read from
+the same native monitor as the tray; failed reads disable full exit, uninstall, and
+sleep changes. A late poll cannot overwrite an acknowledged sleep change. Quit and
+uninstall keep their native confirmations and revalidation. Settings uses the same
+transparent inset title bar and reserved drag area as the main window, allowing the
+page background to extend behind the native traffic lights.
 
 A small AppKit/WKWebView delegate adapter supplies native JavaScript confirmation
 sheets, external-navigation confinement, and actual NSWindow visibility. It forwards

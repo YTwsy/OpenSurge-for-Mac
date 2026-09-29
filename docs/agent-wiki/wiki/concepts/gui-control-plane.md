@@ -414,6 +414,14 @@ policy 是整文档提交，因此这些入口是操作者修正身份的唯一�
 Selector 即时切换；设备页仅显示当前出口摘要，打开选择器后才展开候选。该探测是网关
 Mac 上 mihomo 到检测地址的节点可达性，不是下游设备数据面证据。
 
+运行中与未启动配置的策略页统一使用 `POST /api/v1/policy-workspace`。节点检测
+通过 `Accept: text/event-stream` 请求逐个结果：每个完成的节点发送 `result`，整批
+完成发送包含权威 snapshot 的 `complete`，中途失败发送 `error`。未请求流式返回的
+调用者继续收到原有 JSON。Helper 通过可选 `watch_policy_results` 转发节点结果，
+保持同一个 workspace lease、生命周期锁、服务端配置来源和 6 路并发。前端只更新
+对应节点的健康信息并结束其加载状态，不改变列表顺序；断流保留已完成结果，不重放
+检测请求。页面卸载会中断结果订阅和剩余检测。
+
 连通性页使用后端固定 catalog，避免把任意 URL 探测变成 SSRF 接口。
 `POST /api/v1/connectivity/tests` 从 Control Service 经 applied runtime mixed-port 发起
 三轮请求，并在请求仍活跃时尽力关联 mihomo connection 的 rule、rule payload 和 chain。

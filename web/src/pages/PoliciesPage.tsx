@@ -169,7 +169,7 @@ export function PoliciesPage({ overview, onChanged, viewState, onViewStateChange
   }, [snapshot, groupNames, onScrollPositionChange, onViewStateChange])
 
   return <>
-    <PageHeader eyebrow="POLICIES" title="策略与节点健康" description="查看当前配置的策略组、节点选择与延迟；未启动网关时也可以提前选择出口。" action={<div className="source-head">{snapshot && <span className={`effect-badge ${snapshot.mode === 'running' ? 'live' : ''}`}>{t(snapshot.mode === 'running' ? '运行中配置' : '待启动配置')}</span>}<button className="primary" type="button" disabled={!testableNames.length || testableNames.some(name => testing.has(name))} onClick={() => void test(testableNames)}>{testing.size ? t('正在检测 {{count}} 个节点…', { count: testing.size }) : t('检测当前视图')}</button></div>} />
+    <PageHeader eyebrow="POLICIES" title="策略与节点健康" description="查看当前配置的策略组、节点选择与延迟；未启动网关时也可以提前选择出口。" action={<div className="policy-header-actions">{snapshot && <span className={`effect-badge ${snapshot.mode === 'running' ? 'live' : ''}`}>{t(snapshot.mode === 'running' ? '运行中配置' : '待启动配置')}</span>}<button className="primary" type="button" disabled={!testableNames.length || testableNames.some(name => testing.has(name))} onClick={() => void test(testableNames)}>{testing.size ? t('正在检测 {{count}} 个节点…', { count: testing.size }) : t('检测当前视图')}</button></div>} />
     <LocalMacGlobalPolicy
       running={overview?.status.gateway === 'running'}
       healthByName={byName}
