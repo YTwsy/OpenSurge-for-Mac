@@ -1,3 +1,4 @@
+import { releaseDisplayVersion } from '../release'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { copyText, desktopAction } from '../desktop'
 import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, t } from '../i18n'
@@ -141,7 +142,7 @@ export function TrayApp() {
      {browserError && <p role="alert" className="tray-error">{browserError}</p>}
      <div className="tray-row"><button onClick={() => void run(async () => { await copyText(diagnosticSummary(status)); setCopied(true) })}>{t(copied ? '已复制' : '复制诊断摘要')}</button><button disabled={refreshing} aria-label={t('刷新状态')} onClick={() => { setRefreshing(true); void refresh(true).finally(() => setRefreshing(false)) }}>{t(refreshing ? '正在刷新…' : '刷新')}</button></div>
      <TrayUtilities canUninstall={snapshot.can_uninstall === true} />
-     <p className="tray-caption">{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</p>
+     <p className="tray-caption">{releaseDisplayVersion(import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</p>
      <section className="tray-exit">
       <button disabled={!snapshot.can_quit || !snapshot.service_actions || serviceBusy} title={!snapshot.can_quit ? t('请先在网络设置中停止网关并完成恢复。') : undefined} onClick={() => void serviceAction('quit', true)}>{t('退出 OpenSurge…')}</button>
       <button disabled={serviceBusy} onClick={() => void serviceAction('quit')}>{t('只退出桌面 App…')}</button>

@@ -22,6 +22,7 @@ export function LocalRoutingCard({
   onHealthTest,
   onChanged,
   onPolicies,
+  onOpenConnections,
   onSuggestConnectionRefresh,
 }: {
   running: boolean
@@ -32,6 +33,7 @@ export function LocalRoutingCard({
   onHealthTest: (names: string[]) => Promise<void>
   onChanged: () => Promise<void>
   onPolicies: () => void
+  onOpenConnections?: () => void
   onSuggestConnectionRefresh?: (suggestion: ConnectionRefreshSuggestion) => void
 }) {
   const [routing, setRouting] = useState<LocalRouting | null>(null)
@@ -81,8 +83,7 @@ export function LocalRoutingCard({
   const udpRejected = routing?.mode === 'global' && routing.udp_behavior === 'reject'
   const runtimeWarning = udpRejected ? '' : routing?.warning
   return <article className="this-mac local-routing-card">
-    <div className="source-head"><div><small>THIS MAC</small><h3>{t('出口方式')}</h3></div><span className="effect-badge live">{t('仅影响本机')}</span></div>
-    <p>{interfaceName || 'Mac'} · {lanIP || t('本机网络')}</p>
+    <div className="local-mac-heading"><span className="local-mac-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" /></svg></span><div><h2>{t('当前 Mac 的设备设置')}</h2><p>{interfaceName || 'Mac'} · {lanIP || t('本机网络')}</p></div><span className="effect-badge live">{t('仅影响本机')}</span></div>
     <div className="local-mode-switch" role="group" aria-label={t('这台 Mac 的出口方式')}>
       {(['rule', 'global', 'direct'] as const).map(mode => <button
         key={mode}
@@ -96,10 +97,11 @@ export function LocalRoutingCard({
     {running && !routing && !error && <div className="local-routing-note">{t('正在读取本机设置…')}</div>}
     {mode && <div className="local-routing-state" role="status">
       <strong>{t(mode.description)}</strong>
-      <small>{t('局域网访问和下游设备不受影响；切换只影响新连接。')}</small>
+      <small>{t('即时生效，仅影响本机的新连接；局域网访问和下游设备不受影响。')}</small>
     </div>}
     {routing?.mode === 'global' && routing.global_group && <div className="local-global-policy">
       <OutletSummary
+        inline
         title={t('本机全局出口')}
         ariaLabel={t('本机全局策略组 当前策略 {{selected}}', { selected: routing.global_group.selected })}
         group={routing.global_group}
@@ -111,7 +113,10 @@ export function LocalRoutingCard({
     </div>}
     {udpRejected && <div className="notice warn local-routing-warning" role="alert">{t('当前固定出口不支持 UDP，部分应用可能无法联网。')}</div>}
     {(runtimeWarning || error) && <div className="notice warn local-routing-warning" role="alert">{error || runtimeWarning}</div>}
+    <details className="local-routing-tools"><summary>{t('连接与详情')}</summary>
+    {onOpenConnections && <button className="text-link" type="button" onClick={onOpenConnections}>{t('查看本机连接')}</button>}
     <ConnectionRefreshControl ariaLabel={t('刷新 Mac 本机连接')} disabled={!running || !routing} disabledReason={t('启动网关并读取本机设置后可以刷新连接。')} refresh={api.refreshLocalConnections} onRefreshed={onChanged} />
     <button className="text-link" type="button" onClick={onPolicies}>{t('前往策略与节点健康')} →</button>
+    </details>
   </article>
 }

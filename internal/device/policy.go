@@ -131,16 +131,17 @@ type RuleProvider struct {
 }
 
 type CompiledDevice struct {
-	ID                   string             `json:"id"`
-	MAC                  string             `json:"mac"`
-	IPv4                 string             `json:"ipv4"`
-	Profile              string             `json:"profile"`
-	GatewayTarget        string             `json:"gateway_target"`
-	EgressMode           string             `json:"egress_mode"`
-	ConfiguredEgressMode string             `json:"configured_egress_mode,omitempty"`
-	PolicyAdjustments    []PolicyAdjustment `json:"policy_adjustments,omitempty"`
-	IPv6Blocked          bool               `json:"ipv6_blocked,omitempty"`
-	Groups               map[string]string  `json:"groups"` // slot (default or rule id) -> mihomo group name
+	ID                   string               `json:"id"`
+	MAC                  string               `json:"mac"`
+	IPv4                 string               `json:"ipv4"`
+	Profile              string               `json:"profile"`
+	GatewayTarget        string               `json:"gateway_target"`
+	EgressMode           string               `json:"egress_mode"`
+	ConfiguredEgressMode string               `json:"configured_egress_mode,omitempty"`
+	PolicyAdjustments    []PolicyAdjustment   `json:"policy_adjustments,omitempty"`
+	IPv6Blocked          bool                 `json:"ipv6_blocked,omitempty"`
+	Groups               map[string]string    `json:"groups"`                 // slot (default or rule id) -> mihomo group name
+	RuleMatches          map[string]RuleMatch `json:"rule_matches,omitempty"` // display metadata from this policy snapshot, keyed by rule id
 }
 
 type CompiledPolicy struct {
@@ -496,6 +497,10 @@ func compilePolicySet(set PolicySet, ipOnlyDevicesActive bool, resolution *Polic
 		}
 
 		for _, rule := range profile.Rules {
+			if device.RuleMatches == nil {
+				device.RuleMatches = make(map[string]RuleMatch)
+			}
+			device.RuleMatches[rule.ID] = rule.Match
 			action := rule.Action
 			unsupported := resolveUnsupported(rule.OnUnsupported, profile.OnUnsupported)
 			if len(rule.Policies) > 0 {

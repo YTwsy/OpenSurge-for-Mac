@@ -26,6 +26,7 @@ check_value CFBundleExecutable OpenSurgeDesktop
 check_value CFBundleShortVersionString "$VERSION"
 check_value CFBundleVersion "$BUILD_NUMBER"
 check_value OpenSurgeReleaseTag "$RELEASE_TAG"
+check_value OpenSurgeReleaseCodename "$(python3 "$(dirname "$0")/release-codename.py" "$RELEASE_TAG")"
 check_value LSMinimumSystemVersion 13.0
 check_value CFBundleIconFile OpenSurgeAppIcon
 check_value CFBundleLocalizations:0 en

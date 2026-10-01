@@ -30,7 +30,7 @@ if not scenario_file.exists():
 lock = threading.Lock()
 observations = {"requests": {}, "writes": [], "events_opened": 0, "events_closed": 0}
 language, sleep_enabled = "zh-Hans", False
-login_state = "disabled"
+login_state = None
 sources = []
 
 
@@ -178,7 +178,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         status.update({key: state[key] for key in ("dhcp", "mihomo", "pf_anchor") if key in state})
         routes = {
             "/api/v1/desktop-smoke/lifecycle": {},
-            "/api/v1/desktop-smoke/login": {"state": login_state},
+            "/api/v1/desktop-smoke/login": {"state": login_state or state.get("login_initial", "disabled")},
             "/api/v1/desktop-smoke/uninstall": {"outcome": state.get("uninstall_outcome", "cancel")},
             "/api/v1/desktop-smoke/release": {"tag_name": state.get("release_tag", "v0.2.5"), "html_url": "https://github.com/YTwsy/OpenSurge-for-Mac/releases/tag/" + state.get("release_tag", "v0.2.5"), "draft": False, "prerelease": False},
             "/api/v1/overview": {**common, "status": status, "doctor": [], "leases": [], "policies": [], "providers": {"proxy_providers": [], "rule_providers": []}, "recovery": recovery},

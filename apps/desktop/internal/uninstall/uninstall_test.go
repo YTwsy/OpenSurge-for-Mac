@@ -110,3 +110,17 @@ func TestClosedModes(t *testing.T) {
 		t.Fatal("untrusted command accepted")
 	}
 }
+
+func TestUnresolvedLoginStateCannotBypassUninstallCleanup(t *testing.T) {
+	for _, state := range []string{"not_found", "unavailable", "unknown"} {
+		login := &fakeLogin{state: state}
+		calls := 0
+		m := New("available", func() error { return nil }, func(context.Context) (*menustatus.Status, error) { return safeStatus(), nil }, func(Mode) error {
+			calls++
+			return nil
+		}, login)
+		if err := m.Run(context.Background(), KeepData); !errors.Is(err, ErrLogin) || calls != 0 || len(login.changes) != 0 {
+			t.Fatal(state, err, calls, login.changes)
+		}
+	}
+}

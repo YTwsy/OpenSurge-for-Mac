@@ -1,6 +1,8 @@
+import { releaseDisplayVersion } from '../release'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Select } from '../components/Select'
+import { LoginItemFeedback } from '../components/LoginItemFeedback'
 import { desktopAction } from '../desktop'
 import { useDesktopUtilities } from '../hooks/useDesktopUtilities'
 import { useDesktopRuntime } from '../hooks/useDesktopRuntime'
@@ -49,15 +51,13 @@ export function SettingsApp() {
   </section>
   <section className="settings-section" aria-label={t('运行偏好')}>
    <label className="settings-row"><span>{t('登录时显示')}<small>{t('登录 Mac 后自动显示 OpenSurge。')}</small></span><input type="checkbox" role="switch" aria-label={t('登录时显示')} checked={login?.state === 'enabled' || login?.state === 'approval'} disabled={!login || busy || login.state === 'unavailable'} onChange={event => void changeLogin(event.target.checked)} /></label>
-   {login?.state === 'approval' && <p className="settings-hint">{t('等待 macOS 批准登录项。')} <button onClick={() => openLink('login-settings')}>{t('打开登录项设置')}</button></p>}
-   {login?.state === 'unavailable' && <p className="settings-hint">{t('当前 App 无法管理登录项。请从已安装的应用中设置。')}</p>}
-   {login?.failed && <p role="alert" className="settings-error">{t('登录项未能更新，已保留 macOS 的实际状态。')}</p>}
+   <LoginItemFeedback login={login} hintClass="settings-hint" errorClass="settings-error" openSettings={() => openLink('login-settings')} />
    <label className="settings-row"><span>{t('合盖保持运行')}<small>{t('默认关闭 · 本次运行有效')}</small></span><input type="checkbox" role="switch" aria-label={t('合盖保持运行')} checked={sleep?.active ?? false} disabled={!sleep || busy} onChange={event => void changeSleep(event.target.checked)} /></label>
    {sleep?.active && <p className="settings-hint">{t('合盖后仍会运行，请注意耗电与散热，不要放入不通风的包内。')}</p>}
    {sleep?.error && <p role="alert" className="settings-error">{sleep.error}</p>}
   </section>
   <section className="settings-section" aria-label={t('软件更新')}>
-   <div className="settings-row"><span>{t('软件更新')}<small>{update?.current || import.meta.env.VITE_OPENSURGE_RELEASE_TAG} · Wind Rose</small></span><button disabled={!update || update.checking} onClick={() => { setUtilityError(''); void check() }}>{t(update?.checking ? '正在检查…' : '检查更新')}</button></div>
+   <div className="settings-row"><span>{t('软件更新')}<small>{releaseDisplayVersion(update?.current || import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</small></span><button disabled={!update || update.checking} onClick={() => { setUtilityError(''); void check() }}>{t(update?.checking ? '正在检查…' : '检查更新')}</button></div>
    {!update?.checking && (update?.failed ? <p role="status" className="settings-hint">{t('无法检查更新，请稍后重试。')}</p> : update?.version && update.url ? <p className="settings-hint"><button onClick={() => openLink('open-external', { url: update.url })}>{t('打开稳定版 {{version}} 下载页', { version: update.version })}</button></p> : update?.checked && <p role="status" className="settings-hint">{t('没有更新的稳定版')}</p>)}
   </section>
   <section className="settings-section settings-lifecycle" aria-label={t('退出与卸载')}>
