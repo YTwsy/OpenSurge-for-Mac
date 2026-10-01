@@ -7,6 +7,8 @@ import { policyDisplayName } from '../policyDisplay'
 import { t } from '../i18n'
 
 type OutletPickerProps = {
+  id?: string
+  inline?: boolean
   open: boolean
   title: string
   group: ProxyGroup
@@ -15,9 +17,10 @@ type OutletPickerProps = {
   onTest: (names: string[]) => Promise<void>
   onSelect: (policy: string) => Promise<void>
   onClose: () => void
+  onEditCandidates?: () => void
 }
 
-export function OutletPicker({ open, title, group, healthByName, testing, onTest, onSelect, onClose }: OutletPickerProps) {
+export function OutletPicker({ id, inline = false, open, title, group, healthByName, testing, onTest, onSelect, onClose, onEditCandidates }: OutletPickerProps) {
   const titleID = useId()
   const [search, setSearch] = useState('')
   const [switching, setSwitching] = useState('')
@@ -36,11 +39,11 @@ export function OutletPicker({ open, title, group, healthByName, testing, onTest
   }, [open])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || inline) return
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !switching) onClose() }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [open, onClose, switching])
+  }, [open, inline, onClose, switching])
 
   if (!open) return null
 
@@ -56,8 +59,8 @@ export function OutletPicker({ open, title, group, healthByName, testing, onTest
     }
   }
 
-  return <dialog className="outlet-dialog" open aria-modal="true" aria-labelledby={titleID}>
-    <div className="outlet-dialog-head"><div><small>{group.type}</small><h2 id={titleID}>{t(title)}</h2><p>{group.name} · {t('当前')} {group.selected ? policyDisplayName(group.selected, healthByName.get(group.selected)) : t('未选择')}</p></div><button className="icon-button" type="button" aria-label={t('关闭出口选择')} disabled={Boolean(switching)} onClick={onClose}>×</button></div>
+  const content = <>
+    <div className="outlet-dialog-head"><div>{!inline && <small>{group.type}</small>}<h2 id={titleID}>{inline ? t('选择出口') : t(title)}</h2><p>{!inline && `${group.name} · `}{t('当前')} {group.selected ? policyDisplayName(group.selected, healthByName.get(group.selected)) : t('未选择')}</p></div><button className="icon-button" type="button" aria-label={t('关闭出口选择')} disabled={Boolean(switching)} onClick={onClose}>×</button></div>
     <div className="outlet-toolbar"><label><span className="sr-only">{t('搜索出口')}</span><input type="search" value={search} placeholder={t('搜索节点或策略组')} onChange={event => setSearch(event.target.value)} /></label><button type="button" disabled={!probeable.length || probeable.some(name => testing.has(name))} onClick={() => void onTest(probeable)}>{t('检测候选')}</button></div>
     {error && <div className="notice warn" role="alert">{error}</div>}
     <div className="outlet-options">{options.map(option => {
@@ -71,6 +74,12 @@ export function OutletPicker({ open, title, group, healthByName, testing, onTest
       </button>
     })}</div>
     {!options.length && <Empty text={t('没有匹配的出口')} />}
+    {onEditCandidates && <div className="outlet-candidates-link"><button className="text-link" type="button" disabled={Boolean(switching)} onClick={onEditCandidates}><span aria-hidden="true">＋ </span>{t('新增出口候选')}<span aria-hidden="true"> →</span></button><small>{t('前往下方候选编辑区，修改后保存并重载。')}</small></div>}
     <p className="dialog-footnote">{t(selectable ? '选择 Selector 候选会即时生效。' : '这是自动策略组，候选仅供查看，不能手动选择。')} {t('延迟由网关 Mac 上的 mihomo 发起探测，只表示节点到检测地址的可达性。')}</p>
-  </dialog>
+  </>
+  return inline
+    ? <section id={id} className="outlet-inline" aria-label={t('选择出口：{{title}}', { title })} onKeyDown={event => {
+      if (event.key === 'Escape' && !switching) { event.stopPropagation(); onClose() }
+    }}>{content}</section>
+    : <dialog id={id} className="outlet-dialog" open aria-modal="true" aria-labelledby={titleID}>{content}</dialog>
 }

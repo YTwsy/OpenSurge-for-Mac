@@ -60,6 +60,36 @@ func TestPolicyBundleSnapshotPreservesPausedIPOnlyCompilation(t *testing.T) {
 	}
 }
 
+func TestOldPolicySnapshotRestoresRuleDisplayMetadataFromAppliedPolicy(t *testing.T) {
+	set := PolicySet{
+		Profiles: []Profile{{ID: "home", DefaultPolicies: []string{"DIRECT"}, Rules: []Rule{{
+			ID: "rule-1", Match: RuleMatch{Domains: []string{"applied.example"}}, Policies: []string{"DIRECT"},
+		}}}},
+		Devices: []ManagedDevice{{ID: "phone", MAC: "aa:bb:cc:dd:ee:01", IPv4: "192.168.50.101", Profile: "home"}},
+	}
+	bundle, err := CompilePolicyBundle(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A bundle written before rule_matches existed must still show applied names.
+	bundle.Compiled.Devices[0].RuleMatches = nil
+	path := filepath.Join(t.TempDir(), "device-policy.applied.json")
+	if err := WritePolicyBundleSnapshot(path, bundle); err != nil {
+		t.Fatal(err)
+	}
+	set.Profiles[0].Rules[0].Match.Domains[0] = "draft.example"
+	loaded, err := LoadPolicyBundleSnapshot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(loaded.Compiled.Devices[0].RuleMatches["rule-1"].Domains, ","); got != "applied.example" {
+		t.Fatalf("applied rule display metadata = %q", got)
+	}
+	if loaded.Digest != bundle.Digest {
+		t.Fatal("display metadata changed the policy digest")
+	}
+}
+
 func TestPolicyBundleForLANKeepsDesiredPolicyButDormantDevicesOutOfRuntime(t *testing.T) {
 	set := PolicySet{
 		Profiles: []Profile{{

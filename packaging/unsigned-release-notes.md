@@ -1,13 +1,22 @@
 [简体中文](#简体中文) · [English](#english)
 
-> **v0.3 系列代号：Verdilion · 第三个候选版本**<br>
-> **v0.3 series codename: Verdilion · Third release candidate**
+> **v0.3 系列代号：Verdilion · 第四个候选版本**<br>
+> **v0.3 series codename: Verdilion · Fourth release candidate**
 
 ## 简体中文
 
-### v0.3.0-rc.3 主要变化（相对 v0.2.4）
+### v0.3.0-rc.4 主要变化（相对 v0.3.0-rc.3）
 
-Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。本次是基于 `Next` 的第三个 v0.3 候选版本，面向愿意提前体验并反馈问题的用户；以下主要变化以 v0.2.4 为基准，稳定版仍为 v0.2.4。
+本次是基于 `Next` 的第四个 v0.3 候选版本，重点改善“设备与规则”的布局与出口操作，面向愿意提前体验并反馈问题的用户。稳定版仍为 v0.2.4。
+
+- **设备工作台**：左侧集中选择和搜索设备，右侧展示当前设备的身份、路由方式、分流顺序及未命中时的出口。待应用、待移除、身份冲突和地址变化等状态保持可见；规则集与分流模版使用独立页签。
+- **更清晰的路由与提示**：改善“部分出口已不在当前配置中”的提示样式，修正“设备路由方式”“命中后的出口”的文字排布，并增加路由选项与选择标识之间的间距。
+- **卡片内选择出口**：设备默认出口与规则出口的候选直接在卡片内展开。“新增出口候选”可定位到对应编辑区；候选修改仍需保存与重载，即时出口切换与配置草稿继续分开。
+- **准确的规则出口名称**：已应用的规则出口按分流模版、规则集或匹配条件显示名称，并从已应用快照恢复旧版本缺少的展示信息，避免把未保存的草稿名称当作当前运行规则。只修改候选时保留组合匹配条件和其他规则。
+
+### v0.3 系列主要变化（相对 v0.2.4）
+
+Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。以下变化包含前三个候选版本的桌面改进。
 
 - **完整的桌面操作入口**：OpenSurge 现在直接在独立桌面窗口中展示总览、网络设置、设备、连接、策略和诊断。窗口支持原生菜单、快捷键、文件选择与保存；隐藏后重新打开会保留当前页面和草稿。菜单栏也保留「在浏览器中打开」入口。
 - **更实用的菜单栏状态面板**：集中展示上传下载速率、近 60 秒趋势、本机出口和活跃设备。网络状态、本机出口与具体设备可在面板内展开；窗口随内容调整大小，并提供展开过渡。网关停止时收起流量曲线，显示紧凑提示；桌面窗口隐藏后，菜单栏仍独立采样流量。
@@ -21,7 +30,7 @@ Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状�
 - 本次以 GitHub Pre-release 发布，不替代 v0.2.4 的稳定版 Latest，也不合入 `master`。
 - 更新检查继续只发现稳定版；安装本候选版本后，后续 RC 需要从 GitHub Releases 手动获取。
 - 网关规则、配置与网络数据面沿用 v0.2.4 的实现边界。下游 IPv6 仍为实验性能力，适用拓扑与验证范围见项目文档。
-- 本次完成 Web/Go/桌面端测试、安装器契约检查、macOS 临时 App 登录项注册恢复验证和双架构打包校验；未为本 RC 重新运行 Virtual Lab 或真实网关网络验收。临时 App 验证不等于真实 PKG 升级后重新登录验收，也不代表 Intel 实机界面验收。
+- 本次完成 Web/Go/桌面端测试、安装器契约检查和双架构打包校验；未为本 RC 重新运行 Virtual Lab 或真实网关网络验收。真实 PKG 升级后重新登录，以及 Intel 实机界面仍未验收。
 
 ### 选择安装包
 
@@ -69,9 +78,18 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ## English
 
-### v0.3.0-rc.3 highlights since v0.2.4
+### v0.3.0-rc.4 highlights since v0.3.0-rc.3
 
-Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. This is the third v0.3 release candidate based on `Next`, intended for users who want to try the new experience and report issues. The highlights below compare against v0.2.4, which remains the stable release.
+This is the fourth v0.3 release candidate based on `Next`, focused on the Devices & Rules layout and outlet controls. It is intended for users who want to try the new experience and report issues. v0.2.4 remains the stable release.
+
+- **Device workbench:** Select and search devices on the left, then inspect the selected device's identity, routing mode, rule order and unmatched outlet on the right. Pending application, removal, identity conflicts and address changes remain visible. Rule sets and routing templates have separate tabs.
+- **Clearer routing controls and notices:** Refines the missing-outlet notice, fixes text layout for Device routing mode and Outlet after match, and gives routing choices more space beside their selection indicators.
+- **Choose outlets inside the card:** Default-device and rule outlet candidates expand within the card. Add outlet candidates takes you to the corresponding editor. Candidate changes still require save and reload, keeping immediate outlet selection separate from configuration drafts.
+- **Accurate rule outlet names:** Applied rule outlets show their template, rule set or match conditions. Older snapshots recover missing display metadata from the applied policy, keeping unsaved draft names separate from running rules. Editing candidates preserves compound match conditions and other rules.
+
+### v0.3 series highlights since v0.2.4
+
+Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. The following highlights include desktop improvements from the first three release candidates.
 
 - **A complete desktop entry point:** Overview, network settings, devices, connections, policies and diagnostics now open in a dedicated desktop window with native menus, shortcuts, file selection and saving. Hiding and reopening the window preserves the current page and drafts. The menu bar retains an Open in Browser action.
 - **A more useful menu-bar panel:** Upload/download rates, a 60-second traffic trend, local egress and active devices are available at a glance. Network details, local egress and individual devices expand inside the panel, with transitions and content-driven window sizing. Stopping the gateway replaces empty charts with a compact status; menu-bar traffic sampling continues independently while the desktop window is hidden.
@@ -85,7 +103,7 @@ Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar st
 - Published as a GitHub Pre-release, without replacing v0.2.4 as the stable Latest release or merging into `master`.
 - Update checks still discover stable releases only. Subsequent RCs must be downloaded manually from GitHub Releases.
 - Gateway rules, configuration and the network data plane retain their v0.2.4 implementation boundaries. Downstream IPv6 remains experimental; supported topologies and validation limits are documented in the project.
-- Validation covers Web/Go/desktop tests, installer contracts, login registration recovery with a temporary macOS app, and both architecture packages. Virtual Lab and real gateway/network acceptance were not rerun for this RC. The temporary-app check does not establish login continuity after a real PKG upgrade or Intel hardware UI acceptance.
+- Validation covers Web/Go/desktop tests, installer contracts and both architecture packages. Virtual Lab and real gateway/network acceptance were not rerun for this RC. Login continuity after a real PKG upgrade and Intel hardware UI behavior remain unverified.
 
 ### Choose a package
 
