@@ -163,3 +163,25 @@ func TestGatewayPresentationPreservesRecoveryAfterFailedStartup(t *testing.T) {
 		t.Fatalf("%+v", view)
 	}
 }
+
+func TestGatewayPresentationRechecksSampleCrossingPolicyWorkspaceCompletion(t *testing.T) {
+	server := newTestServer(t)
+	endActivity := server.gatewayActivity.beginPolicyWorkspace()
+	calls := 0
+	server.gatewayStatus = func(context.Context, config.Config) (gateway.Status, error) {
+		calls++
+		if calls == 1 {
+			endActivity()
+			return gateway.Status{Gateway: "degraded", DHCP: "stopped"}, nil
+		}
+		return healthyGatewayStatus(), nil
+	}
+	cfg, err := config.LoadRuntime(server.configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, view := server.observeGateway(t.Context(), cfg)
+	if calls != 2 || view.State != "running" || view.Busy {
+		t.Fatalf("calls=%d view=%+v", calls, view)
+	}
+}

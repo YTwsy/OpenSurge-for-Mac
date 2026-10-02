@@ -11,7 +11,7 @@ case "$VARIANT" in
   production) APP_NAME=OpenSurge; BUNDLE_ID=com.opensurge.menubar ;;
   *) echo "usage: $0 [preview|production]" >&2; exit 2 ;;
 esac
-RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v0.3.0-rc.5}"
+RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v0.3.0-rc.6}"
 [[ "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]] || { echo "invalid desktop release tag" >&2; exit 1; }
 RELEASE_VERSION="${RELEASE_TAG#v}"
 RELEASE_VERSION="${RELEASE_VERSION%%[-+]*}"

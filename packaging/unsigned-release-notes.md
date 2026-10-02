@@ -1,20 +1,20 @@
-[简体中文](#v030-rc5-主要变化相对-v030-rc4) · [English](#english)
+[简体中文](#v030-rc6-主要变化相对-v030-rc5) · [English](#english)
 
-> **v0.3 series codename: Verdilion · Fifth release candidate**
+> **v0.3 series codename: Verdilion · Sixth release candidate**
 
-### v0.3.0-rc.5 主要变化（相对 v0.3.0-rc.4）
+### v0.3.0-rc.6 主要变化（相对 v0.3.0-rc.5）
 
-本次是基于 `Next` 的第五个 v0.3 候选版本，重点修复菜单栏、桌面左下角与总览卡片的网关状态显示，面向愿意提前体验并反馈问题的用户。稳定版仍为 v0.2.4。
+本次是基于 `Next` 的第六个 v0.3 候选版本，修复策略页检测节点时网关状态被误报为“正在更新网关”的问题，面向愿意提前体验并反馈问题的用户。稳定版仍为 v0.2.4。
 
-- **准确区分操作中与运行异常**：启动、应用配置、停止、代理引擎恢复与回滚分别显示对应状态和当前阶段。启动或重载中途组件尚未就绪时，不再误报整个网关运行异常；菜单栏、侧栏与总览卡片使用一致的状态与颜色。
-- **配置与诊断提醒更清楚**：新增设备出口等配置修改后，正常运行的网关继续显示“正在运行”，另行提示有配置待应用、当前仍使用原配置。上次诊断有检查项时单独提示，不再直接把网关标为异常。
-- **故障原因与暂不可用分开显示**：代理引擎退出、TUN 故障、PF 未加载或 IPv4 转发关闭时显示具体原因；无法确认运行状态或操作结果时显示暂不可用提示。操作仍在执行或状态未确认时，完整退出和卸载会继续等待确认，避免把中途停止当作操作结束。
-- **减少旧状态闪现**：操作开始和完成时及时刷新；操作期间加快菜单栏状态采样。较早查询的迟到结果不会覆盖最新状态，跨越操作边界的采样会重新确认，遗留操作记录也不会让界面一直停在“启动中”。
+- **节点检测期间保持真实网关状态**：策略页读取、选择和检测节点时，正常运行的网关继续显示“正在运行”；停止状态下检测则保持“已停止”，不再出现“另一网关操作正在执行”的误导提示。菜单栏、桌面侧栏与总览卡片同步使用正确状态。
+- **检测结束后正确释放状态**：普通检测与逐项返回结果的检测，在完成、失败或取消后都清除活动标记，后续真实的启动、停止和配置应用仍会显示对应进度。
+- **保留并发保护与真实故障提示**：检测期间继续防止网关启停或配置切换与检测冲突；实际服务故障仍显示具体原因，配置待应用和诊断提醒也继续保留。
 
 ### v0.3 系列主要变化（相对 v0.2.4）
 
-v0.3 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。以下变化包含前四个候选版本的桌面与设备管理改进。
+v0.3 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。以下变化包含前五个候选版本的桌面、设备管理与状态显示改进。
 
+- **一致且准确的网关状态**：菜单栏、侧栏与总览区分启动、重载、停止、恢复和回滚进度；配置待应用与诊断提醒单独显示，实际服务故障给出具体原因。操作边界重新确认状态，迟到响应和遗留记录不会覆盖当前结果。
 - **完整的桌面操作入口**：OpenSurge 现在直接在独立桌面窗口中展示总览、网络设置、设备、连接、策略和诊断。窗口支持原生菜单、快捷键、文件选择与保存；隐藏后重新打开会保留当前页面和草稿。菜单栏也保留「在浏览器中打开」入口。
 - **更实用的菜单栏状态面板**：集中展示上传下载速率、近 60 秒趋势、本机出口和活跃设备。网络状态、本机出口与具体设备可在面板内展开；窗口随内容调整大小，并提供展开过渡。网关停止时收起流量曲线，显示紧凑提示；桌面窗口隐藏后，菜单栏仍独立采样流量。
 - **统一的设置入口与外观**：通过「OpenSurge → 设置…」、`⌘,` 或侧栏快捷设置进入独立设置窗口，管理语言、外观、登录时显示、临时合盖保持运行与更新，并提供退出和卸载入口。设置顶部新增「GitHub 仓库」和「文档」链接，点击后在系统浏览器中打开。侧栏底部保留扁平状态样式，齿轮可展开快捷设置；标题栏、列表、滚动条与文字选择统一使用 OpenSurge 的界面风格。
@@ -76,19 +76,19 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ## English
 
-### v0.3.0-rc.5 highlights since v0.3.0-rc.4
+### v0.3.0-rc.6 highlights since v0.3.0-rc.5
 
-This is the fifth v0.3 release candidate based on `Next`, focused on accurate gateway status in the menu bar, desktop sidebar and overview card. It is intended for users who want to try the new experience and report issues. v0.2.4 remains the stable release.
+This is the sixth v0.3 release candidate based on `Next`, fixing the gateway incorrectly showing Updating gateway while testing nodes on the Policies page. It is intended for users who want to try the new experience and report issues. v0.2.4 remains the stable release.
 
-- **Distinguish progress from runtime failures:** Starting, applying configuration, stopping, proxy-engine recovery and rollback show their own state and current phase. Components that are not ready during startup or reload no longer turn the entire gateway into a runtime warning. The menu bar, sidebar and overview card use consistent states and colors.
-- **Clearer configuration and diagnostic reminders:** Adding device outlet candidates or editing configuration keeps a healthy gateway marked Running, with a separate reminder that changes are pending and the previous configuration is still in use. Findings from the last diagnostic run are shown separately rather than changing the gateway's runtime state.
-- **Specific failures and unavailable status:** An exited proxy engine, failed TUN, missing PF rules or disabled IPv4 forwarding shows the corresponding reason. Unconfirmed runtime status or operation results show an unavailable-state message. Full quit and uninstall continue to wait while an operation is active or its status is unconfirmed, avoiding an exit during an intermediate stop.
-- **Fewer stale status flashes:** Operation start and completion refresh the summaries, with faster menu-bar sampling during operations. Late responses cannot replace newer state, samples crossing operation boundaries are checked again, and old operation records cannot leave the UI stuck at Starting.
+- **Keep actual gateway status during node tests:** Reading policies, selecting nodes and testing nodes keep a healthy gateway marked Running; testing while stopped keeps it marked Stopped. The misleading message about another gateway operation no longer appears. The menu bar, desktop sidebar and overview card share the corrected state.
+- **Clear activity when testing ends:** Both regular and streamed node tests release their activity marker on completion, failure or cancellation, so later gateway startup, shutdown and configuration changes continue to show their actual progress.
+- **Preserve concurrency protection and real fault reporting:** Gateway lifecycle and configuration changes remain protected against conflicts with active tests. Actual service failures still show their specific reason, and pending configuration and diagnostic reminders remain visible.
 
 ### v0.3 series highlights since v0.2.4
 
-Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. The following highlights include desktop and device-management improvements from the first four release candidates.
+Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. The following highlights include desktop, device-management and status improvements from the first five release candidates.
 
+- **Consistent, accurate gateway status:** The menu bar, sidebar and overview distinguish startup, reload, shutdown, recovery and rollback progress. Pending configuration and diagnostic reminders appear separately, while actual service failures show a specific cause. Operation boundaries are checked again, and late responses or old operation records cannot replace current state.
 - **A complete desktop entry point:** Overview, network settings, devices, connections, policies and diagnostics now open in a dedicated desktop window with native menus, shortcuts, file selection and saving. Hiding and reopening the window preserves the current page and drafts. The menu bar retains an Open in Browser action.
 - **A more useful menu-bar panel:** Upload/download rates, a 60-second traffic trend, local egress and active devices are available at a glance. Network details, local egress and individual devices expand inside the panel, with transitions and content-driven window sizing. Stopping the gateway replaces empty charts with a compact status; menu-bar traffic sampling continues independently while the desktop window is hidden.
 - **Unified settings and appearance:** OpenSurge → Settings…, `⌘,` and the sidebar lead to the same separate settings window for language, appearance, login display, temporary lid-closed operation and updates, with quit and uninstall actions. New GitHub repository and Documentation links open in the system browser from the top of Settings. The flat sidebar status area expands quick settings through a gear icon. Title bars, selects, scrollbars and text selection follow the OpenSurge visual style.

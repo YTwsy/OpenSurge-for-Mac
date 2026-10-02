@@ -14,9 +14,26 @@ import (
 // Only operations owned by this service instance are live. Persisted operations
 // from an interrupted instance remain diagnostic history, never a busy lease.
 type gatewayActivity struct {
-	mu         sync.Mutex
-	generation uint64
-	active     map[string]Operation
+	mu               sync.Mutex
+	generation       uint64
+	active           map[string]Operation
+	policyWorkspaces int
+}
+
+// Workspace reads, selections and probes share lifecycle exclusion but do not
+// transition the gateway. Track their request lifetime without creating a
+// persisted operation or mistaking the Helper's lock for an external action.
+func (a *gatewayActivity) beginPolicyWorkspace() func() {
+	a.mu.Lock()
+	a.policyWorkspaces++
+	a.generation++
+	a.mu.Unlock()
+	return func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.policyWorkspaces--
+		a.generation++
+	}
 }
 
 func (a *gatewayActivity) update(op Operation) {
@@ -50,7 +67,7 @@ type gatewayActivitySnapshot struct {
 func (a *gatewayActivity) snapshot() gatewayActivitySnapshot {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	result := gatewayActivitySnapshot{generation: a.generation, known: len(a.active) > 0}
+	result := gatewayActivitySnapshot{generation: a.generation, known: len(a.active) > 0 || a.policyWorkspaces > 0}
 	for _, op := range a.active {
 		if operationGatewayState(op) != "" && (result.operation == nil || op.CreatedAt.After(result.operation.CreatedAt)) {
 			copy := op

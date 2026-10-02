@@ -113,6 +113,8 @@ func (s *Server) handlePolicyWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
+	endActivity := s.gatewayActivity.beginPolicyWorkspace()
+	defer endActivity()
 	input, err := s.policyWorkspaceInput(request)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "policy_workspace_invalid", err.Error())
