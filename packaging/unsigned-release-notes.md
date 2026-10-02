@@ -1,22 +1,19 @@
-[简体中文](#简体中文) · [English](#english)
+[简体中文](#v030-rc5-主要变化相对-v030-rc4) · [English](#english)
 
-> **v0.3 系列代号：Verdilion · 第四个候选版本**<br>
-> **v0.3 series codename: Verdilion · Fourth release candidate**
+> **v0.3 series codename: Verdilion · Fifth release candidate**
 
-## 简体中文
+### v0.3.0-rc.5 主要变化（相对 v0.3.0-rc.4）
 
-### v0.3.0-rc.4 主要变化（相对 v0.3.0-rc.3）
+本次是基于 `Next` 的第五个 v0.3 候选版本，重点修复菜单栏、桌面左下角与总览卡片的网关状态显示，面向愿意提前体验并反馈问题的用户。稳定版仍为 v0.2.4。
 
-本次是基于 `Next` 的第四个 v0.3 候选版本，重点改善“设备与规则”的布局与出口操作，面向愿意提前体验并反馈问题的用户。稳定版仍为 v0.2.4。
-
-- **设备工作台**：左侧集中选择和搜索设备，右侧展示当前设备的身份、路由方式、分流顺序及未命中时的出口。待应用、待移除、身份冲突和地址变化等状态保持可见；规则集与分流模版使用独立页签。
-- **更清晰的路由与提示**：改善“部分出口已不在当前配置中”的提示样式，修正“设备路由方式”“命中后的出口”的文字排布，并增加路由选项与选择标识之间的间距。
-- **卡片内选择出口**：设备默认出口与规则出口的候选直接在卡片内展开。“新增出口候选”可定位到对应编辑区；候选修改仍需保存与重载，即时出口切换与配置草稿继续分开。
-- **准确的规则出口名称**：已应用的规则出口按分流模版、规则集或匹配条件显示名称，并从已应用快照恢复旧版本缺少的展示信息，避免把未保存的草稿名称当作当前运行规则。只修改候选时保留组合匹配条件和其他规则。
+- **准确区分操作中与运行异常**：启动、应用配置、停止、代理引擎恢复与回滚分别显示对应状态和当前阶段。启动或重载中途组件尚未就绪时，不再误报整个网关运行异常；菜单栏、侧栏与总览卡片使用一致的状态与颜色。
+- **配置与诊断提醒更清楚**：新增设备出口等配置修改后，正常运行的网关继续显示“正在运行”，另行提示有配置待应用、当前仍使用原配置。上次诊断有检查项时单独提示，不再直接把网关标为异常。
+- **故障原因与暂不可用分开显示**：代理引擎退出、TUN 故障、PF 未加载或 IPv4 转发关闭时显示具体原因；无法确认运行状态或操作结果时显示暂不可用提示。操作仍在执行或状态未确认时，完整退出和卸载会继续等待确认，避免把中途停止当作操作结束。
+- **减少旧状态闪现**：操作开始和完成时及时刷新；操作期间加快菜单栏状态采样。较早查询的迟到结果不会覆盖最新状态，跨越操作边界的采样会重新确认，遗留操作记录也不会让界面一直停在“启动中”。
 
 ### v0.3 系列主要变化（相对 v0.2.4）
 
-Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。以下变化包含前三个候选版本的桌面改进。
+v0.3 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状态面板。以下变化包含前四个候选版本的桌面与设备管理改进。
 
 - **完整的桌面操作入口**：OpenSurge 现在直接在独立桌面窗口中展示总览、网络设置、设备、连接、策略和诊断。窗口支持原生菜单、快捷键、文件选择与保存；隐藏后重新打开会保留当前页面和草稿。菜单栏也保留「在浏览器中打开」入口。
 - **更实用的菜单栏状态面板**：集中展示上传下载速率、近 60 秒趋势、本机出口和活跃设备。网络状态、本机出口与具体设备可在面板内展开；窗口随内容调整大小，并提供展开过渡。网关停止时收起流量曲线，显示紧凑提示；桌面窗口隐藏后，菜单栏仍独立采样流量。
@@ -24,6 +21,7 @@ Verdilion 带来独立的 macOS 桌面 App，以及重新整理的菜单栏状�
 - **更连贯的窗口体验**：Dock 图标跟随桌面和设置窗口的显示状态；启动加载阶段展示浅色渐变与 OpenSurge 图标。App 在后台运行且窗口已关闭时，再次点击图标会重新显示主窗口，修复设置窗口被一同打开、菜单栏面板闪现的问题。同步改善退出和卸载确认窗口的前台显示，以及与后台服务断开后的重连和状态保留。
 - **登录项可以重新注册**：修复更新 App 后「登录时显示」开关被禁用、误提示需要打开已安装 App 的问题。当前版本的登录项缺失时，可在设置中重新开启；等待 macOS 批准或注册失败会显示真实状态和错误，不会把点击开关当作注册成功。
 - **节点检测逐项显示结果**：策略页每完成一个节点的检测就更新该节点结果，无需等待整批完成。同步改善连通性页面文字对比度、策略页控件对齐、菜单栏设备跳转，以及诊断日志的局部横向滚动。
+- **设备工作台与出口操作**：左侧搜索和选择设备，右侧集中管理身份、路由、分流与未命中时的出口，待应用和身份冲突等状态保持可见。设备和规则出口在卡片内选择候选，新增候选可定位到对应编辑区；规则名称来自已应用快照，候选编辑保留组合匹配条件与其他规则。
 
 ### 候选版本说明
 
@@ -78,18 +76,18 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ## English
 
-### v0.3.0-rc.4 highlights since v0.3.0-rc.3
+### v0.3.0-rc.5 highlights since v0.3.0-rc.4
 
-This is the fourth v0.3 release candidate based on `Next`, focused on the Devices & Rules layout and outlet controls. It is intended for users who want to try the new experience and report issues. v0.2.4 remains the stable release.
+This is the fifth v0.3 release candidate based on `Next`, focused on accurate gateway status in the menu bar, desktop sidebar and overview card. It is intended for users who want to try the new experience and report issues. v0.2.4 remains the stable release.
 
-- **Device workbench:** Select and search devices on the left, then inspect the selected device's identity, routing mode, rule order and unmatched outlet on the right. Pending application, removal, identity conflicts and address changes remain visible. Rule sets and routing templates have separate tabs.
-- **Clearer routing controls and notices:** Refines the missing-outlet notice, fixes text layout for Device routing mode and Outlet after match, and gives routing choices more space beside their selection indicators.
-- **Choose outlets inside the card:** Default-device and rule outlet candidates expand within the card. Add outlet candidates takes you to the corresponding editor. Candidate changes still require save and reload, keeping immediate outlet selection separate from configuration drafts.
-- **Accurate rule outlet names:** Applied rule outlets show their template, rule set or match conditions. Older snapshots recover missing display metadata from the applied policy, keeping unsaved draft names separate from running rules. Editing candidates preserves compound match conditions and other rules.
+- **Distinguish progress from runtime failures:** Starting, applying configuration, stopping, proxy-engine recovery and rollback show their own state and current phase. Components that are not ready during startup or reload no longer turn the entire gateway into a runtime warning. The menu bar, sidebar and overview card use consistent states and colors.
+- **Clearer configuration and diagnostic reminders:** Adding device outlet candidates or editing configuration keeps a healthy gateway marked Running, with a separate reminder that changes are pending and the previous configuration is still in use. Findings from the last diagnostic run are shown separately rather than changing the gateway's runtime state.
+- **Specific failures and unavailable status:** An exited proxy engine, failed TUN, missing PF rules or disabled IPv4 forwarding shows the corresponding reason. Unconfirmed runtime status or operation results show an unavailable-state message. Full quit and uninstall continue to wait while an operation is active or its status is unconfirmed, avoiding an exit during an intermediate stop.
+- **Fewer stale status flashes:** Operation start and completion refresh the summaries, with faster menu-bar sampling during operations. Late responses cannot replace newer state, samples crossing operation boundaries are checked again, and old operation records cannot leave the UI stuck at Starting.
 
 ### v0.3 series highlights since v0.2.4
 
-Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. The following highlights include desktop improvements from the first three release candidates.
+Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar status panel. The following highlights include desktop and device-management improvements from the first four release candidates.
 
 - **A complete desktop entry point:** Overview, network settings, devices, connections, policies and diagnostics now open in a dedicated desktop window with native menus, shortcuts, file selection and saving. Hiding and reopening the window preserves the current page and drafts. The menu bar retains an Open in Browser action.
 - **A more useful menu-bar panel:** Upload/download rates, a 60-second traffic trend, local egress and active devices are available at a glance. Network details, local egress and individual devices expand inside the panel, with transitions and content-driven window sizing. Stopping the gateway replaces empty charts with a compact status; menu-bar traffic sampling continues independently while the desktop window is hidden.
@@ -97,6 +95,7 @@ Verdilion introduces a standalone macOS desktop app and a redesigned menu-bar st
 - **Smoother window behavior:** Dock visibility follows the desktop and settings windows. A light gradient and the OpenSurge icon cover startup loading. Clicking the app icon while the app runs in the background with its windows closed reopens the main window, fixing an unwanted Settings window and a briefly flashing menu-bar panel. Quit/uninstall confirmations come to the foreground more reliably, with service reconnection and UI state preservation.
 - **Recoverable login registration:** Fixes Show at login becoming disabled after an app update and incorrectly asking users to open the installed app. A missing login item for the current version can be registered again from Settings. Approval requirements and registration errors reflect the actual macOS result instead of assuming the switch change succeeded.
 - **Node test results as they finish:** Each completed node test updates its result without waiting for the batch. This release also improves connectivity text contrast, policy control alignment, device navigation from the menu bar and horizontal scrolling within diagnostic logs.
+- **Device workbench and outlet controls:** Search and select devices on the left, then manage identity, routing, rules and unmatched outlets on the right while keeping pending changes and identity conflicts visible. Device and rule candidates expand inside the card, and Add outlet candidates opens the corresponding editor. Applied snapshots supply rule names; candidate edits preserve compound matches and other rules.
 
 ### Release-candidate notes
 
