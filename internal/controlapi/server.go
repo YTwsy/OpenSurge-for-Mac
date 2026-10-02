@@ -80,6 +80,7 @@ type Server struct {
 	trafficSampler        *trafficRateSampler
 	connectionObservation connectionObservationCache
 	gatewayStatus         func(context.Context, config.Config) (gateway.Status, error)
+	gatewayActivity       gatewayActivity
 	doctor                *doctorController
 	mihomoRecovery        *mihomoRecoveryController
 	sleepPrevention       *sleepPreventionController
@@ -571,11 +572,14 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) overview(ctx context.Context) (Overview, error) {
+	return s.readOverview(ctx, true)
+}
+
+func (s *Server) readOverview(ctx context.Context, inventory bool) (Overview, error) {
 	cfg, desiredErr := config.Load(s.configPath)
 	if desiredErr != nil {
 		cfg, _ = config.LoadRuntime(s.configPath)
 	}
-	status, statusErr := s.gatewayStatus(ctx, cfg)
 	revision := fileDigest(s.configPath)
 	paths := runtime.NewPaths(cfg)
 	leases, _ := device.LoadLeases(paths.LeaseFile)
@@ -585,7 +589,6 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if cfg.DevicePolicy.Bundle != nil {
 		annotateRegisteredLeaseNames(leases, cfg.DevicePolicy.Bundle.Policy)
 	}
-	recovery, _ := s.store.Recovery()
 	desiredDigest := ""
 	if cfg.DevicePolicy.Bundle != nil {
 		desiredDigest = cfg.DevicePolicy.Bundle.Digest
@@ -606,21 +609,29 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 	if profileDigestErr != nil {
 		warnings = append(warnings, "desired imported profile: "+profileDigestErr.Error())
 	}
-	groups, groupErr := mihomo.FetchProxyGroups(ctx, cfg)
+	var groups []mihomo.ProxyGroup
+	var groupErr, providerErr error
+	var providers mihomo.ProvidersSnapshot
+	if inventory {
+		groups, groupErr = mihomo.FetchProxyGroups(ctx, cfg)
+		providers, providerErr = mihomo.FetchProviders(ctx, cfg)
+	}
 	if groups == nil {
 		groups = []mihomo.ProxyGroup{}
 	}
 	groups = mihomo.VisibleProxyGroups(groups)
-	if groupErr != nil && status.Gateway == "running" {
-		warnings = append(warnings, "mihomo policies unavailable: "+groupErr.Error())
-	}
-	providers, providerErr := mihomo.FetchProviders(ctx, cfg)
 	providers = mihomo.VisibleProviders(providers)
 	if providers.ProxyProviders == nil {
 		providers.ProxyProviders = []mihomo.ProxyProvider{}
 	}
 	if providers.RuleProviders == nil {
 		providers.RuleProviders = []mihomo.RuleProvider{}
+	}
+	status, statusErr, recovery, presentation := s.observeGateway(ctx, cfg)
+	presentation.ConfigPending = desiredDigest != appliedDigest || desiredProfileDigest != appliedProfileDigest
+	presentation.DiagnosisWarning = !controlDoctorHealthy
+	if groupErr != nil && status.Gateway == "running" {
+		warnings = append(warnings, "mihomo policies unavailable: "+groupErr.Error())
 	}
 	if providerErr != nil && status.Gateway == "running" {
 		warnings = append(warnings, "mihomo providers unavailable: "+providerErr.Error())
@@ -632,6 +643,7 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 		warnings = append(warnings, "gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again")
 	}
 	return Overview{
+		Presentation:         presentation,
 		SchemaVersion:        SchemaVersion,
 		Revision:             revision,
 		Topology:             cfg.Gateway.Mode,
@@ -657,13 +669,15 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 }
 
 func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
-	overview, err := s.overview(r.Context())
+	// Status polling does not need the full policy/provider inventory.
+	overview, err := s.readOverview(r.Context(), false)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "menubar_unavailable", err.Error())
 		return
 	}
 	cfg, _ := config.LoadRuntime(s.configPath)
 	writeJSON(w, http.StatusOK, MenuBarStatus{
+		Presentation:  overview.Presentation,
 		SchemaVersion: SchemaVersion, Revision: overview.Revision, Gateway: overview.Status.Gateway,
 		Topology: cfg.Gateway.Mode, LANIP: overview.Status.LANIP, DHCP: overview.Status.DHCP,
 		Mihomo: overview.Status.Mihomo, MihomoError: overview.Status.MihomoError, PFAnchor: overview.Status.PFAnchor, Forwarding: overview.Status.Forwarding,
@@ -892,6 +906,7 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "operation_failed", err.Error())
 		return
 	}
+	s.gatewayActivity.update(op)
 	if action == "restart-mihomo" {
 		s.mihomoRecovery.beginManual()
 	}
@@ -941,6 +956,7 @@ func (s *Server) runOperationLocked(op Operation, topology string, recoveryBefor
 		}
 	}
 	_ = s.store.SaveOperation(op)
+	s.gatewayActivity.update(op)
 	if completed != nil {
 		completed(err)
 	} else if op.Kind == "restart-mihomo" {
@@ -2177,7 +2193,7 @@ func (s *Server) stateEvent(ctx context.Context) (StateEvent, error) {
 	if err != nil {
 		return StateEvent{}, err
 	}
-	status, _ := gateway.New(cfg).Status(ctx)
+	status, _, recovery, presentation := s.observeGateway(ctx, cfg)
 	paths := runtime.NewPaths(cfg)
 	desired := ""
 	if cfg.DevicePolicy.File != "" {
@@ -2192,8 +2208,8 @@ func (s *Server) stateEvent(ctx context.Context) (StateEvent, error) {
 		applied = state.DevicePolicyDigest
 		appliedProfile = state.ProfileDigest
 	}
-	recovery, _ := s.store.Recovery()
-	return StateEvent{SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, DesiredProfileDigest: desiredProfile, AppliedProfileDigest: appliedProfile, Drift: desired != applied || desiredProfile != appliedProfile, Recovery: recovery, SleepPrevention: s.sleepPrevention.Status(), UIPreferences: uiPreferencesOrDefault(s.store)}, nil
+	presentation.ConfigPending = desired != applied || desiredProfile != appliedProfile
+	return StateEvent{Presentation: presentation, SchemaVersion: SchemaVersion, Revision: fileDigest(s.configPath), Gateway: status.Gateway, DesiredDigest: desired, AppliedDigest: applied, DesiredProfileDigest: desiredProfile, AppliedProfileDigest: appliedProfile, Drift: presentation.ConfigPending, Recovery: recovery, SleepPrevention: s.sleepPrevention.Status(), UIPreferences: uiPreferencesOrDefault(s.store)}, nil
 }
 
 func (s *Server) sourceByID(id string) (Source, error) {

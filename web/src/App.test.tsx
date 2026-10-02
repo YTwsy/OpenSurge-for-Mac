@@ -138,6 +138,7 @@ vi.mock('./api', () => ({
 
 import { api, RequestError, waitForOperation } from './api'
 import { App } from './App'
+import { clearOperations, recordOperation } from './operations'
 
 const overview: Overview = {
   schema_version: 1,
@@ -232,6 +233,7 @@ describe('OpenSurge app shell', () => {
   const scrollTo = vi.fn()
 
   beforeEach(() => {
+    clearOperations()
     window.history.replaceState({}, '', '/dashboard')
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
@@ -247,6 +249,55 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+
+  it('keeps the sidebar running when saved configuration is pending', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true, doctor_healthy: false,
+      status: { ...overview.status, gateway: 'running' },
+      presentation: { state: 'running', busy: false, config_pending: true, diagnosis_warning: true },
+    })
+    render(<App />)
+    const summary = await screen.findByRole('button', { name: '快捷设置：正在运行' })
+    expect(within(summary).getByText('有配置待应用，当前仍使用原配置')).toBeTruthy()
+    expect(summary.textContent).not.toContain('运行异常')
+  })
+
+  it('uses lifecycle progress in the sidebar even when raw components are incomplete', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true,
+      status: { ...overview.status, gateway: 'degraded', ipv4_takeover: 'failed' },
+      presentation: { state: 'starting', phase: 'starting_mihomo', busy: true, config_pending: true, diagnosis_warning: false },
+    })
+    render(<App />)
+    const summary = await screen.findByRole('button', { name: '快捷设置：正在启动' })
+    expect(within(summary).getByText('启动 Mihomo 并等待就绪')).toBeTruthy()
+    expect(summary.querySelector('.status-dot.transition')).toBeTruthy()
+    expect(summary.textContent).not.toContain('运行异常')
+    const card = screen.getByRole('article', { name: '网关状态' })
+    expect(within(card).getByText('正在应用…')).toBeTruthy()
+    expect(within(card).getByText('尚未就绪')).toBeTruthy()
+    expect(card.textContent).not.toContain('运行异常')
+  })
+
+  it('cannot replace a completed operation snapshot with a delayed partial sample', async () => {
+    let release!: (value: Overview) => void
+    vi.mocked(api.overview).mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      .mockResolvedValueOnce({ ...overview, status: { ...overview.status, gateway: 'running' }, presentation: { state: 'running', busy: false, config_pending: false, diagnosis_warning: false } })
+    render(<App />)
+    expect(screen.getByRole('button', { name: '快捷设置：正在连接…' })).toBeTruthy()
+    act(() => recordOperation({ id: 'status-race', kind: 'start', state: 'succeeded', created_at: new Date().toISOString() }))
+    await screen.findByRole('button', { name: '快捷设置：正在运行' })
+    await act(async () => release({ ...overview, status: { ...overview.status, gateway: 'degraded' } }))
+    expect(screen.getByRole('button', { name: '快捷设置：正在运行' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '快捷设置：运行异常' })).toBeNull()
+  })
+
+  it('marks a failed fresh read unavailable while retaining the page content', async () => {
+    render(<App />)
+    await screen.findByRole('button', { name: '快捷设置：已停止' })
+    vi.mocked(api.overview).mockRejectedValueOnce(new Error('service offline'))
+    act(() => recordOperation({ id: 'offline-status', kind: 'stop', state: 'succeeded' }))
+    await screen.findByRole('button', { name: '快捷设置：无法连接后台服务' })
+    expect(screen.getByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
+  })
 
   it('stops background updates and explains how to reconnect when authentication expires', async () => {
     const close = vi.fn()
@@ -480,7 +531,7 @@ describe('OpenSurge app shell', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<App />)
 
-    expect(await screen.findByText('重启后待清理')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '快捷设置：重启后待清理' })).toBeTruthy()
     expect(screen.queryByText(/gateway runtime was interrupted by a system reboot/)).toBeNull()
     const dashboardCleanup = screen.getByRole('button', { name: '安全清理旧状态' })
     expect(dashboardCleanup.classList.contains('primary')).toBe(true)

@@ -146,11 +146,16 @@ builds must not register login items or change installed network services on lau
 The menu-bar window uses a separate frontend entry and stylesheet; it does not load
 the main App or start its subscriptions. A native monitor reads the existing
 `/api/v1/menubar` DTO every 15 seconds in the background, every 2 seconds while the
-popup is open, and backs off failures up to 60 seconds. The visible popup reads the
+popup is open, every second during a busy operation, and backs off failures up to
+60 seconds. Unknown/degraded observations use a two-second refresh. The visible popup reads the
 monitor's private snapshot. Failed reads clear actionable status, including quit
-eligibility, instead of displaying an old healthy result. Network-recovery attention
-takes precedence over stopped/running display; an unchanged prepared recovery card
-does not imply an interrupted network.
+eligibility, instead of displaying an old healthy result. The Control API's shared
+`presentation` contract distinguishes live transitions, pending configuration,
+cached diagnostic warnings, confirmed failures and unknown observations. Main-window
+operation start/completion refreshes the native snapshot too. Network-recovery
+attention remains explicit once a transition finishes; an unchanged prepared recovery
+card does not imply an interrupted network. Busy/unknown snapshots cannot authorize
+full exit or uninstall, even when raw services are temporarily stopped during reload.
 
 The popup presents a gateway overview: current rates and a short chart, this Mac's
 routing summary, this Mac plus two active downstream devices, expandable network
@@ -223,6 +228,9 @@ Match the Swift host's state appearance: brand image at 0.75 opacity while conne
 0.55 when stopped, 0.35 when unreachable, and 1.0 while running. Degraded/recovery
 use the original AppKit warning symbols at full opacity. Do not append text badges
 that widen the status item. Keep the brand source separate from rendered warning images.
+Lifecycle transitions use the circular-arrows symbol, rollback uses a return arrow,
+and unknown observations use a question mark. Pending configuration and cached Doctor
+warnings retain the running brand icon and appear as secondary text in the popup.
 The adapter also applies the localised tooltip/accessibility label; the pinned Wails
 macOS `SetTooltip` implementation is a no-op.
 

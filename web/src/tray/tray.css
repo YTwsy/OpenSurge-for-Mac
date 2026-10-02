@@ -52,6 +52,8 @@ h1 { margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -.2px; }
 .tray-dot { display: inline-block; flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--tray-secondary); }
 .tray-dot.running { background: #34a853; }
 .tray-dot.degraded, .tray-dot.recovery { background: #d99121; }
+.tray-dot.interrupted { background: #d99121; }
+.tray-dot.transition { background: var(--tray-accent); }
 .tray-dot.unreachable { background: #db5349; }
 .tray-subtitle { margin: 9px 0 4px; color: var(--tray-secondary); font-size: 11px; line-height: 1.4; }
 .tray-content { min-height: 0; overflow-y: auto; scrollbar-width: none; flex: 0 1 auto; padding: 2px; margin: 0 -2px; }

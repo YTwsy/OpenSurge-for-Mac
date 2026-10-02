@@ -56,7 +56,15 @@ func (h *desktopHost) menuStatusChanged(snapshot menustatus.Snapshot) {
 		"connecting": {"正在连接后台服务", "Connecting to service"},
 		"stopped":    {"网关已停止", "Gateway stopped"}, "running": {"网关正在运行", "Gateway running"},
 		"degraded": {"网关运行异常", "Gateway needs attention"}, "recovery": {"网络恢复尚未完成", "Network recovery incomplete"},
-		"unreachable": {"无法连接后台服务", "Service unreachable"},
+		"unreachable":  {"无法连接后台服务", "Service unreachable"},
+		"starting":     {"正在启动网关", "Starting gateway"},
+		"reloading":    {"正在应用配置", "Applying configuration"},
+		"stopping":     {"正在停止网关", "Stopping gateway"},
+		"recovering":   {"正在恢复代理引擎", "Recovering proxy engine"},
+		"rolling_back": {"正在回滚网络改动", "Rolling back network changes"},
+		"changing":     {"正在更新网关", "Updating gateway"},
+		"interrupted":  {"重启后待清理", "Cleanup required after reboot"},
+		"unknown":      {"状态暂不可用", "Status temporarily unavailable"},
 	}
 	i := 0
 	if english {
