@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRef, useState } from 'react'
 import type { LocalRouting, Overview, PolicyWorkspaceSnapshot, ProxyHealthSnapshot } from '../types'
+import type { PolicyTestObserver } from '../api'
 import type { ConnectionRefreshSuggestion } from '../components/ConnectionRefreshPrompts'
 
 vi.mock('../api', () => ({
@@ -125,8 +126,61 @@ describe('PoliciesPage', () => {
     render(<PoliciesPageHarness />)
     await screen.findAllByText('86 ms')
     await userEvent.click(screen.getByRole('button', { name: '检测当前视图' }))
-    await waitFor(() => expect(api.policyWorkspace).toHaveBeenCalledWith({ action: 'test', names: ['Proxy-A', 'Proxy-B'] }))
+    await waitFor(() => expect(api.policyWorkspace).toHaveBeenCalledWith({ action: 'test', names: ['Proxy-A', 'Proxy-B'] }, expect.objectContaining({ onResult: expect.any(Function) })))
     expect(api.testProxyHealth).not.toHaveBeenCalled()
+  })
+
+  it.each(['running', 'prepared'] as const)('shows each finished node while another is still being tested in %s mode', async mode => {
+    workspace.mode = mode
+    render(<PoliciesPageHarness data={mode === 'running' ? overview : null} />)
+    await screen.findByRole('heading', { name: 'Main' })
+    let observer!: PolicyTestObserver
+    let finish!: (snapshot: PolicyWorkspaceSnapshot) => void
+    vi.mocked(api.policyWorkspace).mockImplementationOnce((_, updates) => {
+      observer = updates!
+      return new Promise(resolve => { finish = resolve })
+    })
+    await userEvent.click(screen.getByRole('button', { name: '检测当前视图' }))
+    const fast = screen.getByRole('button', { name: 'Main 选择 Proxy-A' })
+    const slow = screen.getByRole('button', { name: 'Main 选择 Proxy-B' })
+    expect(within(fast).getByText('检测中…')).toBeTruthy()
+    expect(within(slow).getByText('检测中…')).toBeTruthy()
+
+    await act(async () => observer.onResult({ name: 'Proxy-A', status: 'reachable', delay_ms: 42, tested_at: new Date().toISOString(), test_url: health.test_url }))
+    expect(within(fast).getByText('42 ms')).toBeTruthy()
+    expect(within(fast).queryByText('检测中…')).toBeNull()
+    expect(within(slow).getByText('检测中…')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /正在检测/ })).toHaveProperty('disabled', true)
+
+    await act(async () => observer.onResult({ name: 'Proxy-B', status: 'timeout', tested_at: new Date().toISOString(), test_url: health.test_url }))
+    expect(within(slow).getByText('超时')).toBeTruthy()
+    workspace.health.proxies[0].delay_ms = 42
+    await act(async () => finish(structuredClone(workspace)))
+    expect(screen.getByRole('button', { name: '检测当前视图' })).toHaveProperty('disabled', false)
+  })
+
+  it('retains completed results if the stream fails and aborts unfinished reads on unmount', async () => {
+    const page = render(<PoliciesPageHarness />)
+    await screen.findByRole('heading', { name: 'Main' })
+    let observer!: PolicyTestObserver
+    let fail!: (error: Error) => void
+    vi.mocked(api.policyWorkspace).mockImplementationOnce((_, updates) => {
+      observer = updates!
+      return new Promise((_, reject) => { fail = reject })
+    })
+    await userEvent.click(screen.getByRole('button', { name: '检测当前视图' }))
+    await act(async () => observer.onResult({ name: 'Proxy-A', status: 'reachable', delay_ms: 42, tested_at: new Date().toISOString(), test_url: health.test_url }))
+    await act(async () => fail(new Error('Stream disconnected')))
+    expect(within(screen.getByRole('button', { name: 'Main 选择 Proxy-A' })).getByText('42 ms')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('Stream disconnected')
+    expect(api.policyWorkspace).toHaveBeenCalledTimes(2)
+    vi.mocked(api.policyWorkspace).mockImplementationOnce((_, updates) => {
+      observer = updates!
+      return new Promise((_, reject) => observer.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }))
+    })
+    await userEvent.click(screen.getByRole('button', { name: '检测当前视图' }))
+    page.unmount()
+    expect(observer.signal.aborted).toBe(true)
   })
 
   it('prepares and selects nodes before the gateway starts without using overview policies', async () => {
@@ -158,7 +212,7 @@ describe('PoliciesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '检测当前视图' }))
 
     expect(await screen.findByText('42 ms')).toBeTruthy()
-    expect(api.policyWorkspace).toHaveBeenCalledWith({ action: 'test', names: ['Proxy-A', 'Proxy-B'] })
+    expect(api.policyWorkspace).toHaveBeenCalledWith({ action: 'test', names: ['Proxy-A', 'Proxy-B'] }, expect.objectContaining({ onResult: expect.any(Function) }))
   })
 
   it('renders an empty current configuration without a stopped-core error or prompt', async () => {
@@ -237,7 +291,7 @@ describe('PoliciesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: '检测当前视图' }))
 
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('Test unavailable'))
-    expect((screen.getByRole('button', { name: '检测当前视图' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '检测当前视图' }) as HTMLButtonElement).disabled).toBe(false)
     expect(api.policyWorkspace).toHaveBeenCalledTimes(2)
   })
 

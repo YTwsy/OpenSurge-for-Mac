@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App 图标">
+  <img src="apps/desktop/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App 图标">
   <h1>OpenSurge for Mac</h1>
   <p><strong>把 Mac 变成可按设备分流的 Surge 风格全屋透明代理网关——既可让指定设备通过旁路由手动接入，也支持 DHCP/DNS 自动接管与实验性下游 IPv6 接管</strong></p>
   <p>
@@ -189,19 +189,21 @@ Tailnet 访问和 Exit Node 是两种不同角色：
 通过安装包使用 OpenSurge 时，请从
 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)开始。
 
-本地 Control API、React Web GUI 和以状态展示为主的 SwiftUI 菜单栏 launcher 已进入仓库。开发构建：
+从 v0.3.0 起，安装包使用 Wails + 系统 WebView 桌面 App：React 主窗口与菜单栏面板共享
+现有 Control API，浏览器入口继续可用。v0.2.4 的旧 Swift 宿主保留为历史维护参考；验收边界见
+[桌面安装验收](docs/desktop-installation.md)。开发构建：
 
 ```sh
 make web-install
 make control-build
 ./bin/opensurge-control --config examples/config.example.yaml
-make menubar-build
+make desktop-production-build
 ```
 
 控制服务只监听 `127.0.0.1`，启动时会输出一次性 Web GUI 链接。菜单栏 App 显示
-状态、恢复警报并打开 Web GUI；除独立的临时合盖运行开关外，不提供网关 start/stop 或
-策略切换。它区分“只退出菜单栏
-App”和“退出 OpenSurge”：后者只在网关数据面已经停止时退出菜单栏 App 与用户级
+状态、恢复警报并打开同一个桌面主窗口；除独立的临时合盖运行开关外，不提供网关 start/stop 或
+策略切换。它区分“只退出桌面
+App”和“退出 OpenSurge”：后者只在网关数据面已经停止时退出桌面 App 与用户级
 Control Service；系统 launchd 托管的 root Helper 保持空闲加载，下次打开无需再次授权。
 菜单栏还提供独立的“卸载 OpenSurge”入口：只要网关已经停止即可通过 macOS 管理员授权
 移除 App、Control Service 与 root Helper，并可选择保留配置数据供以后重新安装或彻底删除。

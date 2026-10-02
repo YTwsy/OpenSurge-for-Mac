@@ -43,7 +43,7 @@ export function DeviceTrafficPanel({ gateway, traffic, history, error, onOpenCon
     setDetailOpen(true)
   }
 
-  return <section className="section traffic-section">
+  return <section id="active-devices" className="section traffic-section" tabIndex={-1} aria-label={t('活跃设备')}>
     <div className="traffic-section-heading"><div><h2>{t('活跃设备')}</h2><p>{t('实时速度来自相邻连接样本；累计值仅覆盖当前活跃会话')}</p></div><div className="traffic-heading-actions">{onOpenConnections && <button type="button" onClick={() => onOpenConnections('all')}>{t('查看全部连接')}</button>}{selectedDevice && <button type="button" onClick={() => selectDevice(selectedDevice)}>{t(detailOpen ? '收起趋势' : '展开趋势')}</button>}</div></div>
     {error && !traffic ? <Empty text={t('暂时无法读取设备流量：{{error}}', { error })} /> : <>
       {traffic?.connection_error && <div className="notice warn">{t(gateway === 'running' || gateway === 'degraded' ? 'mihomo 连接数据暂时不可用；已有设备清单仍会显示。' : '网关未运行；DHCP 租约或已应用静态登记仍会显示，启动后才有活跃连接流量。')}</div>}

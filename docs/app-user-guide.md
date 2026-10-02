@@ -6,24 +6,36 @@ This short guide is for people using the packaged OpenSurge for Mac app. It
 covers installation, proxy configuration, gateway startup, and safe network
 recovery. CLI and development workflows are intentionally left out.
 
+Desktop instructions here describe v0.3.0 and later. The v0.2.4 release uses the
+legacy Swift menu bar host; see [installer acceptance](desktop-installation.md) for the
+verified scope and outstanding platform checks.
+
 ![OpenSurge for Mac dashboard](images/opensurge-dashboard.png)
 
 ## Install and open the app
 
-1. Download the package for your Mac from
-   [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases): use
-   `arm64-unsigned.pkg` on Apple Silicon or `x86_64-unsigned.pkg` on Intel.
+1. Open the latest stable release on
+   [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases), expand **Assets**
+   and download the `.pkg` for your Mac: `arm64` for Apple Silicon or `x86_64` for Intel.
+   The v0.2.4 menu bar workflow is described in its
+   [versioned guide](https://github.com/YTwsy/OpenSurge-for-Mac/blob/v0.2.4/docs/app-user-guide.md).
 2. Double-click the package. If macOS blocks it, open **System Settings →
    Privacy & Security** and choose **Open Anyway** for this package. You do not
    need to disable Gatekeeper globally.
-3. Open **OpenSurge** from `/Applications`; the app opens its menu bar status
-   panel directly.
-4. Later, either open **OpenSurge** again or click its menu bar icon to show the
-   same panel, then choose **打开 OpenSurge 面板** (Open the OpenSurge panel)
-   to launch the Web GUI.
+3. Open **OpenSurge** from `/Applications` to show the independent main window.
+4. The Dock, another launch, or **Open OpenSurge Dashboard** in the tray returns
+   to the same window. Clicking the menu bar icon opens a separate status panel;
+   sources, networking, devices and policies are managed in the main window.
 
-The menu bar app shows status and recovery warnings and opens the Web GUI.
-Sources, network settings, devices, and policies are managed in the Web GUI.
+First launch requests 1440 × 900 logical points, fitted to the available screen.
+You can resize the window and the app remembers your choice. Drag the empty top
+area; native traffic lights blend into the sidebar. Closing hides the window.
+`⌘Q` confirms quitting only the desktop app while background services and the
+running gateway continue.
+
+**App Settings & Updates** in the tray provides explicit login-item management.
+If macOS requires approval, open Login Items through the provided action. Upgrades
+do not automatically toggle registration; the actual OS status is authoritative.
 
 The menu bar panel automatically checks once for the latest stable release and
 also provides a manual **检查更新** (Check for Updates) action. When an update is
@@ -218,10 +230,10 @@ recovery state machine:
 
 The menu bar provides two different quit actions:
 
-- **只退出菜单栏 App** (Quit Menu Bar App Only) closes only the menu bar icon.
+- **只退出桌面 App** (Quit Desktop App Only) closes the main window and menu bar icon.
   Gateway and background services keep running.
 - **退出 OpenSurge** (Quit OpenSurge) is available only after the gateway is
-  stopped and no recovery action remains. It quits the menu bar app and user
+  stopped and no recovery action remains. It quits the desktop app and user
   Control Service.
 
 ## Uninstall

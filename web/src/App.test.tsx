@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { selectOption } from './test/select'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -137,6 +138,7 @@ vi.mock('./api', () => ({
 
 import { api, RequestError, waitForOperation } from './api'
 import { App } from './App'
+import { clearOperations, recordOperation } from './operations'
 
 const overview: Overview = {
   schema_version: 1,
@@ -231,6 +233,7 @@ describe('OpenSurge app shell', () => {
   const scrollTo = vi.fn()
 
   beforeEach(() => {
+    clearOperations()
     window.history.replaceState({}, '', '/dashboard')
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
@@ -246,6 +249,55 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+
+  it('keeps the sidebar running when saved configuration is pending', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true, doctor_healthy: false,
+      status: { ...overview.status, gateway: 'running' },
+      presentation: { state: 'running', busy: false, config_pending: true, diagnosis_warning: true },
+    })
+    render(<App />)
+    const summary = await screen.findByRole('button', { name: '快捷设置：正在运行' })
+    expect(within(summary).getByText('有配置待应用，当前仍使用原配置')).toBeTruthy()
+    expect(summary.textContent).not.toContain('运行异常')
+  })
+
+  it('uses lifecycle progress in the sidebar even when raw components are incomplete', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true,
+      status: { ...overview.status, gateway: 'degraded', ipv4_takeover: 'failed' },
+      presentation: { state: 'starting', phase: 'starting_mihomo', busy: true, config_pending: true, diagnosis_warning: false },
+    })
+    render(<App />)
+    const summary = await screen.findByRole('button', { name: '快捷设置：正在启动' })
+    expect(within(summary).getByText('启动 Mihomo 并等待就绪')).toBeTruthy()
+    expect(summary.querySelector('.status-dot.transition')).toBeTruthy()
+    expect(summary.textContent).not.toContain('运行异常')
+    const card = screen.getByRole('article', { name: '网关状态' })
+    expect(within(card).getByText('正在应用…')).toBeTruthy()
+    expect(within(card).getByText('尚未就绪')).toBeTruthy()
+    expect(card.textContent).not.toContain('运行异常')
+  })
+
+  it('cannot replace a completed operation snapshot with a delayed partial sample', async () => {
+    let release!: (value: Overview) => void
+    vi.mocked(api.overview).mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      .mockResolvedValueOnce({ ...overview, status: { ...overview.status, gateway: 'running' }, presentation: { state: 'running', busy: false, config_pending: false, diagnosis_warning: false } })
+    render(<App />)
+    expect(screen.getByRole('button', { name: '快捷设置：正在连接…' })).toBeTruthy()
+    act(() => recordOperation({ id: 'status-race', kind: 'start', state: 'succeeded', created_at: new Date().toISOString() }))
+    await screen.findByRole('button', { name: '快捷设置：正在运行' })
+    await act(async () => release({ ...overview, status: { ...overview.status, gateway: 'degraded' } }))
+    expect(screen.getByRole('button', { name: '快捷设置：正在运行' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '快捷设置：运行异常' })).toBeNull()
+  })
+
+  it('marks a failed fresh read unavailable while retaining the page content', async () => {
+    render(<App />)
+    await screen.findByRole('button', { name: '快捷设置：已停止' })
+    vi.mocked(api.overview).mockRejectedValueOnce(new Error('service offline'))
+    act(() => recordOperation({ id: 'offline-status', kind: 'stop', state: 'succeeded' }))
+    await screen.findByRole('button', { name: '快捷设置：无法连接后台服务' })
+    expect(screen.getByRole('heading', { name: '全屋网关，一眼可见' })).toBeTruthy()
+  })
 
   it('stops background updates and explains how to reconnect when authentication expires', async () => {
     const close = vi.fn()
@@ -265,17 +317,86 @@ describe('OpenSurge app shell', () => {
     await waitFor(() => expect(close).toHaveBeenCalled())
   })
 
+  it('keeps flat status visible and exposes quick controls only when expanded', async () => {
+    render(<App />)
+    const disclosure = await screen.findByRole('button', { name: /^快捷设置：/ })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(disclosure.textContent).toContain(`${import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Verdilion`)
+    expect(screen.queryByRole('checkbox', { name: /合盖保持运行/ })).toBeNull()
+    expect(screen.queryByRole('combobox')).toBeNull()
+    disclosure.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('checkbox', { name: /合盖保持运行/ })).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: '深色模式' })).toBeTruthy()
+    await userEvent.click(disclosure)
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('checkbox', { name: /合盖保持运行/ })).toBeNull()
+    expect(api.setSleepPrevention).not.toHaveBeenCalled()
+    expect(api.setUIPreferences).not.toHaveBeenCalled()
+  })
+
   it('changes the shared interface language from the polished Web GUI selector', async () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
 
+    await userEvent.click(screen.getByRole('button', { name: /^快捷设置：/ }))
     const selector = screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' })
-    await userEvent.selectOptions(selector, 'en')
+    await selectOption(selector, 'en')
 
     await screen.findByRole('heading', { name: 'Your whole-home gateway at a glance' })
     expect(api.setUIPreferences).toHaveBeenCalledWith({ language: 'en' })
     expect(document.documentElement.lang).toBe('en')
-    expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en')
+    await waitFor(() => expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en'))
+  })
+
+  it('does not restore a stale language while a language save is pending', async () => {
+    let stateListener: EventListener | undefined
+    class TestEventSource {
+      addEventListener(type: string, listener: EventListener) { if (type === 'state') stateListener = listener }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', TestEventSource)
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, ui_preferences: { schema_version: 1, language: 'zh-Hans' } })
+    let saved!: (value: { schema_version: number; language: 'en' }) => void
+    vi.mocked(api.setUIPreferences).mockImplementationOnce(() => new Promise(resolve => { saved = resolve }))
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    await userEvent.click(screen.getByRole('button', { name: /^快捷设置：/ }))
+    await selectOption(screen.getByRole('combobox', { name: '选择 OpenSurge Web GUI 和菜单栏使用的语言' }), 'en')
+    await screen.findByRole('heading', { name: 'Your whole-home gateway at a glance' })
+    await act(async () => stateListener?.(new Event('state')))
+    expect(screen.getByRole('heading', { name: 'Your whole-home gateway at a glance' })).toBeTruthy()
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, ui_preferences: { schema_version: 1, language: 'en' } })
+    await act(async () => saved({ schema_version: 1, language: 'en' }))
+    await waitFor(() => expect(screen.getByRole('combobox').hasAttribute('disabled')).toBe(false))
+    expect(document.documentElement.lang).toBe('en')
+  })
+
+  it('keeps network drafts mounted through desktop service loss and reconnect', async () => {
+    let stateListener: EventListener | undefined
+    class TestEventSource {
+      addEventListener(type: string, listener: EventListener) {
+        if (type === 'state') stateListener = listener
+      }
+      close() {}
+    }
+    vi.stubGlobal('EventSource', TestEventSource)
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+    const input = await screen.findByLabelText('下游 LAN 接口') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'en99-draft' } })
+    vi.mocked(api.overview).mockRejectedValueOnce(new RequestError(503, 'desktop_service_unavailable', 'Reconnecting'))
+    await act(async () => stateListener?.(new Event('state')))
+    expect(await screen.findByText('Reconnecting')).toBeTruthy()
+    expect(screen.getByLabelText('下游 LAN 接口')).toBe(input)
+    expect(input.value).toBe('en99-draft')
+    await act(async () => stateListener?.(new Event('state')))
+    await waitFor(() => expect(screen.queryByText('Reconnecting')).toBeNull())
+    expect(screen.getByLabelText('下游 LAN 接口')).toBe(input)
+    expect(input.value).toBe('en99-draft')
+    expect(api.saveConfig).not.toHaveBeenCalled()
   })
 
   it('does not present a saved recovery card as an unfinished network recovery', async () => {
@@ -286,7 +407,7 @@ describe('OpenSurge app shell', () => {
     expect(brand?.textContent).toBe('OpenSurgefor Mac')
     expect(brand?.querySelector('.brand-series')).toBeNull()
     const sidebarStatus = document.querySelector('.sidebar-status')
-    expect(sidebarStatus?.querySelector('small')?.textContent).toBe(`${import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose`)
+    expect(sidebarStatus?.querySelector('small')?.textContent).toBe(`${import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Verdilion`)
     expect(sidebarStatus?.querySelectorAll('small')).toHaveLength(1)
     expect(sidebarStatus?.textContent).not.toContain('192.168.1.20')
     expect(document.querySelector('.sidebar-release')).toBeNull()
@@ -311,6 +432,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.setSleepPrevention).mockResolvedValue(enabled.sleep_prevention)
     vi.mocked(api.overview).mockResolvedValueOnce(overview).mockImplementation(() => new Promise(resolve => { finishRefresh = resolve }))
     render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: /^快捷设置：/ }))
     const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
     expect((toggle as HTMLInputElement).checked).toBe(false)
     await userEvent.click(toggle)
@@ -341,6 +463,7 @@ describe('OpenSurge app shell', () => {
       .mockResolvedValue(enabled)
 
     render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: /^快捷设置：/ }))
     const toggle = await screen.findByRole('checkbox', { name: /合盖保持运行/ })
     await userEvent.click(toggle)
     await waitFor(() => expect(api.setSleepPrevention).toHaveBeenCalledWith(true))
@@ -408,7 +531,7 @@ describe('OpenSurge app shell', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<App />)
 
-    expect(await screen.findByText('重启后待清理')).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '快捷设置：重启后待清理' })).toBeTruthy()
     expect(screen.queryByText(/gateway runtime was interrupted by a system reboot/)).toBeNull()
     const dashboardCleanup = screen.getByRole('button', { name: '安全清理旧状态' })
     expect(dashboardCleanup.classList.contains('primary')).toBe(true)
@@ -619,14 +742,15 @@ describe('OpenSurge app shell', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
     expect((await screen.findByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.20')
-    const prefixSelect = screen.getByLabelText('下游 LAN 子网前缀') as HTMLSelectElement
-    expect(Array.from(prefixSelect.options, option => Number(option.value))).toEqual(Array.from({ length: 23 }, (_, index) => index + 8))
+    const prefixSelect = screen.getByLabelText('下游 LAN 子网前缀') as HTMLButtonElement
+    await userEvent.click(prefixSelect)
+    expect(screen.getAllByRole('option').map(option => Number(option.dataset.value))).toEqual(Array.from({ length: 23 }, (_, index) => index + 8))
     expect(screen.getByRole('option', { name: '/19（255.255.224.0）' })).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '根据当前网络重新填入' }))
 
     await waitFor(() => expect(api.networkDefaults).toHaveBeenCalledWith('same_wifi_dhcp'))
     await waitFor(() => expect((screen.getByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('10.0.8.20'))
-    expect((screen.getByLabelText('下游 LAN 子网前缀') as HTMLSelectElement).value).toBe('22')
+    expect((screen.getByLabelText('下游 LAN 子网前缀') as HTMLButtonElement).value).toBe('22')
     expect((screen.getByLabelText('DHCP 地址池起点') as HTMLInputElement).value).toBe('10.0.8.100')
     expect(api.saveConfig).not.toHaveBeenCalled()
   })
@@ -802,6 +926,30 @@ describe('OpenSurge app shell', () => {
     expect(window.location.pathname).toBe('/connectivity')
   })
 
+  it('targets active devices from the tray, including repeated navigation, while retaining per-device connection links', async () => {
+    const traffic = await api.deviceTraffic()
+    vi.mocked(api.connections).mockResolvedValue({ ...traffic, gateway_totals: traffic.totals, unclassified: { ...traffic.gateway_local, key: 'unclassified', identity_source: 'unclassified' }, connections: [] })
+    window.history.replaceState({}, '', '/diagnostics')
+    render(<App />)
+    await screen.findByRole('heading', { name: '诊断与 Provider' })
+
+    fireEvent(window, new CustomEvent('opensurge:navigate', { detail: 'dashboard#active-devices' }))
+    const devices = await screen.findByRole('region', { name: '活跃设备' })
+    await waitFor(() => expect(document.activeElement).toBe(devices))
+    expect(window.location.pathname + window.location.hash).toBe('/dashboard#active-devices')
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'smooth', block: 'start' })
+
+    scrollIntoView.mockClear()
+    fireEvent(window, new CustomEvent('opensurge:navigate', { detail: 'dashboard#active-devices' }))
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledOnce())
+    expect(document.activeElement).toBe(devices)
+
+    fireEvent(window, new CustomEvent('opensurge:navigate', { detail: 'connections?owner=gateway-local' }))
+    await waitFor(() => expect(window.location.pathname).toBe('/connections'))
+    expect(new URLSearchParams(window.location.search).get('owner')).toBe('gateway-local')
+    expect((await screen.findByRole('button', { name: '查看 本机 Mac 的连接' })).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('opens Connections from the dashboard and preserves its device, filters and scroll when returning', async () => {
     const traffic = await api.deviceTraffic()
     vi.mocked(api.connections).mockResolvedValue({ ...traffic, gateway_totals: traffic.totals, unclassified: { ...traffic.gateway_local, key: 'unclassified', identity_source: 'unclassified' }, connections: [] })
@@ -810,12 +958,12 @@ describe('OpenSurge app shell', () => {
     expect(window.location.pathname).toBe('/connections')
     await userEvent.click(await screen.findByRole('button', { name: '查看 本机 Mac 的连接' }))
     await userEvent.type(screen.getByRole('searchbox'), 'example')
-    fireEvent.change(screen.getByLabelText('来源地址族'), { target: { value: 'ipv6' } })
+    await selectOption(screen.getByLabelText('来源地址族'), 'ipv6')
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 420 })
     await userEvent.click(screen.getByRole('button', { name: '总览' }))
     await userEvent.click(screen.getByRole('button', { name: '连接' }))
     expect((await screen.findByRole('searchbox') as HTMLInputElement).value).toBe('example')
-    expect((screen.getByLabelText('来源地址族') as HTMLSelectElement).value).toBe('ipv6')
+    expect((screen.getByLabelText('来源地址族') as HTMLButtonElement).value).toBe('ipv6')
     expect(screen.getByRole('button', { name: '查看 本机 Mac 的连接' }).getAttribute('aria-pressed')).toBe('true')
     expect(new URLSearchParams(window.location.search).get('owner')).toBe('gateway-local')
     await waitFor(() => expect(scrollTo).toHaveBeenLastCalledWith({ top: 420, behavior: 'instant' }))
@@ -916,11 +1064,13 @@ describe('OpenSurge app shell', () => {
 
   it('switches between dark and light backgrounds and remembers the choice', async () => {
     render(<App />)
-    const toggle = await screen.findByRole('button', { name: '切换为浅色模式' })
+    await userEvent.click(await screen.findByRole('button', { name: /^快捷设置：/ }))
+    const toggle = await screen.findByRole('checkbox', { name: '深色模式' }) as HTMLInputElement
+    expect(toggle.checked).toBe(true)
     await userEvent.click(toggle)
     expect(document.documentElement.dataset.theme).toBe('light')
     expect(window.localStorage.getItem('opensurge-theme')).toBe('light')
-    expect(screen.getByRole('button', { name: '切换为深色模式' })).toBeTruthy()
+    expect(toggle.checked).toBe(false)
   })
 
   it('requires saving corrected configuration before the prepared recovery can advance', async () => {
@@ -1475,7 +1625,8 @@ describe('OpenSurge app shell', () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '设备' }))
-    await userEvent.click(await screen.findByRole('button', { name: '＋ 新建规则集' }))
+    await userEvent.click(await screen.findByRole('tab', { name: /规则集/ }))
+    await userEvent.click(screen.getByRole('button', { name: '＋ 新建规则集' }))
     await userEvent.type(screen.getByLabelText('规则集名称'), 'home-domains')
     await userEvent.type(screen.getByLabelText('规则集内容'), 'home.example')
     await userEvent.click(screen.getByRole('button', { name: '保存到草稿' }))
@@ -1527,7 +1678,8 @@ describe('OpenSurge app shell', () => {
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '设备' }))
-    await userEvent.click(await screen.findByRole('button', { name: '＋ 新建规则集' }))
+    await userEvent.click(await screen.findByRole('tab', { name: /规则集/ }))
+    await userEvent.click(screen.getByRole('button', { name: '＋ 新建规则集' }))
     await userEvent.type(screen.getByLabelText('规则集名称'), 'draft-rule-set')
     await userEvent.type(screen.getByLabelText('规则集内容'), 'draft.example')
     await userEvent.click(screen.getByRole('button', { name: '保存到草稿' }))

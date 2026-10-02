@@ -1,5 +1,8 @@
 import type { APIError, ConnectionObservation, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
 import { getOperation, markOperationConnection, operationStatusUnknownMessage, recordOperation } from './operations'
+import { desktopAction, desktopHeaders, isDesktop } from './desktop'
+import { t } from './i18n'
+import { watchVisibleRefresh } from './visibility'
 
 export class RequestError extends Error {
   constructor(public status: number, public code: string, message: string) {
@@ -9,19 +12,64 @@ export class RequestError extends Error {
 
 export const authenticationRequiredEvent = 'opensurge:authentication-required'
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function controlResponse(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, {
     credentials: 'same-origin',
     ...init,
-    headers: init?.body instanceof FormData ? init.headers : { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { ...desktopHeaders(), ...(init?.body instanceof FormData ? init.headers : { 'Content-Type': 'application/json', ...init?.headers }) },
   })
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new Event(authenticationRequiredEvent))
     let payload: APIError = {}
     try { payload = await response.json() as APIError } catch { /* response was not JSON */ }
-    throw new RequestError(response.status, payload.error?.code ?? 'request_failed', payload.error?.message ?? response.statusText)
+    const message = payload.error?.code === 'desktop_service_unavailable'
+      ? t('正在重新连接后台服务，当前页面已保留。连接恢复后，请重新执行未完成的操作。')
+      : payload.error?.message ?? response.statusText
+    throw new RequestError(response.status, payload.error?.code ?? 'request_failed', message)
   }
-  return response.json() as Promise<T>
+  return response
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await controlResponse(path, init)).json() as Promise<T>
+}
+
+export type PolicyTestResult = ProxyHealthTestResponse['results'][number]
+export type PolicyTestObserver = { onResult: (result: PolicyTestResult) => void; signal: AbortSignal }
+
+async function policyWorkspaceRequest(action: PolicyWorkspaceRequest, observer?: PolicyTestObserver): Promise<PolicyWorkspaceSnapshot> {
+  const response = await controlResponse('/api/v1/policy-workspace', {
+    method: 'POST', body: JSON.stringify(action),
+    ...(observer ? { headers: { Accept: 'text/event-stream' }, signal: observer.signal } : {}),
+  })
+  // Older services can return the final JSON snapshot without replaying a test.
+  if (!observer || !response.headers.get('Content-Type')?.startsWith('text/event-stream')) return response.json()
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error(t('节点检测连接已中断，请重试。'))
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      buffer = buffer.replace(/\r\n/g, '\n')
+      let boundary: number
+      while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, boundary)
+        buffer = buffer.slice(boundary + 2)
+        const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+        if (!data) continue
+        const event = JSON.parse(data) as { type: string; result?: PolicyTestResult; workspace?: PolicyWorkspaceSnapshot; error?: string }
+        if (event.type === 'error') throw new Error(event.error || t('节点检测连接已中断，请重试。'))
+        if (event.type === 'result' && event.result) observer.onResult(event.result)
+        if (event.type === 'complete' && event.workspace) return event.workspace
+      }
+      if (done) throw new Error(t('节点检测连接已中断，请重试。'))
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
 }
 
 async function operationStatusRequest<T>(path: string): Promise<T> {
@@ -32,13 +80,17 @@ async function operationStatusRequest<T>(path: string): Promise<T> {
 }
 
 export const api = {
+  recoveryCard: async () => (await controlResponse('/api/v1/recovery/card')).text(),
   overview: () => request<Overview>('/api/v1/overview'),
+  uiPreferences: () => request<UIPreferences>('/api/v1/ui-preferences'),
   config: () => request<ControlConfig>('/api/v1/config'),
   networkInterfaces: () => request<NetworkInterfacesResponse>('/api/v1/network/interfaces'),
   networkDefaults: (mode: NetworkDefaults['mode']) => request<NetworkDefaults>(`/api/v1/network/defaults?mode=${encodeURIComponent(mode)}`),
   saveConfig: (config: ControlConfig) => request<ControlConfig>('/api/v1/config', { method: 'PUT', headers: { 'If-Match': `"${config.revision}"` }, body: JSON.stringify(config) }),
   gateway: (action: 'start' | 'stop' | 'reload' | 'restart-mihomo') => trackedRequest<Operation>(action, `/api/v1/gateway/${action}`, { method: 'POST' }, true),
-  setSleepPrevention: (enabled: boolean) => request<SleepPreventionStatus>('/api/v1/sleep-prevention', { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  setSleepPrevention: (enabled: boolean) => isDesktop()
+    ? desktopAction<SleepPreventionStatus>('sleep-prevention', { enabled })
+    : request<SleepPreventionStatus>('/api/v1/sleep-prevention', { method: 'PUT', body: JSON.stringify({ enabled }) }),
   setUIPreferences: (preferences: Pick<UIPreferences, 'language'>) => request<UIPreferences>('/api/v1/ui-preferences', { method: 'PUT', body: JSON.stringify(preferences) }),
   operation: (id: string) => operationStatusRequest<Operation>(`/api/v1/operations/${encodeURIComponent(id)}`),
   operations: () => operationStatusRequest<{ operations: Operation[] }>('/api/v1/operations'),
@@ -83,7 +135,7 @@ export const api = {
   devicePolicy: () => request<DevicePolicyDocument>('/api/v1/device-policy'),
   saveDevicePolicy: (policy: PolicySet, revision: string) => trackedRequest<DevicePolicyDocument>('save-device-policy', '/api/v1/device-policy', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(policy) }),
   policies: () => request<{ groups: ProxyGroup[] }>('/api/v1/policies'),
-  policyWorkspace: (action: PolicyWorkspaceRequest) => request<PolicyWorkspaceSnapshot>('/api/v1/policy-workspace', { method: 'POST', body: JSON.stringify(action) }),
+  policyWorkspace: policyWorkspaceRequest,
   selectPolicy: (group: string, policy: string) => request(`/api/v1/policies/${encodeURIComponent(group)}/selection`, { method: 'POST', body: JSON.stringify({ policy }) }),
   localRouting: () => request<LocalRouting>('/api/v1/local-routing'),
   setLocalRouting: (mode: LocalRoutingMode, globalPolicy?: string) => request<LocalRouting>('/api/v1/local-routing', { method: 'POST', body: JSON.stringify({ mode, global_policy: globalPolicy }) }),
@@ -201,7 +253,6 @@ export function watchOperations() {
     } catch { /* normal auth and connection banners handle discovery errors */ }
     finally { fetching = false }
   }
-  void discover()
-  const timer = window.setInterval(() => void discover(), 4000)
-  return () => { stopped = true; window.clearInterval(timer) }
+  const stopRefresh = watchVisibleRefresh(discover, 4000)
+  return () => { stopped = true; stopRefresh() }
 }

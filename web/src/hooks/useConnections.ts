@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { isWindowVisible } from '../visibility'
 import type { ConnectionObservation } from '../types'
 
 export function useConnections(paused: boolean, gateway?: string, revision?: string) {
@@ -15,7 +16,7 @@ export function useConnections(paused: boolean, gateway?: string, revision?: str
     const poll = async () => {
       if (!active || inFlight) return
       window.clearTimeout(timer)
-      if (!document.hidden) {
+      if (isWindowVisible()) {
         inFlight = true
         try {
           const value = await api.connections(controller.signal)
@@ -26,7 +27,7 @@ export function useConnections(paused: boolean, gateway?: string, revision?: str
       }
       if (active) timer = window.setTimeout(() => void poll(), 2000)
     }
-    const onVisibility = () => { if (!document.hidden) void poll() }
+    const onVisibility = () => { if (isWindowVisible()) void poll() }
     document.addEventListener('visibilitychange', onVisibility)
     void poll()
     return () => { active = false; controller.abort(); window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisibility) }

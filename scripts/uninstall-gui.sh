@@ -42,7 +42,7 @@ GATEWAY_STATE="$(printf '%s' "$STATUS_JSON" | /usr/bin/plutil -extract gateway r
 }
 
 # The native App waits for this script to return and exits itself afterward.
-# Do not terminate OpenSurgeMenuBar here or the authorization result cannot be
+# Do not terminate the desktop host here or the authorization result cannot be
 # reported to the caller.
 launchctl bootout "gui/$UID_VALUE/com.opensurge.control" 2>/dev/null || true
 if [[ -f "$SYSTEM_ROOT/runtime/sleep-prevention-owned" ]]; then

@@ -47,6 +47,11 @@ func TestCompilePolicySetCreatesIndependentDeviceGroupsAndRules(t *testing.T) {
 	if len(compiled.Reservations) != 2 || compiled.Reservations[0].MAC != "aa:bb:cc:dd:ee:01" {
 		t.Fatalf("reservations = %#v", compiled.Reservations)
 	}
+	for _, managed := range compiled.Devices {
+		if strings.Join(managed.RuleMatches["streaming"].RuleSets, ",") != "streaming" || strings.Join(managed.RuleMatches["block-udp"].Protocols, ",") != "udp" {
+			t.Fatalf("rule display metadata must include profile and inherited template rules: %#v", managed.RuleMatches)
+		}
+	}
 	for _, want := range []string{
 		"device/phone/default",
 		"device/phone/streaming",
@@ -114,6 +119,9 @@ func TestCompilePolicySetExpandsOutletFreeTemplateForDeviceRule(t *testing.T) {
 	}
 	if len(compiled.RuleProviders) != 2 || !hasSelectorGroup(compiled.SelectorGroups, "device/work-mac/claude-code") {
 		t.Fatalf("compiled template = %#v", compiled)
+	}
+	if compiled.Devices[0].RuleMatches["claude-code"].Template != "claude-code" {
+		t.Fatalf("rule display metadata lost its template: %#v", compiled.Devices[0].RuleMatches)
 	}
 }
 

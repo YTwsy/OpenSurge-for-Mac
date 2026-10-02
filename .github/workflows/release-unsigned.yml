@@ -65,16 +65,18 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache: true
+          go-version-file: apps/desktop/go.mod
+          cache-dependency-path: |
+            go.sum
+            apps/desktop/go.sum
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Set up pnpm
-        run: npm install --global pnpm@11.9.0
+        run: npm install --global pnpm@11.19.0
 
       - name: Install Web dependencies
         run: pnpm --dir web install --frozen-lockfile
@@ -101,7 +103,7 @@ jobs:
           export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           make gui-installer
           release_dir="$GITHUB_WORKSPACE/artifacts/release"
-          release_pkg="$release_dir/OpenSurge-for-Mac-${OPENSURGE_VERSION}-${RELEASE_ARCH}-unsigned.pkg"
+          release_pkg="$release_dir/OpenSurge-for-Mac-${OPENSURGE_RELEASE_TAG#v}-${RELEASE_ARCH}-unsigned.pkg"
           mkdir -p "$release_dir"
           mv "$GITHUB_WORKSPACE/artifacts/gui-installer/OpenSurge-for-Mac-${OPENSURGE_VERSION}.pkg" "$release_pkg"
           ./scripts/verify-unsigned-gui-installer.sh \
@@ -150,24 +152,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           release_dir="$GITHUB_WORKSPACE/artifacts/release"
-          package_version="${GITHUB_REF_NAME#v}"
-          package_version="${package_version%%-rc.*}"
+          release_version="${GITHUB_REF_NAME#v}"
           if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then
             channel_flag=--prerelease
           else
             channel_flag=--latest
           fi
-          case "$package_version" in
-            0.2.*) release_codename="Wind Rose" ;;
-            *) release_codename="" ;;
-          esac
+          release_codename="$(python3 scripts/release-codename.py "$GITHUB_REF_NAME")"
           release_title="OpenSurge for Mac $GITHUB_REF_NAME"
           if [[ -n "$release_codename" ]]; then
             release_title="$release_title — $release_codename"
           fi
           gh release create "$GITHUB_REF_NAME" \
-            "$release_dir/OpenSurge-for-Mac-${package_version}-arm64-unsigned.pkg#Apple Silicon 安装包 / Apple Silicon installer" \
-            "$release_dir/OpenSurge-for-Mac-${package_version}-x86_64-unsigned.pkg#Intel 安装包 / Intel installer" \
+            "$release_dir/OpenSurge-for-Mac-${release_version}-arm64-unsigned.pkg#Apple Silicon 安装包 / Apple Silicon installer" \
+            "$release_dir/OpenSurge-for-Mac-${release_version}-x86_64-unsigned.pkg#Intel 安装包 / Intel installer" \
             "$release_dir/SHA256SUMS#SHA-256 校验文件 / SHA-256 checksums" \
             --verify-tag \
             "$channel_flag" \

@@ -6,13 +6,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${OPENSURGE_CONFIG:-$ROOT/examples/config.example.yaml}"
 MIHOMO="${OPENSURGE_MIHOMO_BINARY:-$ROOT/bin/mihomo}"
 DNSMASQ="${OPENSURGE_DNSMASQ_BINARY:-$(command -v dnsmasq || true)}"
-VERSION="${OPENSURGE_VERSION:-0.1.0}"
+VERSION="${OPENSURGE_VERSION:-0.3.0}"
 BUILD_NUMBER="${OPENSURGE_BUILD_NUMBER:-1}"
 RELEASE_TAG="${OPENSURGE_RELEASE_TAG:-v$VERSION}"
 APP_ARCH="${OPENSURGE_APP_ARCH:-$(uname -m)}"
 ARTIFACTS="$ROOT/artifacts/gui-installer"
-PAYLOAD="$ARTIFACTS/payload"
-PKG_SCRIPTS="$ARTIFACTS/pkg-scripts"
+OUTPUT="${OPENSURGE_PKG_OUTPUT:-$ARTIFACTS/OpenSurge-for-Mac-$VERSION.pkg}"
+[[ ! -e "$OUTPUT" ]] || { echo "package already exists; choose OPENSURGE_PKG_OUTPUT: $OUTPUT" >&2; exit 1; }
+mkdir -p "$ARTIFACTS" "$(dirname "$OUTPUT")"
+STAGING="$(mktemp -d "$ARTIFACTS/.build.XXXXXX")"
+trap 'rm -rf "$STAGING"' EXIT
+PAYLOAD="$STAGING/payload"
+PKG_SCRIPTS="$STAGING/pkg-scripts"
 APP_ROOT="$PAYLOAD/Library/Application Support/OpenSurge"
 LICENSE_ROOT="$APP_ROOT/share/licenses"
 GO_BIN="${GO_BIN:-$(command -v go || true)}"
@@ -49,9 +54,8 @@ GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/
 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-helper" ./cmd/opensurge-helper
 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-install-config" ./cmd/opensurge-install-config
 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -o "$ROOT/bin/opensurge-network" ./cmd/opensurge-network
-"$ROOT/scripts/build-menubar-app.sh"
+"$ROOT/scripts/build-desktop-app.sh" production
 
-rm -rf "$ARTIFACTS"
 mkdir -p "$APP_ROOT/bin" "$APP_ROOT/share" "$LICENSE_ROOT" "$PAYLOAD/Library/PrivilegedHelperTools" "$PAYLOAD/Applications" "$PKG_SCRIPTS"
 ditto --norsrc --noextattr "$ROOT/packaging/pkg-scripts" "$PKG_SCRIPTS"
 install -m 0755 "$ROOT/bin/omg" "$PKG_SCRIPTS/omg-recovery"
@@ -72,12 +76,13 @@ install -m 0644 "$ROOT/third_party/licenses/Apache-2.0.txt" "$LICENSE_ROOT/Apach
 install -m 0644 "$ROOT/third_party/licenses/yaml-v3-LICENSE" "$LICENSE_ROOT/yaml-v3-LICENSE"
 install -m 0644 "$ROOT/third_party/licenses/bbolt-MIT.txt" "$LICENSE_ROOT/bbolt-MIT.txt"
 install -m 0644 "$ROOT/third_party/licenses/react-MIT.txt" "$LICENSE_ROOT/react-MIT.txt"
+install -m 0644 "$ROOT/third_party/licenses/wails-MIT.txt" "$LICENSE_ROOT/wails-MIT.txt"
 install -m 0644 "$ROOT/THIRD_PARTY_NOTICES.md" "$LICENSE_ROOT/THIRD_PARTY_NOTICES.md"
 ditto --norsrc --noextattr "$ROOT/bin/OpenSurge.app" "$PAYLOAD/Applications/OpenSurge.app"
 xattr -cr "$PAYLOAD"
 
 for executable in \
-  "$PAYLOAD/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar" \
+  "$PAYLOAD/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeDesktop" \
   "$PKG_SCRIPTS/omg-recovery" \
   "$APP_ROOT/bin/omg" \
   "$APP_ROOT/bin/opensurge-install-config" \
@@ -107,5 +112,5 @@ PKG_ARGS=(
   --install-location /
 )
 if [[ -n "${OPENSURGE_INSTALLER_IDENTITY:-}" ]]; then PKG_ARGS+=(--sign "$OPENSURGE_INSTALLER_IDENTITY"); fi
-pkgbuild "${PKG_ARGS[@]}" "$ARTIFACTS/OpenSurge-for-Mac-$VERSION.pkg"
-echo "$ARTIFACTS/OpenSurge-for-Mac-$VERSION.pkg"
+pkgbuild "${PKG_ARGS[@]}" "$OUTPUT"
+echo "$OUTPUT"

@@ -1,4 +1,5 @@
 .PHONY: test build mihomo-build doctor status policy-control-test
+.PHONY: desktop-build desktop-production-build desktop-test
 .PHONY: web-install web-build web-test control-build control-run menubar-build menubar-test gui-build gui-test gui-installer gui-notarize
 .PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
 .PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-test-tun-local-routing lab-test-tun-device-policy lab-test-tailscale lab-tailscale-up lab-tailscale-down lab-tailscale-destroy lab-test-ipv6-userspace lab-test-ipv6-same-wifi lab-test-ipv6-same-lan lab-test-ipv6-imported-egress lab-down lab-destroy
@@ -18,6 +19,15 @@ test:
 
 build:
 	go build -o bin/omg ./cmd/omg
+
+desktop-build:
+	./scripts/build-desktop-app.sh
+
+desktop-production-build: web-build
+	./scripts/build-desktop-app.sh production
+
+desktop-test:
+	cd apps/desktop && MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="$(CGO_CFLAGS) -mmacosx-version-min=13.0" CGO_LDFLAGS="$(CGO_LDFLAGS) -mmacosx-version-min=13.0" go test -race -ldflags '-extldflags=-mmacosx-version-min=13.0' ./internal/...
 
 mihomo-build:
 	./scripts/build-opensurge-mihomo.sh
@@ -45,9 +55,9 @@ menubar-build:
 menubar-test:
 	./scripts/check-menubar.sh
 
-gui-build: control-build menubar-build
+gui-build: control-build desktop-production-build
 
-gui-test: test web-test menubar-test
+gui-test: test web-test desktop-test
 	./scripts/check-gui-packaging.sh
 
 gui-installer:

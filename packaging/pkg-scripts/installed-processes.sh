@@ -5,11 +5,12 @@ opensurge_is_installed_gui_command() {
   local command="$1"
   local user_home="$2"
   local control="$user_home/Library/Application Support/OpenSurge/bin/opensurge-control"
+  local desktop="/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeDesktop"
   local app="/Applications/OpenSurge.app/Contents/MacOS/OpenSurgeMenuBar"
   local legacy_app="/Applications/OpenSurge Menu Bar.app/Contents/MacOS/OpenSurgeMenuBar"
 
   case "$command" in
-    "$control"|"$control "*|"$app"|"$app "*|"$legacy_app"|"$legacy_app "*)
+    "$control"|"$control "*|"$desktop"|"$desktop "*|"$app"|"$app "*|"$legacy_app"|"$legacy_app "*)
       return 0
       ;;
   esac
@@ -37,12 +38,12 @@ opensurge_installed_named_gui_pids() {
 
 opensurge_installed_menu_bar_pids() {
   [[ "$#" -eq 2 ]] || return 2
-  opensurge_installed_named_gui_pids "$1" "$2" OpenSurgeMenuBar
+  opensurge_installed_named_gui_pids "$1" "$2" OpenSurgeMenuBar OpenSurgeDesktop
 }
 
 opensurge_installed_gui_pids() {
   [[ "$#" -eq 2 ]] || return 2
-  opensurge_installed_named_gui_pids "$1" "$2" opensurge-control OpenSurgeMenuBar
+  opensurge_installed_named_gui_pids "$1" "$2" opensurge-control OpenSurgeMenuBar OpenSurgeDesktop
 }
 
 opensurge_signal_installed_gui_pid() {
@@ -67,8 +68,8 @@ opensurge_process_wait_tick() {
   sleep 0.1
 }
 
-# The menu bar can bootstrap com.opensurge.control when polling observes that
-# the service is unavailable. Stop it first, then keep booting out the exact
+# Both desktop generations can bootstrap com.opensurge.control. Stop the hosts
+# first, then keep booting out the exact
 # launchd service while rescanning installed executable paths. This also closes
 # the smaller race where a launchctl child finishes bootstrap after the menu bar
 # process itself has already exited.

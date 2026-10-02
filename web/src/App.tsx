@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
+import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from './desktop'
+import { watchVisibleRefresh } from './visibility'
+import { useTheme } from './hooks/useTheme'
+import { useInterfaceLanguage } from './hooks/useInterfaceLanguage'
+import './styles.css'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { ConnectionRefreshPrompts, queueConnectionRefreshSuggestion, type ConnectionRefreshSuggestion, type ConnectionRefreshSuggestionItem } from './components/ConnectionRefreshPrompts'
 import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './components/OperationNotifications'
@@ -15,13 +20,13 @@ import { DiagnosticsPage } from './pages/DiagnosticsPage'
 import { NetworkPage } from './pages/NetworkPage'
 import { PoliciesPage, type PoliciesViewState } from './pages/PoliciesPage'
 import { SourcesPage } from './pages/SourcesPage'
-import { needsNetworkRecoveryWarning, statusLabel } from './status'
-import { operationStatusUnknownMessage } from './operations'
+import { gatewayDisplayState, gatewayStatusDetail, gatewayStatusLabel, needsNetworkRecoveryWarning } from './status'
+import { getOperations, operationStatusUnknownMessage, subscribeOperations } from './operations'
 import type { Overview } from './types'
-import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, t, type RequestedLanguage } from './i18n'
+import { t } from './i18n'
+import { releaseCodename } from './release'
 
 type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connections' | 'connectivity' | 'diagnostics'
-type Theme = 'dark' | 'light'
 type NetworkNavigationTarget = 'none' | 'control' | 'bottom'
 
 const nav = [
@@ -38,12 +43,6 @@ const nav = [
 function currentPage(): Page {
   const candidate = window.location.pathname.split('/').filter(Boolean)[0] as Page | undefined
   return nav.some(item => item.id === candidate) ? candidate! : 'dashboard'
-}
-
-function initialTheme(): Theme {
-  const stored = window.localStorage.getItem('opensurge-theme')
-  if (stored === 'dark' || stored === 'light') return stored
-  return typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
 function focusGatewayControl(target: Exclude<NetworkNavigationTarget, 'none'>) {
@@ -66,12 +65,15 @@ function networkNavigationHash(target: NetworkNavigationTarget) {
 
 export function App() {
   const [page, setPage] = useState<Page>(currentPage)
+  const [dashboardNavigationRequest, setDashboardNavigationRequest] = useState(0)
   const [overview, setOverview] = useState<Overview | null>(null)
+  const [overviewConnection, setOverviewConnection] = useState('connecting')
+  const overviewRequest = useRef(0)
   const [error, setError] = useState('')
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
-  const [theme, setTheme] = useState<Theme>(initialTheme)
-  const [language, setLanguage] = useState<RequestedLanguage>(initialRequestedLanguage)
-  const [languageChanging, setLanguageChanging] = useState(false)
+  const [theme, setTheme] = useTheme()
+  const [quickSettingsOpen, setQuickSettingsOpen] = useState(false)
+  const { language, languageChanging, changeLanguage, beginLanguageRefresh } = useInterfaceLanguage(setError)
   const [devicesDirty, setDevicesDirty] = useState(false)
   const [connectionsView, setConnectionsView] = useState<ConnectionsViewState>(initialConnectionsView)
   const connectionsScroll = useRef<number | null>(null)
@@ -82,42 +84,30 @@ export function App() {
   const notificationID = useRef(0)
   const connectionRefreshSuggestionID = useRef(0)
   const sleepPreventionGeneration = useRef(0)
-  const languageGeneration = useRef(0)
   const policiesScrollPosition = useRef<number | null>(null)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
   pageRef.current = page
   devicesDirtyRef.current = devicesDirty
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    window.localStorage.setItem('opensurge-theme', theme)
-  }, [theme])
-
-  useEffect(() => {
-    activateLanguage(language)
-    cacheRequestedLanguage(language)
-  }, [language])
-
-  const commitLanguage = useCallback(async (nextLanguage: RequestedLanguage) => {
-    await prepareLanguage(nextLanguage)
-    activateLanguage(nextLanguage)
-    setLanguage(nextLanguage)
-  }, [])
+  useEffect(() => watchDesktopLinks(setError), [])
 
   const refresh = useCallback(async () => {
+    const request = ++overviewRequest.current
     const sleepGeneration = sleepPreventionGeneration.current
-    const requestedLanguageGeneration = languageGeneration.current
+    const acceptLanguage = beginLanguageRefresh()
     try {
       const nextOverview = await api.overview()
+      if (request !== overviewRequest.current) return
       setOverview(current => sleepGeneration === sleepPreventionGeneration.current || !current
         ? nextOverview
         : { ...nextOverview, sleep_prevention: current.sleep_prevention })
       setError('')
-      if (requestedLanguageGeneration === languageGeneration.current && isRequestedLanguage(nextOverview.ui_preferences?.language)) {
-        await commitLanguage(nextOverview.ui_preferences.language)
-      }
+      setOverviewConnection('connected')
+      await acceptLanguage(nextOverview.ui_preferences?.language)
     } catch (cause) {
+      if (request !== overviewRequest.current) return
+      setOverviewConnection('unreachable')
       if (cause instanceof RequestError && cause.status === 401) {
         setAuthenticationRequired(true)
         setError('')
@@ -125,27 +115,20 @@ export function App() {
       }
       setError(cause instanceof Error ? cause.message : String(cause))
     }
-  }, [commitLanguage])
+  }, [beginLanguageRefresh])
 
-  const changeLanguage = async (nextLanguage: RequestedLanguage) => {
-    if (languageChanging || nextLanguage === language) return
-    const previousLanguage = language
-    languageGeneration.current += 1
-    setLanguageChanging(true)
-    try {
-      await commitLanguage(nextLanguage)
-      const preferences = await api.setUIPreferences({ language: nextLanguage })
-      languageGeneration.current += 1
-      await commitLanguage(preferences.language)
-      await refresh()
-    } catch (cause) {
-      languageGeneration.current += 1
-      await commitLanguage(previousLanguage)
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setLanguageChanging(false)
-    }
-  }
+  useEffect(() => {
+    let signature = ''
+    return subscribeOperations(() => {
+      // Beginning/completing an operation invalidates both visible summaries.
+      // Phase polls have their own refresh cadence and do not fan out requests.
+      const next = getOperations().map(operation => `${operation.id}:${operation.state}`).join('|')
+      if (next === signature) return
+      signature = next
+      void refresh()
+      if (isDesktop()) void desktopAction('menubar-status', { refresh: true }).catch(() => {})
+    })
+  }, [refresh])
 
   useEffect(() => {
     const requireAuthentication = () => {
@@ -158,10 +141,8 @@ export function App() {
 
   useEffect(() => {
     if (authenticationRequired) return
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 8000)
-    const events = typeof EventSource === 'undefined' ? null : new EventSource('/api/v1/events')
-    events?.addEventListener('state', () => void refresh())
+    const stopRefresh = watchVisibleRefresh(refresh, 8000)
+    const stopEvents = watchControlEvents(() => void refresh())
     const onPop = () => {
       const next = currentPage()
       if (pageRef.current === 'devices' && next !== 'devices' && devicesDirtyRef.current && !window.confirm(t('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？'))) {
@@ -176,8 +157,8 @@ export function App() {
     }
     window.addEventListener('popstate', onPop)
     return () => {
-      window.clearInterval(timer)
-      events?.close()
+      stopRefresh()
+      stopEvents()
       window.removeEventListener('popstate', onPop)
     }
   }, [authenticationRequired, refresh])
@@ -198,6 +179,39 @@ export function App() {
     setPage(next)
     return true
   }
+
+  const goRef = useRef(go)
+  goRef.current = go
+  useEffect(() => {
+    if (page !== 'dashboard' || window.location.hash !== '#active-devices') return
+    const section = document.getElementById('active-devices')
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    section?.scrollIntoView?.({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' })
+    section?.focus({ preventScroll: true })
+  }, [page, dashboardNavigationRequest, authenticationRequired])
+
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const path = (event as CustomEvent<string>).detail
+      if (typeof path !== 'string') return
+      const [route, section = ''] = path.split('#')
+      const [page, query = ''] = route.split('?')
+      if (!nav.some(item => item.id === page)) return
+      if (!goRef.current(page as Page, page === 'network' ? 'control' : 'none')) return
+      if (page === 'dashboard' && section === 'active-devices') {
+        history.replaceState({}, '', '/dashboard#active-devices')
+        setDashboardNavigationRequest(request => request + 1)
+      }
+      if (page === 'connections') {
+        const owner = new URLSearchParams(query).get('owner') || 'all'
+        setConnectionsView({ ...initialConnectionsView(), owner })
+        connectionsScroll.current = 0
+        history.replaceState({}, '', `/connections?owner=${encodeURIComponent(owner)}`)
+      }
+    }
+    window.addEventListener('opensurge:navigate', navigate)
+    return () => window.removeEventListener('opensurge:navigate', navigate)
+  }, [])
 
   const openConnections = (owner = 'all') => {
     if (!go('connections')) return
@@ -262,19 +276,33 @@ export function App() {
     policiesScrollPosition.current = scrollY
   }, [])
 
-  return <div className="app-shell">
+  const displayState = overviewConnection === 'connected' ? gatewayDisplayState(overview?.presentation, overview?.status.gateway, overview?.status.runtime_state) : overviewConnection
+  const displayLabel = gatewayStatusLabel(displayState)
+  const displayDetail = overviewConnection === 'connected' ? gatewayStatusDetail(overview?.presentation, overview?.drift, overview?.status.gateway) : ''
+
+  return <div className={`app-shell${isDesktop() ? ' desktop-shell' : ''}`}>
+    {isDesktop() && <div className="desktop-titlebar" aria-hidden="true" />}
     <aside className="sidebar">
       <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
       <nav aria-label="OpenSurge sections">
         {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{t(item.label)}</button>)}
       </nav>
-      <div className="sidebar-controls">
-        <label className={`sidebar-switch ${overview?.sleep_prevention?.active ? 'active' : ''}`} title={t('阻止空闲睡眠和合盖睡眠。合盖运行可能明显增加耗电与发热，请勿放入不通风的包内。')}><input type="checkbox" checked={overview?.sleep_prevention?.active ?? false} disabled={!overview || sleepPreventionChanging} onChange={event => void setSleepPrevention(event.target.checked)} /><span><strong>{t(sleepPreventionChanging ? '正在切换…' : '合盖保持运行')}</strong><small>{t(overview?.sleep_prevention?.active ? '系统睡眠已临时禁用' : '默认关闭 · 本次运行有效')}</small></span></label>
+      <div className="sidebar-footer">
+      <button type="button" className="sidebar-status" aria-label={t('快捷设置：{{status}}', { status: displayLabel })} aria-expanded={quickSettingsOpen} aria-controls="sidebar-quick-settings" onClick={() => setQuickSettingsOpen(open => !open)}><StatusDot status={displayState} /><span className="sidebar-status-copy"><strong>{displayLabel}</strong>{displayDetail && <small className="sidebar-status-detail">{displayDetail}</small>}<small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} {releaseCodename(import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</small></span><svg className="sidebar-status-gear" viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M10 3h4l.5 2.3 1.3.8 2.2-.7 2 3.4-1.7 1.6v3.2l1.7 1.6-2 3.4-2.2-.7-1.3.8L14 21h-4l-.5-2.3-1.3-.8-2.2.7-2-3.4 1.7-1.6v-3.2L4 8.8l2-3.4 2.2.7 1.3-.8L10 3Zm5 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z" /></svg></button>
+      <div className={`sidebar-settings-reveal ${quickSettingsOpen ? 'expanded' : ''}`} id="sidebar-quick-settings" aria-hidden={!quickSettingsOpen} inert={!quickSettingsOpen}><div className="sidebar-settings-inner"><div className="sidebar-controls">
+        <label className="sidebar-control-row sidebar-switch" title={t('阻止空闲睡眠和合盖睡眠。合盖运行可能明显增加耗电与发热，请勿放入不通风的包内。')}>
+          <span className="sidebar-control-copy"><strong>{t(sleepPreventionChanging ? '正在切换…' : '合盖保持运行')}</strong><small>{t(overview?.sleep_prevention?.active ? '系统睡眠已临时禁用' : '默认关闭 · 本次运行有效')}</small></span>
+          <input type="checkbox" checked={overview?.sleep_prevention?.active ?? false} disabled={!overview || sleepPreventionChanging} onChange={event => void setSleepPrevention(event.target.checked)} />
+        </label>
         {overview?.sleep_prevention?.error && <small className="sidebar-control-error" role="status">{overview.sleep_prevention.error}</small>}
-        <LanguageSelector language={language} changing={languageChanging} onChange={next => void changeLanguage(next)} />
-        <button type="button" className="theme-toggle" aria-pressed={theme === 'light'} aria-label={t(theme === 'dark' ? '切换为浅色模式' : '切换为深色模式')} onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}><span aria-hidden="true">{theme === 'dark' ? '☀' : '◐'}</span>{t(theme === 'dark' ? '浅色模式' : '深色模式')}</button>
+        <LanguageSelector language={language} changing={languageChanging} onChange={next => { void changeLanguage(next).then(changed => { if (changed) void refresh() }) }} />
+        <label className="sidebar-control-row sidebar-switch">
+          <span className="sidebar-control-copy"><strong>{t('深色模式')}</strong></span>
+          <input type="checkbox" checked={theme === 'dark'} onChange={event => setTheme(event.target.checked ? 'dark' : 'light')} />
+        </label>
+        {isDesktop() && <button type="button" className="sidebar-control-row desktop-settings-link" onClick={() => { void desktopAction('show-settings').catch(cause => setError(cause instanceof Error ? cause.message : String(cause))) }}><span className="sidebar-control-copy"><strong>{t('设置…')}</strong></span><kbd>⌘,</kbd></button>}
+      </div></div></div>
       </div>
-      <div className="sidebar-status"><StatusDot status={overview?.status.gateway ?? 'unreachable'} /><div><strong>{statusLabel(overview?.status.gateway, overview?.status.runtime_state)}</strong><small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} Wind Rose</small></div></div>
     </aside>
     <main className="workspace">
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>{t('Web GUI 与 OpenSurge 的安全连接已过期')}</h1><p>{t('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。')}</p></div></section> : <>

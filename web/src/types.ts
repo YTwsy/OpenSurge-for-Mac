@@ -1,3 +1,14 @@
+export type GatewayDisplayState = 'running' | 'stopped' | 'starting' | 'reloading' | 'stopping' | 'recovering' | 'rolling_back' | 'changing' | 'degraded' | 'recovery' | 'interrupted' | 'unknown'
+export type GatewayPresentation = {
+  state: GatewayDisplayState
+  reason?: string
+  phase?: string
+  operation_id?: string
+  busy: boolean
+  config_pending: boolean
+  diagnosis_warning: boolean
+}
+
 export type GatewayStatus = {
   gateway: string
   runtime_state?: 'none' | 'active' | 'interrupted'
@@ -169,6 +180,7 @@ export type TailscaleDiscoveryResponse = {
 }
 
 export type Overview = {
+  presentation?: GatewayPresentation
   schema_version: number
   revision: string
   topology: string
@@ -283,7 +295,7 @@ export type DeviceEgressMode = 'inherit_global' | 'dedicated'
 export type AppliedDeviceEgressMode = DeviceEgressMode | 'legacy_fallback'
 export type DeviceGatewayTarget = 'opensurge' | 'upstream_router'
 export type PolicyAdjustment = { slot: string; effect: 'inherit_global' | 'skip_rule' | 'filter_candidates'; missing_targets: string[]; selected?: string }
-export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; gateway_target?: DeviceGatewayTarget | ''; egress_mode?: AppliedDeviceEgressMode | ''; configured_egress_mode?: AppliedDeviceEgressMode; policy_adjustments?: PolicyAdjustment[]; ipv6_blocked?: boolean; groups: Record<string, string> }
+export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; gateway_target?: DeviceGatewayTarget | ''; egress_mode?: AppliedDeviceEgressMode | ''; configured_egress_mode?: AppliedDeviceEgressMode; policy_adjustments?: PolicyAdjustment[]; ipv6_blocked?: boolean; groups: Record<string, string>; rule_matches?: Record<string, PolicyRule['match']> }
 export type ObservedDevice = { ip: string; mac?: string; active_connections: number; neighbor_observed: boolean }
 export type DevicesResponse = {
   desired_digest?: string

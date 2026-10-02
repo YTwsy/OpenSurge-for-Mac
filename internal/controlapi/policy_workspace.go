@@ -113,6 +113,8 @@ func (s *Server) handlePolicyWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	s.lifecycleMu.Lock()
 	defer s.lifecycleMu.Unlock()
+	endActivity := s.gatewayActivity.beginPolicyWorkspace()
+	defer endActivity()
 	input, err := s.policyWorkspaceInput(request)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "policy_workspace_invalid", err.Error())
@@ -120,6 +122,10 @@ func (s *Server) handlePolicyWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.policyWorkspaceLease.hold(r.Context(), s.policyWorkspaceRunner, s.configPath); err != nil {
 		writeError(w, http.StatusBadGateway, "policy_workspace_unavailable", err.Error())
+		return
+	}
+	if request.Action == "test" && strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		s.streamPolicyWorkspace(w, r, input)
 		return
 	}
 	response, err := s.policyWorkspaceRunner.PolicyWorkspace(r.Context(), s.configPath, input)
@@ -480,25 +486,13 @@ func runPolicyWorkspace(ctx context.Context, configPath string, input PolicyWork
 					return fmt.Errorf("node is unavailable or cannot be tested")
 				}
 			}
-			response.Results = make([]mihomo.ProxyDelayResult, len(names))
-			jobs := make(chan int)
-			var workers sync.WaitGroup
-			for range min(proxyHealthConcurrency, len(names)) {
-				workers.Add(1)
-				go func() {
-					defer workers.Done()
-					for index := range jobs {
-						name := names[index]
-						url, timeout := proxyHealthProbe(available[name], health.TestURL)
-						response.Results[index] = mihomo.MeasureProxyDelay(ctx, apiConfig, name, url, timeout)
-					}
-				}()
+			response.Results = measurePolicyWorkspaceNodes(ctx, names, func(ctx context.Context, name string) mihomo.ProxyDelayResult {
+				url, timeout := proxyHealthProbe(available[name], health.TestURL)
+				return mihomo.MeasureProxyDelay(ctx, apiConfig, name, url, timeout)
+			})
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			for index := range names {
-				jobs <- index
-			}
-			close(jobs)
-			workers.Wait()
 			health, err = mihomo.FetchProxyHealth(ctx, apiConfig)
 			if err != nil {
 				return err

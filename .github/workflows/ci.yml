@@ -20,3 +20,45 @@ jobs:
 
       - name: Run unit tests
         run: make test
+
+  web:
+    name: Web tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm install --global pnpm@11.19.0
+      - run: pnpm --dir web install --frozen-lockfile
+      - run: make web-test web-build
+
+  desktop:
+    name: Desktop build (${{ matrix.arch }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/desktop/go.mod
+          cache-dependency-path: apps/desktop/go.sum
+      - name: Test desktop control client
+        run: make desktop-test
+      - name: Build native desktop preview
+        env:
+          OPENSURGE_DESKTOP_ARCH: ${{ matrix.arch }}
+        run: make desktop-build
+      - name: Build production desktop bundle
+        env:
+          OPENSURGE_APP_ARCH: ${{ matrix.arch }}
+          OPENSURGE_VERSION: 0.3.0
+          OPENSURGE_BUILD_NUMBER: 42
+          OPENSURGE_RELEASE_TAG: v0.3.0
+        run: ./scripts/build-desktop-app.sh production
+      - name: Verify GUI packaging contracts
+        if: matrix.arch == 'arm64'
+        run: ./scripts/check-gui-packaging.sh

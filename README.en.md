@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="apps/menubar/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App Icon">
+  <img src="apps/desktop/Resources/OpenSurgeAppIcon.png" width="96" height="96" alt="OpenSurge for Mac App Icon">
   <h1>OpenSurge for Mac</h1>
   <p><strong>Turn a Mac into a Surge-style whole-home transparent gateway with per-device routing—onboard selected devices in same-LAN bypass-router mode, take over DHCP/DNS automatically, and optionally enable experimental downstream IPv6 takeover.</strong></p>
   <p>
@@ -215,23 +215,25 @@ act as a subnet router, or expose inbound services through the managed node.
 If you installed OpenSurge from a package, start with the
 [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 
-The repository now includes the loopback Go Control API, an embedded React Web
-GUI, and a status-focused native SwiftUI menu bar launcher. For a development build:
+Starting with v0.3.0, the PKG uses a Wails + system WebView desktop app with the shared
+React main window and tray panel. The independent loopback Control API and browser UI
+remain supported. The v0.2.4 Swift host is retained for historical maintenance; see the
+[installer acceptance boundaries](docs/desktop-installation.md). For a development build:
 
 ```sh
 make web-install
 make control-build
 ./bin/opensurge-control --config examples/config.example.yaml
-make menubar-build
+make desktop-production-build
 ```
 
 The control service listens only on `127.0.0.1` and prints a one-time Web GUI
 bootstrap link. The menu bar app shows status and recovery warnings and opens
-the Web GUI. Apart from the independent temporary lid-closed-operation switch,
+the existing desktop main window. Apart from the independent temporary lid-closed-operation switch,
 it deliberately has no gateway start/stop or policy-selection actions. It
-separates quitting only the menu bar app from quitting OpenSurge.
+separates quitting only the desktop app from quitting OpenSurge.
 The latter is available only after the gateway data plane has stopped, and
-quits the menu bar app plus the user-level Control Service. The launchd-managed
+quits the desktop app plus the user-level Control Service. The launchd-managed
 root Helper remains loaded and idle, so reopening OpenSurge needs no new
 administrator authorization.
 The menu bar also provides a separate Uninstall OpenSurge action. Once the
