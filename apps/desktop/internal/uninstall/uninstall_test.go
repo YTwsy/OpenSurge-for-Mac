@@ -32,6 +32,24 @@ func (f *fakeLogin) SetEnabled(enabled bool) loginitem.Snapshot {
 func safeStatus() *menustatus.Status {
 	return &menustatus.Status{SchemaVersion: 1, Gateway: "stopped", DHCP: "stopped", Mihomo: "stopped", PFAnchor: "unloaded", Forwarding: "enabled", RecoveryRequired: true, RecoveryStage: "mac_static"}
 }
+
+func TestGatewayTransitionBlocksUninstallEvenBetweenRuntimeFiles(t *testing.T) {
+	status := safeStatus()
+	status.Presentation.State = "reloading"
+	status.Presentation.Busy = true
+	if CanUninstall(status) {
+		t.Fatal("reload's temporary stopped snapshot allowed uninstall")
+	}
+	status.Presentation.State = "unknown"
+	status.Presentation.Busy = false
+	if CanUninstall(status) {
+		t.Fatal("unconfirmed status allowed uninstall")
+	}
+	status.Presentation.State = "recovery"
+	if !CanUninstall(status) {
+		t.Fatal("stopped manual network recovery lost uninstall eligibility")
+	}
+}
 func TestGuardAndConfirmationRecheck(t *testing.T) {
 	s := safeStatus()
 	calls := 0

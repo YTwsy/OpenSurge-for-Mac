@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
+
+	"open-mihomo-gateway/internal/gatewayview"
 )
 
 func TestExitAndIndicatorMatchExistingHostContract(t *testing.T) {
@@ -41,6 +44,34 @@ func TestExitAndIndicatorMatchExistingHostContract(t *testing.T) {
 	stopped.Mihomo = "running (1.19.30-opensurge.1)"
 	if stopped.CanQuit() {
 		t.Fatal("versioned running engine permitted exit")
+	}
+}
+
+func TestPresentationKeepsPendingConfigHealthyAndTransitionsNonActionable(t *testing.T) {
+	status := Status{SchemaVersion: 1, Gateway: "running", DHCP: "running", Mihomo: "running", Drift: true, DoctorHealthy: false}
+	if status.Indicator() != "running" {
+		t.Fatal("legacy pending configuration/Doctor became a runtime fault")
+	}
+	status.Presentation = gatewayview.Status{State: "running", ConfigPending: true, DiagnosisWarning: true}
+	if status.Indicator() != "running" {
+		t.Fatal("pending configuration/Doctor became a runtime fault")
+	}
+	for _, state := range []string{"starting", "reloading", "stopping", "recovering", "rolling_back", "changing", "unknown"} {
+		status.Gateway, status.DHCP, status.Mihomo, status.PFAnchor = "stopped", "stopped", "stopped", "unloaded"
+		status.Presentation = gatewayview.Status{State: state, Busy: true}
+		if status.Indicator() != state || status.CanQuit() {
+			t.Fatalf("%s: %+v", state, status)
+		}
+	}
+	monitor := New(func(context.Context) (*Status, error) { return &status, nil }, nil)
+	monitor.Refresh(context.Background())
+	if monitor.interval() != time.Second {
+		t.Fatal("in-flight operation retained idle polling interval")
+	}
+	status.Gateway = ""
+	status.Presentation = gatewayview.Status{State: "unknown", Reason: "status_unavailable"}
+	if snapshot := monitor.Refresh(context.Background()); snapshot.Indicator != "unknown" || snapshot.CanQuit {
+		t.Fatalf("unknown snapshot = %+v", snapshot)
 	}
 }
 

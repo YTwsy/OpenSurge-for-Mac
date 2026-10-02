@@ -1,3 +1,14 @@
+export type GatewayDisplayState = 'running' | 'stopped' | 'starting' | 'reloading' | 'stopping' | 'recovering' | 'rolling_back' | 'changing' | 'degraded' | 'recovery' | 'interrupted' | 'unknown'
+export type GatewayPresentation = {
+  state: GatewayDisplayState
+  reason?: string
+  phase?: string
+  operation_id?: string
+  busy: boolean
+  config_pending: boolean
+  diagnosis_warning: boolean
+}
+
 export type GatewayStatus = {
   gateway: string
   runtime_state?: 'none' | 'active' | 'interrupted'
@@ -169,6 +180,7 @@ export type TailscaleDiscoveryResponse = {
 }
 
 export type Overview = {
+  presentation?: GatewayPresentation
   schema_version: number
   revision: string
   topology: string

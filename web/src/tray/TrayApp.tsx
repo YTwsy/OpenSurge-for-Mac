@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { copyText, desktopAction } from '../desktop'
 import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, t } from '../i18n'
 import { useTheme } from '../hooks/useTheme'
-import { recoveryLabel, statusLabel, takeoverLabel } from '../status'
+import { gatewayIsTransitioning, gatewayStatusDetail, gatewayStatusLabel, recoveryLabel, statusLabel, takeoverLabel } from '../status'
 import type { SleepPreventionStatus } from '../types'
 import { isWindowVisible, watchVisibleRefresh } from '../visibility'
 import type { MenuBarStatus, TraySnapshot } from './types'
@@ -12,7 +12,6 @@ import { TrayActivity } from './TrayActivity'
 import './tray.css'
 
 const initial: TraySnapshot = { status: null, indicator: 'connecting', sequence: 0, can_quit: false }
-const indicatorLabels = { connecting: '正在连接后台服务…', stopped: '网关已停止', running: '网关正在运行', degraded: '网关运行异常', recovery: '网络恢复尚未完成', unreachable: '无法连接后台服务' }
 
 export function diagnosticSummary(status: MenuBarStatus | null): string {
  if (!status) return 'OpenSurge Control API: unreachable'
@@ -125,16 +124,19 @@ export function TrayApp() {
   await refresh(true)
  }
  const status = snapshot.status
+ const displayLabel = gatewayStatusLabel(snapshot.indicator)
+ const detail = gatewayStatusDetail(status?.presentation)
+ const transitioning = gatewayIsTransitioning(snapshot.indicator)
  const topology = status ? ({ same_lan: '旁路由模式', same_wifi_dhcp: '局域网 DHCP 接管', isolated_lan: '独立下游 LAN' } as Record<string, string>)[status.topology] ?? status.topology : ''
  const rows = status ? [
-  [t('网关'), statusLabel(status.gateway)], [t('拓扑'), t(topology)], ['LAN IP', status.lan_ip], [t('客户端'), String(status.client_count)],
+  [t('网关'), displayLabel], [t('拓扑'), t(topology)], ['LAN IP', status.lan_ip], [t('客户端'), String(status.client_count)],
   ['DHCP / DNS', statusLabel(status.dhcp)], ['mihomo', status.mihomo.startsWith('running') ? `${statusLabel('running')}${status.mihomo.slice(7)}` : statusLabel(status.mihomo)], ['TUN', `${takeoverLabel(status.tun)}${status.tun_interface ? ` · ${status.tun_interface}` : ''}`],
   ['PF', t(status.pf_anchor === 'loaded' ? '已加载' : '未加载')], [t('IPv4 接管'), takeoverLabel(status.ipv4_takeover)], [t('IPv6 接管'), takeoverLabel(status.ipv6_takeover)],
  ] : []
  return <main className="tray-app" ref={panel} tabIndex={-1}>
   <header className="tray-header">
    <img src="/opensurge-icon.png" alt="" /><h1>OpenSurge</h1>
-   <span className={`tray-indicator ${snapshot.indicator}`} title={t(indicatorLabels[snapshot.indicator])}><span className={`tray-dot ${snapshot.indicator}`} />{t(snapshot.indicator === 'running' ? '运行中' : snapshot.indicator === 'stopped' ? '已停止' : snapshot.indicator === 'connecting' ? '正在连接…' : '需要处理')}</span>
+   <span className={`tray-indicator ${snapshot.indicator}`} title={detail || displayLabel}><span className={`tray-dot ${transitioning ? 'transition' : snapshot.indicator}`} />{displayLabel}</span>
    <details className="tray-more" ref={more} onKeyDown={event => { if (event.key === 'Escape' && more.current?.open) { more.current.open = false; event.stopPropagation(); more.current.querySelector('summary')?.focus() } }}>
     <summary aria-label={t('更多操作')} title={t('更多操作')}>···</summary>
     <div className="tray-more-panel">
@@ -153,9 +155,11 @@ export function TrayApp() {
   {status && <p className="tray-subtitle"><span>{t(topology)}</span><span aria-hidden="true"> · </span><span>{status.lan_ip}</span></p>}
   <div className="tray-content">
    {snapshot.indicator === 'recovery' && <section className="tray-notice warning" role="alert"><strong>{t('网络恢复尚未完成')}</strong><p>{recoveryLabel(status?.recovery_stage ?? '')}</p><button onClick={() => show('network')}>{t('继续恢复')}</button></section>}
-   {snapshot.indicator === 'degraded' && <section className="tray-notice warning" role="alert"><strong>{t('网关运行异常')}</strong><p>{status?.warnings[0] || t('请在网络设置中查看异常原因。')}</p><button onClick={() => show('network')}>{t('查看网络设置')}</button></section>}
+   {['degraded', 'interrupted'].includes(snapshot.indicator) && <section className="tray-notice warning" role="alert"><strong>{displayLabel}</strong><p>{detail || t('请在网络设置中查看异常原因。')}</p><button onClick={() => show('network')}>{t('查看网络设置')}</button></section>}
+   {(transitioning || snapshot.indicator === 'unknown') && <section className="tray-notice" role="status"><strong>{displayLabel}</strong>{detail && <p>{detail}</p>}</section>}
    {!status && <section className="tray-notice" role="status"><p>{t(snapshot.indicator === 'connecting' ? '正在连接后台服务…' : '状态暂不可用。后台连接恢复后会自动更新。')}</p>{snapshot.service_actions && <button disabled={serviceBusy} onClick={() => void serviceAction('reconnect')}>{t('重新连接后台服务')}</button>}</section>}
-   {status?.drift && <p className="tray-inline-warning">{t('配置已修改，需要重启网关')}</p>}
+   {status?.drift && !transitioning && <p className="tray-inline-warning">{t(status.gateway === 'stopped' ? '配置将在下次启动时应用' : '有配置待应用，当前仍使用原配置')}</p>}
+   {status?.presentation?.diagnosis_warning && <p className="tray-inline-warning">{t('上次诊断有待检查项')} <button className="tray-text-button" onClick={() => show('diagnostics')}>{t('查看诊断')}</button></p>}
    <TrayActivity gateway={status?.gateway} onOpen={show} />
    <section className={`tray-network ${networkExpanded ? 'expanded' : ''}`}>
     <button type="button" className="tray-network-toggle" aria-expanded={networkExpanded} aria-controls="tray-network-details" onClick={() => setNetworkExpanded(value => !value)}><span>{t('网络状态')}</span><span className="tray-caption">{t(networkExpanded ? '收起详情' : '查看详情')} <svg className="tray-disclosure" viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4" /></svg></span></button>

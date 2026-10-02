@@ -1,38 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { waitForOperation, watchOperations } from '../api'
 import { t } from '../i18n'
+import { operationPhaseLabel } from '../status'
 import { dismissOperation, getOperations, markOperationConnection, subscribeOperations } from '../operations'
 
-const phaseLabels: Record<string, string> = {
-  submitting: '正在提交操作',
-  waiting_helper: '等待网关服务响应',
-  checking_runtime: '检查当前运行状态',
-  validating_network: '检查网络接口与启动条件',
-  checking_reservations: '检查设备固定地址冲突',
-  preparing_config: '生成候选运行配置',
-  validating_config: '校验 Mihomo 配置',
-  validating_device_policy: '校验设备身份与路由规则',
-  saving_config: '保存已校验的配置',
-  saving_runtime: '保存网络恢复快照',
-  enabling_forwarding: '启用网关转发',
-  starting_mihomo: '启动 Mihomo 并等待就绪',
-  starting_ipv6: '启动下游 IPv6 数据面',
-  starting_dns: '启动 DHCP / DNS 服务',
-  applying_firewall: '应用网关防火墙规则',
-  enabling_system_proxy: '启用本机系统代理协同',
-  enabling_system_dns: '接管 Mac 系统 DNS',
-  initiating_tailscale: '发起 Tailscale 预热',
-  restoring_system_proxy: '恢复原有系统代理设置',
-  restoring_system_dns: '恢复 Mac 系统 DNS',
-  stopping_dns: '停止 DHCP / DNS 服务',
-  stopping_ipv6: '撤销下游 IPv6 接管',
-  stopping_mihomo: '停止 Mihomo 进程',
-  restoring_network: '恢复防火墙与转发设置',
-  clearing_runtime: '清理本次运行状态',
-  rolling_back: '操作未完成，正在回滚网络改动',
-  restoring_config: '恢复之前的配置与网关',
-  probing_dhcp: '正在探测 DHCP OFFER',
-}
 
 const kindLabels: Record<string, string> = {
   start: '启动网关', stop: '停止网关', reload: '重载网关', 'restart-mihomo': '重启 Mihomo',
@@ -75,7 +46,7 @@ export function OperationProgress({ onOpenDiagnostics }: { onOpenDiagnostics: ()
   const uncertain = running && (operation.connection !== 'connected' || stale)
   const status = uncertain ? 'uncertain' : running ? 'running' : operation.state
   const elapsed = Math.max(0, Math.floor(((running ? now : Date.parse(operation.updated_at || '')) - Date.parse(operation.created_at || '')) / 1000)) || 0
-  const phase = t(phaseLabels[operation.phase || ''] || '正在执行操作')
+  const phase = operationPhaseLabel(operation.phase)
   const recheck = () => {
     markOperationConnection(operation.id, 'reconnecting')
     void waitForOperation(operation.id).catch(() => { /* keep the known outcome on the card */ })

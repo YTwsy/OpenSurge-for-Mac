@@ -48,7 +48,8 @@ func (m *Manager) Availability() string { return m.state }
 func CanUninstall(s *menustatus.Status) bool {
 	// Recovery may still need manual steps after uninstall, as in the Swift host.
 	// Existing host forwarding alone is not a gateway-owned service.
-	return s != nil && s.SchemaVersion == 1 && s.Gateway == "stopped" &&
+	return s != nil && s.SchemaVersion == 1 && !s.Presentation.Busy &&
+		(s.Presentation.State == "" || s.Presentation.State == "stopped" || s.Presentation.State == "recovery") && s.Gateway == "stopped" &&
 		(s.DHCP == "stopped" || s.DHCP == "disabled") && s.Mihomo == "stopped" &&
 		(s.PFAnchor == "unloaded" || s.PFAnchor == "disabled")
 }

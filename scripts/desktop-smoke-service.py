@@ -173,9 +173,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             recovery["network_snapshot"] = snapshot
         status = {"gateway": state["gateway"], "interface": "en0", "lan_ip": "192.0.2.10", "dhcp": "stopped", "dhcp_enabled": False, "mihomo": "stopped", "tun": "stopped", "pf_anchor": "unloaded", "forwarding": "disabled", "ipv4_takeover": "stopped", "ipv6_takeover": "disabled", "dns_ipv6": False, "tun_ipv6_requested": "off", "ipv6_packet": "disabled", "native_ipv6_available": False, "client_count": 0}
         common = {"schema_version": 1, "revision": "smoke", "topology": "same_lan", "drift": False, "warnings": [], "doctor_healthy": True, "sleep_prevention": sleep, "ui_preferences": preferences}
-        common.update({key: state[key] for key in ("drift", "doctor_healthy") if key in state})
+        common.update({key: state[key] for key in ("drift", "doctor_healthy", "presentation") if key in state})
         common["topology"] = state.get("mode", "same_lan")
-        status.update({key: state[key] for key in ("dhcp", "mihomo", "pf_anchor") if key in state})
+        status.update({key: state[key] for key in ("dhcp", "mihomo", "pf_anchor", "tun", "forwarding", "ipv4_takeover", "ipv6_takeover", "runtime_state") if key in state})
         routes = {
             "/api/v1/desktop-smoke/lifecycle": {},
             "/api/v1/desktop-smoke/login": {"state": login_state or state.get("login_initial", "disabled")},

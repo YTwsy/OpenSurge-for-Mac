@@ -17,6 +17,37 @@ beforeEach(async () => {
 })
 afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans'); localStorage.clear(); delete window.__opensurgeWindowVisible })
 
+it('presents pending configuration and cached diagnostics without a runtime alarm', async () => {
+ vi.mocked(desktopAction).mockResolvedValue({ ...fixture, indicator: 'running', status: { ...fixture.status!, gateway: 'running', drift: true,
+  presentation: { state: 'running', busy: false, config_pending: true, diagnosis_warning: true },
+ } })
+ render(<TrayApp />)
+ await screen.findByText('Configuration changes are pending; the previous configuration is still in use')
+ expect(screen.queryByRole('alert')).toBeNull()
+ expect(screen.getByText('The last diagnostic run found items to review')).toBeTruthy()
+ expect(document.querySelector('.tray-dot.running')).toBeTruthy()
+})
+
+it('shows startup progress instead of a fault for incomplete runtime components', async () => {
+ vi.mocked(desktopAction).mockResolvedValue({ ...fixture, indicator: 'starting', can_quit: false, status: { ...fixture.status!, gateway: 'degraded',
+  presentation: { state: 'starting', phase: 'starting_mihomo', busy: true, config_pending: false, diagnosis_warning: false },
+ } })
+ render(<TrayApp />)
+ await screen.findByText('Starting Mihomo and waiting for readiness')
+ expect(screen.queryByRole('alert')).toBeNull()
+ expect(document.querySelector('.tray-dot.transition')).toBeTruthy()
+ expect(screen.getByRole('main').textContent).not.toMatch(/[\u3400-\u9fff]/)
+})
+
+it('uses the concrete runtime failure reason rather than an unrelated warning', async () => {
+ vi.mocked(desktopAction).mockResolvedValue({ ...fixture, indicator: 'degraded', can_quit: false, status: { ...fixture.status!, gateway: 'degraded', warnings: ['unrelated policy observation'],
+  presentation: { state: 'degraded', reason: 'dns_stopped', busy: false, config_pending: false, diagnosis_warning: false },
+ } })
+ render(<TrayApp />)
+ await screen.findByText('DHCP / DNS service has stopped')
+ expect(screen.getByRole('alert').textContent).not.toContain('unrelated policy observation')
+})
+
 it('focuses the panel on reopen without stealing existing keyboard focus', async () => {
  render(<TrayApp />)
  const panel = screen.getByRole('main')

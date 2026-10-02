@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"open-mihomo-gateway/internal/gatewayview"
 )
 
 type SleepPrevention struct {
@@ -16,27 +18,28 @@ type SleepPrevention struct {
 }
 
 type Status struct {
-	SchemaVersion    int             `json:"schema_version"`
-	Revision         string          `json:"revision"`
-	Gateway          string          `json:"gateway"`
-	Topology         string          `json:"topology"`
-	LANIP            string          `json:"lan_ip"`
-	DHCP             string          `json:"dhcp"`
-	Mihomo           string          `json:"mihomo"`
-	TUN              string          `json:"tun"`
-	TUNInterface     string          `json:"tun_interface,omitempty"`
-	PFAnchor         string          `json:"pf_anchor"`
-	Forwarding       string          `json:"forwarding"`
-	IPv4Takeover     string          `json:"ipv4_takeover"`
-	IPv6Takeover     string          `json:"ipv6_takeover"`
-	ClientCount      int             `json:"client_count"`
-	Drift            bool            `json:"drift"`
-	DoctorHealthy    bool            `json:"doctor_healthy"`
-	RecoveryRequired bool            `json:"recovery_required"`
-	RecoveryStage    string          `json:"recovery_stage,omitempty"`
-	ErrorCode        string          `json:"error_code,omitempty"`
-	Warnings         []string        `json:"warnings"`
-	SleepPrevention  SleepPrevention `json:"sleep_prevention"`
+	Presentation     gatewayview.Status `json:"presentation"`
+	SchemaVersion    int                `json:"schema_version"`
+	Revision         string             `json:"revision"`
+	Gateway          string             `json:"gateway"`
+	Topology         string             `json:"topology"`
+	LANIP            string             `json:"lan_ip"`
+	DHCP             string             `json:"dhcp"`
+	Mihomo           string             `json:"mihomo"`
+	TUN              string             `json:"tun"`
+	TUNInterface     string             `json:"tun_interface,omitempty"`
+	PFAnchor         string             `json:"pf_anchor"`
+	Forwarding       string             `json:"forwarding"`
+	IPv4Takeover     string             `json:"ipv4_takeover"`
+	IPv6Takeover     string             `json:"ipv6_takeover"`
+	ClientCount      int                `json:"client_count"`
+	Drift            bool               `json:"drift"`
+	DoctorHealthy    bool               `json:"doctor_healthy"`
+	RecoveryRequired bool               `json:"recovery_required"`
+	RecoveryStage    string             `json:"recovery_stage,omitempty"`
+	ErrorCode        string             `json:"error_code,omitempty"`
+	Warnings         []string           `json:"warnings"`
+	SleepPrevention  SleepPrevention    `json:"sleep_prevention"`
 	UIPreferences    struct {
 		Language string `json:"language"`
 	} `json:"ui_preferences"`
@@ -57,16 +60,26 @@ func (s Status) ServicesActive() bool {
 	return s.Gateway == "running" || s.Gateway == "degraded" || s.DHCP == "running" || strings.HasPrefix(s.Mihomo, "running") || s.PFAnchor == "loaded"
 }
 func (s Status) CanQuit() bool {
-	return s.Gateway == "stopped" && !s.ServicesActive() && !s.RecoveryNeedsAttention()
+	return !s.Presentation.Busy && (s.Presentation.State == "" || s.Presentation.State == "stopped") && s.Gateway == "stopped" && !s.ServicesActive() && !s.RecoveryNeedsAttention()
 }
 func (s Status) Indicator() string {
+	if s.Presentation.State != "" {
+		switch s.Presentation.State {
+		case "running", "stopped", "starting", "reloading", "stopping", "recovering", "rolling_back", "changing", "degraded", "recovery", "interrupted", "unknown":
+			return s.Presentation.State
+		default:
+			return "unknown"
+		}
+	}
+	// Older Control Services lack the additive display contract. Config drift
+	// and cached Doctor results still must not be presented as runtime failures.
 	if s.RecoveryNeedsAttention() {
 		return "recovery"
 	}
 	if s.Gateway == "stopped" {
 		return "stopped"
 	}
-	if s.Gateway == "degraded" || s.Drift || !s.DoctorHealthy {
+	if s.Gateway == "degraded" || s.IPv4Takeover == "failed" || s.IPv6Takeover == "failed" {
 		return "degraded"
 	}
 	if s.Gateway == "running" {
@@ -108,10 +121,11 @@ func (m *Monitor) Refresh(ctx context.Context) Snapshot {
 	defer cancel()
 	status, err := m.read(ctx)
 	m.mu.Lock()
+	wasBusy := m.snapshot.Status != nil && m.snapshot.Status.Presentation.Busy
 	m.snapshot.Sequence++
 	m.snapshot.Status = nil
 	m.snapshot.CanQuit = false
-	if err != nil || status == nil || status.SchemaVersion != 1 || status.Gateway == "" {
+	if err != nil || status == nil || status.SchemaVersion != 1 || (status.Gateway == "" && status.Presentation.State == "") {
 		m.failures++
 		m.snapshot.Indicator = "unreachable"
 	} else {
@@ -122,6 +136,12 @@ func (m *Monitor) Refresh(ctx context.Context) Snapshot {
 	}
 	result := m.snapshot
 	m.mu.Unlock()
+	if result.Status != nil && result.Status.Presentation.Busy && !wasBusy {
+		select {
+		case m.wake <- struct{}{}:
+		default:
+		}
+	}
 	if m.changed != nil {
 		m.changed(result)
 	}
@@ -164,6 +184,11 @@ func (m *Monitor) interval() time.Duration {
 	defer m.mu.Unlock()
 	interval := 15 * time.Second
 	if m.rapid {
+		interval = 2 * time.Second
+	}
+	if m.snapshot.Status != nil && m.snapshot.Status.Presentation.Busy {
+		interval = time.Second
+	} else if m.snapshot.Indicator == "unknown" || m.snapshot.Indicator == "degraded" {
 		interval = 2 * time.Second
 	}
 	for i := 0; i < min(m.failures, 4); i++ {

@@ -365,6 +365,10 @@ void configureOpenSurgeMenuBarIcon(void) {
                 NSString *symbol = nil;
                 if ([menuBarIndicator isEqualToString:@"degraded"]) symbol = @"exclamationmark.circle";
                 else if ([menuBarIndicator isEqualToString:@"recovery"]) symbol = @"exclamationmark.triangle.fill";
+                else if ([menuBarIndicator isEqualToString:@"interrupted"]) symbol = @"exclamationmark.triangle.fill";
+                else if ([menuBarIndicator isEqualToString:@"unknown"]) symbol = @"questionmark.circle";
+                else if ([menuBarIndicator isEqualToString:@"rolling_back"]) symbol = @"arrow.uturn.backward";
+                else if ([@[@"starting", @"reloading", @"stopping", @"recovering", @"changing"] containsObject:menuBarIndicator]) symbol = @"arrow.triangle.2.circlepath";
                 image = (symbol ? [NSImage imageWithSystemSymbolName:symbol accessibilityDescription:nil] : nil) ?: [menuBarBrandImage copy];
                 image.size = NSMakeSize(18, 18);
                 image.template = YES;

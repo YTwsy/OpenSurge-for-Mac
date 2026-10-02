@@ -55,6 +55,7 @@ func (s *Server) beginRequestOperation(w http.ResponseWriter, r *http.Request, k
 		writeError(w, status, "operation_failed", err.Error())
 		return nil, nil, false
 	}
+	s.gatewayActivity.update(op)
 	w.Header().Set(operationIDHeader, id)
 	return s.observeOperation(r.Context(), &op), &op, true
 }
@@ -77,6 +78,7 @@ func (s *Server) observeOperation(ctx context.Context, op *Operation) context.Co
 		}
 		if changed {
 			op.UpdatedAt = now
+			s.gatewayActivity.update(*op)
 			// Progress is observability, not another lifecycle precondition.
 			_ = s.store.SaveOperation(*op)
 		}
@@ -91,4 +93,5 @@ func (s *Server) finishOperation(op *Operation, err error) {
 		op.Error = err.Error()
 	}
 	_ = s.store.SaveOperation(*op)
+	s.gatewayActivity.update(*op)
 }

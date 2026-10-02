@@ -1,6 +1,7 @@
-import type { SleepPreventionStatus, UIPreferences } from '../types'
+import type { GatewayDisplayState, GatewayPresentation, SleepPreventionStatus, UIPreferences } from '../types'
 
 export type MenuBarStatus = {
+ presentation?: GatewayPresentation
  schema_version: number
  revision: string
  gateway: string
@@ -26,7 +27,7 @@ export type MenuBarStatus = {
 }
 export type TraySnapshot = {
  status: MenuBarStatus | null
- indicator: 'connecting' | 'stopped' | 'running' | 'degraded' | 'recovery' | 'unreachable'
+ indicator: GatewayDisplayState | 'connecting' | 'unreachable'
  sequence: number
  can_quit: boolean
  service_actions?: boolean

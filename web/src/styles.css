@@ -36,6 +36,7 @@ button{cursor:pointer}
 .gateway-card p{margin:0;color:#7d918a}
 .orb{width:68px;height:68px;border-radius:50%;border:1px solid #3a6454;display:grid;place-items:center;background:radial-gradient(circle,#3ca67a33,transparent 62%)}
 .orb span{width:24px;height:24px;border-radius:50%;background:#8ef0c2;box-shadow:0 0 25px #62d7a8}
+.orb .status-dot.stopped{background:#6d7773;box-shadow:0 0 25px #6d777366}
 .metric{padding:24px;display:flex;flex-direction:column}
 .metric strong{font-size:30px;margin:auto 0 5px}
 .metric span{color:#73877f;font-size:12px}
@@ -117,6 +118,8 @@ button{cursor:pointer}
 .status-dot{width:8px;height:8px;border-radius:50%;background:#6d7773;box-shadow:0 0 0 4px #6d77731a}
 .status-dot.running{background:#76e4b0;box-shadow:0 0 0 4px #76e4b018}
 .status-dot.degraded{background:#ffbd70;box-shadow:0 0 0 4px #ffbd7018}
+.status-dot.transition{background:#70b9ff;box-shadow:0 0 0 4px #70b9ff18}
+.sidebar-status-copy .sidebar-status-detail{white-space:normal;line-height:1.4;max-width:160px}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .split>div{min-width:0}
 .row{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid #182923}

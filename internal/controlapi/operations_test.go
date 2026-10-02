@@ -87,6 +87,22 @@ func TestFirstGatewayStartExposesProgressBeforeCompleting(t *testing.T) {
 	if progress.Code != http.StatusOK || !containsAll(progress.Body.String(), `"phase":"starting_mihomo"`, `"state":"running"`, `"phase_started_at":`) {
 		t.Fatalf("in-flight progress: %d %s", progress.Code, progress.Body.String())
 	}
+	// The shared summary must follow this same live operation even before the
+	// first runtime state file exists. It also feeds the state-event signature.
+	for _, path := range []string{"/api/v1/overview", "/api/v1/menubar"} {
+		response := performAuthorized(server, http.MethodGet, path, nil)
+		var status MenuBarStatus
+		if err := json.Unmarshal(response.Body.Bytes(), &status); err != nil {
+			t.Fatal(err)
+		}
+		if status.Presentation.State != "starting" || status.Presentation.Phase != "starting_mihomo" || !status.Presentation.Busy {
+			t.Fatalf("in-flight %s: %s", path, response.Body.String())
+		}
+	}
+	event, err := server.stateEvent(context.Background())
+	if err != nil || event.Presentation.State != "starting" {
+		t.Fatalf("in-flight event = %+v, %v", event, err)
+	}
 	// An in-flight replay is still idempotent, never a second start.
 	repeated := httptest.NewRecorder()
 	server.Handler().ServeHTTP(repeated, request)

@@ -6,6 +6,7 @@ import (
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
+	"open-mihomo-gateway/internal/gatewayview"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 )
@@ -24,6 +25,7 @@ type ErrorResponse struct {
 }
 
 type Overview struct {
+	Presentation         gatewayview.Status       `json:"presentation"`
 	SchemaVersion        int                      `json:"schema_version"`
 	Revision             string                   `json:"revision"`
 	Topology             string                   `json:"topology"`
@@ -60,6 +62,7 @@ type DoctorRunStatus struct {
 }
 
 type MenuBarStatus struct {
+	Presentation    gatewayview.Status    `json:"presentation"`
 	SchemaVersion   int                   `json:"schema_version"`
 	Revision        string                `json:"revision"`
 	Gateway         string                `json:"gateway"`
@@ -596,6 +599,7 @@ type BootstrapResponse struct {
 }
 
 type StateEvent struct {
+	Presentation         gatewayview.Status    `json:"presentation"`
 	SchemaVersion        int                   `json:"schema_version"`
 	Revision             string                `json:"revision"`
 	Gateway              string                `json:"gateway"`
