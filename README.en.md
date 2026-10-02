@@ -215,9 +215,9 @@ act as a subnet router, or expose inbound services through the managed node.
 If you installed OpenSurge from a package, start with the
 [OpenSurge for Mac App User Guide](docs/app-user-guide.md).
 
-On `Next`, the PKG uses a Wails + system WebView desktop app with the shared React
-main window and tray panel. The independent loopback Control API and browser UI
-remain supported. Public v0.2.4 still uses the Swift host; see the
+Starting with v0.3.0, the PKG uses a Wails + system WebView desktop app with the shared
+React main window and tray panel. The independent loopback Control API and browser UI
+remain supported. The v0.2.4 Swift host is retained for historical maintenance; see the
 [installer acceptance boundaries](docs/desktop-installation.md). For a development build:
 
 ```sh

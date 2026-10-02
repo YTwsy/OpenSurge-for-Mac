@@ -1,6 +1,6 @@
 # OpenSurge desktop host
 
-This separate Go module hosts the Next branch's Wails desktop migration. It pins
+This separate Go module hosts the Wails desktop app shipped in OpenSurge v0.3. It pins
 Wails v3 to an exact prerelease and keeps its native dependencies outside the root
 Go module, so the existing Linux `make test` gate remains independent of WebKit/GTK.
 
@@ -71,8 +71,8 @@ the UI available for explicit reconnect. A custom directory never operates the r
 job; production `--smoke-actions` exercises launch wake with a fixture runner.
 Preview and production single-instance identities are separate.
 
-The preview retains its separate identifier and output. On `Next`, `make gui-build`
-and `make gui-installer` now use this Wails host. The Swift host remains only as
+The preview retains its separate identifier and output. Since v0.3, `make gui-build`
+and `make gui-installer` use this Wails host. The Swift host remains only as
 maintenance source in `apps/menubar`; its explicit legacy build writes under
 `bin/legacy/`. Local bundles are ad-hoc signed, not Developer ID signed or notarized.
 See [installer acceptance](../../docs/desktop-installation.md) for validation limits.

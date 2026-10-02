@@ -189,8 +189,8 @@ Tailnet 访问和 Exit Node 是两种不同角色：
 通过安装包使用 OpenSurge 时，请从
 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)开始。
 
-`Next` 的安装包使用 Wails + 系统 WebView 桌面 App：React 主窗口与菜单栏面板共享
-现有 Control API，浏览器入口继续可用。公开的 v0.2.4 仍为旧 Swift 宿主；迁移验收边界见
+从 v0.3.0 起，安装包使用 Wails + 系统 WebView 桌面 App：React 主窗口与菜单栏面板共享
+现有 Control API，浏览器入口继续可用。v0.2.4 的旧 Swift 宿主保留为历史维护参考；验收边界见
 [桌面安装验收](docs/desktop-installation.md)。开发构建：
 
 ```sh

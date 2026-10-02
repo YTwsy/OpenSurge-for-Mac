@@ -6,18 +6,18 @@ This short guide is for people using the packaged OpenSurge for Mac app. It
 covers installation, proxy configuration, gateway startup, and safe network
 recovery. CLI and development workflows are intentionally left out.
 
-Desktop instructions here describe `Next` builds. Public v0.2.4 still uses the
-Swift menu bar host; see [installer acceptance](desktop-installation.md) for the
+Desktop instructions here describe v0.3.0 and later. The v0.2.4 release uses the
+legacy Swift menu bar host; see [installer acceptance](desktop-installation.md) for the
 verified scope and outstanding platform checks.
 
 ![OpenSurge for Mac dashboard](images/opensurge-dashboard.png)
 
 ## Install and open the app
 
-1. For this desktop preview, use a supplied `Next` test package matching your Mac:
-   `arm64` for Apple Silicon or `x86_64` for Intel. Public packages are available on
-   [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases); v0.2.4
-   retains the menu bar workflow described in its
+1. Open the latest stable release on
+   [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases), expand **Assets**
+   and download the `.pkg` for your Mac: `arm64` for Apple Silicon or `x86_64` for Intel.
+   The v0.2.4 menu bar workflow is described in its
    [versioned guide](https://github.com/YTwsy/OpenSurge-for-Mac/blob/v0.2.4/docs/app-user-guide.md).
 2. Double-click the package. If macOS blocks it, open **System Settings →
    Privacy & Security** and choose **Open Anyway** for this package. You do not

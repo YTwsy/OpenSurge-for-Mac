@@ -5,17 +5,16 @@
 本指南面向通过安装包使用 OpenSurge for Mac 的普通用户，介绍从安装、准备代理配置到启动
 网关和安全恢复网络的基本流程。CLI、开发构建和高级配置不在本文展开。
 
-本页的桌面操作描述对应 `Next` 构建；公开 v0.2.4 仍使用旧菜单栏宿主。
+本页的桌面操作描述对应 v0.3.0 及之后的版本；v0.2.4 使用旧 Swift 菜单栏宿主。
 安装器的已验证范围与待完成平台验收见[桌面安装验收](desktop-installation.md)。
 
 ![OpenSurge for Mac 总览](images/opensurge-dashboard.png)
 
 ## 安装与打开
 
-1. 体验本页描述的桌面端时，使用提供的 `Next` 测试安装包：Apple Silicon 选择 `arm64`，
-   Intel Mac 选择 `x86_64`。公开安装包位于
-   [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases)；v0.2.4 的旧菜单栏
-   操作请参照[对应版本指南](https://github.com/YTwsy/OpenSurge-for-Mac/blob/v0.2.4/docs/app-user-guide.zh-CN.md)。
+1. 打开 [GitHub Releases](https://github.com/YTwsy/OpenSurge-for-Mac/releases)
+   中的最新稳定版，展开页面底部的 **Assets**，下载匹配芯片的 `.pkg`：
+   Apple Silicon 选择 `arm64`，Intel Mac 选择 `x86_64`。v0.2.4 的旧菜单栏操作请参照[对应版本指南](https://github.com/YTwsy/OpenSurge-for-Mac/blob/v0.2.4/docs/app-user-guide.zh-CN.md)。
 2. 双击安装包。如果 macOS 阻止打开，请前往**系统设置 → 隐私与安全性**，对这个安装包
    选择**仍要打开**。不需要全局关闭 Gatekeeper。
 3. 安装完成后，从 `/Applications` 打开 **OpenSurge**，进入独立主窗口。

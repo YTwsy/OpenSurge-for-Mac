@@ -1,6 +1,6 @@
 # Legacy Swift menu-bar host
 
-This source is retained for v0.2.4 maintenance and migration reference. `Next`
+This source is retained for v0.2.4 maintenance and migration reference. v0.3
 GUI build/test/package targets use `apps/desktop` (Wails + system WebView).
 
 An explicit `make menubar-build` writes `bin/legacy/OpenSurge.app`; it cannot

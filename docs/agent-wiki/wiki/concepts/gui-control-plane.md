@@ -1,10 +1,10 @@
 # GUI 控制面
 
-Next 的完整 GUI 是 `web/` 中的 React 应用，由 `apps/desktop/` 中的 Wails +
+v0.3 的完整 GUI 是 `web/` 中的 React 应用，由 `apps/desktop/` 中的 Wails +
 系统 WebView 承载主窗口和菜单栏面板；浏览器入口继续可用。两者都只访问
 `cmd/opensurge-control` 的 loopback API，Go 业务规则与 root Helper 保持独立。
 当前宿主、认证和安装器契约见 [Desktop host](desktop-host.md)。下文涉及 Swift/AppKit
-旧宿主的具体实现和故障记录仅供 v0.2.4 维护参考，不是 Next 的实现要求。
+旧宿主的具体实现和故障记录仅供 v0.2.4 维护参考，不是 v0.3 的实现要求。
 
 原生应用图标由 `apps/desktop/Resources/OpenSurgeAppIcon.png` 经
 `scripts/build-desktop-app.sh` 等比生成各档 `.icns` 资源。1024 × 1024 源图已包含
@@ -160,7 +160,7 @@ Doctor 包含真实 `mihomo -t`，单次配置验证最长可到 90 秒，因此
 执行各自的真实预检与 TUN readiness，不能用历史 Doctor 成功结果替代。
 
 进程刚启动且尚未取得第一份状态时使用独立的 connecting 状态和 OpenSurge 品牌图标；真实
-请求失败后进入 unreachable。Next 使用状态符号、tooltip 和面板文案区分各状态，不沿用
+请求失败后进入 unreachable。v0.3 使用状态符号、tooltip 和面板文案区分各状态，不沿用
 旧 Swift 宿主的图标透明度约定；Control Service 尚未准备好不表示网关已经停止。
 
 “只退出桌面 App”关闭主窗口和菜单栏，不会停止用户级 Control Service，也不会停止正在
@@ -196,7 +196,7 @@ preinstall 的严格 recovery 与 stop 顺序，不能与产品卸载门禁混�
 这段历史不要求 Wails 沿用 SwiftUI 或同一个确认实现。
 
 旧 Swift 菜单栏通过 `NSWorkspace.shared.open` 打开浏览器，失败后回退 `/usr/bin/open`。
-Next 的菜单栏直接恢复主窗口；native relay 负责会话交换，不将 bearer token 或 cookie
+v0.3 的菜单栏直接恢复主窗口；native relay 负责会话交换，不将 bearer token 或 cookie
 交给 JavaScript。任何宿主都不能把一次性 bootstrap URL 写入错误信息或长期日志。
 
 Control API 的 bootstrap `expires_at` 来自 Go `time.Time`，可能包含 RFC3339 小数秒；
@@ -212,7 +212,7 @@ Web GUI 从一次性 bootstrap 链接换取的 HttpOnly 会话使用 12 小时�
 菜单栏的 Control API bearer token 只从用户应用支持目录内权限为 `0600` 的
 `control-token` 读取，不复制到 Keychain，也不回退到可能过期的旧 Keychain 副本。文件
 缺失与 endpoint 尚未生成都表示用户级 Control Service 尚未准备好：先轻量 kickstart 并
-重试，仍失败才显示友好错误和“重新连接”。Next 的启动与显式重新连接都不使用
+重试，仍失败才显示友好错误和“重新连接”。v0.3 的启动与显式重新连接都不使用
 `kickstart -k`，只唤醒已有服务，不强制重启 Control Service 或操作网关数据面。
 Preview 默认不管理已安装服务；旧 Swift 的重启实现只供历史版本维护。
 
@@ -487,7 +487,7 @@ Proxy/内容过滤等已知用途、只覆盖遵循系统代理的 Mac 应用、
 生产 pkg 使用固定 `/` install location 和不可 relocatable 的桌面 bundle，把 App 安装
 到 `/Applications/OpenSurge.app`；否则 macOS Installer 可能把它 relocate 回构建工作区的
 `payload/Applications`。升级的 postinstall 在新 payload 落盘后清理旧的
-`/Applications/OpenSurge Menu Bar.app`，避免 Launchpad 出现重复入口。主程序在 Next 改为
+`/Applications/OpenSurge Menu Bar.app`，避免 Launchpad 出现重复入口。主程序在 v0.3 改为
 `OpenSurgeDesktop`，bundle identifier 与 launchd label 保持既有技术命名。
 生产 pkg 把 applied config、mihomo/dnsmasq、runtime 和 helper 放在 root-owned 的
 `/Library/Application Support/OpenSurge` / `PrivilegedHelperTools` 下；用户级 Control

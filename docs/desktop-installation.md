@@ -1,11 +1,11 @@
-# Next 桌面安装器切换与验收
+# v0.3 桌面安装器与验收
 
-`Next` 的 `make gui-build`、`make gui-test` 和 `make gui-installer` 已采用 Wails
-宿主。公开 v0.2.4 仍使用 Swift 菜单栏宿主；本文件不表示已经发布新版本。
+从 v0.3.0 起，`make gui-build`、`make gui-test` 和 `make gui-installer` 使用 Wails
+宿主，替代 v0.2.4 的 Swift 菜单栏宿主。版本发布不扩大下文记录的验收范围。
 
 ## 安装契约
 
-| 项目 | Next 行为 |
+| 项目 | v0.3 行为 |
 | --- | --- |
 | App 路径 / 身份 | `/Applications/OpenSurge.app` / `com.opensurge.menubar`，保持现有身份 |
 | 主程序 | `OpenSurgeDesktop`；PKG 完整替换 bundle，移除旧 `OpenSurgeMenuBar` |
@@ -34,23 +34,23 @@ Wails 接到 Installer 的 TERM 时只退出宿主，不显示交互退出确认
 从明确提交的干净源码导出构建，保留既有 PKG。示例变量需替换为本次构建的实际来源：
 
 ```sh
-OPENSURGE_VERSION=0.2.4 \
+OPENSURGE_VERSION=0.3.0 \
 OPENSURGE_BUILD_NUMBER=1 \
-OPENSURGE_RELEASE_TAG=v0.2.4-next \
+OPENSURGE_RELEASE_TAG=v0.3.0 \
 OPENSURGE_APP_ARCH=arm64 \
 OPENSURGE_MIHOMO_BINARY=/absolute/path/to/pinned/mihomo \
 OPENSURGE_DNSMASQ_BINARY=/absolute/path/to/pinned/dnsmasq \
-OPENSURGE_PKG_OUTPUT=/absolute/path/to/OpenSurge-0.2.4-next-arm64-build1-COMMIT-unsigned.pkg \
+OPENSURGE_PKG_OUTPUT=/absolute/path/to/OpenSurge-0.3.0-arm64-build1-COMMIT-unsigned.pkg \
 make gui-installer
 ```
 
 构建使用临时 staging，不清空既有安装包；目标文件已存在时拒绝覆盖。
-`OPENSURGE_VERSION` 必须匹配 release tag 的基础版本。省略 tag 的本地 Next 构建带
-`-next`，正式发布流水线仍显式传入稳定版或 RC tag。Apple Silicon 与 Intel 必须分别提供
+`OPENSURGE_VERSION` 必须匹配 release tag 的基础版本。默认 tag 为当前正式版；
+发布流水线显式传入稳定版或 RC tag。Apple Silicon 与 Intel 必须分别提供
 匹配架构的 mihomo / dnsmasq。
 
 ```sh
-./scripts/verify-unsigned-gui-installer.sh PACKAGE 0.2.4 arm64 13.0 v0.2.4-next 1
+./scripts/verify-unsigned-gui-installer.sh PACKAGE 0.3.0 arm64 13.0 v0.3.0 1
 shasum -a 256 PACKAGE > PACKAGE.sha256
 shasum -a 256 -c PACKAGE.sha256
 ```
@@ -72,7 +72,7 @@ shasum -a 256 -c PACKAGE.sha256
 重定位，并用假系统命令代替 launchd、权限变更、睡眠设置与 receipt 操作。它覆盖首次
 seed、升级保留、恢复阻断、失败停止，以及保留数据 / 彻底卸载。该门槛不触碰已安装 App。
 
-发布前仍需在可恢复的测试安装中完成以下操作；当前集成不能代替这些实机记录：
+以下项目仍需在可恢复的测试安装中完成；正式版发布和构建检查不代替这些实机记录：
 
 1. 从 Swift v0.2.4 升级及重复安装 Wails 包；确认单一 App、无旧进程/重复图标、数据保留。
 2. 升级前分别设置登录项开启和关闭；升级后读取实际状态、重登录，确认不会意外启用或丢失。

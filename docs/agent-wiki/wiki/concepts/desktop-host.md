@@ -1,8 +1,8 @@
 # Desktop host
 
-The `Next` branch develops a Wails v3 host in `apps/desktop/`. Its Go module is
+OpenSurge v0.3 ships a Wails v3 host in `apps/desktop/`. Its Go module is
 independent of the root module so native UI dependencies do not enter backend CI.
-On `Next`, production GUI targets and the PKG ship the Wails host. Swift sources
+Production GUI targets and the PKG ship the Wails host. Swift sources
 remain for historical maintenance; their explicit build writes to `bin/legacy/`.
 This does not establish PackageKit or macOS 13/Intel runtime acceptance.
 
@@ -282,7 +282,7 @@ Semantic version comparison includes Next and release-candidate builds. Checks r
 at launch and every 24 hours (15-minute retry after failure), deduplicate concurrent
 requests and clear obsolete download links on failure. The host only opens the
 validated page on explicit action; download/install remain user actions. Both builds
-take their version from `OPENSURGE_RELEASE_TAG`, defaulting to `v0.3.0-rc.3`.
+take their version from `OPENSURGE_RELEASE_TAG`, defaulting to `v0.3.0`.
 
 Uninstall is a closed native capability with two fixed modes. Production execution
 requires the installed App identity/path and a root-owned, non-writable script and
@@ -333,12 +333,15 @@ roots with mocked system commands. It cannot establish host-network cleanup.
 
 ## Release identity
 
-The v0.3 candidates (Verdilion) originate from `Next`; publication
-uses `codex/release-v0.3.0` and does not imply a merge to `master`.
+The v0.3 series (Verdilion) is developed on `Next`; publication uses the existing
+`codex/release-v0.3.0` branch. For v0.3.0 stable, validate and publish the exact
+release commit first, synchronize `Next` to it, then merge `Next` into `master`
+through a merge-commit PR as requested by the maintainer. The published tag,
+release branch and resulting mainline must have the same source tree.
 `packaging/release-codenames.json` is the series-codename source for the current
 Web/desktop/tray UI, native bundle metadata and GitHub Release title. Unknown
 series display the version without inheriting a previous codename. The retained
-Swift host is the v0.2 maintenance reference and is not included in Next packages.
-`OPENSURGE_RELEASE_TAG` carries the full candidate tag; the macOS numeric bundle
+Swift host is the v0.2 maintenance reference and is not included in v0.3 packages.
+`OPENSURGE_RELEASE_TAG` carries the full stable or candidate tag; the macOS numeric bundle
 and package version remain `0.3.0`. Update discovery still accepts stable releases
-only, so RC-to-RC updates require a manual download.
+only: v0.3.0 is discoverable, while RC-to-RC updates require a manual download.

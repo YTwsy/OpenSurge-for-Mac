@@ -28,7 +28,7 @@
   subnet route、Exit Node 与 outbound-only 边界。
 - [GUI 控制面](concepts/gui-control-plane.md)：React Web GUI、Wails 桌面
   宿主、本地 API 与恢复状态的职责边界。
-- [桌面宿主迁移](concepts/desktop-host.md)：Next 分支的 Wails 宿主、React 界面复用、
+- [桌面宿主迁移](concepts/desktop-host.md)：v0.3 的 Wails 宿主、React 界面复用、
   独立后台服务与桌面生命周期契约。
 - [合盖运行临时接管](../sources/decisions/lid-closed-sleep-prevention.md)：为什么
   `caffeinate` 不满足合盖需求，以及 Helper lease、ownership marker 和恢复边界。
@@ -44,7 +44,7 @@ mihomo 提供代理行为，macOS pf/sysctl 提供 IPv4 NAT 和 forwarding。实
 下游 IPv6 通过 dnsmasq RA/SLAAC/RDNSS 或手工 ULA 接入，再由 macOS BPF broker
 与本项目补丁构建的 mihomo 用户态数据面接管。
 
-Next 面向操作者的主要控制面是 Wails 系统 WebView 内的 React 主窗口；菜单栏
+v0.3 面向操作者的主要控制面是 Wails 系统 WebView 内的 React 主窗口；菜单栏
 面板显示网关状态、恢复提醒并打开同一个主窗口。浏览器 Web GUI 继续受支持；loopback Control API 连接界面与 Go 业务规则，root Helper
 执行固定的特权动作。`omg` CLI 不再代表产品形态，但仍是受支持的运维、诊断、
 自动化和恢复接口。

@@ -1,7 +1,7 @@
 # Agent 指南
 
 OpenSurge for Mac 是一个开源的 Surge for Mac 风格 macOS 网关与控制面。
-Next 分支面向用户的入口是 Wails + 系统 WebView 桌面 App，复用 React 主界面与
+v0.3 面向用户的入口是 Wails + 系统 WebView 桌面 App，复用 React 主界面与
 菜单栏面板；浏览器 Web GUI 继续受支持。`omg`
 CLI 保留为运维、诊断、自动化和恢复接口。核心能力是全屋代理网关：Mac 为
 下游设备承担网关职责，并按拓扑提供 DHCP/DNS；mihomo 作为当前代理引擎，

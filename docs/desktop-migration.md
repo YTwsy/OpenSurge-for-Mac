@@ -1,5 +1,8 @@
 # Wails desktop migration
 
+This page records the v0.3 migration on `Next`. The Wails host ships in v0.3.0;
+remaining installation and platform checks are listed below.
+
 The `Next` integration branch starts at `origin/master` commit
 `72eaeb26485f3f9405b05de9fa74d006b637d103`, which contains release v0.2.4 through
 PR #55. Each migration increment starts from the current `origin/Next` on a
@@ -30,7 +33,7 @@ Wails executables. Default GUI build/test/package targets no longer use Swift.
 The local preview remains isolated. The main window also uses a spacious default
 and integrated native title bar.
 
-This is an integration-branch cutover, not a public release acceptance claim. Real
+Publishing v0.3.0 does not establish every platform acceptance result. Real
 PackageKit upgrade/uninstall, login-item continuity and administrator authorization
 must be verified on a disposable installation. macOS 13 and native Intel runtime
 acceptance remain outstanding. See [installer acceptance](desktop-installation.md).
@@ -47,7 +50,8 @@ acceptance remain outstanding. See [installer acceptance](desktop-installation.m
   [validation gates](agent-wiki/wiki/concepts/validation-gates.md). A desktop build
   or unit-test result must not be reported as host-network evidence.
 
-When the migration is ready for release, create a versioned release branch from a
-verified `Next` commit. Validate and publish from that release branch, verify the
-published artifacts, then PR that same release branch into `master`. Release fixes
-flow back to `Next` through PRs.
+For v0.3.0 stable, use the existing `codex/release-v0.3.0` branch. Validate and
+publish the exact release commit, then verify the published artifacts. Synchronize
+`Next` to that commit and merge `Next` into `master` through a merge-commit PR,
+following the maintainer's requested branch flow. The release tag and both branch
+heads must preserve the same source tree.

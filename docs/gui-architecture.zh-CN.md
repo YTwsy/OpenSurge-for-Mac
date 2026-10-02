@@ -1,6 +1,6 @@
 # Web GUI 与菜单栏 App
 
-Next 使用独立桌面主窗口与菜单栏面板，浏览器 Web GUI 继续受支持：
+v0.3 使用独立桌面主窗口与菜单栏面板，浏览器 Web GUI 继续受支持：
 
 - `cmd/opensurge-control` 是只监听 `127.0.0.1` 的 Go Control API，并嵌入
   `web/` 构建出的 React 应用；
@@ -111,14 +111,14 @@ Vitest 中的 fixture 只供自动化测试使用，不会被 `pnpm dev` 自动�
 
 登录项使用 `SMAppService.mainAppService`，返回真实 OS 状态，不自动注册。更新检查只访问
 官方 GitHub stable release API，保留手动检查与 24 小时自动检查；仅显式打开已验证下载页。
-原生宿主和前端显示同一个完整 release tag，包含 Next / RC 身份。
+原生宿主和前端显示同一个完整 release tag，包括正式版与 RC 身份。
 
 卸载仅对正式身份且位于 `/Applications/OpenSurge.app` 的 App 启用。宿主确认前后读取
 最新停止证据，检查固定 root-owned 脚本，选择保留数据或彻底删除并发起管理员授权。
 脚本再次验证 gateway 已停止。登录项在授权前停用，取消或失败时尝试恢复并报告结果。
 生产安装、授权和平台兼容性的未验证边界见 [桌面安装验收](desktop-installation.md)。
 
-旧 `apps/menubar/` 中的 Swift/AppKit 宿主保留供 v0.2.4 维护，已退出 Next 默认构建链路。
+旧 `apps/menubar/` 中的 Swift/AppKit 宿主保留供 v0.2.4 维护，已退出 v0.3 默认构建链路。
 
 Control API 默认位置是 `http://127.0.0.1:61767`。端点描述、token、来源快照、操作记录
 和局域网 DHCP 接管恢复状态位于：
@@ -342,7 +342,7 @@ DHCP、DNS 或 TUN 验收证据，不能显示成“已验收”。
 `/api/v1/menubar`，窗口打开时每 2 秒刷新，失败时指数退避到最多 60 秒，并根据 connecting、
 stopped、running、degraded、recovery、unreachable 显示状态。首次启动尚未取得状态时，
 connecting 使用 OpenSurge 品牌图标和等待符号；只有真实请求失败后才进入 unreachable。
-Next 通过图标旁的状态符号、tooltip 和面板文案表示状态，不依赖旧 Swift 的图标透明度。
+v0.3 通过图标旁的状态符号、tooltip 和面板文案表示状态，不依赖旧 Swift 的图标透明度。
 恢复警报优先于其他状态。
 网关明确处于 `stopped` 时显示“OpenSurge 网关已停止”；此时 runtime-oriented doctor
 未通过或存在待应用配置都不能把“未启动”误报成“运行异常”。
@@ -388,7 +388,7 @@ relocatable bundle，确保它固定安装到 `/Applications/OpenSurge.app`。
 
 升级到采用产品名 bundle 的版本时，postinstall 会在新 payload 已落盘后删除旧的
 `/Applications/OpenSurge Menu Bar.app`，避免 Launchpad 同时保留两个相同 bundle ID
-的入口；卸载脚本兼容清理新旧两个路径。Next 的内部 executable 改为
+的入口；卸载脚本兼容清理新旧两个路径。v0.3 的内部 executable 改为
 `OpenSurgeDesktop`，保持原 bundle ID `com.opensurge.menubar` 与 launchd labels。
 
 安装包包含 Web 静态资源（嵌入 control binary 与桌面宿主）、用户级 Control Service、桌面 App、
