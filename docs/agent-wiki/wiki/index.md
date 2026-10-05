@@ -15,7 +15,7 @@
 | 来源、草稿与引擎配置 | [配置合成](concepts/mihomo-profile-overlay.md) | [profile overlay 与准备态](../sources/decisions/mihomo-profile-overlay.md) |
 | 设备、匹配与出口 | [设备策略](concepts/device-policy-overlays.md) | [身份与编译](../sources/decisions/device-policy-overlays.md) |
 | 本机与下游作用域 | [本机流量](concepts/local-mac-routing-modes.md) | [本机模式契约](../sources/decisions/local-mac-routing-modes.md) |
-| 系统 DNS 与 host TUN | [DNS 协同](concepts/local-system-dns-coordination.md) | [DNS 所有权与路由](../sources/decisions/local-system-dns-coordination.md) |
+| 系统 DNS、网关解析与 fake IP | [DNS 协同](concepts/local-system-dns-coordination.md) | [DNS 所有权与路由](../sources/decisions/local-system-dns-coordination.md) / [引擎 DNS 配置](../sources/decisions/mihomo-profile-overlay.md#Imported-DNS-policy) |
 | 应用系统代理接入 | [系统代理协同](concepts/local-system-proxy-coordination.md) | [兼容层与恢复](../sources/decisions/local-system-proxy-coordination.md) |
 | Tailnet 与公网出口 | [Tailscale 出站](concepts/tailscale-outbound.md) | [身份、授权与 Exit Node](../sources/decisions/tailscale-outbound.md) |
 | 临时合盖运行 | — | [Helper lease 与睡眠所有权](../sources/decisions/lid-closed-sleep-prevention.md) |
