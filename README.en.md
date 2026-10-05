@@ -16,7 +16,7 @@
     <a href="https://opensurge.pages.dev/">Website</a> ·
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases">Download</a> ·
     <a href="https://opensurge.pages.dev/docs/">Documentation</a> ·
-    <a href="docs/app-user-guide.md">App guide</a> ·
+    <a href="docs/user/app-user-guide.md">App guide</a> ·
     <a href="#capabilities">Capabilities</a> ·
     <a href="#per-device-policies">Per-device policies</a> ·
     <a href="#web-gui-and-menu-bar-app">Web GUI</a> ·
@@ -105,9 +105,9 @@ into the next engineering loop.
 - Follow a recovery state machine through same-LAN DHCP takeover startup,
   client validation, shutdown, and network restoration.
 
-Start with the [OpenSurge for Mac App User Guide](docs/app-user-guide.md). For
+Start with the [OpenSurge for Mac App User Guide](docs/user/app-user-guide.md). For
 common local-network, TUN, and device configuration questions, see the
-[FAQ](docs/faq.md).
+[FAQ](docs/user/faq.md).
 
 **Gateway and proxying**
 
@@ -167,13 +167,13 @@ dedicated device selector before global rules. It also supports direct
 device-specific actions such as `REJECT` and domain/IP/protocol/port/rule-provider
 overlays. Local/private destinations remain direct in dedicated mode. The
 local-Mac Rule / Global / Direct switch does not change those downstream rules;
-see [local Mac routing modes](docs/local-mac-routing.md).
+see [local Mac routing modes](docs/user/local-mac-routing.md).
 
 The Web GUI rule library manages rule sets, outlet-free routing templates, and
 the per-device outlet selected after a match as separate concepts. It includes
 an inspectable community Claude Code example, but does not apply that example
 to any device by default. Operators supply all other policy content; the empty
-starter file remains valid. See [per-device policy overlays](docs/device-policy.md)
+starter file remains valid. See [per-device policy overlays](docs/user/device-policy.md)
 for the JSON model, precedence, CLI commands, and validation boundary.
 
 ### Tailscale outbound
@@ -213,12 +213,12 @@ act as a subnet router, or expose inbound services through the managed node.
 ## Web GUI and menu bar app
 
 If you installed OpenSurge from a package, start with the
-[OpenSurge for Mac App User Guide](docs/app-user-guide.md).
+[OpenSurge for Mac App User Guide](docs/user/app-user-guide.md).
 
 Starting with v0.3.0, the PKG uses a Wails + system WebView desktop app with the shared
 React main window and tray panel. The independent loopback Control API and browser UI
 remain supported. The v0.2.4 Swift host is retained for historical maintenance; see the
-[installer acceptance boundaries](docs/desktop-installation.md). For a development build:
+[installer acceptance boundaries](docs/agent-wiki/sources/validation/evidence-map.md#桌面与安装). For a development build:
 
 ```sh
 make web-install
@@ -244,8 +244,9 @@ The Web GUI includes a native connectivity page for the applied configuration
 plus current local-Mac mode and links to Net.Coffee for a separate browser-local
 check. Neither result is presented as proof of downstream gateway rules or a
 device's DHCP/DNS/TUN path.
-See the [GUI architecture notes](docs/gui-architecture.zh-CN.md) for the current
-security and packaging boundary.
+See [development](docs/agent-wiki/sources/development.md) for local builds,
+[Control API](docs/agent-wiki/sources/control-api.md) for authentication and permissions,
+and [distribution](docs/agent-wiki/sources/distribution.md) for installation and uninstall.
 
 `make gui-installer` builds a macOS package after requiring real mihomo and
 dnsmasq binaries. Developer ID signing and notarization are opt-in through the
@@ -429,7 +430,7 @@ go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.examp
 
 These commands are intended for development, automation, and diagnostics.
 Package users can follow the graphical workflow in the
-[App User Guide](docs/app-user-guide.md).
+[App User Guide](docs/user/app-user-guide.md).
 
 ### Status and diagnostics
 
@@ -579,7 +580,7 @@ The verification layers are complementary:
 
 Virtual Lab results do not stand in for real-device behavior, and one physical
 smoke does not replace the deterministic Lab gates. See the
-[validation contract](docs/agent-wiki/wiki/concepts/validation-gates.md) for the
+[validation contract](docs/agent-wiki/sources/validation/test-gates.md) for the
 exact claim each gate is allowed to support.
 
 ### Agent Wiki: externalized project memory
@@ -588,16 +589,23 @@ The [Agent Wiki](docs/agent-wiki/wiki/index.md) applies the LLM Wiki idea of
 moving durable memory out of a transient context window and into a small,
 versioned, source-backed knowledge layer:
 
-- `docs/agent-wiki/sources/` records stable project briefs, decisions, and
-  validation contracts.
-- `docs/agent-wiki/wiki/` distills those sources into short, linked pages that
-  an agent can load progressively for the task at hand.
+- `docs/agent-wiki/sources/` maintains project specifications, domain contracts,
+  validation methods and scoped evidence.
+- `docs/agent-wiki/wiki/concepts/` explains concepts, relationships and responsibilities
+  with short text and optional diagrams, linking to the relevant sources. Known
+  questions can go directly to a source or code.
+- `docs/user/` collects operator-facing installation, configuration and usage guides.
 - `.codex/hooks.json` integrates the local Session Wiki hook, when installed,
   so session continuity and compaction can use project-local memory without
   committing private session state.
 
-Only reusable, verified knowledge belongs in this layer. One-off logs,
-temporary output, unverified guesses, and ordinary TODOs do not.
+Current contracts, validation methods and historical results state their own scope.
+Earlier records do not establish acceptance of the current checkout. Full one-off
+logs, temporary ideas and ordinary TODOs stay with the current work context.
+Existing completed tasks and execution reports move to
+`docs/agent-wiki/tasks/finished_archived/`, excluded from default searches by `.ignore`.
+Validation sources maintain reusable methods and necessary evidence summaries,
+without adding a page for each test run.
 
 ## License
 

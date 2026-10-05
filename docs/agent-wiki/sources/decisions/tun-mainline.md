@@ -1,34 +1,84 @@
----
-title: TUN is the macOS transparent proxy mainline
-kind: decision
-status: accepted
----
-
 # TUN 是 macOS 透明代理主线
 
-TUN 是 OpenSurge for Mac 在 macOS 上受支持的透明代理路径。
+本页维护支持路径、退役路径、TUN readiness 与冲突诊断；来源为 `internal/config/validator.go`、`internal/mihomo/` 和 `internal/gateway/manager.go`。
 
-该决策覆盖 IPv4 下游和 Mac 本机透明代理。三种受支持拓扑的下游 IPv6 packet ingress
-使用 BPF + patched Mihomo `opensurge-packet`/gVisor 保留物理 source MAC，但仍要求
-整体 `transparent.mode: "tun"`，且不得据此重新启用 redir/PF TCP redirect。
+TUN 是 OpenSurge for Mac 在 macOS 上受支持的透明代理路径。透明代理应通过
+以下配置启用：
 
-项目曾评估 `mihomo.redir_port` 加 PF TCP redirection 的路线，但这条路线现在
-明确 inactive。当前 Darwin mihomo build 在运行时报告 redir 不受支持，因此
-仓库把 PF TCP redirection 视为已退役的透明代理实现路径。
+```yaml
+transparent:
+  mode: "tun"
+```
 
-## 影响
+这里的决策仍约束 IPv4 下游流量与 Mac 本机透明代理。三种受支持拓扑的实验性下游
+IPv6 在物理 Ethernet ingress 使用 BPF → Unix sideband → patched Mihomo
+`opensurge-packet`/gVisor，以保留 source MAC；它不会重新启用 redir/PF redirect，
+也不改变 `transparent.mode: "tun"` 作为整体网关前置条件。详见
+[下游 IPv6 接管](downstream-ipv6-takeover.md)。
 
-- `transparent.mode: "tun"` 是受支持的透明代理模式。
-- `mihomo.redir_port` 必须保持 `0`。
-- `pf.redirect_tcp_to` 必须保持 `0`。
-- `internal/mihomo/config.go` 不应重新启用 `redir-port` 路径。
-- `internal/pf/template.go` 不应重新输出 `rdr pass` TCP redirect 规则。
-- 当用户尝试启用已退役旋钮时，配置验证应指向
-  `transparent.mode: "tun"`。
-- 透明代理相关变更应通过 `make lab-test-tun` 验证。
+旧的 redir/PF redirect 路线不是当前 active implementation path：
+
+```yaml
+mihomo:
+  redir_port: 0
+pf:
+  redirect_tcp_to: 0
+```
+
+## 为什么是 TUN
+
+当前 Darwin mihomo build 在运行时报告 redir 不受支持。OpenSurge for Mac 需要
+可靠的全屋代理路径，因此项目使用 mihomo TUN 承担透明路由，而不是依赖 inactive
+的 `redir-port` 加 PF TCP redirection 行为。
+
+## 实现期望
+
+- `internal/config/validator.go` 拒绝非零 `mihomo.redir_port`。
+- `internal/config/validator.go` 拒绝非零 `pf.redirect_tcp_to`。
+- `internal/mihomo/config.go` 应保持旧 redir 路径 inactive。
+- `internal/pf/template.go` 不应重新引入 `rdr pass` TCP redirect 规则。
+- 文档应把 TUN 描述为受支持路径，不要描述成候选或实验路线。
+
+## 启动 readiness 与其他 TUN
+
+存在 `utun` 接口本身不是冲突证据。普通 split-route VPN、Tailscale 非 Exit Node
+路径和系统组件都可能保留或创建 utun。macOS 也无法可靠证明 utun 的进程所有权，
+因此不要在 start、reload、`restart-mihomo` 或 DHCP 接管计划中根据现有公网路由
+猜测冲突。真实启动由下面的 readiness fail closed；只有 mihomo 实际报告添加路由
+失败后，才查询该目标的当前接口/网关并补充诊断。
+
+mihomo REST API 可以先于 TUN 初始化对外响应，因此 `/version` 成功不代表透明
+路径已经就绪。启动流程必须在有限时间内等待运行时 `/configs` 报告
+`tun.enable: true`，自动路由开启时还检查 DNS 捕获、fake IPv4/IPv6 与公网 IPv6
+目标实际选择该 TUN，同时识别 `Start TUN listening error`。当前启动预算是 10 秒；
+失败时先给新进程 3 秒 SIGTERM 清理窗口，再按需 SIGKILL，并进入 gateway
+rollback。运行中的 status/overview 每次只读取一次轻量运行时状态；若 `/configs`
+暂时不可读，TUN 显示 `unknown` 并附带 warning，但不能据此把仍运行的网关改成
+`degraded`。只有明确读取到 `tun.enable: false` 才是失败信号。不要增加独立后台
+watchdog，也不要在状态热路径反复执行 route/scutil 扫描。
+
+`tun.enable: false` 的失败语义已经针对项目固定的 mihomo v1.19.30 验证。升级
+mihomo 时必须重新核对失败后的 `/configs` 行为并跑真实 TUN Lab，不能把这个语义
+当作所有历史版本都具备的通用契约。
+
+当前默认不支持与另一个全局 TUN 同时占有公网路由。DNS resolver 状态与 TUN 路由
+所有权是不同信号；不要因为出现 utun scoped/supplemental resolver 就判定 TUN
+冲突。
+
+Mac 系统 DNS 默认随自动 TUN 路由接管并恢复；Mac IPv6 TUN 独立于下游 IPv6。
+具体所有权、私有解析与路由契约见 [Mac 系统 DNS 与 IPv6 TUN](local-system-dns-coordination.md)。
+
+SafeDNS、DNS Proxy、内容过滤等 Network Extension 可能让 TUN 已 ready，但部分本机
+应用的 DNS/访问路径仍异常。`local_system_proxy.enabled` 提供默认关闭的 HTTP/HTTPS
+系统代理协同，只作为 TUN 兼容层；它不能成为绕过 TUN readiness 的替代路径。生命周期、
+冲突检查与恢复契约见 [Mac 本机系统代理协同](local-system-proxy-coordination.md)。
 
 ## 重新打开条件
 
 只有当 macOS-compatible mihomo redir 支持真实存在、可测试，并且相对 TUN 有
 明确产品理由时，才重新打开这个决策。重新打开需要同时改代码、文档和 lab
 覆盖。
+
+## 验证入口
+
+透明代理、导入 profile 与受控出口切换分别使用 [TUN 验证门槛](../validation/test-gates.md#透明代理门槛)。

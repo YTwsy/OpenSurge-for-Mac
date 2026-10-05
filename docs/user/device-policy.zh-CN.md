@@ -16,7 +16,7 @@ device_policy:
   file: "./devices.json"
 ```
 
-空的 [starter 文件](../examples/device-policy.example.json) 合法，尚未登记设备时不会生成设备专属路由。
+空的 [starter 文件](../../examples/device-policy.example.json) 合法，尚未登记设备时不会生成设备专属路由。
 路径相对于 gateway 配置文件解析。设备 IPv4 必须唯一；位于当前网关网段内的地址
 不能是网段地址、广播地址或 `gateway.lan_ip`。网段由 `gateway.lan_ip` 与
 `gateway.lan_prefix_len` 决定（省略时按 /24）。不在当前网段的登记会休眠而不是

@@ -14,7 +14,7 @@ policy data. Network configuration saves also keep policies enabled. Register
 devices and configure their egress directly on the Devices page.
 
 For a standalone CLI configuration, point `device_policy.file` at a JSON document.
-The empty [starter document](../examples/device-policy.example.json) is valid;
+The empty [starter document](../../examples/device-policy.example.json) is valid;
 it generates no device-specific routes until devices are registered.
 
 ```yaml

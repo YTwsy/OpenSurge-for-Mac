@@ -28,9 +28,8 @@ a remote global egress is selected.
 OpenSurge constrains both the **inbound type** and the **source address**:
 
 - TUN connections whose mihomo local-TUN source identity is `198.18.0.1`;
-- on the `DEFAULT-TUN` inbound, the exact fake-IPv6 local identity
-  `fdfe:dcba:9876::1/128` when AAAA is enabled but IPv6 TUN is inactive, or the
-  exact host-TUN identity `fdfe:dcba:9877::1/128` when IPv6 TUN is effective;
+- IPv6 connections on the `DEFAULT-TUN` inbound with the exact host-TUN
+  source identity `fdfe:dcba:9877::1/128`;
 - explicit mixed-port connections from `127.0.0.0/8` or the gateway Mac's LAN
   IPv4 address.
 
@@ -45,15 +44,13 @@ they continue into device overrides and the imported/managed gateway rules.
 IPv6 is set to `auto` and remains inactive because no native upstream IPv6 is
 available, enabling AAAA responses still makes mihomo DNS return fake IPv6
 addresses from `fdfe:dcba:9876::/64`. Some applications prefer those answers.
-When IPv6 TUN is inactive, the corresponding `fdfe:dcba:9876::1/128`
-system-TUN source identity is sent through `open-surge/mac-mode-*`, so AAAA
-does not need to be disabled merely to make local Direct mode effective. When
-IPv6 TUN is effective, mihomo's explicit `fdfe:dcba:9877::1/128` host-TUN
-identity replaces it and uses the same mode.
+These fake IPv6 answers are destination addresses. Local traffic uses the fixed
+system-TUN source identity `fdfe:dcba:9877::1/128`, independently of the AAAA
+and downstream IPv6 settings. AAAA therefore does not need to be disabled merely
+to make local Direct mode effective.
 
-Both IPv6 alternatives additionally require `IN-NAME,DEFAULT-TUN`; only the
-effective identity is generated. They do not match the whole fake-IP `/64`,
-downstream `fdfe:dcba:9878::/64`, or the
+The IPv6 rule also requires `IN-NAME,DEFAULT-TUN`. It does not match the whole
+fake-IP `/64`, downstream `fdfe:dcba:9878::/64`, or the
 `opensurge-ipv6` listener. Reload the gateway after upgrading to a version with
 this support so it generates the new rules. Mode switches still affect only
 new connections; refresh or let applications recreate existing connections.

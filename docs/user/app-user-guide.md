@@ -7,10 +7,10 @@ covers installation, proxy configuration, gateway startup, and safe network
 recovery. CLI and development workflows are intentionally left out.
 
 Desktop instructions here describe v0.3.0 and later. The v0.2.4 release uses the
-legacy Swift menu bar host; see [installer acceptance](desktop-installation.md) for the
+legacy Swift menu bar host; see [installer acceptance](../agent-wiki/sources/validation/evidence-map.md#桌面与安装) for the
 verified scope and outstanding platform checks.
 
-![OpenSurge for Mac dashboard](images/opensurge-dashboard.png)
+![OpenSurge for Mac dashboard](../images/opensurge-dashboard.png)
 
 ## Install and open the app
 

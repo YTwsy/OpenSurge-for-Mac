@@ -24,9 +24,8 @@ selector 或 DHCP/DNS 配置。
 OpenSurge 同时约束 **入口类型** 和 **源地址**：
 
 - TUN 入口中源地址为 mihomo 本机 TUN 身份 `198.18.0.1` 的连接；
-- `DEFAULT-TUN` 入口中，开启 AAAA、但 IPv6 TUN 未启用时精确匹配 fake-IPv6 本机
-  身份 `fdfe:dcba:9876::1/128`；实际启用 IPv6 TUN 时改为精确匹配
-  `fdfe:dcba:9877::1/128`；
+- `DEFAULT-TUN` 入口中，源地址精确为本机 host-TUN 身份
+  `fdfe:dcba:9877::1/128` 的 IPv6 连接；
 - 从 `127.0.0.0/8` 或网关 Mac LAN IPv4 进入 mihomo mixed-port 的本机显式代理连接。
 
 下游 IPv4 连接使用自己的 LAN IPv4；下游 IPv6 则从独立的 `opensurge-ipv6` packet
@@ -38,13 +37,11 @@ listener 进入，携带设备 `IN-USER`，源地址位于 `fdfe:dcba:9878::/64`
 `dns.ipv6` 与 `transparent.tun_ipv6` 相互独立。即使“何时为下游启用 IPv6”设为
 `auto` 且因没有原生上游 IPv6 而未实际启用下游 IPv6，开启“允许 AAAA 查询”仍会让
 mihomo DNS 返回 `fdfe:dcba:9876::/64` 中的 fake IPv6。一些应用会优先使用这类 AAAA。
-IPv6 TUN 未启用时，本机模式会把对应的 `fdfe:dcba:9876::1/128` 系统 TUN 源身份送入
-`open-surge/mac-mode-*`，因此不需要为了让本机直连生效而关闭 AAAA。若 IPv6 TUN
-实际启用，mihomo 会用显式配置的 `fdfe:dcba:9877::1/128` 取代前者，本机模式也随之
-匹配这个身份。
+fake IPv6 是 DNS 返回的目标地址；本机流量的系统 TUN 源身份固定使用
+`fdfe:dcba:9877::1/128`，不会随 AAAA 或下游 IPv6 开关切换。因此不需要为了让本机
+直连生效而关闭 AAAA。
 
-这两种 IPv6 规则都额外要求 `IN-NAME,DEFAULT-TUN`，且不会同时生成或匹配整个
-fake-IP `/64`、
+这条 IPv6 规则同时要求 `IN-NAME,DEFAULT-TUN`，不会匹配整个 fake-IP `/64`、
 下游 `fdfe:dcba:9878::/64` 或 `opensurge-ipv6` listener。升级到包含此支持的版本后需要
 重载网关以生成新规则；模式切换仍只影响新连接，已有连接需刷新或由应用重新建立。
 

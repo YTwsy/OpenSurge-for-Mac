@@ -1,6 +1,6 @@
-# Decision: local system-proxy coordination is an opt-in TUN compatibility layer
+# Mac 本机系统代理协同契约
 
-Status: accepted
+本页维护默认关闭的 HTTP/HTTPS 兼容层、冲突检查与快照恢复规则。
 
 OpenSurge may coordinate the gateway Mac's HTTP and HTTPS system-proxy settings
 only when `local_system_proxy.enabled: true` and `transparent.mode: "tun"`.
@@ -33,8 +33,6 @@ rollback. HTTP/HTTPS changes made while the takeover was active are therefore
 replaced by that snapshot. A restore failure still fails closed and keeps
 runtime state retryable.
 
-Command-level tests can prove parsing, write scope, ordering, rollback, and
-state retention. Existing TUN labs with the setting disabled prove regression
-coverage only. Product-level resolution of a Network Extension conflict still
-requires a real Mac test with the conflicting extension active, plus start,
-traffic, stop, and settings-restoration evidence.
+## 验证入口
+
+命令级测试覆盖解析、写入范围、顺序、回滚和 state 保留。真实 Network Extension 冲突的兼容验收见 [透明代理门槛](../validation/test-gates.md#透明代理门槛)；关闭兼容层的 TUN Lab 仅证明回归范围。

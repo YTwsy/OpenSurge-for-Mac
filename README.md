@@ -16,7 +16,7 @@
     <a href="https://opensurge.pages.dev/zh-cn/">官网</a> ·
     <a href="https://github.com/YTwsy/OpenSurge-for-Mac/releases">下载</a> ·
     <a href="https://opensurge.pages.dev/zh-cn/docs/">使用文档</a> ·
-    <a href="docs/app-user-guide.zh-CN.md">App 指南</a> ·
+    <a href="docs/user/app-user-guide.zh-CN.md">App 指南</a> ·
     <a href="#能力">能力</a> ·
     <a href="#每设备策略">每设备策略</a> ·
     <a href="#web-gui-与菜单栏-app">Web GUI</a> ·
@@ -91,8 +91,8 @@ macOS BPF packet broker 和本项目补丁构建的 mihomo 用户态数据面共
 - 在一个控制面中完成订阅导入、网络设置、设备分流、节点健康、连通性检查与诊断；
 - 使用恢复状态机引导局域网 DHCP 接管的启动、客户端验收、停止和网络恢复。
 
-第一次使用请参阅 [OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)。遇到常见
-网络、TUN 或设备配置问题时，请参阅 [常见问题](docs/faq.zh-CN.md)。
+第一次使用请参阅 [OpenSurge for Mac App 使用指南](docs/user/app-user-guide.zh-CN.md)。遇到常见
+网络、TUN 或设备配置问题时，请参阅 [常见问题](docs/user/faq.zh-CN.md)。
 
 **网关与代理**
 
@@ -143,12 +143,12 @@ macOS BPF packet broker 和本项目补丁构建的 mihomo 用户态数据面共
 全局规则之前走设备专属 selector；它也支持 `REJECT` 这类设备专属动作，以及按
 域名/IP/协议/端口/rule-provider 叠加的规则覆盖。dedicated 模式下，本地/私有目标
 保持直连。Mac 本机的规则 / 全局 / 直连开关不改变这些下游规则；详见
-[Mac 本机流量模式](docs/local-mac-routing.zh-CN.md)。
+[Mac 本机流量模式](docs/user/local-mac-routing.zh-CN.md)。
 
 Web GUI 的规则库把规则集、不带出口的分流模版和每台设备的命中出口分开管理。
 其中提供一份可查看的 Claude Code 社区规则示例，但不会默认应用到任何设备；其他策略内容由操作者提供，空 starter
 文件也是合法配置。JSON 模型、优先级、CLI 命令和验证边界见
-[每设备策略覆盖](docs/device-policy.zh-CN.md)。
+[每设备策略覆盖](docs/user/device-policy.zh-CN.md)。
 
 ### Tailscale 出站
 
@@ -187,11 +187,11 @@ Tailnet 访问和 Exit Node 是两种不同角色：
 ## Web GUI 与菜单栏 App
 
 通过安装包使用 OpenSurge 时，请从
-[OpenSurge for Mac App 使用指南](docs/app-user-guide.zh-CN.md)开始。
+[OpenSurge for Mac App 使用指南](docs/user/app-user-guide.zh-CN.md)开始。
 
 从 v0.3.0 起，安装包使用 Wails + 系统 WebView 桌面 App：React 主窗口与菜单栏面板共享
 现有 Control API，浏览器入口继续可用。v0.2.4 的旧 Swift 宿主保留为历史维护参考；验收边界见
-[桌面安装验收](docs/desktop-installation.md)。开发构建：
+[桌面安装验收](docs/agent-wiki/sources/validation/evidence-map.md#桌面与安装)。开发构建：
 
 ```sh
 make web-install
@@ -207,7 +207,8 @@ App”和“退出 OpenSurge”：后者只在网关数据面已经停止时退�
 Control Service；系统 launchd 托管的 root Helper 保持空闲加载，下次打开无需再次授权。
 菜单栏还提供独立的“卸载 OpenSurge”入口：只要网关已经停止即可通过 macOS 管理员授权
 移除 App、Control Service 与 root Helper，并可选择保留配置数据供以后重新安装或彻底删除。
-架构、安全边界与构建说明见 [Web GUI 与菜单栏 App](docs/gui-architecture.zh-CN.md)。
+本地调试与构建见 [开发说明](docs/agent-wiki/sources/development.md)，认证与权限见
+[Control API](docs/agent-wiki/sources/control-api.md)，安装与卸载见 [分发契约](docs/agent-wiki/sources/distribution.md)。
 Web GUI 内置 applied 配置 + 当前 Mac 本机模式的连通性页面，并提供 Net.Coffee 的
 独立浏览器本机检测入口；两者都不会被描述成下游设备网关规则或 DHCP/DNS/TUN 路径
 已经验收。
@@ -363,7 +364,7 @@ go run ./cmd/omg validate-mihomo --config examples/config.imported-profile.examp
 ## CLI 使用方式
 
 下面的命令适合开发、自动化和诊断。普通安装包用户可以直接使用
-[App 使用指南](docs/app-user-guide.zh-CN.md)中的图形界面流程。
+[App 使用指南](docs/user/app-user-guide.zh-CN.md)中的图形界面流程。
 
 ### 状态与诊断
 
@@ -507,21 +508,24 @@ ADB 辅助或人工真实设备验证
 
 Virtual Lab 不能替代真实设备行为，一次真机 smoke 也不能替代确定性的 Lab gate。
 每个门槛究竟允许支持什么结论，见
-[验证契约](docs/agent-wiki/wiki/concepts/validation-gates.md)。
+[验证契约](docs/agent-wiki/sources/validation/test-gates.md)。
 
 ### Agent Wiki：外置的项目记忆
 
 [Agent Wiki](docs/agent-wiki/wiki/index.md) 融入了 LLM Wiki 思想：把可复用的长期记忆
 从短暂的上下文窗口移到小型、版本化、带来源的知识层中。
 
-- `docs/agent-wiki/sources/` 保存稳定的项目简报、决策与验证契约。
-- `docs/agent-wiki/wiki/` 把来源材料整理成短小、互相链接的页面，让 Agent 按任务
-  渐进加载。
+- `docs/agent-wiki/sources/` 维护项目规范、领域契约、验证方法与有范围的证据。
+- `docs/agent-wiki/wiki/concepts/` 用短说明和必要的结构图解释概念、关系与职责边界，
+  并指向具体来源；已知问题可直接进入 source 或代码。
+- `docs/user/` 集中面向操作者的安装、配置和使用指南。
 - `.codex/hooks.json` 在本机安装 Session Wiki hook 后，把 session 延续与 compaction
   接入项目本地记忆，同时不把私有 session 状态提交到仓库。
 
-这个知识层只收录可复用、已经验证的内容；一次性日志、临时输出、未经验证的猜测和
-普通 TODO 不进入 Agent Wiki。
+当前规则、验证方法与历史结果分别注明职责和范围；已有记录不自动成为当前版本的验收。
+一次性完整日志、临时想法和普通 TODO 保留在当前工作上下文。
+已有任务和单次报告结束后归档到 `docs/agent-wiki/tasks/finished_archived/`，默认检索由
+`.ignore` 隔离；验证来源只维护方法和必要的证据摘要，不为每次测试增加页面。
 
 ## 许可证
 

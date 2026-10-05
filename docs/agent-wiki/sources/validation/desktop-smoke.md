@@ -1,5 +1,7 @@
 # Native desktop acceptance
 
+This page owns repeatable native fixture procedures, not a record of a completed run. Host behavior lives in [the desktop contract](../decisions/desktop-host.md); installed checks are listed under [installation acceptance](#安装验收). Known results and gaps live in [the evidence map](evidence-map.md#桌面与安装).
+
 Build with `make web-build desktop-test desktop-build`. The preview bundle is
 `bin/OpenSurge Desktop Preview.app`; it has a separate identity from the installed
 production app. The shared frontend defaults to the stable release, `v0.3.0`;
@@ -237,3 +239,32 @@ installed script, ask for administrator privileges or delete any installed data.
 The minimum target is macOS 13. Native acceptance on macOS 14 alone must not be
 reported as a macOS 13 runtime test. Installer upgrade and real gateway/network
 acceptance remain separate gates.
+
+## 安装验收
+
+本节维护可复用的检查层级和通过标准，适用于安装、升级、登录项、退出与卸载变更。实际运行结果进入提交/PR 或任务记录；当前已知范围由 [证据入口](evidence-map.md#桌面与安装) 维护。安装行为见 [分发契约](../distribution.md)。
+
+| 门槛 | 能证明什么 | 不能证明什么 |
+| --- | --- | --- |
+| `make test` / `make web-test web-build` / `make desktop-test` | Go、React、桌面认证与能力边界回归 | 真实网络、安装或 macOS 版本兼容性 |
+| `check-gui-packaging.sh` | 生产宿主选择、进程匹配、脚本顺序、数据保留与卸载范围 | 真实 launchd / PackageKit / 管理员授权 |
+| 两架构 App / PKG 构建和解包验证 | arm64 / x86_64 payload 与 macOS 13 编译目标 | Intel 硬件或 macOS 13 的实际运行 |
+| 目标 macOS / 架构上的原生 fixture | WebView、窗口、标题栏、菜单、固定能力交互、TERM 退出 | 实际安装位置的身份门禁与 root 操作 |
+
+`tests/packaging/test_installer.py` 仅在自己的临时目录运行脚本副本，将硬编码安装路径
+重定位，并用假系统命令代替 launchd、权限变更、睡眠设置与 receipt 操作。它覆盖首次
+seed、升级保留、恢复阻断、失败停止，以及保留数据 / 彻底卸载。该门槛不触碰已安装 App。
+
+在可恢复的测试安装中按受影响范围检查：
+
+1. 从 Swift v0.2.4 升级及重复安装 Wails 包；确认单一 App、无旧进程/重复图标、数据保留。
+2. 升级前分别设置登录项开启和关闭；升级后读取实际状态、重登录，确认不会意外启用或丢失。
+3. 完整退出后重开 App，确认只唤醒 Control Service，网关保持停止。
+4. 管理员授权取消、卸载保留数据后重装、彻底卸载；核对 LaunchAgent、Helper、receipt 和文件。
+5. macOS 13 及 Intel 原生 GUI：系统 WebView、主窗口、物理菜单栏点击、登录项、退出与卸载。
+6. 如果要宣称真实升级网络清理已验证，按 [validation gates](test-gates.md)
+   执行相关 Lab 门槛，完成清理；fixture、截图和打包成功不代替这些证据。
+
+### 独立登录项桥接门槛
+
+`python3 tests/desktop/test_login_item.py` 在临时 App 身份中验证真实 ServiceManagement 桥接与两份 ad-hoc 签名间的显式恢复，并注销测试身份。它不证明安装包迁移或真实 logout/login 后的启动。交互步骤见 [desktop smoke](desktop-smoke.md#Unified-Settings)。
