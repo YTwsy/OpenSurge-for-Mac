@@ -1,8 +1,7 @@
 import { useId } from 'react'
 import type { TrafficHistoryPoint } from '../types'
 import { formatRate } from '../trafficFormat'
-import { buildSmoothChart } from '../trafficChart'
-import { useAnimatedTrafficSeries } from '../hooks/useAnimatedTrafficSeries'
+import { buildSmoothChart, trafficChartMaximum } from '../trafficChart'
 import { t } from '../i18n'
 
 type LiveRateCardProps = {
@@ -14,13 +13,11 @@ type LiveRateCardProps = {
 export function LiveRateCard({ direction, history, value }: LiveRateCardProps) {
   const gradientID = useId().replace(/:/g, '')
   const label = t(direction === 'upload' ? '上传' : '下载')
-  const target = history.map(point => ({ upload: point.upload, download: point.download }))
-  if (target.length === 0) target.push({ upload: 0, download: 0 })
-  target[target.length - 1] = { ...target[target.length - 1], [direction]: value }
-  const animated = useAnimatedTrafficSeries(target, `${direction}:${history.at(-1)?.sampled_at ?? 'empty'}:${value}`)
-  const values = animated.map(point => point[direction])
-  const chartMaximum = Math.max(...values, 0)
-  const peak = Math.max(...target.map(point => point[direction]), value, 0)
+  const values = history.map(point => point[direction])
+  if (values.length === 0) values.push(value)
+  else values[values.length - 1] = value
+  const chartMaximum = trafficChartMaximum(values)
+  const peak = Math.max(...values, value, 0)
   const { amount, unit } = rateParts(value)
   const chart = buildSmoothChart(values, chartMaximum, 7, 35)
   return <article className={`live-rate-card ${direction}`} aria-label={t('{{direction}}当前速度 {{rate}}', { direction: label, rate: formatRate(value) })}>

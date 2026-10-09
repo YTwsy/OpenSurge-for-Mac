@@ -453,6 +453,7 @@ export const englishMessages: Record<string, string> = {
   '向右浏览策略组': 'Browse policy groups to the right',
   '实时': 'Live',
   '{{title}}最近 60 秒上传下载趋势': '{{title}} upload and download trend over the last 60 seconds',
+  '纵轴范围：0–{{rate}}': 'Y-axis range: 0–{{rate}}',
   '等待采样': 'Waiting for samples',
   '近 60 秒': 'Last 60 seconds',
   '现在': 'Now',

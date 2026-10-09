@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { buildSmoothChart } from './trafficChart'
+import { buildSmoothChart, trafficChartMaximum } from './trafficChart'
+
+describe('trafficChartMaximum', () => {
+  it('holds small fluctuations in readable ranges without clipping new peaks', () => {
+    expect(trafficChartMaximum([8_001, 9_999])).toBe(10_000)
+    expect(trafficChartMaximum([10_001])).toBe(20_000)
+    expect(trafficChartMaximum([20_001])).toBe(50_000)
+    expect(trafficChartMaximum([850_000, 1_000_000])).toBe(1_000_000)
+    expect(trafficChartMaximum([0, 0])).toBe(1)
+    expect(trafficChartMaximum([])).toBe(1)
+  })
+})
 
 describe('buildSmoothChart', () => {
   it('builds a bounded cubic curve and a closed area', () => {
