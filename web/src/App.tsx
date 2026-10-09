@@ -4,6 +4,7 @@ import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from 
 import { watchVisibleRefresh } from './visibility'
 import { useTheme } from './hooks/useTheme'
 import { useInterfaceLanguage } from './hooks/useInterfaceLanguage'
+import { DeviceTrafficProvider } from './hooks/useDeviceTraffic'
 import './styles.css'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
 import { ConnectionRefreshPrompts, queueConnectionRefreshSuggestion, type ConnectionRefreshSuggestion, type ConnectionRefreshSuggestionItem } from './components/ConnectionRefreshPrompts'
@@ -308,16 +309,18 @@ export function App() {
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>{t('Web GUI 与 OpenSurge 的安全连接已过期')}</h1><p>{t('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。')}</p></div></section> : <>
         {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network', 'control')} />}
         {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>{t('重试')}</button></div>}
-        <PageErrorBoundary key={page}>
-          {page === 'dashboard' && <DashboardPage overview={overview} onOpenConnections={openConnections} onOpenNetwork={action => go('network', action === 'cleanup' ? 'control' : action === 'stop' ? 'bottom' : 'none')} />}
-          {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} />}
-          {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} />}
-          {page === 'devices' && <DevicesPage overview={overview} onOpenConnections={openConnections} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} onSuggestConnectionRefresh={suggestConnectionRefresh} />}
-          {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} onSuggestConnectionRefresh={suggestConnectionRefresh} viewState={policiesViewState} onViewStateChange={updatePoliciesViewState} restoreScrollY={policiesScrollPosition.current} onScrollPositionChange={updatePoliciesScrollPosition} />}
-          {page === 'connections' && <ConnectionsPage overview={overview} view={connectionsView} onViewChange={changeConnectionsView} restoreScrollY={connectionsScroll.current} />}
-          {page === 'connectivity' && <ConnectivityPage overview={overview} onChanged={refresh} />}
-          {page === 'diagnostics' && <DiagnosticsPage overview={overview} onOpenConnections={openConnections} />}
-        </PageErrorBoundary>
+        <DeviceTrafficProvider gateway={overview?.status.gateway}>
+          <PageErrorBoundary key={page}>
+            {page === 'dashboard' && <DashboardPage overview={overview} onOpenConnections={openConnections} onOpenNetwork={action => go('network', action === 'cleanup' ? 'control' : action === 'stop' ? 'bottom' : 'none')} />}
+            {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} />}
+            {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} />}
+            {page === 'devices' && <DevicesPage overview={overview} onOpenConnections={openConnections} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} onSuggestConnectionRefresh={suggestConnectionRefresh} />}
+            {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} onSuggestConnectionRefresh={suggestConnectionRefresh} viewState={policiesViewState} onViewStateChange={updatePoliciesViewState} restoreScrollY={policiesScrollPosition.current} onScrollPositionChange={updatePoliciesScrollPosition} />}
+            {page === 'connections' && <ConnectionsPage overview={overview} view={connectionsView} onViewChange={changeConnectionsView} restoreScrollY={connectionsScroll.current} />}
+            {page === 'connectivity' && <ConnectivityPage overview={overview} onChanged={refresh} />}
+            {page === 'diagnostics' && <DiagnosticsPage overview={overview} onOpenConnections={openConnections} />}
+          </PageErrorBoundary>
+        </DeviceTrafficProvider>
       </>}
     </main>
     {!authenticationRequired && <div className="bottom-right-stack">

@@ -189,6 +189,12 @@ recovery state active until the network has actually been restored.
   Dashboard and Devices provide shortcuts.
 - **诊断** (Diagnostics) shows recent operations, providers, and redacted logs.
 
+Dashboard traffic trends retain recent samples when you switch pages within the
+same window. The Y-axis still adapts to peaks in the last 60 seconds, with labels
+showing its current range; a quick page switch does not start the chart from an
+empty history. Chart sampling pauses while the window is hidden and resumes when
+it becomes visible. Reloading the page or relaunching the app starts a new history.
+
 Connections keeps registered devices even when they have no active traffic,
 and distinguishes a DHCP lease, an unapplied registration, and observed traffic.
 No active sessions does not mean a device is offline. IPv4 traffic sent directly

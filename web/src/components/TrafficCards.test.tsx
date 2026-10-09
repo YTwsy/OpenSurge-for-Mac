@@ -10,8 +10,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('traffic card motion', () => {
-  it('updates upload and peak numbers immediately while the curve waits for animation frames', () => {
+describe('traffic card sampling', () => {
+  it('updates upload, peak and the smooth curve together without scheduling animation frames', () => {
     disableAnimationFrames()
     const initial = [point('2026-07-24T00:00:00Z', 1_000, 2_000)]
     const { rerender } = render(<LiveRateCard direction="upload" history={initial} value={1_000} />)
@@ -26,10 +26,12 @@ describe('traffic card motion', () => {
     const card = screen.getByLabelText('上传当前速度 9 kB/s')
     expect(within(card).getByText('9')).toBeTruthy()
     expect(within(card).getByText('峰值 9 kB/s')).toBeTruthy()
-    expect(card.querySelector('path.rate-line')?.getAttribute('d')).toBe(initialPath)
+    expect(card.querySelector('path.rate-line')?.getAttribute('d')).not.toBe(initialPath)
+    expect(card.querySelector('path.rate-line')?.getAttribute('d')).toContain(' C ')
+    expect(requestAnimationFrame).not.toHaveBeenCalled()
   })
 
-  it('updates total-trend numbers immediately while its curves remain animated', () => {
+  it('updates trend numbers and curves together with a shared, labelled scale', () => {
     disableAnimationFrames()
     const initial = [point('2026-07-24T00:00:00Z', 1_000, 2_000)]
     const { rerender } = render(<TrafficTrendCard title="流量趋势" subtitle="测试" history={initial} />)
@@ -43,7 +45,10 @@ describe('traffic card motion', () => {
 
     expect(screen.getByText('↑ 9 kB/s')).toBeTruthy()
     expect(screen.getByText('↓ 8 kB/s')).toBeTruthy()
-    expect(document.querySelector('path.trend-line.upload')?.getAttribute('d')).toBe(initialPath)
+    expect(document.querySelector('path.trend-line.upload')?.getAttribute('d')).not.toBe(initialPath)
+    expect(screen.getByRole('img').getAttribute('aria-description')).toBe('纵轴范围：0–10 kB/s')
+    expect(document.querySelector('.trend-y-axis')?.textContent).toBe('10 kB/s5 kB/s0')
+    expect(requestAnimationFrame).not.toHaveBeenCalled()
   })
 })
 
