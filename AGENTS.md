@@ -10,18 +10,12 @@ macOS 网络能力负责 NAT、转发与透明路由。
 这个文件是 coding agent 进入本仓库时的第一站。凡是改动网关行为、网络
 验证、配置语义或项目定位，都应先读这里。
 
-## 先读这些
+## 按问题定位
 
-1. 读 `README.md`，了解面向用户的范围和当前 App/CLI 工作流。
-2. 读 `docs/agent-wiki/wiki/index.md`，获取 agent 专用项目上下文。
-3. 如果改网关行为，读
-   `docs/agent-wiki/wiki/concepts/gateway-lifecycle.md`。
-4. 如果改透明代理，读
-   `docs/agent-wiki/wiki/concepts/macos-tun-transparent-proxy.md`。
-5. 如果改下游 IPv6，读
-   `docs/agent-wiki/wiki/concepts/downstream-ipv6-takeover.md`。
-6. 如果判断测试或验收门槛，读
-   `docs/agent-wiki/wiki/concepts/validation-gates.md`。
+- 了解公开范围和用户操作时读 `README.md` 或 `docs/user/README.md`。
+- 从 `docs/agent-wiki/wiki/index.md` 定位来源或代码；已知入口可直接进入，需要理解跨主题关系才读 Concept。
+- 网关启停、回滚与资源所有权见 `docs/agent-wiki/sources/decisions/gateway-lifecycle.md`；透明接入与下游 IPv6 见同目录的 `tun-mainline.md` 和 `downstream-ipv6-takeover.md`。
+- 选择检查见 `docs/agent-wiki/sources/validation/test-gates.md`。回答支持或验收问题时，从同目录 `evidence-map.md` 定向读取对应记录并核对版本、环境与路径。
 
 ## 产品方向
 
@@ -70,10 +64,22 @@ host-network IPv6 路径已验证。
 
 ## Agent Wiki 维护规则
 
-`docs/agent-wiki/sources/` 记录稳定来源材料：项目目标、决策和验证契约。
+`docs/agent-wiki/sources/` 维护项目规范、领域契约、验证方法与有范围的证据；
+`wiki/concepts/` 维护理解系统所需的概念、关系、职责边界和来源入口，必要时使用简单结构图。
+具体字段、行为规则、实现步骤和验证要求归入对应 source；精简前先迁移独有的有效规则并核对差异。
 
-`docs/agent-wiki/wiki/` 是给未来 agent 优先阅读的上下文页面。当某个改动产生
-会影响未来 agent 判断的知识时，同步更新这些页面。
+长期变化随代码更新主要来源；只有概念关系或入口变化时才同步 Concept、索引与本文件。
+面向用户的操作说明放在 `docs/user/`。历史背景按需追溯，不作为当前行为或当前验收的依据。
+临时想法、普通 TODO 和完整一次性日志保留在当前上下文或现有工作记录中。
 
-只沉淀可复用知识。一次性日志、临时命令输出、未经验证的猜测和普通 TODO 不
-应进入 wiki。
+`sources/validation/` 只维护可复用方法、通过标准与已知证据范围。单次执行的版本、环境、
+实际检查、结果和未覆盖项写入提交/PR 或已有任务记录，不为每次检查新增 validation 页面。
+影响能力判断的新结果、阻塞或复验要求同步到 `evidence-map.md` 与对应领域限制；
+未收录不等于不支持，最近已知通过不等于当前版本已复验。
+
+默认不建任务文件。需要跨会话接续时使用 `docs/agent-wiki/tasks/<id>.md`，复杂调查才拆目录。
+已有任务与单次报告结束后移入 `docs/agent-wiki/tasks/finished_archived/`；先提炼有效规则，
+并保留当前证据入口到重要结果和未覆盖项的直接链接。没有记录不为归档补建任务台账。
+
+普通递归检索遵守 `.ignore`。验收判断、回归或版本追溯时沿证据链接定向读取归档，
+必要时使用 `rg --no-ignore`；不默认展开历史。归档由 Git 保留，不加入 `.gitignore`。

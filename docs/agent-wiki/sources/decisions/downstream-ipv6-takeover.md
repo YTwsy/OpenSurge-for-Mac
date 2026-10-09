@@ -1,12 +1,8 @@
----
-title: Downstream IPv6 takeover
-kind: decision
-status: implemented-validated
----
+# 下游 IPv6 接管契约
 
-# 下游 IPv6 接管决策
+本页维护实验性下游 IPv6 的拓扑前提、packet path、身份与生命周期。支持范围和实际验收结果分别维护；历史结果见 [证据入口](../validation/evidence-map.md)。
 
-OpenSurge 的下游 IPv6 接管支持三个拓扑，但共享 L2 必须显式确认
+OpenSurge 的下游 IPv6 接管支持三个拓扑，均要求 `transparent.mode: "tun"`。共享 L2 必须显式确认
 `transparent.ipv6_shared_l2_ready: true`，否则配置 fail closed：
 
 - `isolated_lan`：OpenSurge 自动发布 RA/SLAAC/RDNSS；
@@ -26,6 +22,9 @@ Web GUI 使用明确的知晓复选框呈现它；切换拓扑时清除旧确认
 - `transparent.tun_ipv6` 取 `off | auto | always`，控制是否建立下游 IPv6 网关、
   DNS 和用户态透明数据面。`auto` 只在上游接口同时有公网全局
   IPv6 地址（排除 ULA）和 IPv6 默认路由时生效；`always` 强制建立下游路径。
+
+两个设置独立：`off` 关闭下游接管；只开启接管仍可接入 IPv6 字面地址流量，
+但普通域名不会因此获得 OpenSurge DNS 的 AAAA 答案。
 
 下游 IPv6 不从物理接口路由进 macOS 系统 utun。root broker 在下游 Ethernet 的
 BPF 上读取入站 IPv6 Ethernet frame，把 L3 packet 和 source MAC 通过权限为 0600
@@ -79,12 +78,14 @@ Mihomo 系统 TUN 地址使用独立的
 
 启动顺序是 Mihomo listener、BPF broker、下游 IPv6 gateway alias、dnsmasq RA；
 停止顺序是 dnsmasq、router/prefix lifetime-zero withdrawal、alias removal、broker、
-Mihomo。broker PID/fingerprint 必须在修改接口前写入 runtime state。IPv6 source
+Mihomo。broker PID/fingerprint 必须在修改接口前写入 runtime state。`ipv6_ra_effective` 区分自动 RA 与不发送 RA 的手工路径；中间失败统一 rollback，清理失败保留 state 供重试。IPv6 source
 地址被第二个 MAC 使用时保持第一次映射并拒绝冲突，不静默改绑。
 
 `always` 不等于凭空获得公网 IPv6。上游没有原生 IPv6 时，fake IPv6 目标仍可由
 支持相应域名/UDP 的代理出口承载；`DIRECT` 到真实公网 IPv6 地址仍会因为没有上游
 IPv6 route 而失败。HTTP-only 代理也不能承载 UDP/QUIC。
+
+## 实现来源
 
 事实来源：
 
@@ -97,3 +98,25 @@ IPv6 route 而失败。HTTP-only 代理也不能承载 UDP/QUIC。
 - `tests/lab/lab.sh`
 - dnsmasq RA、RDNSS 与 `--ra-param`：<https://dnsmasq.org/docs/dnsmasq-man.html>
 - RFC 4191 Medium default-router preference：<https://www.rfc-editor.org/rfc/rfc4191.html>
+
+## 控制面与路由观察
+
+Web GUI 将这两个设置组合在“下游 IPv6”卡片中，但不改变配置语义。三个拓扑在 TUN
+开启时都提供 `off / auto / always` 与 AAAA 控件。共享 L2 还提供
+`ipv6_shared_l2_ready` 前置条件确认；界面应使用“我已知晓”的复选框，而不是把它表现为
+持续启停功能的滑动开关。切换拓扑时必须清除旧确认，不能沿用。旁路由页面
+另有 IPv4/IPv6 填写速查，动态显示所选 Mac 接口的 link-local 默认网关。卡片应优先
+解释设备会获得的地址、默认路由和 DNS，再显示运行时探测细节，不使用 `RA Override`
+作为用户概念。
+
+在 `same_wifi_dhcp` 运行期间，Mac 可能接收 OpenSurge 自己发布的 RA，并在下游接口上
+形成以本机 link-local 地址为下一跳的 IPv6 默认路由。控制面的绕过提示必须区分这种
+本机自有路由与外部路由器发布的竞争默认路由；只有前者不构成绕过 OpenSurge 的路径。
+如果本机与外部默认路由同时存在，仍必须保留提示。旧恢复快照没有路由所有权字段时应
+继续采取保守行为。
+
+## 连接归属与验收
+
+连接 owner 的专用 listener、MAC-backed applied 身份和守恒规则统一维护在 [连接观察契约](connection-observation.md)。三个 userspace IPv6 Lab 在 UDP 探测后核对受认证的 `/api/v1/connections`，输出 `ipv6-connection-observation.json`；命令、HTTP/3 和停止撤销范围见 [下游 IPv6 门槛](../validation/test-gates.md#下游-IPv6-门槛)。
+
+2026-08-13 物理下游 Mac 的 TCP smoke 保留在 [真实设备记录](../validation/evidence-map.md#物理网络)，不能外推为 IPv6 UDP、GUA 或恢复验收。

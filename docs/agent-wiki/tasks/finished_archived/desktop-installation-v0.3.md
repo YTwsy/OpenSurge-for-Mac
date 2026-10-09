@@ -1,5 +1,9 @@
 # v0.3 桌面安装器与验收
 
+> 归档于 2026-10-05。随已完成的 v0.3 桌面迁移归档；原文仍未覆盖的安装与平台验收继续由当前证据入口保留。
+> 来源：`docs/desktop-installation.md`，文档快照 `405daacba9720731608dba46dd2c7592e62b40d5`；快照提交不冒充被测提交。
+> 当前方法见 [验证门槛](../../sources/validation/test-gates.md)，当前适用性见 [证据入口](../../sources/validation/evidence-map.md)。以下保留原文，历史指令不作为新任务的默认指令。
+
 从 v0.3.0 起，`make gui-build`、`make gui-test` 和 `make gui-installer` 使用 Wails
 宿主，替代 v0.2.4 的 Swift 菜单栏宿主。版本发布不扩大下文记录的验收范围。
 
@@ -79,7 +83,7 @@ seed、升级保留、恢复阻断、失败停止，以及保留数据 / 彻底�
 3. 完整退出后重开 App，确认只唤醒 Control Service，网关保持停止。
 4. 管理员授权取消、卸载保留数据后重装、彻底卸载；核对 LaunchAgent、Helper、receipt 和文件。
 5. macOS 13 及 Intel 原生 GUI：系统 WebView、主窗口、物理菜单栏点击、登录项、退出与卸载。
-6. 如果要宣称真实升级网络清理已验证，按 [validation gates](agent-wiki/wiki/concepts/validation-gates.md)
+6. 如果要宣称真实升级网络清理已验证，按 [validation gates](../../sources/validation/test-gates.md)
    执行相关 Lab 门槛，完成清理；fixture、截图和打包成功不代替这些证据。
 
 ## 旧宿主

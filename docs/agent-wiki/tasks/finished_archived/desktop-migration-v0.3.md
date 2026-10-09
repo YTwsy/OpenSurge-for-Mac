@@ -1,5 +1,9 @@
 # Wails desktop migration
 
+> 归档于 2026-10-05。Next 桌面迁移开发已完成，且已通过 PR #81 合入 master（405daac）。原文中的分支计划和发布顺序仅属于当时任务。
+> 来源：`docs/desktop-migration.md`，文档快照 `405daacba9720731608dba46dd2c7592e62b40d5`；快照提交不冒充被测提交。
+> 当前方法见 [验证门槛](../../sources/validation/test-gates.md)，当前适用性见 [证据入口](../../sources/validation/evidence-map.md)。以下保留原文，历史指令不作为新任务的默认指令。
+
 This page records the v0.3 migration on `Next`. The Wails host ships in v0.3.0;
 remaining installation and platform checks are listed below.
 
@@ -36,7 +40,7 @@ and integrated native title bar.
 Publishing v0.3.0 does not establish every platform acceptance result. Real
 PackageKit upgrade/uninstall, login-item continuity and administrator authorization
 must be verified on a disposable installation. macOS 13 and native Intel runtime
-acceptance remain outstanding. See [installer acceptance](desktop-installation.md).
+acceptance remain outstanding. See [installer acceptance](desktop-installation-v0.3.md).
 
 ## Validation
 
@@ -47,7 +51,7 @@ acceptance remain outstanding. See [installer acceptance](desktop-installation.m
 - Native smoke tests cover actual window/tray focus, reopen, file handling, language,
   service reconnect, close/quit, and the lowest supported macOS version.
 - Changes to gateway lifecycle, networking, or cleanup require the relevant
-  [validation gates](agent-wiki/wiki/concepts/validation-gates.md). A desktop build
+  [validation gates](../../sources/validation/test-gates.md). A desktop build
   or unit-test result must not be reported as host-network evidence.
 
 For v0.3.0 stable, use the existing `codex/release-v0.3.0` branch. Validate and

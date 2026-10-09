@@ -26,7 +26,7 @@ HTTP relay. The bearer credential and authenticated cookie remain in native memo
 neither enters JavaScript. No gateway business implementation is linked into the host.
 
 Start the installed OpenSurge app before opening the preview, or use the isolated
-[smoke fixture](../../docs/desktop-smoke.md). Session and endpoint changes reconnect
+[smoke fixture](../../docs/agent-wiki/sources/validation/desktop-smoke.md). Session and endpoint changes reconnect
 automatically while preserving the current page and drafts. Mutations are never
 replayed automatically. `⌘R` refreshes state without reloading, and `⌘1`–`⌘8`
 navigate the existing pages. Closing the window hides it; Dock reopen, a second
@@ -75,7 +75,7 @@ The preview retains its separate identifier and output. Since v0.3, `make gui-bu
 and `make gui-installer` use this Wails host. The Swift host remains only as
 maintenance source in `apps/menubar`; its explicit legacy build writes under
 `bin/legacy/`. Local bundles are ad-hoc signed, not Developer ID signed or notarized.
-See [installer acceptance](../../docs/desktop-installation.md) for validation limits.
+See [installer acceptance](../../docs/agent-wiki/sources/validation/evidence-map.md#桌面与安装) for validation limits.
 
-See [the migration plan](../../docs/desktop-migration.md) and
-[the desktop host contract](../../docs/agent-wiki/wiki/concepts/desktop-host.md).
+See [the migration history](../../docs/agent-wiki/tasks/finished_archived/desktop-migration-v0.3.md) and
+[the desktop host contract](../../docs/agent-wiki/sources/decisions/desktop-host.md).

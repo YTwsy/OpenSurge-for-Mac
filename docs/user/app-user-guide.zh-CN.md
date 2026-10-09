@@ -6,9 +6,9 @@
 网关和安全恢复网络的基本流程。CLI、开发构建和高级配置不在本文展开。
 
 本页的桌面操作描述对应 v0.3.0 及之后的版本；v0.2.4 使用旧 Swift 菜单栏宿主。
-安装器的已验证范围与待完成平台验收见[桌面安装验收](desktop-installation.md)。
+安装器的已验证范围与待完成平台验收见[桌面安装验收](../agent-wiki/sources/validation/evidence-map.md#桌面与安装)。
 
-![OpenSurge for Mac 总览](images/opensurge-dashboard.png)
+![OpenSurge for Mac 总览](../images/opensurge-dashboard.png)
 
 ## 安装与打开
 

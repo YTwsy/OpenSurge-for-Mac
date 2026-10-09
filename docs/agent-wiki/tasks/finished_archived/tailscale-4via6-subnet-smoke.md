@@ -1,5 +1,9 @@
 # Tailscale 远端子网与 Exit Node 真机验证
 
+> 归档于 2026-10-05。历史执行记录已结束；保留原来的结果和未覆盖项。
+> 来源：`docs/agent-wiki/sources/validation/tailscale-4via6-subnet-smoke.md`，文档快照 `405daacba9720731608dba46dd2c7592e62b40d5`；快照提交不冒充被测提交。
+> 当前方法见 [验证门槛](../../sources/validation/test-gates.md)，当前适用性见 [证据入口](../../sources/validation/evidence-map.md)。以下保留原文，历史指令不作为新任务的默认指令。
+
 本文记录 OpenSurge 经远端 Subnet Router 访问私网 SOCKS5 服务，以及使用
 同一远端节点作为 Exit Node 的大致验证方法和最终验收状态。
 

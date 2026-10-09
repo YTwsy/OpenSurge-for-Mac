@@ -6,6 +6,10 @@ status: seed
 
 # 真实设备 smoke
 
+> 归档于 2026-10-05。历史执行记录已结束；保留原来的结果和未覆盖项。
+> 来源：`docs/agent-wiki/sources/validation/real-device-smoke.md`，文档快照 `405daacba9720731608dba46dd2c7592e62b40d5`；快照提交不冒充被测提交。
+> 当前方法见 [验证门槛](../../sources/validation/test-gates.md)，当前适用性见 [证据入口](../../sources/validation/evidence-map.md)。以下保留原文，历史指令不作为新任务的默认指令。
+
 真实设备 smoke 是 virtual LAN lab 之后的物理设备检查层。它用于确认下游设备
 接入由 Mac 服务的隔离 LAN 后，能获得 OpenSurge for Mac 提供的 DHCP/DNS，
 并通过 Mac 的 gateway 路径出站。
