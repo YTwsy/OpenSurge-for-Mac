@@ -899,14 +899,76 @@ describe('OpenSurge app shell', () => {
     expect(screen.getAllByText('正在运行').length).toBeGreaterThan(0)
   })
 
-  it('allows the client acceptance checkpoint to be explicitly skipped', async () => {
-    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' }, recovery: { ...overview.recovery, stage: 'gateway_active' } })
+  it.each(['gateway_active', 'client_validated', 'client_validation_skipped'])('stops DHCP takeover directly from %s and shows network recovery', async stage => {
+    let currentOverview = { ...overview, status: { ...overview.status, gateway: 'running' }, recovery: { ...overview.recovery, stage } }
+    vi.mocked(api.overview).mockImplementation(async () => currentOverview)
+    vi.mocked(api.gateway).mockImplementationOnce(async () => {
+      currentOverview = { ...overview, recovery: { ...overview.recovery, stage: 'gateway_stopped_waiting_router_dhcp' } }
+      return { id: 'stop-takeover', kind: 'stop', state: 'running' }
+    })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
+    window.history.replaceState({}, '', '/network#gateway-control')
     render(<App />)
-    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
-    await userEvent.click(await screen.findByRole('button', { name: '跳过客户端验收' }))
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('不能把本次运行称为已验收'))
-    expect(api.skipClientValidation).toHaveBeenCalledOnce()
+    const stop = await screen.findByRole('button', { name: '停止 OpenSurge' })
+    await waitFor(() => expect(document.activeElement).toBe(stop))
+    expect(screen.getByText('下一步：检查设备接入').closest('details')?.open).toBe(false)
+    expect(screen.getByText('接管与恢复步骤').closest('details')?.open).toBe(false)
+    expect(screen.queryByRole('button', { name: '跳过客户端验收' })).toBeNull()
+
+    await userEvent.click(stop)
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('局域网设备可能立即断网'))
+    expect(api.gateway).toHaveBeenCalledWith('stop')
+    expect(waitForOperation).toHaveBeenCalledWith('stop-takeover')
+    expect(api.validateClient).not.toHaveBeenCalled()
+    expect(api.skipClientValidation).not.toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: '路由器 DHCP 已恢复，执行 OFFER 探测' })).toBeTruthy()
+    expect(screen.getByText('接管与恢复步骤').closest('details')?.open).toBe(true)
+    expect(screen.getByText('停止网关成功')).toBeTruthy()
+  })
+
+  it('keeps takeover running when stop is cancelled or fails', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' }, recovery: { ...overview.recovery, stage: 'gateway_active' } })
+    vi.mocked(api.gateway).mockResolvedValueOnce({ id: 'stop-takeover-failed', kind: 'stop', state: 'running' })
+    vi.mocked(waitForOperation).mockRejectedValueOnce(new Error('Network cleanup failed'))
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '停止 OpenSurge' }))
+    expect(api.gateway).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: '停止 OpenSurge' }))
+    expect(await screen.findByText('停止网关失败')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '停止 OpenSurge' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByRole('button', { name: '路由器 DHCP 已恢复，执行 OFFER 探测' })).toBeNull()
+  })
+
+  it('checks a device only on request, keeps confirmations, and allows stopping after a failed check', async () => {
+    let currentOverview = { ...overview, status: { ...overview.status, gateway: 'running' }, recovery: { ...overview.recovery, stage: 'gateway_active' } }
+    vi.mocked(api.overview).mockImplementation(async () => currentOverview)
+    const plan = await api.gatewayPlan(false)
+    vi.mocked(api.gatewayPlan).mockResolvedValueOnce({ ...plan, snapshot: { ...plan.snapshot, ipv6_default: true } })
+    vi.mocked(api.validateClient).mockRejectedValueOnce(new Error('No device DNS query observed')).mockImplementationOnce(async () => {
+      currentOverview = { ...currentOverview, recovery: { ...currentOverview.recovery, stage: 'client_validated' } }
+    })
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+    await userEvent.click(await screen.findByText('下一步：检查设备接入'))
+    expect(api.validateClient).not.toHaveBeenCalled()
+    const check = screen.getByRole('button', { name: '检查设备接入' }) as HTMLButtonElement
+    await userEvent.type(screen.getByRole('textbox', { name: '设备 IPv4' }), '192.168.1.120')
+    expect(check.disabled).toBe(true)
+    await userEvent.click(screen.getByRole('checkbox', { name: '已在客户端确认默认网关/DNS 为 Mac，且没有显式代理' }))
+    expect(check.disabled).toBe(true)
+    await userEvent.click(screen.getByRole('checkbox', { name: '已知 IPv6 默认路由可能绕过 IPv4 设备策略' }))
+    await userEvent.click(check)
+    expect(api.validateClient).toHaveBeenCalledWith('192.168.1.120', true)
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'No device DNS query observed')
+    expect((screen.getByRole('button', { name: '停止 OpenSurge' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText('已检查')).toBeNull()
+
+    await userEvent.click(check)
+    expect(await screen.findByText('已检查')).toBeTruthy()
+    expect(screen.getByText('下一步：检查设备接入').closest('details')?.open).toBe(false)
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('navigates to the cooperative same-LAN DHCP recovery flow', async () => {
