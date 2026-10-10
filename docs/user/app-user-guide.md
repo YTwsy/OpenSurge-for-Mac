@@ -151,8 +151,7 @@ active, rather than overwriting those settings.
 
 ### 3. Start OpenSurge
 
-For **Same-LAN DHCP takeover**, gateway start and stop are part of the recovery
-state machine. Follow the steps shown in Network Settings:
+For **Same-LAN DHCP takeover**, follow **Gateway controls** in Network Settings:
 
 1. Select **保存网络快照与离线恢复卡** to save the network snapshot and offline
    recovery card.
@@ -160,7 +159,12 @@ state machine. Follow the steps shown in Network Settings:
 3. Disable router DHCP when prompted.
 4. Return to OpenSurge and run the DHCP OFFER probe.
 5. After the probe succeeds, select **启动 OpenSurge** (Start OpenSurge).
-6. Reconnect a client and complete the DHCP, DNS, and TUN validation step.
+6. Reconnect devices to the network to begin using it.
+
+To confirm a particular device is connected correctly, expand **Next: Check device
+connectivity**, enter its IPv4 address, and follow the prompts. This optional check
+is collapsed by default and does not block everyday use or stopping the gateway.
+An unchecked connection is never marked as verified.
 
 Do not quit immediately after disabling router DHCP. OpenSurge keeps the
 recovery state active until the network has actually been restored.
@@ -224,15 +228,14 @@ and TUN validation from a downstream device.
 
 ## Stop and restore the network
 
-For **Same-LAN DHCP takeover**, stopping the gateway is also part of the
-recovery state machine:
+For **Same-LAN DHCP takeover**, you can stop takeover from **Gateway controls**
+without completing the optional device check first:
 
-1. Complete client validation or explicitly record that it was skipped.
-2. Select **停止 OpenSurge** (Stop OpenSurge).
-3. Re-enable router DHCP when prompted.
-4. Return to OpenSurge and run the DHCP OFFER probe.
-5. Restore automatic DHCP on the Mac, or explicitly keep the static IPv4.
-6. Confirm that recovery is complete before quitting OpenSurge.
+1. Select **停止 OpenSurge** (Stop OpenSurge) and confirm.
+2. Re-enable router DHCP when prompted.
+3. Return to OpenSurge and run the DHCP OFFER probe.
+4. Restore automatic DHCP on the Mac, or explicitly keep the static IPv4.
+5. Confirm that recovery is complete before quitting OpenSurge.
 
 The menu bar provides two different quit actions:
 
