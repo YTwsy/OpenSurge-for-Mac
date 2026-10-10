@@ -212,21 +212,6 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
 
   const save = async () => {
     if (!config || !savedConfig) return
-    const leavingTakeover = savedConfig.gateway.mode === 'same_wifi_dhcp' && config.gateway.mode !== 'same_wifi_dhcp' && config.device_policy.enabled
-    if (leavingTakeover) {
-      try {
-        const document = await api.devicePolicy()
-        const bypassDevices = document.policy.devices.filter(device => device.gateway_target === 'upstream_router')
-        if (bypassDevices.length) {
-          const names = bypassDevices.map(device => device.name || device.id).join('、')
-          setError(t('{{names}} 正在使用“直连主路由”；该方式仅适用于局域网 DHCP 接管。请先在设备页将这些设备切回 OpenSurge。', { names }))
-          return
-        }
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause))
-        return
-      }
-    }
     const leavingSameLAN = savedConfig.gateway.mode === 'same_lan' && config.gateway.mode !== 'same_lan' && config.device_policy.enabled
     if (!leavingSameLAN) {
       await persistConfig(config)

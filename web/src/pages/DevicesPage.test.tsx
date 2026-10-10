@@ -629,18 +629,23 @@ describe('DevicesPage', () => {
     expect(saved.profiles.map(profile => profile.id)).toEqual(['bob-policy'])
   })
 
-  it('marks registrations from another LAN instead of hiding them', async () => {
+  it.each([
+    ['same_wifi_dhcp', 'opensurge'],
+    ['same_wifi_dhcp', 'upstream_router'],
+    ['same_lan', 'opensurge'],
+    ['same_lan', 'upstream_router'],
+  ] as const)('marks registrations from another LAN instead of hiding them (%s, %s)', async (topology, gatewayTarget) => {
     const policy: PolicySet = {
       ...basePolicy,
       devices: [
         { id: 'alice', name: 'Alice', mac: 'aa:bb:cc:dd:ee:01', ipv4: '192.168.1.121', profile: 'shared', egress_mode: 'inherit_global' },
-        { id: 'bob', name: 'Bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.50.122', profile: 'shared', egress_mode: 'inherit_global' },
+        { id: 'bob', name: 'Bob', mac: 'aa:bb:cc:dd:ee:02', ipv4: '192.168.50.122', profile: 'shared', egress_mode: 'inherit_global', gateway_target: gatewayTarget },
       ],
       profiles: [{ id: 'shared', default_policies: ['DIRECT'], rules: [] }],
     }
     vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
     vi.mocked(api.devices).mockResolvedValue(devicesResponse({ out_of_lan_devices: ['bob'], lan_prefix: '192.168.1.0/24' }))
-    renderPage()
+    renderPage({ ...overview, topology } as Overview)
 
     await userEvent.click(await screen.findByRole('button', { name: '选择设备 Bob' }))
     const card = screen.getByRole('article', { name: '设备详情：Bob' })
@@ -1139,6 +1144,55 @@ describe('DevicesPage', () => {
 
     expect(await screen.findByText('IPv4 直连主路由 · IPv6 出站已阻止')).toBeTruthy()
     expect(screen.queryByText(/没有 IPv6 地址/)).toBeNull()
+  })
+
+  it('keeps a retained main-router device editable in same-LAN without DHCP settings', async () => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'console', name: 'Console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'console-policy', gateway_target: 'upstream_router', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'console-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [] }],
+    }
+    vi.mocked(api.config).mockResolvedValue({ gateway: { mode: 'same_lan' }, dhcp: { bypass_gateway: '', bypass_dns: [] }, device_policy: { enabled: true } } as never)
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true,
+      applied_devices: [{ ...policy.devices[0], groups: {} }],
+    }))
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+
+    const card = await screen.findByRole('article', { name: '设备详情：Console' })
+    const retained = within(card).getByRole('radio', { name: /直连主路由/ }) as HTMLInputElement
+    expect(retained.checked).toBe(true)
+    expect(retained.disabled).toBe(true)
+    expect(within(card).getByText(/已保留直连主路由设置；旁路由模式不分配 DHCP/)).toBeTruthy()
+    expect(within(card).queryByText(/仍由 OpenSurge 分配 IPv4|续租后生效/)).toBeNull()
+
+    await userEvent.click(within(card).getByRole('button', { name: '编辑身份与路由' }))
+    await userEvent.clear(screen.getByLabelText('设备名称'))
+    await userEvent.type(screen.getByLabelText('设备名称'), 'Living room console')
+    await userEvent.click(screen.getByRole('button', { name: '更新设备身份与路由' }))
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalledWith(expect.objectContaining({
+      devices: [{ ...policy.devices[0], name: 'Living room console' }],
+      profiles: policy.profiles,
+    }), 'policy-r1'))
+  })
+
+  it.each(['opensurge', 'upstream_router'] as const)('omits DHCP renewal guidance for a same-LAN change to %s', async target => {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'home', gateway_target: target, egress_mode: 'inherit_global' }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }],
+    }
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(devicesResponse({
+      applied: true, drift: true,
+      applied_devices: [{ ...policy.devices[0], gateway_target: target === 'opensurge' ? 'upstream_router' : 'opensurge', groups: {} }],
+    }))
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+    await userEvent.click(await screen.findByRole('button', { name: '应用并重载网关' }))
+    expect(within(screen.getByRole('dialog')).queryByText(/应用后，请重新连接/)).toBeNull()
   })
 
   it('does not expose router bypass outside DHCP takeover', async () => {
