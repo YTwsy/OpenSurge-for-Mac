@@ -29,7 +29,7 @@ mihomo YAML”。
   展开模版的 `rule_sets`。
 - 面向用户的分流模版只组合 `rule_sets`，不携带默认出口或命中出口；出口始终
   位于具体设备分流的 `action` 或 `policies`上。Profile 仍是编译和持久化用的内部容器。
-- `gateway_target` 默认为 `opensurge`。只有 `same_wifi_dhcp` 可选
+- `gateway_target` 默认为 `opensurge`。GUI 仅在 `same_wifi_dhcp` 提供
   `upstream_router`：保留 MAC 固定租约，但 dnsmasq 通过 tag 向该客户端下发
   `dhcp.bypass_gateway` 和 `dhcp.bypass_dns`。这是 IPv4-only 绕行：编译结果不为其
   生成代理 selector/普通设备规则，但必须保留 Profile、规则和 `egress_mode`，切回后
@@ -38,6 +38,14 @@ mihomo YAML”。
   切换是 save-and-reload，且只有客户端 DHCP 续租/重连后新 IPv4 Router/DNS 才生效。
   设备可能仍有 SLAAC/RDNSS，控制面只能写“IPv6 出站已阻止”。共享 L2 必须关闭主路由
   RA/DHCPv6 或使用 RA Guard，否则 IPv6 会绕过 OpenSurge。
+
+从 DHCP 接管切到 `same_lan` 时，允许保留 `upstream_router` 登记，不要求先逐台切回
+OpenSurge。旁路由不下发 DHCP Router/DNS，不检查这些设备对 `dhcp.bypass_gateway`、
+`dhcp.bypass_dns` 的依赖，也不将停用的 bypass gateway 加入设备受保护地址；显式配置的
+`device_policy.protected_ipv4` 仍然生效。设备的网关/DNS 由主路由 DHCP 或手工设置决定。
+保存的设备资料、Profile、规则、`egress_mode` 与原有 IPv6 REJECT 语义保留；不自动将设备
+改为 OpenSurge 出口。GUI 允许保留并编辑这类登记，不显示 OpenSurge 分配 DHCP 或续租提示。
+返回 `same_wifi_dhcp` 时重新执行完整 bypass 校验；`isolated_lan` 仍拒绝当前 LAN 内的绕行设备。
 
 Web GUI 普通登记默认选择 `inherit_global`，路由模式变化需要保存与重载；即时 default
 selector 只展示已应用的 dedicated/legacy 设备。界面向用户暴露规则集、无出口分流模版和

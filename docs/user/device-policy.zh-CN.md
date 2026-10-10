@@ -92,8 +92,8 @@ Web GUI 新登记设备默认使用 `inherit_global`。旧文件没有 `egress_m
 而会以 `legacy_fallback` 保留原来的“全局规则优先、设备出口兜底”语义；GUI 会明确提示
 用户选择一种新模式。
 
-`gateway_target` 默认为 `opensurge`。只有 `same_wifi_dhcp`（局域网 DHCP
-接管）可显式选择 `upstream_router`：dnsmasq 仍按 MAC 为设备分配登记的固定
+`gateway_target` 默认为 `opensurge`。设备页仅在 `same_wifi_dhcp`（局域网 DHCP
+接管）提供切换到 `upstream_router` 的选项：dnsmasq 仍按 MAC 为设备分配登记的固定
 IPv4，但通过 tag 向它单独下发 `dhcp.bypass_gateway` 和
 `dhcp.bypass_dns`。此时不生成该设备的代理 selector 或普通设备规则，Profile
 和规则只保留不删除；切回 `opensurge` 后重新生效。这是仅限 IPv4 的绕行：启用
@@ -104,6 +104,13 @@ IPv4，但通过 tag 向它单独下发 `dhcp.bypass_gateway` 和
 绕过 OpenSurge。切换后必须让设备续租或重新连接网络，新的 IPv4 Router/DNS 才会
 生效。该选项必须有真实 MAC，且主路由网关必须与 Mac 网关处于同一网段、不得
 位于 DHCP 动态地址池内。
+
+从 DHCP 接管切到旁路由模式时，可以保留这些“直连主路由”设备，无需先逐台切回
+OpenSurge，也不会因此阻止保存或启动。旁路由模式不分配 DHCP：请在主路由或设备上
+确认网关和 DNS。原设备资料与分流设置会保留，OpenSurge 不会自动把它们改成代理出口；
+经 OpenSurge 的下游 IPv6 仍按原设置阻止。若要让设备经过 Mac，请在设备页改为
+“跟随网关规则”或“独立设备出口”，并手工配置设备使用 Mac 的网关和 DNS。
+切回 DHCP 接管时，会重新检查主路由网关和 DNS；独立下游 LAN 仍不支持此绕行方式。
 
 只有跟随设备使用的 Profile 仍会保留 `default_policies` 作为以后切换独立模式的配置，
 但这些未渲染的候选不会参与当前 imported profile 引用校验；真正生成独立或兼容 selector

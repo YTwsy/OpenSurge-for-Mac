@@ -1188,6 +1188,29 @@ describe('OpenSurge app shell', () => {
     expect(detail?.classList.contains('open')).toBe(false)
   })
 
+  it('switches DHCP takeover to same-LAN while retaining main-router devices', async () => {
+    const current = { ...configFor('same_wifi_dhcp'), device_policy: { enabled: true, protected_ipv4: [] } }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_wifi_dhcp', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: {
+      devices: [{ id: 'console', mac: 'aa:bb:cc:dd:ee:05', ipv4: '192.168.1.190', profile: 'home', gateway_target: 'upstream_router', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [],
+    } })
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByRole('button', { name: /旁路由模式/ }))
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({
+      gateway: expect.objectContaining({ mode: 'same_lan' }),
+      dhcp: expect.objectContaining({ enabled: false }),
+    })))
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
+    expect(screen.queryByText(/请先在设备页将这些设备切回 OpenSurge/)).toBeNull()
+  })
+
   it('switches from same-LAN to DHCP without a migration dialog when every device already has a MAC', async () => {
     const current = { ...configFor('same_lan'), device_policy: { enabled: true, protected_ipv4: [] } }
     vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
