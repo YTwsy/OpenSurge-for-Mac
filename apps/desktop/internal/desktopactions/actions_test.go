@@ -97,6 +97,25 @@ func TestTrayNavigationAndAppearance(t *testing.T) {
 	}
 }
 
+func TestTrayMenuIsArgumentFree(t *testing.T) {
+	calls := 0
+	a := &Actions{ToggleTrayMenu: func() { calls++ }}
+	for _, body := range []string{`{}`, `{"page":"network"}`, `{"url":"https://example.com"}`, `{"height":2000}`} {
+		w := httptest.NewRecorder()
+		a.ServeHTTP(w, httptest.NewRequest("POST", "/desktop/v1/toggle-tray-menu", strings.NewReader(body)))
+		want := 400
+		if body == `{}` {
+			want = 200
+		}
+		if w.Code != want {
+			t.Fatalf("%s: got %d", body, w.Code)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("unexpected menu toggles: %d", calls)
+	}
+}
+
 func TestSettingsCapabilities(t *testing.T) {
 	calls, theme := 0, ""
 	a := &Actions{ShowSettings: func() { calls++ }, SetSettingsAppearance: func(value string) { theme = value }}

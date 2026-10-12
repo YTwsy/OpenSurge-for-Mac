@@ -22,7 +22,7 @@ func (h *desktopHost) createTray() {
 	h.popup = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name: "menu-bar", Title: "OpenSurge Menu Bar", URL: "/desktop-tray",
 		Width: 390, Height: 550, Hidden: true, Frameless: true, DisableResize: true,
-		AlwaysOnTop: true, HideOnFocusLost: true, HideOnEscape: true,
+		AlwaysOnTop: true, HideOnEscape: true,
 		Mac: application.MacWindow{Backdrop: application.MacBackdropTranslucent, CollectionBehavior: application.MacWindowCollectionBehaviorCanJoinAllSpaces | application.MacWindowCollectionBehaviorFullScreenAuxiliary, TabbingMode: application.MacWindowTabbingModeDisallowed},
 	})
 	h.tray = h.app.SystemTray.New().SetTemplateIcon(trayIcon).AttachWindow(h.popup).WindowOffset(8)
@@ -30,6 +30,17 @@ func (h *desktopHost) createTray() {
 	h.popup.OnWindowEvent(events.Common.WindowShow, func(*application.WindowEvent) { h.status.SetRapid(true) })
 	h.popup.OnWindowEvent(events.Common.WindowHide, func(*application.WindowEvent) { h.status.SetRapid(false) })
 	h.popup.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) { event.Cancel(); h.popup.Hide() })
+	h.trayMore = h.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name: "menu-bar-more", Title: "OpenSurge More Actions", URL: "/desktop-tray-menu",
+		Width: 310, Height: 400, Hidden: true, Frameless: true, DisableResize: true,
+		AlwaysOnTop: true,
+		Mac:         application.MacWindow{Backdrop: application.MacBackdropTranslucent, CollectionBehavior: application.MacWindowCollectionBehaviorCanJoinAllSpaces | application.MacWindowCollectionBehaviorFullScreenAuxiliary, TabbingMode: application.MacWindowTabbingModeDisallowed},
+	})
+	h.trayMore.RegisterKeyBinding("escape", func(application.Window) { native.CloseTrayMenu(h.popup, h.trayMore) })
+	h.trayMore.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		native.CloseTrayMenu(h.popup, h.trayMore)
+	})
 }
 
 func (h *desktopHost) readMenuStatus(ctx context.Context) (*menustatus.Status, error) {

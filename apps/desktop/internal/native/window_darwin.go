@@ -17,6 +17,9 @@ void setOpenSurgeMenuBarIndicator(const char *indicator, const char *description
 void setOpenSurgeDockVisible(bool visible);
 void refreshOpenSurgeDockVisibility(void);
 void presentOpenSurgeWindow(void *window);
+void configureOpenSurgeTrayMenu(void *parent, void *menu);
+void toggleOpenSurgeTrayMenu(void *parent, void *menu);
+void closeOpenSurgeTrayMenu(void *parent, void *menu);
 */
 import "C"
 
@@ -34,6 +37,18 @@ func Configure(window *application.WebviewWindow, rememberFrame bool) {
 
 func ConfigureSettings(window *application.WebviewWindow) {
 	application.InvokeSync(func() { C.configureOpenSurgeWindow(window.NativeWindow(), false, false) })
+}
+
+func ConfigureTrayMenu(parent, menu *application.WebviewWindow) {
+	application.InvokeSync(func() { C.configureOpenSurgeTrayMenu(parent.NativeWindow(), menu.NativeWindow()) })
+}
+
+func ToggleTrayMenu(parent, menu *application.WebviewWindow) {
+	application.InvokeSync(func() { C.toggleOpenSurgeTrayMenu(parent.NativeWindow(), menu.NativeWindow()) })
+}
+
+func CloseTrayMenu(parent, menu *application.WebviewWindow) {
+	application.InvokeSync(func() { C.closeOpenSurgeTrayMenu(parent.NativeWindow(), menu.NativeWindow()) })
 }
 
 func RefreshDockVisibility() {

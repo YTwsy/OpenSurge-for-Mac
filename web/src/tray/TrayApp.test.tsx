@@ -1,21 +1,46 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { TrayApp, diagnosticSummary } from './TrayApp'
-import { desktopAction, copyText } from '../desktop'
+import { TrayApp, TrayMenuApp, diagnosticSummary } from './TrayApp'
+import { desktopAction, copyText, isDesktop } from '../desktop'
 import { activateLanguage, prepareLanguage } from '../i18n'
 import type { TraySnapshot } from './types'
 
-vi.mock('../desktop', () => ({ desktopAction: vi.fn(), copyText: vi.fn() }))
+vi.mock('../desktop', () => ({ desktopAction: vi.fn(), copyText: vi.fn(), isDesktop: vi.fn() }))
 const fixture: TraySnapshot = { indicator: 'stopped', sequence: 1, can_quit: true, status: {
  schema_version: 1, revision: 'test', gateway: 'stopped', topology: 'same_lan', lan_ip: '192.0.2.10', dhcp: 'stopped', mihomo: 'stopped', tun: 'stopped', pf_anchor: 'unloaded', forwarding: 'disabled', ipv4_takeover: 'stopped', ipv6_takeover: 'disabled', client_count: 0, drift: false, doctor_healthy: false, recovery_required: false, warnings: [], sleep_prevention: { enabled: false, active: false }, ui_preferences: { schema_version: 1, language: 'en' },
 } }
 beforeEach(async () => {
  await prepareLanguage('en'); activateLanguage('en')
+ vi.mocked(isDesktop).mockReturnValue(false)
  vi.mocked(desktopAction).mockImplementation(async () => fixture)
 })
 afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans'); localStorage.clear(); delete window.__opensurgeWindowVisible })
+
+it('opens a separate native menu without mounting its content in the overview', async () => {
+ vi.mocked(isDesktop).mockReturnValue(true)
+ render(<TrayApp />)
+ const trigger = screen.getByRole('button', { name: 'More actions' })
+ await userEvent.click(trigger)
+ expect(desktopAction).toHaveBeenCalledWith('toggle-tray-menu')
+ expect(screen.queryByText('Quit Desktop App Only…')).toBeNull()
+ act(() => window.dispatchEvent(new CustomEvent('opensurge:tray-menu', { detail: true })))
+ expect(trigger.getAttribute('aria-expanded')).toBe('true')
+ act(() => window.dispatchEvent(new CustomEvent('opensurge:tray-menu', { detail: false })))
+ expect(trigger.getAttribute('aria-expanded')).toBe('false')
+})
+
+it('shares action eligibility and native confirmation in the standalone menu', async () => {
+ vi.mocked(isDesktop).mockReturnValue(true)
+ vi.mocked(desktopAction).mockResolvedValue({ ...fixture, can_quit: false, service_actions: true })
+ render(<TrayMenuApp />)
+ await screen.findByRole('dialog', { name: 'More actions' })
+ expect(screen.queryByRole('button', { name: /Open OpenSurge/ })).toBeNull()
+ expect((screen.getByRole('button', { name: 'Quit OpenSurge…' }) as HTMLButtonElement).disabled).toBe(true)
+ await userEvent.click(screen.getByRole('button', { name: 'Quit Desktop App Only…' }))
+ expect(desktopAction).toHaveBeenCalledWith('quit', { full: false })
+})
 
 it('presents pending configuration and cached diagnostics without a runtime alarm', async () => {
  vi.mocked(desktopAction).mockResolvedValue({ ...fixture, indicator: 'running', status: { ...fixture.status!, gateway: 'running', drift: true,
