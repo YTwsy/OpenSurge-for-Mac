@@ -84,6 +84,20 @@ static WKWebView *findWebView(NSView *view) {
     return nil;
 }
 
+static void hideTrayMenu(NSWindow *parent, NSWindow *menu) {
+    if (!menu) return;
+    [parent removeChildWindow:menu];
+    [menu orderOut:nil];
+}
+
+static NSRect trayMenuFrame(NSWindow *parent, NSRect frame) {
+    NSRect available = (parent.screen ?: NSScreen.mainScreen).visibleFrame;
+    frame.size.height = MIN(NSHeight(frame), NSHeight(available) - 16);
+    frame.origin.x = MAX(NSMinX(available) + 8, MIN(NSMaxX(parent.frame) - 16 - NSWidth(frame), NSMaxX(available) - NSWidth(frame) - 8));
+    frame.origin.y = MAX(NSMinY(available) + 8, MIN(NSMaxY(parent.frame) - 48, NSMaxY(available) - 8) - NSHeight(frame));
+    return frame;
+}
+
 // Forward Wails' load, renderer-recovery and file-picker delegates. Keeping the
 // original delegates preserves the framework's lifecycle without a Wails fork.
 @interface OpenSurgeWebViewGuard : NSObject <WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler>
@@ -92,9 +106,13 @@ static WKWebView *findWebView(NSView *view) {
 @property (weak) WKWebView *webView;
 @property BOOL english;
 @property BOOL tray;
+@property (weak) NSWindow *trayParent;
+@property (weak) NSWindow *trayMenu;
+@property (strong) id trayClickMonitor;
 @property (strong) OpenSurgeStartupView *startup;
 - (void)publishAppearance:(NSNotification *)notification;
 - (void)publishTraySizing;
+- (void)dismissTrayAfterFocusChange:(NSNotification *)notification;
 - (void)showStartup;
 - (void)finishStartup;
 @end
@@ -175,14 +193,31 @@ void refreshOpenSurgeDockVisibility(void) {
 - (void)publishVisibility:(NSNotification *)notification {
     NSWindow *window = self.webView.window;
     if (smokeActions()) NSLog(@"OpenSurge window visibility: title=%@ visible=%d minimised=%d",
-        self.tray ? @"menu-bar" : window.title, window.isVisible, window.isMiniaturized);
+        self.trayParent ? @"menu-bar-more" : self.tray ? @"menu-bar" : window.title, window.isVisible, window.isMiniaturized);
     // Occlusion pauses polling but must not remove a covered window from Dock.
     // A minimised window keeps its Dock entry so the normal restore path works.
     if (!self.tray) refreshOpenSurgeDockVisibility();
     BOOL visible = window.isVisible && !window.isMiniaturized && (window.occlusionState & NSWindowOcclusionStateVisible);
     NSString *script = [NSString stringWithFormat:@"window.__opensurgeWindowVisible=%@;document.dispatchEvent(new Event('visibilitychange'));", visible ? @"true" : @"false"];
     [self.webView evaluateJavaScript:script completionHandler:nil];
+    if (self.trayParent) {
+        NSString *menuState = [NSString stringWithFormat:@"window.dispatchEvent(new CustomEvent('opensurge:tray-menu',{detail:%@}));", window.isVisible ? @"true" : @"false"];
+        [findWebView(self.trayParent.contentView) evaluateJavaScript:menuState completionHandler:nil];
+    } else if (self.tray && !window.isVisible) {
+        hideTrayMenu(window, self.trayMenu);
+    }
     if (visible) [self publishTraySizing];
+}
+- (void)dismissTrayAfterFocusChange:(NSNotification *)notification {
+    // Resigning key happens before the next window becomes key. Resolve the
+    // pair after AppKit finishes that transfer, including app deactivation.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindow *parent = self.trayParent ?: self.webView.window;
+        NSWindow *menu = self.trayParent ? self.webView.window : self.trayMenu;
+        if (NSApp.isActive && (NSApp.keyWindow == parent || NSApp.keyWindow == menu)) return;
+        hideTrayMenu(parent, menu);
+        [parent orderOut:nil];
+    });
 }
 - (void)publishTraySizing {
     if (!self.tray) return;
@@ -213,12 +248,14 @@ void refreshOpenSurgeDockVisibility(void) {
     CGFloat top = MIN(NSMaxY(frame), NSMaxY(available) - 8);
     frame.size.height = MIN(ceil(height), NSHeight(available) - 16);
     frame.origin.y = MAX(NSMinY(available) + 8, top - frame.size.height);
+    if (self.trayParent) frame = trayMenuFrame(self.trayParent, frame);
     if (NSEqualRects(frame, window.frame)) return;
     // The disclosure animates its intrinsic height in CSS. Follow each measured
     // frame directly, preserving the menu-bar edge, instead of starting competing
     // native animations or scrolling the whole panel inside a fixed window.
     [window setFrame:frame display:YES];
-    if (smokeActions()) NSLog(@"OpenSurge tray geometry: content=%.0f window=%.0f top=%.0f", height, NSHeight(window.frame), NSMaxY(window.frame));
+    if (self.trayMenu.isVisible) [self.trayMenu setFrame:trayMenuFrame(window, self.trayMenu.frame) display:YES];
+    if (smokeActions()) NSLog(@"OpenSurge tray geometry: content=%.0f window=%.0f top=%.0f panel=%@", height, NSHeight(window.frame), NSMaxY(window.frame), self.trayParent ? @"more" : @"overview");
 }
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     if ([self.navigation respondsToSelector:_cmd]) [self.navigation webView:webView didFinishNavigation:navigation];
@@ -252,7 +289,10 @@ void refreshOpenSurgeDockVisibility(void) {
     [alert addButtonWithTitle:self.english ? @"Cancel" : @"取消"];
     [alert beginSheetModalForWindow:webView.window completionHandler:^(NSModalResponse result) { completion(result == NSAlertFirstButtonReturn); }];
 }
-- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+    if (self.trayClickMonitor) [NSEvent removeMonitor:self.trayClickMonitor];
+}
 @end
 
 void configureOpenSurgeWindow(void *pointer, bool rememberFrame, bool tray) {
@@ -308,6 +348,57 @@ void configureOpenSurgeWindow(void *pointer, bool rememberFrame, bool tray) {
     if (!guard.tray) [webView evaluateJavaScript:@"document.documentElement.dataset.uiReady === 'true'" completionHandler:^(id ready, NSError *error) {
         if ([ready isEqual:@YES]) [guard finishStartup];
     }];
+}
+
+void configureOpenSurgeTrayMenu(void *parentPointer, void *menuPointer) {
+    NSWindow *parent = (__bridge NSWindow *)parentPointer;
+    NSWindow *menu = (__bridge NSWindow *)menuPointer;
+    configureOpenSurgeWindow(menuPointer, false, true);
+    OpenSurgeWebViewGuard *parentGuard = objc_getAssociatedObject(findWebView(parent.contentView), &guardKey);
+    OpenSurgeWebViewGuard *menuGuard = objc_getAssociatedObject(findWebView(menu.contentView), &guardKey);
+    parentGuard.trayMenu = menu;
+    menuGuard.trayParent = parent;
+    [NSNotificationCenter.defaultCenter addObserver:parentGuard selector:@selector(dismissTrayAfterFocusChange:) name:NSWindowDidResignKeyNotification object:parent];
+    [NSNotificationCenter.defaultCenter addObserver:menuGuard selector:@selector(dismissTrayAfterFocusChange:) name:NSWindowDidResignKeyNotification object:menu];
+    [NSNotificationCenter.defaultCenter addObserver:parentGuard selector:@selector(dismissTrayAfterFocusChange:) name:NSApplicationDidResignActiveNotification object:NSApp];
+    __weak NSWindow *weakParent = parent;
+    __weak NSWindow *weakMenu = menu;
+    parentGuard.trayClickMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown handler:^NSEvent *(NSEvent *event) {
+        NSWindow *overview = weakParent, *actions = weakMenu;
+        if (!overview.isVisible || event.window == actions) return event;
+        if (event.window == overview) {
+            // Let the trigger toggle the menu itself. All other overview clicks
+            // dismiss the child while remaining available to the clicked control.
+            NSPoint point = [overview.contentView convertPoint:event.locationInWindow fromView:nil];
+            NSRect trigger = NSMakeRect(NSWidth(overview.contentView.bounds) - 42, NSHeight(overview.contentView.bounds) - 41, 26, 25);
+            if (!NSPointInRect(point, trigger)) hideTrayMenu(overview, actions);
+        } else {
+            hideTrayMenu(overview, actions);
+            [overview orderOut:nil];
+        }
+        return event;
+    }];
+}
+
+void closeOpenSurgeTrayMenu(void *parentPointer, void *menuPointer) {
+    NSWindow *parent = (__bridge NSWindow *)parentPointer;
+    NSWindow *menu = (__bridge NSWindow *)menuPointer;
+    hideTrayMenu(parent, menu);
+    if (parent.isVisible) {
+        [parent makeKeyWindow];
+        [findWebView(parent.contentView) evaluateJavaScript:@"document.querySelector('.tray-more-trigger')?.focus();" completionHandler:nil];
+    }
+}
+
+void toggleOpenSurgeTrayMenu(void *parentPointer, void *menuPointer) {
+    NSWindow *parent = (__bridge NSWindow *)parentPointer;
+    NSWindow *menu = (__bridge NSWindow *)menuPointer;
+    if (!parent.isVisible) return;
+    if (menu.isVisible) { closeOpenSurgeTrayMenu(parentPointer, menuPointer); return; }
+    [menu setFrame:trayMenuFrame(parent, menu.frame) display:NO];
+    [parent addChildWindow:menu ordered:NSWindowAbove];
+    [menu makeKeyAndOrderFront:nil];
+    if (smokeActions()) NSLog(@"OpenSurge tray menu opened: overview=%.0f top=%.0f menu=%.0f", NSHeight(parent.frame), NSMaxY(parent.frame), NSHeight(menu.frame));
 }
 
 void setOpenSurgeWindowLanguage(void *pointer, bool english) {

@@ -1,6 +1,6 @@
 import { releaseDisplayVersion } from '../release'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { copyText, desktopAction } from '../desktop'
+import { copyText, desktopAction, isDesktop } from '../desktop'
 import { activateLanguage, cacheRequestedLanguage, initialRequestedLanguage, isRequestedLanguage, prepareLanguage, t } from '../i18n'
 import { useTheme } from '../hooks/useTheme'
 import { gatewayIsTransitioning, gatewayStatusDetail, gatewayStatusLabel, recoveryLabel, statusLabel, takeoverLabel } from '../status'
@@ -18,7 +18,9 @@ export function diagnosticSummary(status: MenuBarStatus | null): string {
  return ['OpenSurge for Mac', `Gateway: ${status.gateway}`, `Topology: ${status.topology}`, `LAN IP: ${status.lan_ip}`, `DHCP/DNS: ${status.dhcp}`, `mihomo: ${status.mihomo}`, `TUN: ${status.tun}${status.tun_interface ? ` [${status.tun_interface}]` : ''}`, `PF: ${status.pf_anchor}`, `Forwarding: ${status.forwarding}`, `IPv4 takeover: ${status.ipv4_takeover}`, `IPv6 takeover: ${status.ipv6_takeover}`, `Clients: ${status.client_count}`, `Drift: ${status.drift}`, `Recovery: ${status.recovery_required ? status.recovery_stage ?? 'required' : 'none'}`, `Error code: ${status.error_code ?? 'none'}`, `Lid-closed sleep prevention: ${status.sleep_prevention.active ? 'active' : 'off'}`].join('\n')
 }
 
-export function TrayApp() {
+export function TrayMenuApp() { return <TrayApp menuOnly /> }
+
+export function TrayApp({ menuOnly = false }: { menuOnly?: boolean } = {}) {
  const panel = useRef<HTMLElement>(null)
  useEffect(() => {
   // WKWebView otherwise focuses the first action when the native popup opens.
@@ -36,12 +38,16 @@ export function TrayApp() {
  const [, , theme] = useTheme()
  useEffect(() => { void desktopAction('tray-appearance', { theme }).catch(() => {}) }, [theme])
  const more = useRef<HTMLDetailsElement>(null)
+ const [nativeMenuOpen, setNativeMenuOpen] = useState(false)
+ const nativeMenu = isDesktop()
  useEffect(() => {
   const close = (event: PointerEvent) => { if (more.current && !more.current.contains(event.target as Node)) more.current.open = false }
   const checkUpdate = () => { if (more.current) more.current.open = true }
+  const menuState = (event: Event) => setNativeMenuOpen((event as CustomEvent<boolean>).detail)
   document.addEventListener('pointerdown', close)
   window.addEventListener('opensurge:check-update', checkUpdate)
-  return () => { document.removeEventListener('pointerdown', close); window.removeEventListener('opensurge:check-update', checkUpdate) }
+  window.addEventListener('opensurge:tray-menu', menuState)
+  return () => { document.removeEventListener('pointerdown', close); window.removeEventListener('opensurge:check-update', checkUpdate); window.removeEventListener('opensurge:tray-menu', menuState) }
  }, [])
  const [snapshot, setSnapshot] = useState(initial)
  const [language, setLanguage] = useState(initialRequestedLanguage)
@@ -133,24 +139,29 @@ export function TrayApp() {
   ['DHCP / DNS', statusLabel(status.dhcp)], ['mihomo', status.mihomo.startsWith('running') ? `${statusLabel('running')}${status.mihomo.slice(7)}` : statusLabel(status.mihomo)], ['TUN', `${takeoverLabel(status.tun)}${status.tun_interface ? ` · ${status.tun_interface}` : ''}`],
   ['PF', t(status.pf_anchor === 'loaded' ? '已加载' : '未加载')], [t('IPv4 接管'), takeoverLabel(status.ipv4_takeover)], [t('IPv6 接管'), takeoverLabel(status.ipv6_takeover)],
  ] : []
+ const menu = <div className="tray-more-panel">
+  <div className="tray-more-content">
+   <button className="tray-browser" disabled={browserBusy} onClick={() => void openBrowser()}>{t(browserBusy ? '正在打开浏览器…' : '在浏览器中打开')}</button>
+   {browserError && <p role="alert" className="tray-error">{browserError}</p>}
+   <div className="tray-row"><button onClick={() => void run(async () => { await copyText(diagnosticSummary(status)); setCopied(true) })}>{t(copied ? '已复制' : '复制诊断摘要')}</button><button disabled={refreshing} aria-label={t('刷新状态')} onClick={() => { setRefreshing(true); void refresh(true).finally(() => setRefreshing(false)) }}>{t(refreshing ? '正在刷新…' : '刷新')}</button></div>
+   <TrayUtilities canUninstall={snapshot.can_uninstall === true} />
+   {menuOnly && error && <p role="alert" className="tray-error">{error}</p>}
+   <p className="tray-caption">{releaseDisplayVersion(import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</p>
+  </div>
+  <section className="tray-exit">
+   <button disabled={!snapshot.can_quit || !snapshot.service_actions || serviceBusy} title={!snapshot.can_quit ? t('请先在网络设置中停止网关并完成恢复。') : undefined} onClick={() => void serviceAction('quit', true)}>{t('退出 OpenSurge…')}</button>
+   <button disabled={serviceBusy} onClick={() => void serviceAction('quit')}>{t('只退出桌面 App…')}</button>
+  </section>
+ </div>
+ if (menuOnly) return <main className="tray-app tray-menu-app" ref={panel} tabIndex={-1} role="dialog" aria-label={t('更多操作')}>{menu}</main>
  return <main className="tray-app" ref={panel} tabIndex={-1}>
   <header className="tray-header">
    <img src="/opensurge-icon.png" alt="" /><h1>OpenSurge</h1>
    <span className={`tray-indicator ${snapshot.indicator}`} title={detail || displayLabel}><span className={`tray-dot ${transitioning ? 'transition' : snapshot.indicator}`} />{displayLabel}</span>
-   <details className="tray-more" ref={more} onKeyDown={event => { if (event.key === 'Escape' && more.current?.open) { more.current.open = false; event.stopPropagation(); more.current.querySelector('summary')?.focus() } }}>
+   {nativeMenu ? <button className="tray-more-trigger" aria-label={t('更多操作')} title={t('更多操作')} aria-haspopup="dialog" aria-expanded={nativeMenuOpen} onClick={() => void run(() => desktopAction('toggle-tray-menu'))}>···</button> : <details className="tray-more" ref={more} onKeyDown={event => { if (event.key === 'Escape' && more.current?.open) { more.current.open = false; event.stopPropagation(); more.current.querySelector('summary')?.focus() } }}>
     <summary aria-label={t('更多操作')} title={t('更多操作')}>···</summary>
-    <div className="tray-more-panel">
-     <button className="tray-browser" disabled={browserBusy} onClick={() => void openBrowser()}>{t(browserBusy ? '正在打开浏览器…' : '在浏览器中打开')}</button>
-     {browserError && <p role="alert" className="tray-error">{browserError}</p>}
-     <div className="tray-row"><button onClick={() => void run(async () => { await copyText(diagnosticSummary(status)); setCopied(true) })}>{t(copied ? '已复制' : '复制诊断摘要')}</button><button disabled={refreshing} aria-label={t('刷新状态')} onClick={() => { setRefreshing(true); void refresh(true).finally(() => setRefreshing(false)) }}>{t(refreshing ? '正在刷新…' : '刷新')}</button></div>
-     <TrayUtilities canUninstall={snapshot.can_uninstall === true} />
-     <p className="tray-caption">{releaseDisplayVersion(import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</p>
-     <section className="tray-exit">
-      <button disabled={!snapshot.can_quit || !snapshot.service_actions || serviceBusy} title={!snapshot.can_quit ? t('请先在网络设置中停止网关并完成恢复。') : undefined} onClick={() => void serviceAction('quit', true)}>{t('退出 OpenSurge…')}</button>
-      <button disabled={serviceBusy} onClick={() => void serviceAction('quit')}>{t('只退出桌面 App…')}</button>
-     </section>
-    </div>
-   </details>
+    {menu}
+   </details>}
   </header>
   {status && <p className="tray-subtitle"><span>{t(topology)}</span><span aria-hidden="true"> · </span><span>{status.lan_ip}</span></p>}
   <div className="tray-content">

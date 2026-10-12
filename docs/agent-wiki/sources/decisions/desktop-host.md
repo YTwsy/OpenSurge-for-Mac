@@ -216,6 +216,16 @@ main frame; an injected ResizeObserver follows intrinsic content height, so the
 native window's lower edge follows the disclosure while its top stays anchored.
 The height is capped to the current display's visible area; only an unusually short
 display or long warning needs internal scrolling, without a visible scrollbar.
+
+More actions uses a separate, reusable native child window, anchored below the
+header trigger. It reuses the React actions and native capability routes, including
+their status checks and confirmations. Its own intrinsic height follows utility
+feedback without resizing the overview. Only screen bounds constrain the menu;
+if its contents exceed the display, utilities scroll while both exit buttons remain
+visible. Focus may move between the two windows without hiding the overview.
+Escape in the menu returns focus to its trigger; an overview click closes only the
+menu, while focus/clicks outside the pair or hiding the overview dismiss both.
+Neither tray window participates in Dock visibility.
 Reduced Motion disables the transition, following Apple's
 [motion guidance](https://developer.apple.com/design/human-interface-guidelines/motion).
 
