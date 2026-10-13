@@ -7,13 +7,13 @@
 从明确提交的干净源码导出构建，保留既有 PKG。示例变量需替换为本次构建的实际来源：
 
 ```sh
-OPENSURGE_VERSION=0.3.0 \
+OPENSURGE_VERSION=0.3.1 \
 OPENSURGE_BUILD_NUMBER=1 \
-OPENSURGE_RELEASE_TAG=v0.3.0 \
+OPENSURGE_RELEASE_TAG=v0.3.1 \
 OPENSURGE_APP_ARCH=arm64 \
 OPENSURGE_MIHOMO_BINARY=/absolute/path/to/pinned/mihomo \
 OPENSURGE_DNSMASQ_BINARY=/absolute/path/to/pinned/dnsmasq \
-OPENSURGE_PKG_OUTPUT=/absolute/path/to/OpenSurge-0.3.0-arm64-build1-COMMIT-unsigned.pkg \
+OPENSURGE_PKG_OUTPUT=/absolute/path/to/OpenSurge-0.3.1-arm64-build1-COMMIT-unsigned.pkg \
 make gui-installer
 ```
 
@@ -23,7 +23,7 @@ make gui-installer
 匹配架构的 mihomo / dnsmasq。
 
 ```sh
-./scripts/verify-unsigned-gui-installer.sh PACKAGE 0.3.0 arm64 13.0 v0.3.0 1
+./scripts/verify-unsigned-gui-installer.sh PACKAGE 0.3.1 arm64 13.0 v0.3.1 1
 shasum -a 256 PACKAGE > PACKAGE.sha256
 shasum -a 256 -c PACKAGE.sha256
 ```
