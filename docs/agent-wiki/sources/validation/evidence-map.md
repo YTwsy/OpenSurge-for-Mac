@@ -39,6 +39,7 @@
 | --- | --- | --- | --- | --- |
 | Next 的 v0.3 Wails 开发迁移与主线归并 | 开发已完成，PR #81 已合入 master | master 405daac 是合入基线，不是全部平台的被测版本 | [已完成迁移计划](../../tasks/finished_archived/desktop-migration-v0.3.md) | 历史阶段表不再指导新开发；迁移完成不扩大安装验收范围 |
 | PackageKit、登录连续性、授权与 macOS 13 / Intel 原生运行 | 迁移期原文列为仍需完成的真实安装/平台检查 | v0.3 迁移说明；没有对应的完整实机执行报告或被测提交 | [原验收说明](../../tasks/finished_archived/desktop-installation-v0.3.md#验收层级) | 当前仍需相应新证据；构建、脚本替身与 fixture 不补足这些结果 |
+| 总览图表渲染开销与切页连续性 | 受控对比中 Graphics and Media 平均 CPU 从 58.95% 降至 1.51%；明暗主题与 5 次快速切页检查通过 | 2026-10-09；macOS 14.8.5 arm64 / 系统 WebView；原实现 405daac，对比相同基线上的图表修复候选，渲染与采样实现现见 4046861 | [问题、方法与汇总结果 #84](https://github.com/YTwsy/OpenSurge-for-Mac/issues/84) | 每组 45 秒、合成 UI fixture、单核 CPU 口径；不证明网关吞吐量、全部 Mac 或完整睡眠唤醒场景；后续渲染改动需复验 |
 | 旧 Swift 面板展开/聚焦修复 | 四种实现未修复实际展开异常，整体回退到 0932641 | codex/release-v0.1.24；日期与完整环境未记载 | [失败与回退记录](../../tasks/finished_archived/swift-menubar-focus-regression.md) | 仅供旧 Swift 维护与回归追溯，不推导 Wails 当前行为 |
 
 ## 使用与更新

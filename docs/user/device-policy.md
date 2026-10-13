@@ -132,8 +132,8 @@ omits `egress_mode` keeps the previous global-first/device-fallback behavior as
 `legacy_fallback`; the GUI displays that state explicitly and asks the operator
 to choose either new mode instead of silently migrating it.
 
-`gateway_target` defaults to `opensurge`. Only `same_wifi_dhcp` may explicitly
-select `upstream_router`: dnsmasq still reserves the device's IPv4 by MAC, but
+`gateway_target` defaults to `opensurge`. The Devices page offers switching to
+`upstream_router` only in `same_wifi_dhcp`: dnsmasq still reserves the device's IPv4 by MAC, but
 uses a client tag to send `dhcp.bypass_gateway` and `dhcp.bypass_dns` instead.
 OpenSurge emits no proxy selectors or ordinary device rules for that device
 while bypass is active; its profile and rules remain stored and return when it
@@ -147,6 +147,17 @@ otherwise IPv6 can bypass OpenSurge entirely. The client must renew its lease
 or reconnect before the new IPv4 Router and DNS options take effect. This
 target requires a real MAC, and the upstream router must be on the gateway LAN
 but outside the dynamic DHCP pool.
+
+When switching from DHCP takeover to bypass-router mode (`same_lan`), you can
+retain these direct main-router devices without changing each one back to
+OpenSurge. They do not block saving or starting the gateway. Bypass-router mode
+does not provide DHCP, so check the gateway and DNS on the main router or the
+device. Device details and routing settings remain stored; OpenSurge does not
+automatically move them to a proxy outlet, and downstream IPv6 through OpenSurge
+remains blocked for them. To route a device through the Mac, choose **Follow
+gateway rules** or **Dedicated device outlet** and manually set its gateway and
+DNS to the Mac. Returning to DHCP takeover revalidates the main-router gateway
+and DNS. An isolated downstream LAN still does not support this bypass target.
 
 When a source switch or subscription update removes a referenced outbound,
 OpenSurge derives effective routes from the final composed target inventory:

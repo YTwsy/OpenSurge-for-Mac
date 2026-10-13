@@ -188,6 +188,17 @@ heights and the actual template image size for this acceptance check.
 These native checks require a build with `private_mac_apis`, as provided by the App
 builder; a browser screenshot alone does not verify the AppKit material.
 
+With the gateway stopped and Network status collapsed, open More actions. The
+menu must extend beyond the overview in its own native window, showing all options
+including **Quit Desktop App Only…** without scrolling when the display has room.
+The overview's frame must remain unchanged on opening/closing the menu. Repeat with
+a running overview, both languages, and login/update feedback appearing while open.
+Check trigger toggling, Escape returning focus to the trigger, and an overview click
+closing only the menu. Clicking another app must dismiss both; reopening the tray
+must leave the menu closed. On a display too short for all options, only the utilities
+may scroll; both exit buttons must remain visible without scrolling. Smoke logs
+distinguish `overview` and `more` geometry and report the parent frame on menu open.
+
 ## Service lifecycle
 
 For lifecycle acceptance, add `--smoke-actions` to the preview invocation above.

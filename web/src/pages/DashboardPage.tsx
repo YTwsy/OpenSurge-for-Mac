@@ -13,7 +13,7 @@ export function DashboardPage({ overview, onOpenNetwork, onOpenConnections }: { 
   const stopped = overview?.status.gateway === 'stopped'
   const interrupted = overview?.status.runtime_state === 'interrupted'
   const warnings = overview?.warnings.filter(item => !(interrupted && item.includes('interrupted by a system reboot'))) ?? []
-  const { traffic, history, error } = useDeviceTraffic(overview?.status.gateway)
+  const { traffic, history, error } = useDeviceTraffic()
   const rates = traffic?.gateway_rates ?? { upload: 0, download: 0 }
   return <>
     <PageHeader eyebrow="CONTROL CENTER" title="全屋网关，一眼可见" description="OpenSurge 负责网关生命周期；mihomo 是当前代理引擎。" action={<button className={interrupted ? 'primary' : running ? 'danger' : 'primary'} disabled={!overview || (!running && !stopped)} onClick={() => onOpenNetwork(interrupted ? 'cleanup' : running ? 'stop' : 'start')}>{t(interrupted ? '安全清理旧状态' : running ? '停止网关' : '启动网关')}</button>} />

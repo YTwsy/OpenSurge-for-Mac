@@ -164,6 +164,17 @@ func TestRenderConfigSameLANDNSOnly(t *testing.T) {
 	cfg.Gateway.Mode = config.GatewayModeSameLAN
 	cfg.DHCP.Enabled = false
 	cfg.DNS.Upstream = "127.0.0.1#1053"
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.DevicePolicy.File = filepath.Join(t.TempDir(), "devices.json")
+	if err := os.WriteFile(cfg.DevicePolicy.File, []byte(`{
+  "profiles": [{"id":"home","default_policies":["DIRECT"]}],
+  "devices": [{"id":"console","mac":"aa:bb:cc:dd:ee:05","ipv4":"192.168.50.190","profile":"home","gateway_target":"upstream_router"}]
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.Validate(cfg); err != nil {
+		t.Fatalf("same-LAN with retained bypass: %v", err)
+	}
 	paths := runtime.NewPaths(cfg)
 	rendered, err := RenderConfig(cfg, paths)
 	if err != nil {
@@ -182,7 +193,9 @@ func TestRenderConfigSameLANDNSOnly(t *testing.T) {
 	}
 	for _, notWant := range []string{
 		"dhcp-range=",
-		"dhcp-option=option:router",
+		"dhcp-option=",
+		"dhcp-host=",
+		"opensurge-router-bypass",
 		"log-dhcp",
 		"dhcp-leasefile=",
 	} {

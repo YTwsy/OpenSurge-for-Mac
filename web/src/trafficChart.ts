@@ -5,6 +5,13 @@ export type SmoothChart = {
   linePath: string
 }
 
+// A readable shared scale avoids resizing the chart for every small rate change.
+export function trafficChartMaximum(values: number[]): number {
+  const peak = Math.max(1, ...values.filter(Number.isFinite))
+  const magnitude = 10 ** Math.floor(Math.log10(peak))
+  return [1, 2, 5, 10].find(step => step * magnitude >= peak)! * magnitude
+}
+
 export function buildSmoothChart(values: number[], maximum: number, top: number, baseline: number): SmoothChart {
   const samples = values.length > 1 ? values : [0, values[0] ?? 0]
   const scale = Math.max(maximum, 1)

@@ -1,32 +1,39 @@
-import { useEffect, useState } from 'react'
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api } from '../api'
 import { watchVisibleRefresh } from '../visibility'
 import type { DeviceTraffic, TrafficHistoryPoint } from '../types'
 
 const refreshIntervalMs = 2_000
 const historyLimit = 30
+const historyWindowMs = 60_000
 export const gatewayLocalDeviceKey = 'gateway-local'
 
-export function useDeviceTraffic(gateway?: string) {
-  const [traffic, setTraffic] = useState<DeviceTraffic | null>(null)
-  const [history, setHistory] = useState<TrafficHistoryPoint[]>([])
-  const [error, setError] = useState('')
+type TrafficSnapshot = { traffic: DeviceTraffic | null; history: TrafficHistoryPoint[]; error: string }
+const emptySnapshot: TrafficSnapshot = { traffic: null, history: [], error: '' }
+const DeviceTrafficContext = createContext<TrafficSnapshot>(emptySnapshot)
+
+// Own sampling above the route boundary: navigation must not discard the chart's
+// history/scale, and pages that do not consume this context do not render on ticks.
+export function DeviceTrafficProvider({ gateway, children }: { gateway?: string; children: ReactNode }) {
+  const [snapshot, setSnapshot] = useState<TrafficSnapshot>(emptySnapshot)
+  const lifecycle = gateway === 'degraded' ? 'running' : gateway
 
   useEffect(() => {
     let active = true
-    setTraffic(null)
-    setHistory([])
-    setError('')
+    setSnapshot(emptySnapshot)
+    if (!lifecycle) return
 
     const refresh = async () => {
       try {
         const next = await api.deviceTraffic()
         if (!active) return
-        setTraffic(next)
-        setHistory(current => appendTrafficPoint(current, next))
-        setError('')
+        setSnapshot(current => {
+          const latest = current.history.at(-1)?.sampled_at
+          if (latest && Date.parse(next.sampled_at) < Date.parse(latest)) return current
+          return { traffic: next, history: appendTrafficPoint(current.history, next), error: '' }
+        })
       } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : String(cause))
+        if (active) setSnapshot(current => ({ ...current, error: cause instanceof Error ? cause.message : String(cause) }))
       }
     }
 
@@ -35,13 +42,19 @@ export function useDeviceTraffic(gateway?: string) {
       active = false
       stopRefresh()
     }
-  }, [gateway])
+  }, [lifecycle])
 
-  return { traffic, history, error }
+  return createElement(DeviceTrafficContext.Provider, { value: snapshot }, children)
 }
 
-function appendTrafficPoint(history: TrafficHistoryPoint[], traffic: DeviceTraffic) {
-  if (history.at(-1)?.sampled_at === traffic.sampled_at) return history
+export function useDeviceTraffic() {
+  return useContext(DeviceTrafficContext)
+}
+
+export function appendTrafficPoint(history: TrafficHistoryPoint[], traffic: DeviceTraffic) {
+  const timestamp = Date.parse(traffic.sampled_at)
+  const latest = history.at(-1)?.sampled_at
+  if (!Number.isFinite(timestamp) || (latest && timestamp <= Date.parse(latest))) return history
   const devices = Object.fromEntries(traffic.devices.map(device => [deviceKey(device.mac, device.ip), {
     upload: device.upload_rate ?? 0,
     download: device.download_rate ?? 0,
@@ -56,7 +69,7 @@ function appendTrafficPoint(history: TrafficHistoryPoint[], traffic: DeviceTraff
     download: traffic.gateway_rates?.download ?? traffic.totals.download_rate ?? 0,
     devices,
   }
-  return [...history, point].slice(-historyLimit)
+  return [...history.filter(sample => timestamp - Date.parse(sample.sampled_at) < historyWindowMs), point].slice(-historyLimit)
 }
 
 export function deviceKey(mac: string, ip: string) {

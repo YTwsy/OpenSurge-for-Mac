@@ -203,7 +203,7 @@ func validateDevicePolicy(cfg Config, scope lan.Scope) error {
 		return fmt.Errorf("device_policy.file: %w", err)
 	}
 	protected := append([]string(nil), cfg.DevicePolicy.ProtectedIPv4...)
-	if device.UsesUpstreamRouter(activePolicy) {
+	if cfg.Gateway.Mode == GatewayModeSameWiFiDHCP && device.UsesUpstreamRouter(activePolicy) {
 		protected = append(protected, cfg.DHCP.BypassGateway)
 	}
 	if err := device.ValidatePolicySetForLAN(bundle.Policy, scope, protected, cfg.Gateway.Mode == GatewayModeSameLAN); err != nil {
@@ -247,8 +247,14 @@ func validateRouterBypass(cfg Config, scope lan.Scope, policy device.PolicySet) 
 	if !device.UsesUpstreamRouter(policy) {
 		return nil
 	}
+	// same_lan does not issue DHCP Router/DNS options. Retain the device's
+	// bypass choice without letting inactive DHCP settings block a topology
+	// switch; validate them again when DHCP takeover is re-enabled.
+	if cfg.Gateway.Mode == GatewayModeSameLAN {
+		return nil
+	}
 	if cfg.Gateway.Mode != GatewayModeSameWiFiDHCP {
-		return fmt.Errorf("gateway_target %q is only available in gateway.mode same_wifi_dhcp", device.GatewayTargetUpstreamRouter)
+		return fmt.Errorf("gateway_target %q requires gateway.mode same_wifi_dhcp or same_lan", device.GatewayTargetUpstreamRouter)
 	}
 	gateway := net.ParseIP(strings.TrimSpace(cfg.DHCP.BypassGateway)).To4()
 	if gateway == nil {

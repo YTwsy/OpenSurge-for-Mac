@@ -19,6 +19,7 @@ type Actions struct {
 	SaveRecovery          func(context.Context) (bool, error)
 	SetLanguage           func(string)
 	SetTrayAppearance     func(string)
+	ToggleTrayMenu        func()
 	SetSettingsAppearance func(string)
 	ShowSettings          func()
 	MenuStatus            func(context.Context, bool) any
@@ -63,6 +64,12 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var result any = map[string]any{"ok": true}
 	switch r.URL.Path {
+	case "/desktop/v1/toggle-tray-menu":
+		if payload != (request{}) {
+			http.Error(w, "tray menu action takes no arguments", http.StatusBadRequest)
+			return
+		}
+		a.ToggleTrayMenu()
 	case "/desktop/v1/show-settings":
 		if payload != (request{}) {
 			http.Error(w, "settings action takes no arguments", http.StatusBadRequest)

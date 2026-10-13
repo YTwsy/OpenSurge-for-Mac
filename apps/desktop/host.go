@@ -30,6 +30,7 @@ type desktopHost struct {
 	mu            sync.Mutex
 	language      string
 	popup         *application.WebviewWindow
+	trayMore      *application.WebviewWindow
 	tray          *application.SystemTray
 	status        *menustatus.Monitor
 	activity      *trayactivity.Monitor
@@ -83,9 +84,13 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 			}
 			return nil
 		},
-		SaveRecovery:          h.saveRecovery,
-		SetLanguage:           h.setLanguage,
-		SetTrayAppearance:     func(theme string) { native.SetAppearance(h.popup, theme) },
+		SaveRecovery: h.saveRecovery,
+		SetLanguage:  h.setLanguage,
+		SetTrayAppearance: func(theme string) {
+			native.SetAppearance(h.popup, theme)
+			native.SetAppearance(h.trayMore, theme)
+		},
+		ToggleTrayMenu:        func() { native.ToggleTrayMenu(h.popup, h.trayMore) },
 		SetSettingsAppearance: func(theme string) { native.SetAppearance(h.settings, theme) },
 		ShowSettings:          h.showSettings,
 		ShowMain:              h.show,
@@ -151,6 +156,9 @@ func (h *desktopHost) setLanguage(language string) {
 	native.SetLanguage(h.main, language == "en")
 	if h.popup != nil {
 		native.SetLanguage(h.popup, language == "en")
+	}
+	if h.trayMore != nil {
+		native.SetLanguage(h.trayMore, language == "en")
 	}
 	if h.settings != nil {
 		native.SetLanguage(h.settings, language == "en")

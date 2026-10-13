@@ -149,6 +149,7 @@ func main() {
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		native.Configure(window, true)
 		native.Configure(host.popup, false)
+		native.ConfigureTrayMenu(host.popup, host.trayMore)
 		native.ConfigureSettings(host.settings)
 		host.mu.Lock()
 		language := host.language

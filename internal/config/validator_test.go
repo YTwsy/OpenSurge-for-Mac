@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -322,7 +323,7 @@ func TestValidateDevicePolicyCandidateEnforcesRouterBypassTopology(t *testing.T)
 		{name: "missing DNS", edit: func(cfg *Config) { cfg.DHCP.BypassDNS = nil }, want: "requires at least one dhcp.bypass_dns"},
 		{name: "different subnet", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "192.168.2.1" }, want: "must remain in gateway LAN"},
 		{name: "inside pool", edit: func(cfg *Config) { cfg.DHCP.BypassGateway = "192.168.1.150" }, want: "must not be inside the DHCP range"},
-		{name: "unsupported topology", edit: func(cfg *Config) { cfg.Gateway.Mode = GatewayModeSameLAN; cfg.DHCP.Enabled = false }, want: "only available in gateway.mode same_wifi_dhcp"},
+		{name: "unsupported topology", edit: func(cfg *Config) { cfg.Gateway.Mode = GatewayModeIsolatedLAN }, want: "requires gateway.mode same_wifi_dhcp or same_lan"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,6 +334,83 @@ func TestValidateDevicePolicyCandidateEnforcesRouterBypassTopology(t *testing.T)
 				t.Fatalf("ValidateDevicePolicyCandidate() error = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestRouterBypassPolicySurvivesSameLANModeSwitch(t *testing.T) {
+	dir := t.TempDir()
+	policyPath := filepath.Join(dir, "devices.json")
+	policyJSON := []byte(`{
+  "profiles": [{"id":"home","default_policies":["DIRECT"]}],
+  "devices": [
+    {"id":"console","mac":"aa:bb:cc:dd:ee:05","ipv4":"192.168.50.190","profile":"home","gateway_target":"upstream_router","egress_mode":"dedicated"},
+    {"id":"phone","mac":"aa:bb:cc:dd:ee:01","ipv4":"192.168.50.191","profile":"home","egress_mode":"dedicated"}
+  ]
+}`)
+	if err := os.WriteFile(policyPath, policyJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Default()
+	cfg.DevicePolicy.File = policyPath
+	cfg.Gateway.Mode = GatewayModeSameWiFiDHCP
+	cfg.Transparent.Mode = TransparentModeTUN
+	cfg.DHCP.BypassGateway = "192.168.50.254"
+	cfg.DHCP.BypassDNS = []string{"192.168.50.254"}
+	if err := PrepareDevicePolicy(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("DHCP takeover: %v", err)
+	}
+	digest := cfg.DevicePolicy.Bundle.Digest
+
+	// The same persisted document must remain usable when DHCP is disabled,
+	// including when the old DHCP-only gateway settings no longer apply.
+	cfg.Gateway.Mode = GatewayModeSameLAN
+	cfg.DHCP.Enabled = false
+	for _, bypassGateway := range []string{"", "192.168.60.1", "192.168.50.150", "192.168.50.191"} {
+		t.Run("retained gateway "+bypassGateway, func(t *testing.T) {
+			candidate := cfg
+			candidate.DHCP.BypassGateway = bypassGateway
+			candidate.DHCP.BypassDNS = nil
+			if err := ValidateDevicePolicyCandidate(candidate, cfg.DevicePolicy.Bundle.Policy); err != nil {
+				t.Fatalf("same-LAN policy save: %v", err)
+			}
+			configPath := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(configPath, []byte(Render(candidate)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := Load(configPath)
+			if err != nil {
+				t.Fatalf("same-LAN startup config: %v", err)
+			}
+			bundle := loaded.DevicePolicy.Bundle
+			if bundle.Digest != digest || len(bundle.Compiled.Devices) != 2 || bundle.Compiled.Devices[0].GatewayTarget != device.GatewayTargetUpstreamRouter {
+				t.Fatalf("retained policy = %#v", bundle)
+			}
+			if len(bundle.Compiled.SelectorGroups) != 1 || bundle.Compiled.SelectorGroups[0].Name != "device/phone/default" {
+				t.Fatalf("unexpected device routes: %#v", bundle.Compiled.SelectorGroups)
+			}
+			protected := loaded
+			protected.DevicePolicy.ProtectedIPv4 = []string{"192.168.50.191"}
+			if err := Validate(protected); err == nil || !strings.Contains(err.Error(), "protected IPv4") {
+				t.Fatalf("explicit protected address was not enforced: %v", err)
+			}
+			loaded.Gateway.Mode = GatewayModeSameWiFiDHCP
+			loaded.DHCP.Enabled = true
+			if err := Validate(loaded); err == nil {
+				t.Fatal("returning to DHCP accepted invalid bypass settings")
+			}
+			loaded.DHCP.BypassGateway = "192.168.50.254"
+			loaded.DHCP.BypassDNS = []string{"192.168.50.254"}
+			if err := Validate(loaded); err != nil {
+				t.Fatalf("returning to DHCP with valid settings: %v", err)
+			}
+		})
+	}
+	retained, err := os.ReadFile(policyPath)
+	if err != nil || string(retained) != string(policyJSON) {
+		t.Fatalf("mode switch changed the saved device policy: %s, %v", retained, err)
 	}
 }
 

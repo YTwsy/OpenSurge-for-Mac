@@ -8,7 +8,7 @@
 
 ```text
 idle -> prepared -> mac_static -> router_dhcp_disabled_confirmed
-     -> gateway_active -> client_validated | client_validation_skipped
+     -> gateway_active [-> client_validated | client_validation_skipped]
      -> gateway_stopped_waiting_router_dhcp
         -> router_dhcp_restored -> complete | complete_static
         -> complete_static
@@ -32,9 +32,12 @@ OFFER 探测不可用，认证后的 Web GUI 提供带断网警告和显式人�
 
 局域网 DHCP 接管 start 后还有 `client_validated` 阶段：要求 active lease、DHCPACK、客户端源 IP
 DNS 与 mihomo TUN 日志，并保存用户对网关/DNS、无显式代理和 IPv6 绕过警告的确认。
-Web GUI 允许用户显式进入 `client_validation_skipped`，然后继续 stop；这只是解除流程阻塞，
-必须记录“没有客户端路径证据”，不能显示或对外宣称已经验收。紧急 stop 仍允许直接执行，
-以免验收失败阻塞网络恢复。
+网络页将这项检查放在默认折叠的“下一步：检查设备接入”中，作为可选操作；运行控制
+直接提供 stop，不要求先检查或跳过。只有检查成功才进入 `client_validated`，未执行检查
+不能显示或对外宣称已经验收。API 保留显式 `client_validation_skipped` 及“没有客户端
+路径证据”的记录以兼容已有调用；界面不再提供单独的跳过步骤。三种运行阶段都可直接
+stop，不能让检查失败阻塞网络恢复。接管与恢复步骤在运行期间默认折叠，启动前及停止后
+默认展开；停止后的 DHCP 与 Mac 网络恢复提示始终直接显示。
 
 `prepared` 只表示恢复网络快照和离线恢复卡已经落盘：此时 Mac、路由器和 DHCP 尚未
 改变。它不是跨页面高风险告警；`gateway_active` / `client_validated` 是预期的稳定接管

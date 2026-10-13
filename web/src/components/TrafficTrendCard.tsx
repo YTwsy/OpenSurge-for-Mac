@@ -1,8 +1,7 @@
 import { useId } from 'react'
 import type { TrafficHistoryPoint, TrafficRates } from '../types'
 import { formatRate } from '../trafficFormat'
-import { buildSmoothChart } from '../trafficChart'
-import { useAnimatedTrafficSeries } from '../hooks/useAnimatedTrafficSeries'
+import { buildSmoothChart, trafficChartMaximum } from '../trafficChart'
 import { localeIdentifier, t } from '../i18n'
 
 type TrafficTrendCardProps = {
@@ -15,14 +14,13 @@ type TrafficTrendCardProps = {
 
 export function TrafficTrendCard({ title, subtitle, history, deviceKey, className = '' }: TrafficTrendCardProps) {
   const gradientID = useId().replace(/:/g, '')
-  const target = history.map(point => deviceKey ? point.devices[deviceKey] ?? zeroRates : point)
-  const samples = useAnimatedTrafficSeries(target, `${deviceKey ?? 'gateway'}:${history.at(-1)?.sampled_at ?? 'empty'}`)
+  const samples = history.map(point => deviceKey ? point.devices[deviceKey] ?? zeroRates : point)
   const upload = samples.map(point => point.upload)
   const download = samples.map(point => point.download)
-  const maximum = Math.max(...upload, ...download, 1)
+  const maximum = trafficChartMaximum([...upload, ...download])
   const uploadChart = buildSmoothChart(upload, maximum, 8, 46)
   const downloadChart = buildSmoothChart(download, maximum, 8, 46)
-  const current = target.at(-1) ?? zeroRates
+  const current = samples.at(-1) ?? zeroRates
   const firstTime = history[0]?.sampled_at
   const lastTime = history.at(-1)?.sampled_at
 
@@ -33,12 +31,15 @@ export function TrafficTrendCard({ title, subtitle, history, deviceKey, classNam
       <span className="download"><i />↓ {formatRate(current.download)}</span>
     </div>
     <div className="trend-chart">
-      <svg viewBox="0 0 100 52" preserveAspectRatio="none" role="img" aria-label={t('{{title}}最近 60 秒上传下载趋势', { title: t(title) })}>
+      <div className="trend-y-axis" aria-hidden="true"><span>{formatRate(maximum)}</span><span>{formatRate(maximum / 2)}</span><span>0</span></div>
+      <svg viewBox="0 0 100 52" preserveAspectRatio="none" role="img" aria-label={t('{{title}}最近 60 秒上传下载趋势', { title: t(title) })} aria-description={t('纵轴范围：0–{{rate}}', { rate: formatRate(maximum) })}>
         <defs>
           <linearGradient id={`${gradientID}-up`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#8b7cf6" stopOpacity=".24" /><stop offset="1" stopColor="#8b7cf6" stopOpacity="0" /></linearGradient>
           <linearGradient id={`${gradientID}-down`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#58bce8" stopOpacity=".22" /><stop offset="1" stopColor="#58bce8" stopOpacity="0" /></linearGradient>
         </defs>
+        <line x1="0" y1="8" x2="100" y2="8" className="chart-grid-line" />
         <line x1="0" y1="27" x2="100" y2="27" className="chart-grid-line" />
+        <line x1="0" y1="46" x2="100" y2="46" className="chart-grid-line" />
         <path d={uploadChart.areaPath} fill={`url(#${gradientID}-up)`} />
         <path d={downloadChart.areaPath} fill={`url(#${gradientID}-down)`} />
         <path d={uploadChart.linePath} className="trend-line upload" />
