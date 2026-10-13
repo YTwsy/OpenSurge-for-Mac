@@ -15,17 +15,8 @@ v0.3.1 是 Verdilion 系列的修复与体验改进版本，重点改善总览�
 ### 升级与验证说明
 
 - 本次为正式版，替代 v0.3.0 成为稳定版 Latest；App 的稳定版更新检查可以发现 v0.3.1。
-- 下游 IPv6 仍为实验性能力，适用拓扑与验证范围见项目文档。旁路由模式的配置保留不代表已自动修改下游设备的网络设置。
-- 发布检查覆盖 Go/Web/桌面端测试、嵌入资源构建、安装器契约，以及 Apple Silicon / Intel 双架构安装包校验。拓扑切换修复的回归覆盖配置校验、生成结果和界面行为；本次未完成 Virtual Lab 或真实 DHCP/TUN 网络验收。真实 PKG 升级后重新登录，以及 macOS 13 / Intel 实机界面仍未验收。
+- 发布检查覆盖 Go/Web/桌面端测试、嵌入资源构建、安装器契约，以及 Apple Silicon / Intel 双架构安装包校验。拓扑切换修复的回归覆盖配置校验、生成结果和界面行为。
 - 完整变更：[v0.3.0...v0.3.1](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.0...v0.3.1)。
-
-### 开发幕后：Team Cross
-
-OpenSurge 的开发常要在 Mac 与多台下游设备上验证网络路径；调查和修复也可能跨越多台机器、多个 Agent Session，测试证据、关键判断和后续任务需要在这些会话之间持续传递。最初，我为自己的工作流做了一个多 Agent 协作工具。看到它在 OpenSurge 开发中显著提升了开发效率后，我意识到同样的痛点也存在于团队协作、产研协同等更广泛的场景。于是，我结合一线开发团队中积累的经验，围绕会话分享、证据讨论和任务交接重新设计这个工具，将它的能力扩展到真实的团队协作场景上；最终将它发展为独立的开源项目 [Team Cross](https://github.com/YTwsy/Team-Cross)。
-
-https://github.com/YTwsy/Team-Cross
-
-Team Cross 让团队成员和各自的 Agent 预览并分享选定的 Codex、Claude Code 会话材料，在原文旁批注和引用；需要共同执行时，再明确开放访问，并交接或收回共享会话的输入权。在最近几个版本的 OpenSurge 开发中，它帮助我把多设备测试的上下文带入需求推进、问题排查和 PR 代码审查，减少反复解释背景与重新定位结论的工作，让这些任务更快接续和推进。
 
 ### 下载安装包
 
@@ -90,15 +81,8 @@ v0.3.1 is a maintenance and usability release in the Verdilion series, focused o
 ### Upgrade and validation notes
 
 - This stable release replaces v0.3.0 as Latest. The app's stable-release update check can discover v0.3.1.
-- Downstream IPv6 remains experimental; topology requirements and validation limits are documented in the project. Retaining configuration in bypass-router mode does not automatically change client network settings.
-- Release checks cover Go/Web/desktop tests, embedded-resource builds, installer contracts and Apple Silicon / Intel package verification. Topology-switching regressions cover configuration validation, generated output and UI behavior; Virtual Lab and real DHCP/TUN network acceptance were not completed for this release. Login continuity after a real PKG upgrade and macOS 13 / Intel hardware UI behavior remain unverified.
+- Release checks cover Go/Web/desktop tests, embedded-resource builds, installer contracts and Apple Silicon / Intel package verification. Topology-switching regressions cover configuration validation, generated output and UI behavior.
 - Full changelog: [v0.3.0...v0.3.1](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.0...v0.3.1).
-
-### Behind the development: Team Cross
-
-OpenSurge development often requires validating the same network path on a Mac and multiple downstream devices. Investigations and fixes can span several machines and Agent Sessions, so test evidence, key findings, and next steps need to travel between them. I initially built a multi-agent collaboration tool for my own workflow. Seeing how much it accelerated OpenSurge development made me realize that teams face the same challenges when working together across product and engineering. Drawing on my experience in development teams, I redesigned and rebuilt the tool around sharing sessions, discussing evidence, and handing off tasks. What began as a personal tool became the independent open-source project [Team Cross](https://github.com/YTwsy/Team-Cross).
-
-Team Cross lets teammates and their agents preview and share selected Codex and Claude Code session material, annotate and cite passages alongside the original, and explicitly grant access when they need to work together. They can hand over or reclaim input control of a shared session. In recent OpenSurge versions, it has helped me carry multi-device test context into feature development, troubleshooting, and PR code review. That reduces repeated explanations and the need to rediscover conclusions, helping these tasks continue and move forward faster.
 
 ### Download the installer
 
