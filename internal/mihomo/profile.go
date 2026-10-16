@@ -12,6 +12,7 @@ import (
 )
 
 var importableProfileSectionOrder = []string{
+	"hosts",
 	"proxies",
 	"proxy-providers",
 	"proxy-groups",
