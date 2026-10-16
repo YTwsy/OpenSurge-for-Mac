@@ -18,6 +18,7 @@ relative paths are anchored to the profile directory, absolute and URL-shaped
 paths stay unchanged, and missing paths remain absent. The loader does not
 namespace or migrate downloaded caches. Imported sections are:
 
+- `hosts`
 - `proxies`
 - `proxy-providers`
 - `proxy-groups`
@@ -152,6 +153,19 @@ This includes `default-nameserver`, `nameserver`, `nameserver-policy`,
 settings. Proxy server hostnames can depend on these fields, so discarding them
 can leave mihomo healthy while every imported node resolves to an unreachable
 address.
+
+The top-level `hosts` mapping is retained alongside these DNS fields, including
+IP values, IP lists, domain aliases, wildcard keys and supported YAML anchors.
+It survives global overlay composition, final gateway rendering and prepared
+policy rendering without changing `use-hosts` or the imported filtering policy.
+Mihomo's candidate validation remains authoritative for engine-specific hosts
+semantics. The source snapshot is not rewritten.
+
+Retaining `hosts` does not reconcile DNS listener references: the gateway still
+owns its DNS listener, the prepared core still disables DNS listening, and
+imported resolver addresses such as `proxy-server-nameserver` are unchanged.
+Profiles referring to their original local DNS listener can therefore still
+depend on an unavailable or independently running local service.
 
 ## Gateway-owned fields
 

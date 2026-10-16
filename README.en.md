@@ -372,11 +372,16 @@ OpenSurge for Mac can render a managed mihomo config or import an existing
 mihomo profile. In imported mode, OpenSurge keeps owning gateway-critical
 fields such as LAN binding, `allow-lan`, the DNS listener/fake-IP range, TUN,
 `external-controller`, and runtime paths. The imported profile contributes
-`proxies`, `proxy-providers`, `proxy-groups`, `rule-providers`, and `rules`, plus
+`hosts`, `proxies`, `proxy-providers`, `proxy-groups`, `rule-providers`, and `rules`, plus
 its non-gateway DNS resolver/filter fields. Preserving fields such as
 `nameserver-policy`, `proxy-server-nameserver`, and `fake-ip-filter` keeps proxy
 server hostnames resolvable without allowing the profile to replace the
 gateway DNS listener or TUN DNS contract.
+
+IP mappings, domain aliases, and wildcard mappings in `hosts` are retained in
+the final config. Resolver addresses referring to the original local DNS
+listener are not automatically reconciled; retaining hosts does not fix a
+dependency on the old listening port.
 
 Importing a profile is not required for advanced configuration. The Web GUI's
 **Global Profile Overlay** can independently add proxies, providers, manual
