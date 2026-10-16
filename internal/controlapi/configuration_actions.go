@@ -120,6 +120,16 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 	cfg.Mihomo.Profile = profilePath
 	cfg.Mihomo.ProfileSourceDigest = sourceDigest
 	cfg.Mihomo.ProfileOverlayDigest = overlayDigest
+	customDNS, err := mihomo.CustomDNSFromProfile(payload)
+	if err != nil {
+		cleanupProfile()
+		return ProfileApplyResult{}, err
+	}
+	cfg.Mihomo.ProfileCustomDNSDigest = mihomo.CustomDNSDigest(customDNS)
+	if err := mihomo.ValidateCustomDNSCandidate(cfg, payload); err != nil {
+		cleanupProfile()
+		return ProfileApplyResult{}, err
+	}
 	gateway.ReportProgress(ctx, "validating_config")
 	if err := deps.validate(cfg); err != nil {
 		cleanupProfile()

@@ -303,6 +303,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/tailscale/discovery", s.auth(http.HandlerFunc(s.handleTailscaleDiscovery)))
 	mux.Handle("PUT /api/v1/tailscale", s.auth(http.HandlerFunc(s.handleTailscale)))
 	mux.Handle("POST /api/v1/tailscale/forget-identity", s.auth(http.HandlerFunc(s.handleTailscaleForgetIdentity)))
+	mux.Handle("GET /api/v1/custom-dns", s.auth(http.HandlerFunc(s.handleCustomDNS)))
+	mux.Handle("PUT /api/v1/custom-dns", s.auth(http.HandlerFunc(s.handleCustomDNS)))
+	mux.Handle("POST /api/v1/custom-dns/import", s.auth(http.HandlerFunc(s.handleCustomDNSImport)))
+	mux.Handle("POST /api/v1/custom-dns/preview", s.auth(http.HandlerFunc(s.handleCustomDNSPreview)))
 	mux.Handle("GET /api/v1/profile-overlay", s.auth(http.HandlerFunc(s.handleProfileOverlay)))
 	mux.Handle("PUT /api/v1/profile-overlay", s.auth(http.HandlerFunc(s.handleProfileOverlay)))
 	mux.Handle("GET /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
@@ -1697,7 +1701,7 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "profile_overlay_failed", err.Error())
 		return
 	}
-	composition, err := mihomo.ComposeProfileOverlay(sourcePayload, overlay)
+	composition, err := s.composeDNSDraft(sourcePayload, overlay)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "profile_overlay_incompatible", err.Error())
 		return

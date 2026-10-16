@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -176,6 +177,15 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	dnsResolverFields := defaultDNSResolverFieldsYAML
 	var dnsReferences []DNSReference
 	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
+		if cfg.Mihomo.ProfileCustomDNSDigest != "" {
+			data, err := os.ReadFile(cfg.Mihomo.Profile)
+			if err != nil {
+				return templateData{}, err
+			}
+			if err := ValidateCustomDNSCandidate(cfg, data); err != nil {
+				return templateData{}, err
+			}
+		}
 		loaded, err := loadImportedProfile(cfg.Mihomo.Profile)
 		if err != nil {
 			return templateData{}, err
@@ -206,6 +216,10 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 			return templateData{}, err
 		}
 	}
+	if err := validateCustomDNSForwardingLoops(cfg, dnsResolverFields); err != nil {
+		return templateData{}, err
+	}
+
 	policySections, err := renderPolicySections(cfg, imported)
 	if err != nil {
 		return templateData{}, err

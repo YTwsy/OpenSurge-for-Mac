@@ -54,6 +54,16 @@
 本次正式网关和完整交接的通过证据。单元与准备态真实核心通过不替代这些门槛；后续正式
 运行结论必须补齐记录中的复验项。
 
+## 文件式自定义 DNS
+
+已接入文件导入、草稿/预览、候选合成、Mac TUN 前提与 dnsmasq `no-hosts`，并对 DHCP
+名称和别名冲突设置应用阻断；实现契约见
+[自定义 DNS](../decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
+本轮用户明确接手后续验收。Go/Web/桌面代码检查只证明对应软件行为；新增功能的双入口
+真实 DNS 查询、真实连接、系统 hosts 冲突、DNS 缓存切换及完整交接尚未验收。
+这也不补齐上节 DNS-02/03 的正式 1053 与 Lab 缺口。执行记录及验收矩阵继续保留在
+[现有任务](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#文件式自定义-dns-实施记录)。
+
 ## 使用与更新
 
 先确定具体路径再读对应报告。“最近已知通过”不等于当前 checkout 复验；未收录或未检索到

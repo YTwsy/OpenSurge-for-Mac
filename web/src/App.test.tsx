@@ -86,7 +86,8 @@ vi.mock('./api', () => ({
 	tailscaleDiscovery: vi.fn(async () => ({ schema_version: 1, available: false, magic_dns: false, peers: [] })),
 	saveTailscale: vi.fn(),
 	forgetTailscaleIdentity: vi.fn(),
-	profileOverlay: vi.fn(async () => ({
+	customDNS: vi.fn(async () => ({ schema_version: 1, revision: 'dns-revision', document: { schema_version: 1, enabled: false, yaml: 'hosts: {}\ndns: {}\n' }, desired: true, applied: false, hosts: 0, policies: 0 })),
+    profileOverlay: vi.fn(async () => ({
       schema_version: 1,
       revision: 'overlay-revision',
       yaml: 'schema-version: 1\nenabled: false\n',

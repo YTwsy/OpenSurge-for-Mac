@@ -453,3 +453,9 @@ export type ConnectionObservation = DeviceTraffic & {
   inventory_error?: string
   connections: ObservedConnection[]
 }
+
+export type CustomDNSDocument = { schema_version: number; enabled: boolean; yaml: string }
+export type CustomDNSDraft = { schema_version: number; revision: string; document: CustomDNSDocument; desired: boolean; applied: boolean; hosts: number; policies: number }
+export type CustomDNSChange = { field: string; before: string; after: string; source: string }
+export type CustomDNSImport = { document: CustomDNSDocument; sections: string[] }
+export type CustomDNSPreview = { changes: CustomDNSChange[]; warnings: string[]; blockers: string[]; final_yaml: string; base_yaml: string; overlay_yaml: string; custom_yaml: string; managed_changes: CustomDNSChange[]; mac_ready: boolean; downstream_ready: boolean; dns_references: DNSReference[] }

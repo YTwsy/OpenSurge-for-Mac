@@ -31,6 +31,93 @@ text. Both block and flow collections are supported, including compact
 OpenSurge does not rewrite the imported source snapshot; only the generated
 runtime mihomo config may normalize collection style or indentation.
 
+## File-based custom DNS
+
+Network Settings exposes one optional **Custom DNS** draft, independently of the
+Global Extension. The control service stores `custom-dns.json` (schema version,
+enabled flag and portable YAML); absence means disabled. Saving uses an atomic
+Store `If-Match` comparison and never mutates the desired gateway config or a
+running process. Import and preview are also non-applying operations.
+
+Two UTF-8 formats are accepted, each limited to 2 MiB; BOM and LF/CRLF work:
+
+- **hosts text**: literal IPv4/IPv6 followed by one or more names; `#` comments.
+  Names are lowercased ASCII/punycode with a trailing root dot removed. Repeated
+  names accumulate unique IPs in order. No wildcards, aliases, directives or URLs.
+  Import replaces the draft's entire `hosts` section and preserves `dns`.
+- **Mihomo YAML**: one mapping containing only `hosts` and/or `dns`, with native
+  field values (no overlay `merge`/`append` wrapper). Each provided section
+  replaces that entire draft section; omitted sections remain. Hosts supports IPs,
+  IP lists, domain aliases and whole-label domain wildcards. Duplicate normalized
+  keys, null deletion, custom tags, cyclic aliases and excessive expansion fail.
+  Acyclic YAML anchors are expanded before saving/export. Import is atomic.
+
+`dns` uses the same top-level allowlist as `profileOverlayDNSFields`:
+`cache-algorithm`, `default-nameserver`, `direct-nameserver`,
+`direct-nameserver-follow-policy`, `fake-ip-filter`, `fake-ip-filter-mode`,
+`fallback`, `fallback-filter`, `nameserver`, `nameserver-policy`, `prefer-h3`,
+`proxy-server-nameserver`, `proxy-server-nameserver-policy`, `respect-rules`,
+`use-hosts`, `use-system-hosts`. New domain selectors are literal/wildcard domains;
+rule-mode filters accept DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD and terminal MATCH,
+with `real-ip`/`fake-ip` actions. Wildcard matching follows the pinned core
+[domain trie](https://github.com/MetaCubeX/mihomo/blob/ac017cdd246ce8bd547653d927e7bf77d7ee73d5/component/trie/domain.go);
+ambiguous equal-rank alias targets are checked conservatively. New geosite/RuleSet/provider/file dependencies,
+full profiles, dnsmasq snippets and gateway-owned fields are rejected. Existing
+subscription/overlay dependencies are retained. Engine validation still owns
+resolver protocol/parameter semantics.
+
+Composition order is raw source (or managed base), enabled global overlay,
+enabled custom DNS, then gateway fields/system DNS coordination/reference binding.
+The original snapshot is unchanged. Hosts and both nameserver-policy mappings
+merge by normalized domain key; a custom value replaces the whole inherited IP
+or resolver list. Other mappings merge recursively and ordinary arrays/scalars
+replace when supplied. Missing fields and empty mappings do not delete inherited
+entries. Removing a custom entry restores inheritance on the next composition.
+
+Fake-IP filtering is mode dependent. The inherited default mode is `blacklist`.
+With the same or omitted mode, blacklist/whitelist append unique custom entries;
+rule mode prepends custom rules. A custom MATCH can shadow inherited rules and is
+shown in preview. An explicit mode change must also supply a complete list; the
+pair replaces the inherited mode/list. An empty list in the same mode adds nothing.
+Whitelist matches mean Fake-IP, not real-IP exceptions. A draft containing custom
+hosts forces `use-hosts: true`; explicit false in that draft is an application
+conflict. Hosts precedence, wildcard specificity, alias-target filtering and
+possible node/provider use remain Mihomo semantics. Preview shows known direct
+node/provider host matches, direct-nameserver follow-policy state, before/after
+values, lower-layer DNS and subsequent managed changes.
+
+The immutable candidate carries `x-opensurge-custom-dns` and the desired config
+stores `mihomo.profile_custom_dns_digest`. This is control-plane metadata, stripped
+from runtime/export output, and is not accepted as ownership metadata from raw
+subscriptions. Workspace snapshots carry the normalized draft to the Helper.
+Prepared views/start and source apply use the same composition order; running
+policy views ignore drafts. Source-free and overlay-disabled composition work.
+Repeated materialization starts from raw/root base metadata; when that information
+is missing, changing an existing composition fails rather than stacking patches.
+
+Application requires managed dnsmasq upstream, TUN auto-route and Mac system DNS
+coordination. It disables dnsmasq's system hosts lookup with `no-hosts`, leaving
+Mihomo `use-system-hosts` in charge. While DHCP is enabled, custom hosts and policy
+keys may not intersect single-label names or the configured lease-domain namespace.
+Alias reachability is checked through inherited hosts too; uncertain wildcard
+intersections are conservatively rejected. Exact hosts take precedence over
+wildcards; bounded alias traversal rejects cycles/excessive complexity. This
+reserves possible future lease names without discarding DHCP hostnames or device
+identity. DHCP settings changes are revalidated whenever a candidate is rendered.
+These checks do not promise shared dynamic lease-name resolution.
+
+A formatted draft may be saved despite application blockers. Activation/disable
+uses existing full gateway start or source apply/reload; full reload restarts the
+owned dnsmasq and its cache. Engine-only recovery and page navigation never load a
+new DNS draft. Failed apply follows existing lifecycle rollback/state reporting.
+Exports contain only the canonical custom YAML; desktop uses a native save dialog,
+browser uses a file download. No original file paths or file watching are retained.
+
+The implementation is configuration-level support. Mac system/TUN and downstream
+UDP/TCP DNS plus actual connections still require the acceptance matrix in the
+[current task](../../tasks/issue-93-dns-references-and-issue-82-overrides.md);
+unit tests or previews do not establish real-network acceptance.
+
 ## Global profile overlay and optional sources
 
 The Web GUI's **Global Extension** is an independent, versioned draft in

@@ -181,6 +181,8 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Mihomo.Profile = value
 	case "mihomo.profile_source_digest":
 		cfg.Mihomo.ProfileSourceDigest = value
+	case "mihomo.profile_custom_dns_digest":
+		cfg.Mihomo.ProfileCustomDNSDigest = value
 	case "mihomo.profile_overlay_digest":
 		cfg.Mihomo.ProfileOverlayDigest = value
 	case "mihomo.store_fake_ip":

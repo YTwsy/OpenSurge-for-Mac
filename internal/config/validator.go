@@ -374,7 +374,7 @@ func validateMihomoProfile(cfg Config) error {
 		if strings.TrimSpace(cfg.Mihomo.Profile) != "" {
 			return fmt.Errorf("mihomo.profile requires mihomo.profile_mode: \"imported\"")
 		}
-		if cfg.Mihomo.ProfileSourceDigest != "" || cfg.Mihomo.ProfileOverlayDigest != "" {
+		if cfg.Mihomo.ProfileSourceDigest != "" || cfg.Mihomo.ProfileOverlayDigest != "" || cfg.Mihomo.ProfileCustomDNSDigest != "" {
 			return fmt.Errorf("mihomo profile composition digests require mihomo.profile_mode: \"imported\"")
 		}
 	case MihomoProfileModeImported:
@@ -383,6 +383,9 @@ func validateMihomoProfile(cfg Config) error {
 		}
 		if cfg.Mihomo.ProfileSourceDigest != "" && !validSHA256Digest(cfg.Mihomo.ProfileSourceDigest) {
 			return fmt.Errorf("mihomo.profile_source_digest must be a lowercase SHA-256 digest")
+		}
+		if cfg.Mihomo.ProfileCustomDNSDigest != "" && !validSHA256Digest(cfg.Mihomo.ProfileCustomDNSDigest) {
+			return fmt.Errorf("mihomo.profile_custom_dns_digest must be a lowercase SHA-256 digest")
 		}
 		if cfg.Mihomo.ProfileOverlayDigest != "" && !validSHA256Digest(cfg.Mihomo.ProfileOverlayDigest) {
 			return fmt.Errorf("mihomo.profile_overlay_digest must be a lowercase SHA-256 digest")

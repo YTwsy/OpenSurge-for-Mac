@@ -210,7 +210,7 @@ func (s *Server) decorateSourceStates(sources []Source) []Source {
 		} else if data, _, err := readValidatedSourceSnapshot(s.store.Dir(), result[i]); err != nil {
 			result[i].OverlayCompatible = false
 			result[i].OverlayValidation = err.Error()
-		} else if composition, err := mihomo.ComposeProfileOverlay(data, overlay); err != nil {
+		} else if composition, err := s.composeDNSDraft(data, overlay); err != nil {
 			result[i].OverlayCompatible = false
 			result[i].OverlayValidation = err.Error()
 		} else {
