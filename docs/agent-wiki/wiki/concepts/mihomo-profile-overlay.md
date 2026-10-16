@@ -13,6 +13,8 @@ flowchart TD
 
 原始来源、草稿、准备态与运行态有各自的生命周期。
 准备态用于观察和选择未来的策略；网络是否已接管由网关运行态表达。
+配置中的自身 DNS 引用描述服务依赖，正式态与准备态各自绑定运行端点；
+查询如何经过这些服务，见 [DNS 运行路径](local-system-dns-coordination.md)。
 
 - 查询导入、DNS 合并、保留字段与准备态 → [profile overlay 契约](../../sources/decisions/mihomo-profile-overlay.md)。
 - 查询来源存储与显式应用 → [Control API](../../sources/control-api.md#来源凭据与应用)。

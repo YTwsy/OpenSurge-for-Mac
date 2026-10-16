@@ -185,7 +185,13 @@ func (s *Server) policyWorkspaceInput(request PolicyWorkspaceRequest) (PolicyWor
 	// The persisted imported profile already represents this composition. Its
 	// root-owned copy is authoritative and remains usable when an optional user
 	// source-library snapshot has been deleted or is temporarily unavailable.
-	if cfg.Mihomo.ProfileOverlayDigest == effectiveOverlayRevision {
+	needsDNSRecovery := false
+	if cfg.Mihomo.ProfileOverlayDigest != "" {
+		if data, readErr := os.ReadFile(cfg.Mihomo.Profile); readErr == nil {
+			needsDNSRecovery = mihomo.NeedsDNSSourceRecovery(data)
+		}
+	}
+	if cfg.Mihomo.ProfileOverlayDigest == effectiveOverlayRevision && !needsDNSRecovery {
 		return input, nil
 	}
 	digest := cfg.Mihomo.ProfileSourceDigest
@@ -302,6 +308,13 @@ func workspaceCandidate(configPath string, cfg config.Config, input PolicyWorksp
 			// Legacy applied profiles can already include an overlay. Without their
 			// raw source, reapplying a different overlay would duplicate additions.
 			if cfg.Mihomo.ProfileOverlayDigest == mihomo.ProfileOverlayDigest(input.Overlay) {
+				data, err := os.ReadFile(cfg.Mihomo.Profile)
+				if err != nil {
+					return cfg, nil, err
+				}
+				if mihomo.NeedsDNSSourceRecovery(data) {
+					return cfg, nil, fmt.Errorf("original DNS listener metadata and raw source are unavailable; reimport the selected source to rebuild DNS references")
+				}
 				return cfg, nil, nil
 			}
 			return cfg, nil, fmt.Errorf("raw source is unavailable; import or select the source before changing its extension")

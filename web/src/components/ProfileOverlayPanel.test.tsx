@@ -69,6 +69,7 @@ const preview: ProfileOverlayPreview = {
   effective_inventory: { ...source.inventory, rule_count: 3 },
   diff: { ...source.diff, rule_count_delta: 1 },
   validation: '结构组合通过',
+  dns_references: [{ field: 'dns.proxy-server-nameserver[0]', target: 'udp://127.0.0.1:7874', effective: 'udp://127.0.0.1:1053', source: 'subscription', source_digest: 'source-digest', purpose: 'proxy-server-nameserver', service: 'self' }],
 }
 
 describe('ProfileOverlayPanel', () => {
@@ -90,6 +91,7 @@ describe('ProfileOverlayPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'View composed result' }))
     const dialog = await screen.findByRole('dialog', { name: 'Final configuration preview' })
     expect(within(dialog).getByText('Composition order')).toBeTruthy()
+    expect(within(dialog).getByText('DNS references and sources')).toBeTruthy()
     expect(globalThis.document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
   })
 
@@ -166,6 +168,10 @@ describe('ProfileOverlayPanel', () => {
 
     const dialog = await screen.findByRole('dialog', { name: '最终配置预览' })
     expect(within(dialog).getByText(/高优先级自定义规则.*订阅规则.*专家低优先级规则.*最终 MATCH/)).toBeTruthy()
+    await userEvent.click(within(dialog).getByText('DNS 引用与来源'))
+    expect(within(dialog).getByText('自身 DNS：绑定受管端点', { exact: false })).toBeTruthy()
+    expect(within(dialog).getByText('udp://127.0.0.1:7874')).toBeTruthy()
+    expect(within(dialog).getByText('→ udp://127.0.0.1:1053')).toBeTruthy()
     await userEvent.click(within(dialog).getByRole('button', { name: '原始来源' }))
     expect(within(dialog).getByText(/rules:\s+- MATCH,DIRECT/)).toBeTruthy()
     await userEvent.click(within(dialog).getByRole('button', { name: '最终 mihomo' }))

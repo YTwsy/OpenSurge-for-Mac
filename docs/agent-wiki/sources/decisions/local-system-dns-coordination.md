@@ -32,6 +32,11 @@ TUN 与路由检查通过、DHCP/DNS 和 pf 就绪，再持久化 DNS 写入意�
 导入 DNS 中的 `system`（含旧 `dhcp://system` 写法）在接管开启时必须拒绝，
 避免引擎递归解析自己；改用显式解析器，或明确关闭该协同功能。
 
+订阅自身 DNS 的引用绑定发生在最终解析配置合成后，正式端点仍为受管的 1053，
+不改变本页的系统 DNS 接管目的地址或恢复顺序。准备态如需自身 DNS，只开启同一核心的
+私有 loopback DNS，不调用系统 DNS 协同；引用分类、歧义声明及就绪检查见
+[profile 契约](mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
+
 ## 独立的 Mac IPv6 路径
 
 Mac 的系统 TUN 始终使用 `fdfe:dcba:9877::1/126`，不依赖 `dns.ipv6`、

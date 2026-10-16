@@ -99,10 +99,23 @@ states. While the gateway is running it talks to the running mihomo and ignores
 source and overlay drafts. While stopped, the privileged Helper composes the
 selected raw source when one exists, the saved global overlay when enabled,
 and OpenSurge-managed device/Tailscale sections, then starts a prepared mihomo
-with only a random authenticated loopback controller. Business proxy ports,
-DNS listeners, TUN, custom listeners/tunnels, DHCP, pf, forwarding and IPv6
-packet ingress remain disabled. Resolver policy stays loaded so provider and
-proxy hostnames behave like the future gateway.
+with a random authenticated loopback controller. When the final resolver graph
+contains a supported self DNS reference, that same process also opens a private
+loopback DNS port. Without that dependency DNS listening stays disabled.
+Business proxy ports, TUN, custom listeners/tunnels, DHCP, pf, forwarding and
+IPv6 packet ingress remain disabled. Resolver policy stays loaded so provider
+and proxy hostnames behave like the future gateway.
+
+The private DNS endpoint and probe identity are root-only prepared state, never
+desired configuration or browser API fields. Both TCP and UDP are reserved
+until immediately before process start; reservation alone does not prove a
+successful bind. Readiness verifies that this process owns both sockets, then
+queries both transports using a random exact `.invalid` TXT policy answered
+inside the core (`rcode://success`). The probe does not depend on public DNS,
+hosts enablement, Fake-IP or prior caches. At most three startup attempts are
+allowed, with the previous process cleaned up before another attempt. Reusing
+a prepared process checks DNS again without reallocating its port; a failed
+reuse probe reports the failure and does not silently restart a live owner.
 
 The prepared core uses the same cache directory as the next real gateway core,
 so `profile.store-selected` choices, Provider caches, and the Tailscale state
@@ -161,11 +174,81 @@ policy rendering without changing `use-hosts` or the imported filtering policy.
 Mihomo's candidate validation remains authoritative for engine-specific hosts
 semantics. The source snapshot is not rewritten.
 
-Retaining `hosts` does not reconcile DNS listener references: the gateway still
-owns its DNS listener, the prepared core still disables DNS listening, and
-imported resolver addresses such as `proxy-server-nameserver` are unchanged.
-Profiles referring to their original local DNS listener can therefore still
-depend on an unavailable or independently running local service.
+### DNS reference composition and binding
+
+Self DNS compatibility is always part of rendering, independent of the global
+overlay or a future custom-resolution editor. Before dropping owned DNS fields,
+the importer captures the original `enable`/`listen`, source digest and resolver
+field/value origins. Materialized profiles preserve them under the versioned
+`x-opensurge-dns-source` extension, including the immediately overridden origin
+when a final target changes. Raw source snapshots stay unchanged. This extension
+is composition evidence, not authority to restore a subscription listener.
+
+After overlay and managed DNS coordination, classify the final targets again.
+Only confirmed self references in `proxy-server-nameserver` and
+`proxy-server-nameserver-policy` are automatically rebound. Supported targets are
+literal UDP/TCP loopback endpoints covered by an enabled original wildcard or
+exact loopback listener of the same address family and port. IPv6 reference
+forms bind to the same IPv4 loopback runtime service; this does not demonstrate
+a downstream IPv6 packet/DNS path. Bare IPv4 endpoints and `udp://`/`tcp://`
+forms are supported. Parameters, hostname aliases, scoped IPv6 and other URL
+protocols are not rewritten as if they were equivalent.
+
+| Field / condition | Self reference behavior |
+| --- | --- |
+| Node resolver and node resolver policy | Bind to `127.0.0.1:1053` in the formal config, or the current prepared loopback endpoint |
+| `nameserver`, ordinary `nameserver-policy`, `default-nameserver`, `fallback` | Reject a recursive dependency before application |
+| `direct-nameserver` | Self binding is outside the supported scope; reject explicitly |
+| `respect-rules`, or an upstream proxy/interface fragment other than `#DIRECT`, alongside self DNS | Reject the unverified bootstrap dependency |
+| Independent loopback / external resolver | Preserve the exact target and parameters; independent UDP/TCP loopback port 1053 conflicts with the managed service |
+| Cross-family wildcard or `localhost` ambiguity | Report the field, source, target and original listener; require an explicit declaration or a supported literal form |
+
+An exported source can declare the purpose of an exact reference without
+enabling any optional editor:
+
+```yaml
+x-opensurge-dns-services:
+  - field: 'dns.proxy-server-nameserver[0]'
+    target: udp://127.0.0.1:7874
+    service: independent
+```
+
+`service` is `self` or `independent`. A declaration belongs to that selected raw
+source and exact field/target pair; it is retained with source metadata across
+composition and no longer matches when the final target changes. `self` still
+requires an enabled original DNS and a supported literal loopback transport;
+it cannot waive unsupported field, protocol or bootstrap checks. Edit/export
+and reimport the source rather than changing a managed snapshot in place.
+
+The final configuration carries `x-opensurge-dns-bindings` diagnostics with the
+original/final target, purpose, provenance and service classification. Preparation
+checks those bindings against the actual fields before rebinding, then removes
+the extension from its engine config. Preview exposes configuration inference,
+not a claim that a live DNS query has succeeded. Unknown external recursion
+cannot be ruled out by static address checks.
+
+For a final configuration with self references, formal startup also requires
+the started process to own both port 1053 listeners and answer UDP/TCP TXT
+queries. A managed exact `.invalid` policy and `x-opensurge-dns-probe` identify
+that check. The identity is deterministic for the final configuration, so
+rendering does not cause needless prepared restarts. Preparation replaces the
+formal policy with its private random identity. Neither policy enters the raw
+source or desired configuration. A live controller alone cannot make a failed
+DNS bind count as a successful startup; failure stops the process just started.
+
+For legacy overlaid profiles with local resolver targets and missing listener
+metadata, the stopped workspace retrieves the selected raw snapshot even when
+the overlay digest is unchanged. Root-owned base metadata can also provide that
+source. If neither exists, report the missing original metadata; do not infer
+service identity from a port occupant or silently reuse a filtered profile.
+Direct CLI rendering likewise diagnoses a legacy composed local resolver whose
+origin cannot be recovered. An unchanged independent profile without such a
+dependency remains readable.
+
+Real-core prepared DNS tests cover aliases, filters, controlled upstreams,
+node/Provider connectivity, both transports and bind-race cleanup. Formal port
+1053 and host-network handoff still require the corresponding unoccupied-port
+and Lab gates; see the [DNS task evidence](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录).
 
 ## Gateway-owned fields
 

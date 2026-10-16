@@ -28,6 +28,7 @@ var profileOverlayDNSFields = map[string]bool{
 	"nameserver-policy":               true,
 	"prefer-h3":                       true,
 	"proxy-server-nameserver":         true,
+	"proxy-server-nameserver-policy":  true,
 	"respect-rules":                   true,
 	"use-hosts":                       true,
 	"use-system-hosts":                true,
@@ -269,6 +270,13 @@ func ComposeProfileOverlay(source []byte, document ProfileOverlayDocument) (Prof
 		return ProfileOverlayComposition{}, fmt.Errorf("parse retained imported DNS: %w", err)
 	}
 	if err := applyOverlayDNS(dns, document.DNS); err != nil {
+		return ProfileOverlayComposition{}, err
+	}
+	overlayYAML, err := RenderProfileOverlay(document)
+	if err != nil {
+		return ProfileOverlayComposition{}, err
+	}
+	if err := refreshDNSOrigins(base.dnsSource, dns, "global-overlay", ProfileOverlayDigest(overlayYAML)); err != nil {
 		return ProfileOverlayComposition{}, err
 	}
 	rendered, err := renderComposedProfileSource(&base, dns)
@@ -620,6 +628,9 @@ func renderComposedProfileSource(profile *importedProfile, dns *yaml.Node) ([]by
 	}
 	if dns != nil && len(dns.Content) > 0 {
 		root.Content = append(root.Content, stringNode("dns"), dns)
+	}
+	if profile.dnsSource != nil {
+		setPreparedField(root, dnsSourceMetadataKey, profile.dnsSource)
 	}
 	rendered, err := encodeYAMLNode(root)
 	return []byte(rendered), err

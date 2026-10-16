@@ -98,6 +98,20 @@ preview on Sources to compare the raw source, overlay changes, effective source,
 and final mihomo config. Refreshing a subscription only creates a new draft and
 never changes the running gateway automatically.
 
+**DNS references and sources** in the final-config preview lists resolver
+targets, binding results and their provenance. Confirmed references from node
+resolution to the subscription's own DNS are bound to the current core without
+enabling the global overlay. While the gateway is stopped, the prepared core
+opens a private loopback DNS listener only when that dependency exists, and
+checks both TCP and UDP readiness. This does not start the gateway or change
+system DNS. Independent local and external resolvers retain their targets.
+Follow specific diagnostics for ambiguous references, cycles or missing original
+listener metadata; another proxy client's running DNS is not compatibility
+evidence. Preview is configuration inference; node tests and the relevant
+network gates establish runtime behavior. Supported forms and explicit service
+declarations are described in the
+[DNS reference contract](../agent-wiki/sources/decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding).
+
 Each imported-source card shows the local snapshot managed by OpenSurge. You
 can copy its full path or select **Finder 中显示** (Show in Finder) to reveal
 the file. Do not edit the managed snapshot because its digest, history, and

@@ -270,7 +270,19 @@ export type ProfileOverlay = {
   applied: boolean
   validation: string
 }
+export type DNSReference = {
+  overrides?: { target: string; source: string; digest: string }
+  field: string
+  target: string
+  effective: string
+  source: string
+  source_digest: string
+  purpose: string
+  service: 'self' | 'independent'
+}
+
 export type ProfileOverlayPreview = {
+  dns_references?: DNSReference[]
   schema_version: number
   source_id: string
   source_yaml: string

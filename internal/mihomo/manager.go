@@ -73,8 +73,13 @@ func (m Manager) Start() (int, error) {
 		return 0, err
 	}
 	configDir := m.configDir()
-	if _, err := os.Stat(m.paths.MihomoConfig); err != nil {
+	rendered, err := os.ReadFile(m.paths.MihomoConfig)
+	if err != nil {
 		return 0, fmt.Errorf("prepared mihomo config: %w", err)
+	}
+	dnsProbe, err := finalDNSProbeName(string(rendered))
+	if err != nil {
+		return 0, err
 	}
 	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o640); err != nil {
 		return 0, err
@@ -91,6 +96,12 @@ func (m Manager) Start() (int, error) {
 		m.stopStartedProcess(pid)
 		return 0, err
 	}
+	if dnsProbe != "" {
+		if err := m.waitForDNS(pid, dnsProbe, 10*time.Second); err != nil {
+			m.stopStartedProcess(pid)
+			return 0, err
+		}
+	}
 	if m.cfg.Transparent.TUNEnabled() {
 		if err := m.waitForTUN(pid, tunStartupTimeout); err != nil {
 			m.stopStartedProcess(pid)
@@ -104,6 +115,36 @@ func (m Manager) Start() (int, error) {
 		}
 	}
 	return pid, nil
+}
+
+func (m Manager) waitForDNS(pid int, probeName string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	var lastErr error
+	for {
+		if !process.IsAlive(pid) {
+			return fmt.Errorf("mihomo exited before its DNS listeners were ready")
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		lastErr = verifyPreparedDNSSockets(probeCtx, PreparedState{PID: pid, DNSAddr: "*:1053"})
+		if lastErr == nil {
+			for _, network := range []string{"udp", "tcp"} {
+				lastErr = queryPreparedDNS(probeCtx, network, gatewayDNSEndpoint, probeName)
+				if lastErr != nil {
+					break
+				}
+			}
+		}
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("mihomo owned DNS not ready: %w", errors.Join(ctx.Err(), lastErr))
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 func (m Manager) waitForIPv6PacketListener(pid int, timeout time.Duration) error {

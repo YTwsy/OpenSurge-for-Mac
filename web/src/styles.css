@@ -901,3 +901,10 @@ html[data-theme="light"] .recovery-card-actions button,html[data-theme="light"] 
 .desktop-titlebar { position:fixed;inset:0 16px auto 0;height:40px;z-index:20;--wails-draggable:drag;user-select:none;-webkit-user-select:none; }
 .desktop-shell .sidebar { padding-top:54px; }
 .desktop-shell .workspace { padding-top:54px; }
+
+.overlay-preview-changes{max-height:calc(92vh - 200px);overflow:auto}
+.dns-reference-preview summary{cursor:pointer;font-size:12px;font-weight:700}
+.dns-reference-preview ul{margin:12px 0 0;padding:0;list-style:none}
+.dns-reference-preview li{display:grid;gap:5px;padding:12px 0;border-top:1px solid #29463b;overflow-wrap:anywhere}
+.dns-reference-preview li span{font-size:11px;opacity:.75}
+.dns-reference-preview code{font-size:11px;white-space:pre-wrap}

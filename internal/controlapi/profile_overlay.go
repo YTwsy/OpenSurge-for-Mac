@@ -106,6 +106,11 @@ func (s *Server) handleSourcePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	effectiveInventory := inventoryFromInspection(composition.Inspection)
+	dnsReferences, err := mihomo.DNSReferenceBindings(final)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "dns_reference_preview_failed", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, ProfileOverlayPreview{
 		SchemaVersion:        SchemaVersion,
 		SourceID:             source.ID,
@@ -117,6 +122,7 @@ func (s *Server) handleSourcePreview(w http.ResponseWriter, r *http.Request) {
 		EffectiveInventory:   effectiveInventory,
 		Diff:                 diffInventory(source.Digest, source.Inventory, effectiveInventory),
 		Validation:           "结构组合通过；实际应用前仍会运行 mihomo 引擎校验。",
+		DNSReferences:        dnsReferences,
 	})
 }
 

@@ -89,20 +89,23 @@ rules: ['MATCH,Proxy']
 					if err != nil {
 						t.Fatal(err)
 					}
-					prepared, err := RenderPreparedConfig(final, "127.0.0.1:19090", "test-secret")
+					prepared, err := renderPreparedConfig(final, "127.0.0.1:19090", "test-secret", "127.0.0.1:19053", "opensurge-ready-test.invalid")
 					if err != nil {
 						t.Fatal(err)
 					}
-					for _, stage := range []struct{ name, body, listen string }{
-						{"gateway", final, "0.0.0.0:1053"},
-						{"prepared", prepared, ""},
+					for _, stage := range []struct{ name, body, listen, resolver string }{
+						{"gateway", final, "0.0.0.0:1053", "udp://127.0.0.1:1053"},
+						{"prepared", prepared, "127.0.0.1:19053", "udp://127.0.0.1:19053"},
 					} {
 						document := assertHosts(stage.name, stage.body)
 						dns := document["dns"].(map[string]any)
 						if dns["listen"] != stage.listen || dns["use-hosts"] != useHosts {
 							t.Fatalf("%s changed DNS ownership or use-hosts: %#v", stage.name, dns)
 						}
-						for _, field := range []string{"nameserver", "proxy-server-nameserver", "use-system-hosts"} {
+						if !reflect.DeepEqual(dns["proxy-server-nameserver"], []any{stage.resolver}) {
+							t.Fatalf("%s did not bind its own node DNS: %#v", stage.name, dns["proxy-server-nameserver"])
+						}
+						for _, field := range []string{"nameserver", "use-system-hosts"} {
 							if !reflect.DeepEqual(dns[field], original["dns"].(map[string]any)[field]) {
 								t.Fatalf("%s changed dns.%s", stage.name, field)
 							}
