@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -15,8 +16,9 @@ import (
 	"open-mihomo-gateway/internal/config"
 )
 
-// Inspect the actual core's parsed addresses without opening a TUN, DNS,
-// packet listener or forwarding path. In particular, omitting inet6-address
+// Inspect the actual core's parsed addresses with TUN enabled, but an invalid
+// supplied file descriptor prevents opening a TUN (including as root). No DNS,
+// packet listener or forwarding path is opened. In particular, omitting inet6-address
 // would restore Mihomo's default even when the host preference is disabled.
 func TestMacTUNIPv6ConfigRealCore(t *testing.T) {
 	binary := os.Getenv("OMG_PREPARED_MIHOMO_BINARY")
@@ -45,7 +47,15 @@ func TestMacTUNIPv6ConfigRealCore(t *testing.T) {
 				if err := yaml.Unmarshal([]byte(body), &root); err != nil {
 					t.Fatal(err)
 				}
-				root["tun"].(map[string]any)["enable"] = false
+				tun := root["tun"].(map[string]any)
+				if tun["enable"] != true {
+					t.Fatal("probe must exercise the enabled TUN parser branch")
+				}
+				tun["file-descriptor"] = 2147483647
+				tun["device"] = "utun61999"
+				tun["auto-route"] = false
+				tun["auto-detect-interface"] = false
+				delete(tun, "route-address")
 				root["dns"].(map[string]any)["enable"] = false
 				root["mixed-port"] = 0
 				delete(root, "interface-name")
@@ -63,6 +73,7 @@ func TestMacTUNIPv6ConfigRealCore(t *testing.T) {
 					t.Fatal(err)
 				}
 				cmd := exec.Command(binary, "-d", dir, "-f", path)
+				cmd.Env = append(os.Environ(), "SKIP_SYSTEM_IPV6_CHECK=false")
 				cmd.Stdout, cmd.Stderr = log, log
 				if err := cmd.Start(); err != nil {
 					log.Close()
@@ -79,6 +90,10 @@ func TestMacTUNIPv6ConfigRealCore(t *testing.T) {
 						<-done
 					}
 					log.Close()
+					output, _ := os.ReadFile(log.Name())
+					if !strings.Contains(string(output), "bad file descriptor") || strings.Contains(string(output), "Tun adapter listening") {
+						t.Errorf("probe must fail safely before opening a TUN: %s", output)
+					}
 					if t.Failed() {
 						data, _ := os.ReadFile(log.Name())
 						t.Log(string(data))
@@ -90,14 +105,12 @@ func TestMacTUNIPv6ConfigRealCore(t *testing.T) {
 					state, err := FetchTUNRuntimeState(ctx, cfg)
 					if err == nil {
 						if state.Enabled {
-							t.Fatal("test must not enable TUN")
+							t.Fatal("invalid file descriptor must leave the runtime TUN disabled")
 						}
-						// With DNS disabled and no active TUN the core can clear IPv6
-						// on hosts without native IPv6. The opt-out must always be empty.
 						if !enabled && len(state.IPv6Addresses) != 0 {
 							t.Fatalf("core restored host IPv6: %v", state.IPv6Addresses)
 						}
-						if enabled && dns && (len(state.IPv6Addresses) != 1 || state.IPv6Addresses[0] != config.MihomoTUNIPv6) {
+						if enabled && (len(state.IPv6Addresses) != 1 || state.IPv6Addresses[0] != config.MihomoTUNIPv6) {
 							t.Fatalf("host IPv6 lost: %v", state.IPv6Addresses)
 						}
 						return

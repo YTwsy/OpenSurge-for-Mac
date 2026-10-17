@@ -11,7 +11,6 @@ OPENSURGE_VERSION=0.3.1 \
 OPENSURGE_BUILD_NUMBER=1 \
 OPENSURGE_RELEASE_TAG=v0.3.1 \
 OPENSURGE_APP_ARCH=arm64 \
-OPENSURGE_MIHOMO_BINARY=/absolute/path/to/pinned/mihomo \
 OPENSURGE_DNSMASQ_BINARY=/absolute/path/to/pinned/dnsmasq \
 OPENSURGE_PKG_OUTPUT=/absolute/path/to/OpenSurge-0.3.1-arm64-build1-COMMIT-unsigned.pkg \
 make gui-installer
@@ -20,7 +19,13 @@ make gui-installer
 构建使用临时 staging，不清空既有安装包；目标文件已存在时拒绝覆盖。
 `OPENSURGE_VERSION` 必须匹配 release tag 的基础版本。默认 tag 为当前正式版；
 发布流水线显式传入稳定版或 RC tag。Apple Silicon 与 Intel 必须分别提供
-匹配架构的 mihomo / dnsmasq。
+匹配架构的 dnsmasq；mihomo 按目标架构重新构建。
+
+每次打包都会校验固定上游源码的 SHA-256、应用当前 checkout 的补丁和 overlay，
+构建到本次 staging，并检查即将入包的核心。拒绝 `OPENSURGE_MIHOMO_BINARY`；
+同版本号或旧缓存二进制不能证明包含当前补丁。可用
+`OPENSURGE_MIHOMO_SOURCE_ARCHIVE=/absolute/path/to/mihomo-source.tar.gz`
+复用通过固定摘要校验的源码归档；Go 编译缓存可以继续使用。
 
 ```sh
 ./scripts/verify-unsigned-gui-installer.sh PACKAGE 0.3.1 arm64 13.0 v0.3.1 1

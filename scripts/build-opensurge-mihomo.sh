@@ -39,11 +39,14 @@ trap 'rm -rf "$work_dir"' EXIT
 tar -xzf "$SOURCE_ARCHIVE" -C "$work_dir" --strip-components=1
 patch -d "$work_dir" -p1 <"$ROOT/patches/mihomo/0001-opensurge-packet-listener.patch"
 cp -R "$ROOT/patches/mihomo/overlay/listener" "$work_dir/"
+cp "$ROOT/patches/mihomo/overlay/config/opensurge_ipv6_test.go" "$work_dir/config/"
 mkdir -p "$(dirname "$OUTPUT")"
 
 build_output="$work_dir/mihomo-opensurge"
 
 cd "$work_dir"
+# Native tests simulate an absent IPv6 uplink; no interfaces or routes are changed.
+"$GO_BIN" test -tags with_gvisor ./config -run '^TestOpenSurgeIPv6WithoutNativeUplink$' -count=1
 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 \
   "$GO_BIN" build -tags with_gvisor -trimpath \
   -ldflags "-X github.com/metacubex/mihomo/constant.Version=$VERSION -w -s -buildid=" \

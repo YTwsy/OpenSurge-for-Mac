@@ -120,8 +120,12 @@ HTTP-only Global 的 UDP 拒绝，系统 TUN 的 IPv4/IPv6 精确来源不会匹
 本机 IPv4 连通性和停止清理；关闭时不应存在公网、fake 或 Tailnet IPv6 捕获，
 下游 IPv6 listener 与设备规则需保持独立。隔离解析检查
 `OMG_PREPARED_MIHOMO_BINARY=... go test ./internal/mihomo -run TestMacTUNIPv6ConfigRealCore -count=1`
-仅证明真实核心读取显式空地址后不会回填默认值，不启动 TUN，不替代该网络门槛或
-夸克等实际应用的 IPv4 回退验收。
+检查本机开关与 DNS AAAA 的四种组合：显式空地址不得回填，开启时地址不得丢失。
+配置保留 `tun.enable: true`，但提供无效文件描述符且关闭自动路由，要求核心在创建
+接口前报错；不创建系统 TUN。打包必须针对即将入包的二进制运行该检查。
+核心构建另运行 overlay 中的 `TestOpenSurgeIPv6WithoutNativeUplink`，注入无原生
+IPv6 的检测结果，避免宿主已有 IPv6/TUN 掩盖冷启动缺陷；覆盖 DNS、本机、下游与
+顶层开关的独立性。两层检查均不替代该网络门槛或夸克等实际应用的 IPv4 回退验收。
 
 使用发布同源的 patched Mihomo，不能退回引导用的上游 v1.19.27。系统 DNS 验收要求
 `getaddrinfo` 随机新域名返回 fake A/AAAA、系统代理关闭、UDP/TCP DNS 捕获、Mihomo 重启
