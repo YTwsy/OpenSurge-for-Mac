@@ -6,6 +6,7 @@ import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from 
 import { watchVisibleRefresh } from './visibility'
 import { useTheme } from './hooks/useTheme'
 import { useInterfaceLanguage } from './hooks/useInterfaceLanguage'
+import { useCompactLayout } from './hooks/useCompactLayout'
 import { DeviceTrafficProvider } from './hooks/useDeviceTraffic'
 import './styles.css'
 import { PageErrorBoundary } from './components/PageErrorBoundary'
@@ -28,6 +29,7 @@ import { getOperations, operationStatusUnknownMessage, subscribeOperations } fro
 import type { Overview } from './types'
 import { t } from './i18n'
 import { releaseCodename } from './release'
+import './mobile.css'
 
 type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connections' | 'connectivity' | 'diagnostics'
 type NetworkNavigationTarget = 'none' | 'control' | 'bottom'
@@ -77,6 +79,10 @@ export function App() {
   const [authenticationRequired, setAuthenticationRequired] = useState(false)
   const [theme, setTheme] = useTheme()
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false)
+  const compactLayout = useCompactLayout() && !isDesktop()
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
+  const navigationRef = useRef<HTMLElement>(null)
+  const navigationToggleRef = useRef<HTMLButtonElement>(null)
   const { language, languageChanging, changeLanguage, beginLanguageRefresh } = useInterfaceLanguage(setError)
   const [devicesDirty, setDevicesDirty] = useState(false)
   const [sourcesDirty, setSourcesDirty] = useState(false)
@@ -98,6 +104,29 @@ export function App() {
   sourcesDirtyRef.current = sourcesDirty
 
   useEffect(() => watchDesktopLinks(setError), [])
+
+  useEffect(() => {
+    if (!compactLayout) { setMobileNavigationOpen(false); return }
+    if (!mobileNavigationOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const navigation = navigationRef.current
+    navigation?.querySelector<HTMLButtonElement>('nav button.active')?.focus()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); setMobileNavigationOpen(false); return }
+      if (event.key !== 'Tab' || !navigation) return
+      const controls = [...navigation.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]')].filter(control => !control.closest('[inert], [hidden]'))
+      const first = controls[0], last = controls.at(-1)
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+    }
+    navigation?.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      navigation?.removeEventListener('keydown', onKeyDown)
+      navigationToggleRef.current?.focus()
+    }
+  }, [compactLayout, mobileNavigationOpen])
 
   const refresh = useCallback(async () => {
     const request = ++overviewRequest.current
@@ -167,6 +196,7 @@ export function App() {
       if (pageRef.current === 'connections' && next !== 'connections') connectionsScroll.current = window.scrollY
       if (next === 'connections') setConnectionsView(current => ({ ...current, owner: new URLSearchParams(window.location.search).get('owner') || 'all' }))
       setPage(next)
+      setMobileNavigationOpen(false)
       if (next === 'sources') setSourcesNavigationRequest(request => request + 1)
     }
     window.addEventListener('popstate', onPop)
@@ -302,10 +332,21 @@ export function App() {
 
   return <div className={`app-shell${isDesktop() ? ' desktop-shell' : ''}`}>
     {isDesktop() && <div className="desktop-titlebar" aria-hidden="true" />}
-    <aside className="sidebar">
+    {compactLayout && <header className="mobile-header" inert={mobileNavigationOpen}>
+      <div className="mobile-brand"><img src="/opensurge-icon.png" alt="" /><span><strong>OpenSurge</strong><small>{t(nav.find(item => item.id === page)!.label)}</small></span></div>
+      <span className="mobile-status"><StatusDot status={displayState} />{displayLabel}</span>
+      <button ref={navigationToggleRef} type="button" className="mobile-nav-toggle" aria-label={t('打开导航')} aria-expanded={mobileNavigationOpen} aria-controls="app-navigation" onClick={() => setMobileNavigationOpen(true)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button>
+    </header>}
+    {compactLayout && mobileNavigationOpen && <div className="mobile-nav-backdrop" aria-hidden="true" onClick={() => setMobileNavigationOpen(false)} />}
+    <aside className="sidebar" id="app-navigation" ref={navigationRef} hidden={compactLayout && !mobileNavigationOpen} role={compactLayout ? 'dialog' : undefined} aria-modal={compactLayout && mobileNavigationOpen ? true : undefined} aria-label={compactLayout ? t('页面导航') : undefined}>
+      {compactLayout && <button type="button" className="mobile-nav-close" aria-label={t('关闭导航')} onClick={() => setMobileNavigationOpen(false)}>×</button>}
       <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
       <nav aria-label="OpenSurge sections">
-        {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{t(item.label)}</button>)}
+        {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} aria-current={page === item.id ? 'page' : undefined} onClick={() => {
+          if (!go(item.id)) return
+          setMobileNavigationOpen(false)
+          if (compactLayout && item.id !== page && item.id !== 'connections' && item.id !== 'policies') window.scrollTo?.({ top: 0 })
+        }}><span aria-hidden="true">{item.icon}</span>{t(item.label)}</button>)}
       </nav>
       <div className="sidebar-footer">
       <button type="button" className="sidebar-status" aria-label={t('快捷设置：{{status}}', { status: displayLabel })} aria-expanded={quickSettingsOpen} aria-controls="sidebar-quick-settings" onClick={() => setQuickSettingsOpen(open => !open)}><StatusDot status={displayState} /><span className="sidebar-status-copy"><strong>{displayLabel}</strong>{displayDetail && <small className="sidebar-status-detail">{displayDetail}</small>}<small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} {releaseCodename(import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</small></span><svg className="sidebar-status-gear" viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M10 3h4l.5 2.3 1.3.8 2.2-.7 2 3.4-1.7 1.6v3.2l1.7 1.6-2 3.4-2.2-.7-1.3.8L14 21h-4l-.5-2.3-1.3-.8-2.2.7-2-3.4 1.7-1.6v-3.2L4 8.8l2-3.4 2.2.7 1.3-.8L10 3Zm5 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z" /></svg></button>
@@ -325,7 +366,7 @@ export function App() {
       </div></div></div>
       </div>
     </aside>
-    <main className="workspace">
+    <main className="workspace" inert={compactLayout && mobileNavigationOpen}>
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>{t('Web GUI 与 OpenSurge 的安全连接已过期')}</h1><p>{t('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。')}</p></div></section> : <>
         {isLANBrowser() && page === 'network' && <p className="lan-network-notice">{t('修改 Mac 网络地址或恢复自动 DHCP 可能断开当前页面。断开后请在 Mac 上确认结果和新的管理地址，勿重复提交。')}</p>}
         {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network', 'control')} />}

@@ -33,3 +33,18 @@ html[data-theme="light"] .settings-app { --settings-text: #253c31; --settings-mu
 .settings-app input[role="switch"]:checked::before { transform: translateX(12px); }
 .settings-app input[role="switch"]:disabled { opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .settings-app input[role="switch"]::before { transition: none; } }
+@media (max-width: 600px) {
+  .settings-app { padding: 28px 16px max(24px, env(safe-area-inset-bottom)); font-size: 14px; }
+  .settings-header { margin-bottom: 20px; }
+  .settings-section { border-radius: 14px; }
+  .settings-row { min-height: 64px; gap: 12px; }
+  .settings-row .select-control { width: min(58%, 210px); min-height: 42px; font-size: 14px; }
+  .settings-app button:not(.select-control) { min-height: 42px; padding: 9px 12px; border-radius: 9px; }
+  .settings-app .lan-hint, .settings-hint, .settings-error { font-size: 12px; line-height: 1.7; }
+  .settings-app .lan-actions > button { flex: 1; }
+  .settings-app .lan-share { align-items: center; text-align: center; padding-top: 16px; gap: 12px; }
+  .settings-app .lan-share > div { justify-items: center; width: 100%; }
+  .settings-app .lan-share code { font-size: 12px; }
+  .settings-app .lan-reset > summary { min-height: 36px; padding-top: 6px; }
+  .settings-app .lan-password-form input { min-height: 44px; font-size: 16px; }
+}

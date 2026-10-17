@@ -75,10 +75,10 @@ export function ConnectionsPage({ overview, view, onViewChange, restoreScrollY }
         <div className="connection-table-wrap"><table className="connection-table"><thead><tr><th>{t('目标与来源')}</th><th>{t('协议')}</th><th>{t('实际出口链')}</th><th>{t('命中规则')}</th><th>{t('上下行速率')}</th><th>{t('持续时间')}</th></tr></thead><tbody>
           {visible.map(connection => <Fragment key={connection.id}><tr className={view.connection === connection.id ? 'selected' : ''}>
             <td><button type="button" className="connection-target" aria-expanded={view.connection === connection.id} onClick={() => onViewChange({ connection: view.connection === connection.id ? '' : connection.id })}>{connectionTarget(connection)}</button><small>{owners.get(connection.owner_key) ? connectionDeviceName(owners.get(connection.owner_key)!) : t('无法归属')} · {connectionMetadata(connection, 'sourceIP') || '—'}</small></td>
-            <td>{connectionMetadata(connection, 'network').toUpperCase() || '—'}<small>{connection.source_family === 'unknown' ? '—' : connection.source_family === 'ipv4' ? 'IPv4' : 'IPv6'}</small></td>
-            <td>{connectionChain(connection)}</td><td>{connection.rule || '—'}<small>{connection.rule_payload}</small></td>
-            <td className="connection-numeric">↑ {unavailable ? '—' : formatRate(connection.upload_rate)}<small>↓ {unavailable ? '—' : formatRate(connection.download_rate)}</small></td>
-            <td>{connectionDuration(connection, snapshot.sampled_at)}</td>
+            <td data-label={t('协议')}>{connectionMetadata(connection, 'network').toUpperCase() || '—'}<small>{connection.source_family === 'unknown' ? '—' : connection.source_family === 'ipv4' ? 'IPv4' : 'IPv6'}</small></td>
+            <td data-label={t('实际出口链')}>{connectionChain(connection)}</td><td data-label={t('命中规则')}>{connection.rule || '—'}<small>{connection.rule_payload}</small></td>
+            <td data-label={t('上下行速率')} className="connection-numeric">↑ {unavailable ? '—' : formatRate(connection.upload_rate)}<small>↓ {unavailable ? '—' : formatRate(connection.download_rate)}</small></td>
+            <td data-label={t('持续时间')}>{connectionDuration(connection, snapshot.sampled_at)}</td>
           </tr>{selection?.id === connection.id && <tr className="connection-detail-row"><td colSpan={6}><ConnectionDetail connection={selection} current device={owners.get(selection.owner_key)} onClose={() => onViewChange({ connection: '' })} /></td></tr>}</Fragment>)}
         </tbody></table></div>
         {!visible.length && <Empty text={t(unavailable ? '连接数据暂不可用，请等待恢复。' : view.owner !== 'all' && !selectedDevice ? '该设备可能已离开当前观察范围，可选择全部连接。' : '当前筛选下没有活跃连接；没有连接不代表设备离线。')} />}

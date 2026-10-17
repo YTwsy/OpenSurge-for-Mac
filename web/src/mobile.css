@@ -1,0 +1,328 @@
+/* Shared compact layout for every browser page. Desktop keeps its own shell. */
+.mobile-header, .mobile-topology { display: none; }
+.sidebar[hidden] { display: none; }
+
+@media (min-width: 901px) and (max-width: 1080px) {
+  body { min-width: 0; }
+  .app-shell:not(.desktop-shell) { grid-template-columns: 210px minmax(0, 1fr); }
+  .app-shell:not(.desktop-shell) .sidebar { width: 210px; padding-inline: 14px; }
+  .app-shell:not(.desktop-shell) .workspace { padding: 32px 24px 48px; }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --mobile-surface: #0d1b17;
+    --mobile-soft: #13271f;
+    --mobile-text: #e4f1e9;
+    --mobile-muted: #93aa9e;
+    --mobile-line: #294237;
+    --mobile-accent: #83deb0;
+    --mobile-header: #0b1915f5;
+  }
+  html[data-theme="light"] {
+    --mobile-surface: #fff;
+    --mobile-soft: #f0f6f2;
+    --mobile-text: #213d2f;
+    --mobile-muted: #62796a;
+    --mobile-line: #d3e2d9;
+    --mobile-accent: #26764e;
+    --mobile-header: #f8fcf9f5;
+  }
+  body { min-width: 0; }
+  .app-shell:not(.desktop-shell) { display: block; }
+  .app-shell:not(.desktop-shell) .workspace { width: 100%; padding: 24px 20px max(40px, env(safe-area-inset-bottom)); }
+  .workspace > *, .workspace section, .workspace article, .workspace fieldset, .workspace .grow { min-width: 0; }
+  .mobile-header { position: sticky; z-index: 20; top: 0; display: flex; align-items: center; gap: 12px; padding: max(10px, env(safe-area-inset-top)) 16px 10px; min-height: 66px; border-bottom: 1px solid var(--mobile-line); background: var(--mobile-header); backdrop-filter: blur(20px); color: var(--mobile-text); }
+  .mobile-brand { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1; }
+  .mobile-brand img { width: 34px; height: 34px; flex: none; }
+  .mobile-brand strong { display: block; font-size: 15px; font-weight: 700; letter-spacing: -.03em; }
+  .mobile-brand small { display: block; margin-top: 2px; font-size: 11px; color: var(--mobile-muted); }
+  .mobile-status { display: flex; align-items: center; gap: 7px; max-width: 38%; font-size: 11px; line-height: 1.4; }
+  .mobile-status .status-dot { width: 6px; height: 6px; flex: none; }
+  .mobile-nav-toggle, .mobile-nav-close { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 10px; border: 1px solid var(--mobile-line); border-radius: 12px; background: var(--mobile-surface); color: var(--mobile-text); box-shadow: none; }
+  .mobile-nav-toggle svg { width: 21px; height: 21px; }
+  .mobile-nav-backdrop { position: fixed; z-index: 60; inset: 0; background: #05130c88; backdrop-filter: blur(4px); }
+  .app-shell:not(.desktop-shell) .sidebar { position: fixed; z-index: 61; inset: 0 auto 0 0; display: flex; align-items: stretch; gap: 0; width: min(330px, calc(100vw - 32px)); height: 100dvh; padding: max(24px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)); background: var(--mobile-surface); border-right: 1px solid var(--mobile-line); box-shadow: 20px 0 70px #001a1640; overflow-y: auto; overscroll-behavior: contain; }
+  .app-shell:not(.desktop-shell) .sidebar[hidden] { display: none; }
+  .mobile-nav-close { position: absolute; right: 14px; top: max(20px, env(safe-area-inset-top)); font-size: 24px; }
+  .sidebar .brand { flex: none; padding: 0 50px 26px 4px; min-height: 64px; }
+  .sidebar .brand-mark { width: 38px; height: 38px; }
+  .sidebar nav { display: grid; gap: 5px; flex: none; padding: 0 0 22px; overflow: visible; }
+  .sidebar nav button { min-height: 46px; padding: 11px 14px; border-radius: 11px; font-size: 14px; gap: 13px; white-space: normal; }
+  .sidebar nav button span { font-size: 18px; width: 20px; }
+  .sidebar-footer { width: 100%; }
+  .sidebar-status { padding: 18px 8px 4px; margin-top: 8px; }
+  .sidebar-controls, .sidebar:has(.lan-session-controls) .sidebar-controls { max-height: none; margin: 0 0 8px; overflow: hidden; }
+  .sidebar-controls .sidebar-control-row { min-height: 50px; padding: 11px 14px; }
+  .sidebar-controls .sidebar-control-copy strong { font-size: 14px; }
+  .lan-session-controls .lan-password-form { padding: 14px; }
+  .lan-session-controls .lan-password-form :is(input, button) { min-height: 44px; }
+
+  .page-header { display: grid; align-items: start; gap: 18px; margin-bottom: 24px; }
+  .page-header > div { min-width: 0; }
+  .page-header small { font-size: 10px; letter-spacing: .13em; }
+  .page-header h1, :root .devices-workbench-page .page-header h1 { font-size: 28px; line-height: 1.25; letter-spacing: -.04em; margin: 7px 0 9px; overflow-wrap: anywhere; }
+  .page-header p, :root .devices-workbench-page .page-header p { margin: 0; font-size: 13px; line-height: 1.7; }
+  .page-header > button, .page-header > .policy-header-actions { justify-self: start; }
+  .workspace button { touch-action: manipulation; }
+  .workspace :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) { font-size: 16px; max-width: 100%; min-width: 0; }
+  .workspace :is(button.primary, button.select-control, .section button, .segmented button, .connection-filters button, .connection-pagination button) { min-height: 42px; }
+  .workspace :is(.library-item-actions button, .library-pane-heading button, .builtin-template button, .rule-actions button, .connectivity-category-head button, .outlet-toolbar button) { min-height: 42px; }
+  .select-option { min-height: 44px; font-size: 14px; }
+  .workspace :is(.section, .split, .source-card, .source-import-card, .device-card) { padding: 18px; border-radius: 15px; }
+  .workspace :is(.section-title, .source-head, .diagnostic-doctor-head, .traffic-section-heading) { gap: 12px; flex-wrap: wrap; }
+  .section-title h2, .traffic-section-heading h2 { font-size: 18px; line-height: 1.4; }
+  .section-title p, .traffic-section-heading p, .source-description { font-size: 12px; line-height: 1.65; }
+  .workspace :is(.notice, .evidence-note, .lan-network-notice, .empty) { font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+  .workspace .lan-network-notice { margin-top: 0; border-color: var(--mobile-line); color: var(--mobile-muted); background: var(--mobile-soft); }
+  .workspace :is(.notice.actionable, .recovery-banner, .error-banner, .sticky-save) { flex-wrap: wrap; gap: 12px; }
+  .workspace .recovery-banner { padding: 16px; }
+  .workspace .recovery-banner > div { flex: 1 1 220px; }
+  .workspace .recovery-banner > button { width: 100%; min-height: 42px; }
+  .workspace :is(.split, .config-form, .dhcp-config-grid, .mode-detail-copy, .registration-body, .mihomo-dns-advanced-grid, .source-import-grid, .source-grid, .recovery-card-grid, .local-system-proxy-card) { grid-template-columns: minmax(0, 1fr); }
+  .workspace :is(.config-field.wide, .config-form .wide) { grid-column: 1 / -1; }
+  .workspace .row { flex-wrap: wrap; gap: 12px; }
+  .workspace .row .grow { flex: 1 1 180px; overflow-wrap: anywhere; }
+  .workspace .row small { line-height: 1.6; overflow-wrap: anywhere; }
+  .sticky-save.has-changes, .sticky-save.needs-reload { bottom: max(10px, env(safe-area-inset-bottom)); padding: 14px; box-shadow: 0 6px 24px #001a1620; }
+  .sticky-save > div { flex: 1 1 100%; }
+  .sticky-save > button { flex: 1; white-space: normal; font-size: 13px; }
+  .operation-progress, .operation-notifications, .connection-refresh-prompts { max-width: 100%; overflow-wrap: anywhere; }
+  .workspace :is(.outlet-dialog, .reload-dialog) { width: calc(100vw - 24px); max-height: calc(100dvh - 32px); border-radius: 18px; }
+  .outlet-dialog-head, .outlet-toolbar, .outlet-options { padding: 16px; }
+  .outlet-toolbar, .outlet-dialog-head { gap: 12px; flex-wrap: wrap; }
+  .outlet-options { grid-template-columns: 1fr; }
+  .outlet-option { min-height: 68px; }
+  .outlet-option-main strong { white-space: normal; overflow-wrap: anywhere; }
+
+  /* Dashboard: compact metrics and readable device rows. */
+  .dashboard-live-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .gateway-health-card { padding: 18px; min-height: 0; }
+  .gateway-health-main { flex-direction: column; align-items: stretch; gap: 16px; }
+  .gateway-health-identity { gap: 13px; }
+  .gateway-health-main .orb { width: 46px; height: 46px; }
+  .gateway-health-main h2 { font-size: 25px; }
+  .gateway-health-meta { flex: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gateway-meta { padding: 10px; gap: 5px; }
+  .gateway-meta small { font-size: 10px; letter-spacing: 0; }
+  .gateway-meta strong { font-size: 12px; }
+  .gateway-service-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 8px; }
+  .gateway-service-state small { font-size: 10px; }
+  .live-rate-card { min-height: 180px; padding: 14px 14px 0; }
+  .live-rate-card header { gap: 7px; }
+  .live-rate-card header em { display: none; }
+  .rate-reading strong { font-size: 30px; }
+  .rate-meta { font-size: 10px; flex-direction: column; gap: 4px; }
+  .rate-mini-chart svg { height: 48px; }
+  .dashboard-monitor-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 12px; }
+  .activity-card, .traffic-trend-card { min-height: 0; padding: 18px; }
+  .activity-total { margin-top: 16px; font-size: 36px; }
+  .activity-breakdown { margin-top: 18px; }
+  .activity-breakdown small { font-size: 11px; line-height: 1.5; }
+  .trend-card-header p { white-space: normal; font-size: 11px; line-height: 1.6; }
+  .device-traffic-layout, .device-traffic-layout.expanded { grid-template-columns: minmax(0, 1fr); }
+  .device-traffic-grid-head { display: none; }
+  .device-traffic-grid, .app-shell:has(.lan-session-controls) .device-traffic-grid { overflow: hidden; }
+  .device-traffic-row, .device-traffic-layout.expanded .device-traffic-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; padding: 16px; }
+  .device-traffic-row .traffic-device { grid-column: 1 / -1; }
+  .traffic-device strong { font-size: 14px; }
+  .traffic-device small { font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
+  .device-traffic-row .traffic-ip { grid-column: 1 / 3; }
+  .traffic-ip code { font-size: 12px; }
+  .traffic-connections { display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 13px; }
+  .traffic-connections::before { content: attr(data-label); font-size: 11px; color: var(--mobile-muted); font-weight: 400; }
+  .traffic-rate::before { content: attr(data-label); display: block; margin-bottom: 5px; font-size: 11px; color: var(--mobile-muted); }
+  .traffic-rate strong { font-size: 14px; }
+  .traffic-rate small, .traffic-egress small { font-size: 10px; white-space: normal; overflow-wrap: anywhere; }
+  .traffic-egress strong { font-size: 12px; }
+
+  /* Network and sources: vertically arranged controls and clear actions. */
+  .mode-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .mode { min-height: 96px; padding: 16px; }
+  .mode h3 { font-size: 16px; }
+  .mode p { font-size: 12px; line-height: 1.6; }
+  .mode-detail-layout { grid-template-columns: 1fr; gap: 18px; }
+  .mode-detail-heading { display: flex; flex-wrap: wrap; gap: 10px; }
+  .mode-topology-image { display: none; }
+  .mobile-topology { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+  .mobile-topology li { position: relative; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; align-items: center; padding: 12px 0; }
+  .mobile-topology li::before { content: ''; width: 10px; height: 10px; justify-self: center; border: 2px solid var(--mobile-accent); border-radius: 50%; background: var(--mobile-surface); z-index: 1; }
+  .mobile-topology li:not(:last-child)::after { content: ''; position: absolute; top: 50%; bottom: -50%; left: 12px; width: 2px; background: var(--mobile-line); }
+  .mobile-topology strong, .mobile-topology small { display: block; }
+  .mobile-topology strong { font-size: 13px; }
+  .mobile-topology small { margin-top: 4px; font-size: 11px; color: var(--mobile-muted); line-height: 1.6; }
+  .mode-facts > div { grid-template-columns: 82px minmax(0, 1fr); gap: 12px; }
+  .config-switch { gap: 12px; padding: 14px; }
+  .config-switch-copy, .gateway-lifecycle-copy { min-width: 0; }
+  .gateway-lifecycle-row, .ipv6-runtime { grid-template-columns: 1fr; flex-direction: column; align-items: stretch; }
+  .gateway-lifecycle-row > button { width: 100%; }
+  .source-origin, .source-head h2, .source-summary, .source-binding { overflow-wrap: anywhere; }
+  .source-actions, .source-location-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .source-actions > button, .source-location-actions > button { flex: 1 1 130px; min-height: 42px; }
+  .workspace .tailscale-section { padding: 0; }
+  .tailscale-hero { padding: 18px; gap: 12px; }
+  .tailscale-heading > small { font-size: 9px; }
+  .tailscale-heading > p { font-size: 12px; line-height: 1.65; }
+  .tailscale-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tailscale-facts > div { padding: 13px 16px; }
+  .tailscale-facts small, .tailscale-facts span, .tailscale-runtime small { font-size: 10px; white-space: normal; line-height: 1.6; }
+  .tailscale-runtime strong { font-size: 12px; }
+  .tailscale-foot { padding: 14px 18px; gap: 10px; }
+  .tailscale-section-copy p, .tailscale-editor-head p, .tailscale-form-grid label, .tailscale-auth-steps li, .tailscale-resource-copy small, .tailscale-save-summary > span small { font-size: 12px; line-height: 1.6; }
+  .tailscale-discovery-copy > p, .tailscale-auth-heading small, .tailscale-auth-card > small { font-size: 11px; line-height: 1.6; }
+  .tailscale-form-grid input, .tailscale-list-editor input { min-height: 44px; }
+  .tailscale-save-summary > span strong { font-size: 12px; white-space: normal; line-height: 1.6; }
+  .profile-overlay-hero { grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
+  .profile-overlay-controls { grid-column: 2; justify-content: flex-start; flex-wrap: wrap; }
+  .overlay-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overlay-resource-form, .overlay-resource-form.proxy, .overlay-rule-form { grid-template-columns: minmax(0, 1fr); }
+  .overlay-resource-form.proxy button { grid-column: auto; }
+  .custom-dns-card.section { padding: 18px; }
+  .custom-dns-editor-toolbar, .custom-dns-save-bar, .custom-dns-summary { align-items: stretch; flex-direction: column; }
+  .custom-dns-tools { gap: 8px; }
+  .custom-dns-tools > div { flex: 1 1 100%; gap: 6px; padding: 0; border: 0; }
+  .custom-dns-tools button { min-height: 40px; flex: 1; padding: 8px; font-size: 12px; white-space: normal; }
+  .custom-dns-editor textarea { min-height: 260px; padding: 14px; font-size: 16px; line-height: 1.7; }
+  .custom-dns-save-bar .custom-dns-actions { display: flex; justify-content: stretch; }
+  .custom-dns-save-bar button { flex: 1; }
+  .custom-dns-apply-copy { flex-basis: 100%; }
+  .custom-dns-apply > button { width: 100%; white-space: normal; }
+  .custom-dns-comparison { grid-template-columns: minmax(0, 1fr); }
+
+  /* Devices: a swipeable device selector, with the selected editor below it. */
+  :root .devices-workbench-page .device-workbench { grid-template-columns: minmax(0, 1fr); }
+  :root .devices-workbench-page .device-workbench-list { position: static; display: flex; gap: 8px; max-height: none; padding: 12px; overflow-x: auto; scroll-snap-type: x proximity; }
+  :root .devices-workbench-page .device-list-item { flex: 0 0 190px; min-height: 76px; margin: 0; padding: 12px; scroll-snap-align: start; border: 1px solid var(--device-border); border-radius: 10px; }
+  :root .devices-workbench-page .device-list-symbol { display: none; }
+  :root .devices-workbench-page .device-workbench-detail { min-width: 0; min-height: 0; border-left: 0; border-top: 1px solid var(--device-border); }
+  :root .devices-workbench-page .device-card { padding: 18px; border-radius: 0 0 14px 14px; }
+  :root .devices-workbench-page .device-title { font-size: 22px; }
+  :root .devices-workbench-page .device-search { width: 100%; }
+  :root .devices-workbench-page .device-search input { font-size: 16px; min-height: 44px; }
+  :root .devices-workbench-page .device-workbench-toolbar > div { width: 100%; justify-content: space-between; gap: 8px; }
+  :root .devices-workbench-page .workbench-tabs { display: flex; overflow-x: auto; gap: 22px; white-space: nowrap; }
+  :root .devices-workbench-page .workbench-tabs button { min-height: 44px; flex: none; }
+  :root .devices-workbench-page .local-routing-card { grid-template-columns: minmax(0, 1fr); padding: 18px; }
+  :root .devices-workbench-page .local-mode-switch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  :root .devices-workbench-page .local-mode-switch button { min-height: 42px; padding: 8px; }
+  :root .devices-workbench-page .local-routing-tools { text-align: left; }
+  :root .devices-workbench-page .route-options { display: grid; grid-template-columns: minmax(0, 1fr); }
+  :root .devices-workbench-page .route-options label { padding: 14px; }
+  :root .devices-workbench-page .flat-rule, :root .devices-workbench-page .device-route-library, :root .devices-workbench-page .registration-body { grid-template-columns: minmax(0, 1fr); }
+  :root .devices-workbench-page .rule-summary { grid-template-columns: minmax(0, 1fr) auto; }
+  :root .devices-workbench-page .rule-summary > strong { grid-column: 1 / -1; text-align: left; }
+  :root .devices-workbench-page .rule-actions { justify-content: flex-end; flex-wrap: wrap; }
+  :root .devices-workbench-page .device-identity-details summary span { float: none; display: block; margin: 5px 0 0; }
+  :root .devices-workbench-page .outlet-summary { gap: 10px; padding: 14px; }
+  :root .devices-workbench-page .outlet-options { padding: 12px; }
+  :root .devices-workbench-page .builtin-template-heading p { font-size: 12px; line-height: 1.7; }
+
+  /* Connections: preserve all fields as labeled cards, without a wide table. */
+  .connection-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .connection-owner-list { display: flex; flex-wrap: nowrap; gap: 8px; padding: 10px; overflow-x: auto; scroll-snap-type: x proximity; }
+  .connection-owner { flex: 0 0 165px; margin: 0; min-height: 76px; padding: 12px; border: 1px solid var(--mobile-line); scroll-snap-align: start; }
+  .connection-owner > span:first-child { min-width: 0; }
+  .connection-owner small { font-size: 11px; line-height: 1.5; }
+  .connection-owner-heading, .connection-owner-empty { display: none; }
+  :root .devices-workbench-page .device-workbench-list, .connection-owner-list { scrollbar-width: none; }
+  :root .devices-workbench-page .device-workbench-list::-webkit-scrollbar, .connection-owner-list::-webkit-scrollbar { display: none; }
+  .connection-main-heading { padding: 18px 16px 14px; }
+  .connection-main-heading p, .connection-sample-status { font-size: 12px; line-height: 1.6; }
+  .connection-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 16px 16px; gap: 8px; }
+  .connection-filters input { grid-column: 1 / -1; min-height: 44px; }
+  .connection-filters .select-control { width: 100%; min-height: 42px; font-size: 12px; }
+  .connection-table-wrap { overflow: visible; }
+  .connection-table, .connection-table tbody { display: block; width: 100%; min-width: 0; }
+  .connection-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .connection-table tr:not(.connection-detail-row) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; padding: 18px 16px; border-top: 1px solid var(--mobile-line); }
+  .connection-table tr:not(.connection-detail-row) > td { display: block; padding: 0; border: 0; font-size: 12px; line-height: 1.6; min-width: 0; }
+  .connection-table tr:not(.connection-detail-row) > td:first-child { grid-column: 1 / -1; }
+  .connection-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; color: var(--mobile-muted); font-size: 10px; }
+  .connection-table .connection-target { min-height: 28px; font-size: 15px; font-weight: 650; }
+  .connection-table td small { font-size: 11px; margin-top: 3px; }
+  .connection-detail-row, .connection-detail-row > td { display: block; width: 100%; }
+  .connection-detail { padding: 16px; }
+  .connection-detail dl > div { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
+  .connection-pagination { padding: 16px; }
+  .connection-pagination > div { width: 100%; }
+  .connection-pagination button { flex: 1; }
+
+  /* Policies and connectivity: readable names, larger touch targets, no clipping. */
+  .policy-local-mac { grid-template-columns: minmax(0, 1fr); padding: 18px; }
+  .policy-header-actions { flex-wrap: wrap; gap: 10px; }
+  .policy-health-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .policy-health-overview > div { min-height: 84px; padding: 14px 12px; }
+  .policy-health-overview small { font-size: 10px; letter-spacing: 0; }
+  .policy-health-overview > .health-legend { grid-column: 1 / -1; min-height: 44px; padding: 12px; justify-content: space-between; gap: 8px; font-size: 11px; }
+  .policy-controls-sticky { top: calc(72px + env(safe-area-inset-top)); padding: 8px; box-shadow: 0 6px 18px #001a1612; }
+  .policy-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; gap: 8px; }
+  .policy-search input { min-height: 44px; }
+  .policy-toolbar .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; justify-self: stretch; }
+  .policy-toolbar .segmented button { padding: 8px; font-size: 12px; }
+  .policy-group-nav-shell { grid-template-columns: 36px minmax(0, 1fr) 36px; }
+  .policy-group-nav-step { width: 36px; height: 40px; }
+  .policy-group-nav button { min-height: 40px; font-size: 12px; }
+  .policy-health-group { scroll-margin-top: 244px; }
+  .policy-group-head { flex-wrap: wrap; padding: 16px; gap: 12px; }
+  .policy-group-head > div:first-child { min-width: 0; width: 100%; }
+  .policy-group-head h2, .policy-group-head p { overflow-wrap: anywhere; }
+  .policy-group-head p { font-size: 12px; line-height: 1.6; }
+  .group-health-summary { width: 100%; justify-content: space-between; }
+  .group-health-summary > span { font-size: 12px; }
+  .group-health-summary button { min-height: 40px; }
+  .proxy-node-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
+  .proxy-node { min-height: 78px; padding: 12px; }
+  .node-copy strong { font-size: 13px; white-space: normal; overflow-wrap: anywhere; }
+  .node-copy small { font-size: 11px !important; }
+  .probe-scope { grid-template-columns: minmax(0, 1fr); margin: 0 0 16px; gap: 8px; }
+  .probe-scope button, .probe-scope a { padding: 13px 14px; min-height: 64px; }
+  .probe-scope strong { font-size: 13px; }
+  .probe-scope small { font-size: 11px; line-height: 1.6; }
+  .connectivity-overview { grid-template-columns: minmax(0, 1fr); }
+  .connectivity-score { padding: 18px; gap: 14px; }
+  .score-orb { width: 66px; height: 66px; }
+  .connectivity-score > div { min-width: 0; }
+  .connectivity-score h2 { font-size: 17px; line-height: 1.5; }
+  .connectivity-score p { font-size: 12px; line-height: 1.6; }
+  .connectivity-metrics small { font-size: 11px; }
+  .baseline-control { display: grid; gap: 12px; padding: 16px; }
+  .baseline-control strong { font-size: 12px; }
+  .baseline-control small { font-size: 11px; line-height: 1.5; }
+  .baseline-control .segmented { display: flex; }
+  .baseline-control .segmented button { flex: 1; font-size: 12px; white-space: normal; padding: 8px; }
+  .connectivity-category-head { grid-template-columns: 34px minmax(0, 1fr); padding: 16px; gap: 12px; }
+  .category-summary { grid-column: 2; justify-content: space-between; font-size: 11px; }
+  .connectivity-category-head p { font-size: 11px; line-height: 1.6; }
+  .connectivity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 12px; }
+  .connectivity-target { padding: 14px; }
+  .target-main strong { font-size: 13px; }
+  .target-main small { font-size: 11px; }
+  .connectivity-value { font-size: 13px; }
+  .route-summary strong { white-space: normal; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+  .route-summary small { font-size: 10px; }
+  .target-details summary { font-size: 12px; min-height: 32px; padding: 6px 0; }
+  .target-evidence p span, .target-evidence p strong, .sample-list span { font-size: 11px; }
+  .target-evidence p strong { white-space: normal; overflow-wrap: anywhere; }
+
+  /* Diagnostics: contain long logs within their own scroll area. */
+  .diagnostic-doctor-head { align-items: flex-start; }
+  .check { align-items: flex-start; gap: 12px; padding: 14px 0; }
+  .check > div { min-width: 0; }
+  .check strong, .check small { overflow-wrap: anywhere; }
+  .check small { line-height: 1.7; font-size: 12px; }
+  .recent-logs pre { max-width: 100%; max-height: 340px; padding: 14px; font-size: 12px; line-height: 1.7; overflow: auto; }
+}
+
+@media (max-width: 560px) {
+  .app-shell:not(.desktop-shell) .workspace { padding-inline: 16px; }
+  .workspace .page-header h1, :root .devices-workbench-page .page-header h1 { font-size: 26px; }
+  .proxy-node-grid, .connectivity-grid { grid-template-columns: minmax(0, 1fr); }
+  .workspace .split { gap: 24px; }
+  .workspace :is(.ipv6-runtime dl, .ipv6-dns-step, .ipv6-card-step, .bypass-client-guide-grid) { grid-template-columns: minmax(0, 1fr); }
+  .ipv6-runtime dl > div, .bypass-client-guide-grid dl > div { grid-template-columns: minmax(0, 1fr); }
+  .outlet-summary-state { gap: 8px; }
+  .source-head { align-items: flex-start; }
+  .source-head > div { min-width: 0; }
+  .config-field-title { flex-direction: column; align-items: flex-start; gap: 5px; }
+  .config-field-title code { font-size: 10px; overflow-wrap: anywhere; }
+}

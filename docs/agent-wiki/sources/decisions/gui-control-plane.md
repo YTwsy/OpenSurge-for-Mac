@@ -71,6 +71,21 @@ Language saves fence background preference refreshes until the
 mutation completes; async catalog preparation must recheck the request generation
 before updating the rendered language.
 
+## 移动端浏览器布局
+
+浏览器视口不超过 900px 时使用紧凑顶栏与可关闭的导航抽屉，页面入口和快捷设置复用
+桌面侧栏。抽屉开启时锁定背景滚动、限制键盘焦点，并支持 Escape 关闭及焦点返回；
+未保存草稿的离开确认仍然生效，取消离开不能先关闭导航或丢弃草稿。
+
+所有主页面共用窄屏间距与表单规则，输入字号至少 16px，主要触控目标至少 42px。
+连接表和总览设备流量转换为保留字段标签的卡片；设备清单与策略分组导航可局部横向
+滚动，正文不依赖整页横向滚动。网络拓扑在窄屏使用同一文案数据的纵向结构，来源、
+DNS 编辑器、设备规则、连通性证据、诊断日志和 App 设置也必须保持完整可访问。
+
+界面验收应覆盖 360px、390px、430px 手机宽度及平板/桌面宽度，使用包含设备、连接、
+节点与长文本的场景检查浅色和深色主题，并展开编辑区与详情。浏览器窄视口预览只证明
+布局和交互，不构成真机浏览器或真实网关网络路径的验证。
+
 ## 网关操作与网络设置
 
 Web GUI 总览页的“启动网关”与“停止网关”只导航到 `network` 页面，不得直接调用

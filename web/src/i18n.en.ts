@@ -1,4 +1,7 @@
 export const englishMessages: Record<string, string> = {
+  '打开导航': 'Open navigation',
+  '关闭导航': 'Close navigation',
+  '页面导航': 'Page navigation',
   '修改 Mac 网络地址或恢复自动 DHCP 可能断开当前页面。断开后请在 Mac 上确认结果和新的管理地址，勿重复提交。': 'Changing the Mac network address or restoring DHCP may disconnect this page. Check the outcome and new management address on the Mac before submitting again.',
   '局域网管理': 'LAN Management',
   '登录已过期或已退出，请重新输入管理密码。': 'Your session expired or was signed out. Enter the management password again.',

@@ -386,6 +386,46 @@ describe('OpenSurge app shell', () => {
     expect(screen.queryByRole('button', { name: '退出登录' })).toBeNull()
   })
 
+  it('uses a dismissible mobile navigation drawer and closes it after choosing a page', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 900px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    render(<App />)
+    await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    const toggle = screen.getByRole('button', { name: '打开导航' })
+    expect(screen.queryByRole('navigation')).toBeNull()
+    await userEvent.click(toggle)
+    const drawer = screen.getByRole('dialog', { name: '页面导航' })
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(within(drawer).getByRole('button', { name: '总览' }).getAttribute('aria-current')).toBe('page')
+    const close = within(drawer).getByRole('button', { name: '关闭导航' })
+    close.focus()
+    await userEvent.tab({ shift: true })
+    expect(document.activeElement).toBe(within(drawer).getByRole('button', { name: /^快捷设置：/ }))
+    await userEvent.tab()
+    expect(document.activeElement).toBe(close)
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.body.style.overflow).toBe('')
+    expect(document.activeElement).toBe(toggle)
+    await userEvent.click(toggle)
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '网络设置' }))
+    expect(window.location.pathname).toBe('/network')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('keeps mobile quick settings and LAN session actions inside the navigation drawer', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 900px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    setBrowserSession({ mode: 'lan', authenticated: true, local_client: false })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '打开导航' }))
+    const drawer = screen.getByRole('dialog', { name: '页面导航' })
+    await userEvent.click(within(drawer).getByRole('button', { name: /^快捷设置：/ }))
+    expect(within(drawer).getByRole('button', { name: '修改管理密码' })).toBeTruthy()
+    expect(within(drawer).getByRole('button', { name: '退出登录' })).toBeTruthy()
+    await userEvent.click(within(drawer).getByRole('button', { name: '关闭导航' }))
+    expect(screen.queryByRole('button', { name: '退出登录' })).toBeNull()
+  })
+
   it.each(['local browser', 'LAN URL on gateway Mac', 'desktop app'])('hides LAN session actions in the %s', async entry => {
     setBrowserSession({ mode: entry === 'local browser' ? 'local' : 'lan', authenticated: true, local_client: entry === 'LAN URL on gateway Mac' })
     if (entry === 'desktop app') {
@@ -1939,7 +1979,8 @@ describe('OpenSurge app shell', () => {
     }), 'policy-r')
   })
 
-  it('protects unsaved device edits before sidebar navigation', async () => {
+  it.each([false, true])('protects unsaved device edits before sidebar navigation (compact: %s)', async compact => {
+    if (compact) vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(max-width: 900px)', addEventListener: vi.fn(), removeEventListener: vi.fn() }))
     vi.mocked(api.config).mockResolvedValue({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', lan_prefix_len: 24, upstream_interface: 'en0' },
@@ -1951,15 +1992,18 @@ describe('OpenSurge app shell', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     render(<App />)
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
+    if (compact) await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
     await userEvent.click(screen.getByRole('button', { name: '设备' }))
     await userEvent.click(await screen.findByRole('tab', { name: /规则集/ }))
     await userEvent.click(screen.getByRole('button', { name: '＋ 新建规则集' }))
     await userEvent.type(screen.getByLabelText('规则集名称'), 'draft-rule-set')
     await userEvent.type(screen.getByLabelText('规则集内容'), 'draft.example')
     await userEvent.click(screen.getByRole('button', { name: '保存到草稿' }))
+    if (compact) await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
     await userEvent.click(screen.getByRole('button', { name: '策略' }))
     expect(window.location.pathname).toBe('/devices')
     expect(screen.getByText('draft-rule-set')).toBeTruthy()
+    if (compact) expect(screen.getByRole('dialog', { name: '页面导航' })).toBeTruthy()
     confirm.mockReturnValue(true)
     await userEvent.click(screen.getByRole('button', { name: '策略' }))
     expect(window.location.pathname).toBe('/policies')
