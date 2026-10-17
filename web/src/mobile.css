@@ -220,7 +220,8 @@
 
   /* Connections: preserve all fields as labeled cards, without a wide table. */
   .connection-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .connection-owner-list { display: flex; flex-wrap: nowrap; gap: 8px; padding: 10px; overflow-x: auto; scroll-snap-type: x proximity; }
+  /* Keep snapping aligned with the inset instead of pulling the first card to the edge. */
+  .connection-owner-list { display: flex; flex-wrap: nowrap; gap: 8px; padding: 10px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 10px; }
   .connection-owner { flex: 0 0 165px; margin: 0; min-height: 76px; padding: 12px; border: 1px solid var(--mobile-line); scroll-snap-align: start; }
   .connection-owner > span:first-child { min-width: 0; }
   .connection-owner small { font-size: 11px; line-height: 1.5; }
