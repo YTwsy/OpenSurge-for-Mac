@@ -64,6 +64,14 @@
 这也不补齐上节 DNS-02/03 的正式 1053 与 Lab 缺口。执行记录及验收矩阵继续保留在
 [现有任务](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#文件式自定义-dns-实施记录)。
 
+## Mac 本机 IPv6 开关
+
+[本机 IPv6 契约](../decisions/local-system-dns-coordination.md#独立的-mac-ipv6-路径)
+新增独立关闭能力。配置/API、已应用状态和隔离真实核心解析检查不能证明实际 TUN
+地址与路由撤销，或应用自动回退 IPv4。该路径仍需按
+[本机模式门槛](test-gates.md#mac-本机模式隔离门槛)补齐关闭/开启、IPv4 连通及停止恢复，
+并单独复验夸克登录；旧版默认开启路径的历史结果不能代替新开关验收。
+
 ## 使用与更新
 
 先确定具体路径再读对应报告。“最近已知通过”不等于当前 checkout 复验；未收录或未检索到

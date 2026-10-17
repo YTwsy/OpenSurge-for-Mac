@@ -61,8 +61,12 @@ tun:
   auto-route: {{ .TUNAutoRoute }}
   auto-detect-interface: {{ .TUNAutoDetectInterface }}
   strict-route: {{ .TUNStrictRoute }}
+{{- if .MacTUNIPv6Enabled }}
   inet6-address:
     - {{ .TUNIPv6Address }}
+{{- else }}
+  inet6-address: []
+{{- end }}
   dns-hijack:
     - any:53
     - tcp://any:53
@@ -147,6 +151,7 @@ type templateData struct {
 	TUNRouteAddresses      string
 	TUNCustomRoutes        bool
 	IPv6Enabled            bool
+	MacTUNIPv6Enabled      bool
 	TUNIPv6Enabled         bool
 	TUNIPv6Address         string
 	UpstreamInterface      string
@@ -241,6 +246,7 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 		TUNRouteAddresses:      tunRouteAddresses,
 		TUNCustomRoutes:        tunRouteAddresses != "",
 		IPv6Enabled:            cfg.DNS.IPv6 || transparent.TUNEnabled(),
+		MacTUNIPv6Enabled:      transparent.MacTUNIPv6Enabled(),
 		TUNIPv6Enabled:         transparent.TUNIPv6 != config.TUNIPv6Off,
 		TUNIPv6Address:         config.MihomoTUNIPv6,
 		UpstreamInterface:      cfg.Gateway.UpstreamInterface,

@@ -186,7 +186,7 @@ func macTUNIPv6Status(state runtime.State, exists bool, runtimeState, tun string
 		return "interrupted"
 	}
 	if !state.MacTUNIPv6 {
-		return "unknown"
+		return "disabled"
 	}
 	return tun
 }

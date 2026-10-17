@@ -116,6 +116,13 @@ HTTP-only Global 的 UDP 拒绝，系统 TUN 的 IPv4/IPv6 精确来源不会匹
 开启 AAAA 的无原生 IPv6 场景也需真实探针；范围以 [本机路由](../decisions/local-mac-routing-modes.md)
 与 [系统 DNS 契约](../decisions/local-system-dns-coordination.md) 为准。
 
+`transparent.mac_tun_ipv6` 关闭/开启需复验完整重启后的 host TUN 地址、路由、
+本机 IPv4 连通性和停止清理；关闭时不应存在公网、fake 或 Tailnet IPv6 捕获，
+下游 IPv6 listener 与设备规则需保持独立。隔离解析检查
+`OMG_PREPARED_MIHOMO_BINARY=... go test ./internal/mihomo -run TestMacTUNIPv6ConfigRealCore -count=1`
+仅证明真实核心读取显式空地址后不会回填默认值，不启动 TUN，不替代该网络门槛或
+夸克等实际应用的 IPv4 回退验收。
+
 使用发布同源的 patched Mihomo，不能退回引导用的上游 v1.19.27。系统 DNS 验收要求
 `getaddrinfo` 随机新域名返回 fake A/AAAA、系统代理关闭、UDP/TCP DNS 捕获、Mihomo 重启
 后再次接管和 stop 恢复原设置。结合下游 IPv6 门槛才支持完整的本机/下游隔离结论。

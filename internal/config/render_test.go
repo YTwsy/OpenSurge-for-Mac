@@ -106,3 +106,30 @@ func TestRenderRoundTripPreservesTailscaleWithoutAuthKey(t *testing.T) {
 		t.Fatal("rendered gateway config unexpectedly contains an auth key")
 	}
 }
+
+func TestMacTUNIPv6DefaultAndRoundTrip(t *testing.T) {
+	cfg := Default()
+	if !cfg.Transparent.MacTUNIPv6 {
+		t.Fatal("legacy default must preserve host IPv6")
+	}
+	cfg.Transparent.Mode = TransparentModeTUN
+	cfg.Transparent.MacTUNIPv6 = false
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := Render(cfg)
+	for _, legacy := range []bool{false, true} {
+		content := body
+		if legacy {
+			content = strings.ReplaceAll(content, "  mac_tun_ipv6: false\n", "")
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.Transparent.MacTUNIPv6 != legacy {
+			t.Fatalf("legacy=%v: host IPv6=%v", legacy, loaded.Transparent.MacTUNIPv6)
+		}
+	}
+}

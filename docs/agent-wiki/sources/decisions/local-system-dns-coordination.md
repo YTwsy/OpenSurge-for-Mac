@@ -59,12 +59,21 @@ Mac 和下游的 UDP/TCP、固定 A/AAAA、公司上游与真实连接验收仍�
 
 ## 独立的 Mac IPv6 路径
 
-Mac 的系统 TUN 始终使用 `fdfe:dcba:9877::1/126`，不依赖 `dns.ipv6`、
-下游 `transparent.tun_ipv6` 或上游原生 IPv6 检测。补丁核心必须保留显式
-host TUN IPv6 配置。AAAA 只控制 DNS 答案，下游开关继续只控制 RA/BPF packet 路径。
+`transparent.mac_tun_ipv6` 默认 `true`，旧配置缺省时保留原行为。开启时 Mac
+系统 TUN 使用 `fdfe:dcba:9877::1/126`，不依赖 `dns.ipv6`、下游
+`transparent.tun_ipv6` 或上游原生 IPv6 检测。关闭时显式生成 `inet6-address: []`
+覆盖核心自带地址，并移除公网、fake IPv6 和 Tailnet IPv6 的系统 TUN 捕获路由及
+本机 IPv6 来源规则；IPv4 和下游 RA/BPF packet 路径保持原行为。
 
-统一生成 `route-address`：普通 IPv4 捕获减去 LAN/私有例外，公网 IPv6
-`2000::/3`，整个 fake IPv6 `/64`，以及单独的 Tailnet peer/subnet 精确路由。
+该开关不改 DNS AAAA 或 mihomo 顶层 IPv6，也不禁用 macOS 原生 IPv6；关闭后
+本机不能经 TUN 访问 fake IPv6 或 Tailnet IPv6，应用是否回退 IPv4 需实际验证。
+保存后完整重启网关生效；单独重启 mihomo 使用 runtime state 中已应用的值。
+Control API 旧客户端省略字段时保留当前设置。启动/Doctor 在关闭时仅检查 IPv4
+路由，状态依据已应用的开关显示 disabled。
+
+统一生成 `route-address`：普通 IPv4 捕获减去 LAN/私有例外；本机 IPv6 开启时加入公网 IPv6
+`2000::/3` 与整个 fake IPv6 `/64`。Tailnet peer/subnet 精确路由中的 IPv4 始终保留，
+IPv6 仅在本机 IPv6 开启时加入。
 不能让 Tailnet `/128` 替代普通 IPv6，也不能经 IPSet 合并丢掉 `/32` / `/128`
 优先级。link-local、multicast 和普通/下游 ULA 不加入 host 捕获。
 

@@ -247,7 +247,7 @@ func (m Manager) waitForTUN(pid int, timeout time.Duration) error {
 		state, err := FetchTUNRuntimeState(ctx, m.cfg)
 		if err == nil && state.Enabled {
 			if m.cfg.Transparent.TUNAutoRoute {
-				err = macosnetwork.VerifyMacTUNRoutes(ctx, state.Device)
+				err = macosnetwork.VerifyMacTUNRoutes(ctx, state.Device, m.cfg.Transparent.MacTUNIPv6Enabled())
 			}
 			if err == nil {
 				cancel()
