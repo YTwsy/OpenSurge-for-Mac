@@ -4,10 +4,10 @@ export COPYFILE_DISABLE=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${OPENSURGE_CONFIG:-$ROOT/examples/config.example.yaml}"
-# A version string does not identify the applied patch. Never package an
-# externally supplied or cached executable; build this checkout's core below.
+# A version string does not identify the applied patch. The builder below
+# checks cache provenance and the binary digest before reusing an executable.
 if [[ -n "${OPENSURGE_MIHOMO_BINARY:-}" ]]; then
-  echo "prebuilt mihomo is not accepted; unset OPENSURGE_MIHOMO_BINARY (use OPENSURGE_MIHOMO_SOURCE_ARCHIVE for the pinned source archive)" >&2
+  echo "prebuilt mihomo is not accepted; unset OPENSURGE_MIHOMO_BINARY (use OPENSURGE_MIHOMO_CACHE_DIR for a verified build cache)" >&2
   exit 1
 fi
 DNSMASQ="${OPENSURGE_DNSMASQ_BINARY:-$(command -v dnsmasq || true)}"

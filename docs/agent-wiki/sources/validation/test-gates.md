@@ -5,6 +5,11 @@
 不在这里复制完整断言清单。环境准备与清理见 [Lab 运行](lab-gates.md)，
 历史执行结果经 [证据入口](evidence-map.md) 定向读取。
 
+打包缓存改动运行 `python3 tests/packaging/test_mihomo_cache.py`，也包含在
+`scripts/check-gui-packaging.sh` 中。它以临时源码归档和假 Go 工具验证命中、输入失效、
+摘要损坏、缺失来源记录及失败不发布。真实核心另验证一次冷构建、相同输入命中及
+命中后二进制 IPv6 隔离检查；这些检查均不创建系统 TUN，不替代网络门槛。
+
 ## 快速门槛
 
 普通 Go 代码、解析与生成逻辑运行 `make test`（`go test ./...`）；Web 交互与文案按范围

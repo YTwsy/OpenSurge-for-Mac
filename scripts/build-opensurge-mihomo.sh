@@ -10,8 +10,18 @@ OUTPUT="${OPENSURGE_MIHOMO_OUTPUT:-$ROOT/bin/mihomo}"
 TARGET_ARCH="${OPENSURGE_MIHOMO_ARCH:-$(uname -m)}"
 VERSION="${OPENSURGE_MIHOMO_VERSION:-1.19.30-opensurge.1}"
 GO_BIN="${GO_BIN:-$(command -v go || true)}"
+CACHE_DIR="${OPENSURGE_MIHOMO_CACHE_DIR:-$ROOT/runtime/release-tools/cache/mihomo-builds}"
+CACHE_HELPER="$ROOT/scripts/mihomo-build-cache.py"
+# Build the pinned module independently of a caller's Go workspace.
+export GOWORK=off
 
 [[ -x "$GO_BIN" ]] || { echo "Go toolchain not found" >&2; exit 1; }
+absolute_path() { python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$1"; }
+# Keep caller-relative paths valid after entering the extracted source module.
+SOURCE_ARCHIVE="$(absolute_path "$SOURCE_ARCHIVE")"
+OUTPUT="$(absolute_path "$OUTPUT")"
+CACHE_DIR="$(absolute_path "$CACHE_DIR")"
+GO_BIN="$(absolute_path "$GO_BIN")"
 case "$TARGET_ARCH" in
   arm64) GO_ARCH=arm64 ;;
   x86_64|amd64) GO_ARCH=amd64 ;;
@@ -37,6 +47,19 @@ fi
 work_dir="$(mktemp -d "${TMPDIR:-/private/tmp}/opensurge-mihomo.XXXXXX")"
 trap 'rm -rf "$work_dir"' EXIT
 tar -xzf "$SOURCE_ARCHIVE" -C "$work_dir" --strip-components=1
+# Resolve the effective toolchain in the upstream module on both cache hits
+# and misses, including Go's automatic toolchain selection.
+cd "$work_dir"
+describe_inputs() {
+  python3 "$CACHE_HELPER" describe --root "$ROOT" --source "$SOURCE_ARCHIVE" \
+    --go "$GO_BIN" --arch "$GO_ARCH" --version "$VERSION"
+}
+describe_inputs > "$work_dir/inputs.json"
+if python3 "$CACHE_HELPER" restore --manifest "$work_dir/inputs.json" \
+  --cache "$CACHE_DIR" --output "$OUTPUT"; then
+  exit 0
+fi
+echo "No matching verified mihomo cache; rebuilding from current inputs"
 patch -d "$work_dir" -p1 <"$ROOT/patches/mihomo/0001-opensurge-packet-listener.patch"
 cp -R "$ROOT/patches/mihomo/overlay/listener" "$work_dir/"
 cp "$ROOT/patches/mihomo/overlay/config/opensurge_ipv6_test.go" "$work_dir/config/"
@@ -44,7 +67,6 @@ mkdir -p "$(dirname "$OUTPUT")"
 
 build_output="$work_dir/mihomo-opensurge"
 
-cd "$work_dir"
 # Native tests simulate an absent IPv6 uplink; no interfaces or routes are changed.
 "$GO_BIN" test -tags with_gvisor ./config -run '^TestOpenSurgeIPv6WithoutNativeUplink$' -count=1
 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 \
@@ -52,6 +74,12 @@ GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 \
   -ldflags "-X github.com/metacubex/mihomo/constant.Version=$VERSION -w -s -buildid=" \
   -o "$build_output" .
 [[ -x "$build_output" ]] || { echo "Go build completed without producing an executable" >&2; exit 1; }
-install -m 0755 "$build_output" "$OUTPUT"
+describe_inputs > "$work_dir/inputs-after.json"
+cmp -s "$work_dir/inputs.json" "$work_dir/inputs-after.json" || {
+  echo "mihomo build inputs changed during compilation; refusing to cache or publish" >&2
+  exit 1
+}
+python3 "$CACHE_HELPER" publish --manifest "$work_dir/inputs.json" \
+  --cache "$CACHE_DIR" --binary "$build_output" --output "$OUTPUT"
 
 echo "Built OpenSurge mihomo $VERSION for $TARGET_ARCH: $OUTPUT"

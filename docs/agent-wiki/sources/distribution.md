@@ -30,9 +30,9 @@ Wails 接到 Installer 的 TERM 时只退出宿主，不显示交互退出确认
 
 PKG 固定以 `/` 为 install location，`packaging/gui-components.plist` 将 App 标为不可 relocatable，避免 Installer 把它放回构建工作区的 `payload/Applications`。应用、CLI、用户 Control Service、root Helper 与 Web 静态资源随包分发。
 
-安装包中的 mihomo 必须由本次源码与补丁构建并通过隔离核心检查，不能从 `bin/`、
-release-tools 缓存或外部二进制覆盖变量直接复用。该要求与版本号相同与否无关；
-源码归档可以按固定 SHA-256 复用，详见 [构建与发布](releasing.md)。
+安装包中的 mihomo 必须与本次源码、补丁和构建参数一致，并通过隔离核心检查。
+匹配来源记录且二进制摘要正确的构建缓存可以复用；缺失记录、输入不匹配或二进制
+损坏时必须重建，不能仅凭版本号或文件存在复用旧核心。详见 [构建与发布](releasing.md)。
 
 applied config、mihomo/dnsmasq、runtime 与 broker 位于 root-owned 的 `/Library/Application Support/OpenSurge`，Helper 位于 `/Library/PrivilegedHelperTools`。Control Service 经 admin 组只读访问 applied 状态，系统写入使用 Helper 的固定动作。
 
