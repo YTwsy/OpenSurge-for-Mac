@@ -117,7 +117,7 @@ export type ControlConfig = {
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string; bypass_gateway: string; bypass_dns: string[] }
   dns: { listen: string; upstream: string; ipv6: boolean }
   mihomo: { store_fake_ip: boolean }
-  transparent: { mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
+  transparent: { mac_tun_ipv6?: boolean; mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }
   local_system_dns?: { enabled: boolean }
   device_policy: { enabled: boolean; protected_ipv4: string[] }
@@ -270,7 +270,19 @@ export type ProfileOverlay = {
   applied: boolean
   validation: string
 }
+export type DNSReference = {
+  overrides?: { target: string; source: string; digest: string }
+  field: string
+  target: string
+  effective: string
+  source: string
+  source_digest: string
+  purpose: string
+  service: 'self' | 'independent'
+}
+
 export type ProfileOverlayPreview = {
+  dns_references?: DNSReference[]
   schema_version: number
   source_id: string
   source_yaml: string
@@ -441,3 +453,9 @@ export type ConnectionObservation = DeviceTraffic & {
   inventory_error?: string
   connections: ObservedConnection[]
 }
+
+export type CustomDNSDocument = { schema_version: number; enabled: boolean; yaml: string }
+export type CustomDNSDraft = { schema_version: number; revision: string; document: CustomDNSDocument; desired: boolean; applied: boolean; hosts: number; policies: number }
+export type CustomDNSChange = { field: string; before: string; after: string; source: string }
+export type CustomDNSImport = { document: CustomDNSDocument; sections: string[] }
+export type CustomDNSPreview = { changes: CustomDNSChange[]; warnings: string[]; blockers: string[]; final_yaml: string; base_yaml: string; overlay_yaml: string; custom_yaml: string; managed_changes: CustomDNSChange[]; mac_ready: boolean; downstream_ready: boolean; dns_references: DNSReference[] }

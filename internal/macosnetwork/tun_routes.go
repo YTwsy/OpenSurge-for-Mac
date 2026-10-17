@@ -32,12 +32,17 @@ func LookupRoute(ctx context.Context, destination string) (RouteSelection, error
 }
 
 // VerifyMacTUNRoutes is a bounded startup/Doctor check, never a status poll.
-// Check both ends of the synthetic /64 as well as a public IPv6 destination.
-func VerifyMacTUNRoutes(ctx context.Context, device string) error {
+// When host IPv6 is enabled, also check both ends of the synthetic /64 and
+// a public IPv6 destination. Disabled IPv6 must not block IPv4 readiness.
+func VerifyMacTUNRoutes(ctx context.Context, device string, ipv6 bool) error {
 	if device == "" {
 		return fmt.Errorf("Mac TUN device is missing")
 	}
-	for _, destination := range []string{config.LocalSystemDNSServer, "198.18.0.2", "fdfe:dcba:9876::2", "fdfe:dcba:9876:0:ffff:ffff:ffff:ffff", "2001:4860:4860::8888"} {
+	destinations := []string{config.LocalSystemDNSServer, "198.18.0.2"}
+	if ipv6 {
+		destinations = append(destinations, "fdfe:dcba:9876::2", "fdfe:dcba:9876:0:ffff:ffff:ffff:ffff", "2001:4860:4860::8888")
+	}
+	for _, destination := range destinations {
 		route, err := LookupRoute(ctx, destination)
 		if err != nil {
 			return err

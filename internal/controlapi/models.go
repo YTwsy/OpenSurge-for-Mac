@@ -224,6 +224,8 @@ type MihomoConfigInput struct {
 }
 
 type TransparentConfigInput struct {
+	// Omitted by legacy clients; preserve the saved preference.
+	MacTUNIPv6        *bool  `json:"mac_tun_ipv6,omitempty"`
 	Mode              string `json:"mode"`
 	StrictRoute       bool   `json:"strict_route"`
 	TUNIPv6           string `json:"tun_ipv6"`
@@ -445,16 +447,17 @@ type ProfileOverlaySaveRequest struct {
 }
 
 type ProfileOverlayPreview struct {
-	SchemaVersion        int        `json:"schema_version"`
-	SourceID             string     `json:"source_id"`
-	SourceYAML           string     `json:"source_yaml"`
-	OverlayYAML          string     `json:"overlay_yaml"`
-	EffectiveProfileYAML string     `json:"effective_profile_yaml"`
-	FinalMihomoYAML      string     `json:"final_mihomo_yaml"`
-	OriginalInventory    Inventory  `json:"original_inventory"`
-	EffectiveInventory   Inventory  `json:"effective_inventory"`
-	Diff                 SourceDiff `json:"diff"`
-	Validation           string     `json:"validation"`
+	SchemaVersion        int                   `json:"schema_version"`
+	SourceID             string                `json:"source_id"`
+	SourceYAML           string                `json:"source_yaml"`
+	OverlayYAML          string                `json:"overlay_yaml"`
+	EffectiveProfileYAML string                `json:"effective_profile_yaml"`
+	FinalMihomoYAML      string                `json:"final_mihomo_yaml"`
+	OriginalInventory    Inventory             `json:"original_inventory"`
+	EffectiveInventory   Inventory             `json:"effective_inventory"`
+	Diff                 SourceDiff            `json:"diff"`
+	Validation           string                `json:"validation"`
+	DNSReferences        []mihomo.DNSReference `json:"dns_references,omitempty"`
 }
 
 type SelectionRequest struct {

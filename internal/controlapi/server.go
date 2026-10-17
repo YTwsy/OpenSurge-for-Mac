@@ -326,6 +326,10 @@ func (s *Server) routes(auth func(http.Handler) http.Handler, local bool) http.H
 	mux.Handle("GET /api/v1/tailscale/discovery", auth(http.HandlerFunc(s.handleTailscaleDiscovery)))
 	mux.Handle("PUT /api/v1/tailscale", auth(http.HandlerFunc(s.handleTailscale)))
 	mux.Handle("POST /api/v1/tailscale/forget-identity", auth(http.HandlerFunc(s.handleTailscaleForgetIdentity)))
+	mux.Handle("GET /api/v1/custom-dns", auth(http.HandlerFunc(s.handleCustomDNS)))
+	mux.Handle("PUT /api/v1/custom-dns", auth(http.HandlerFunc(s.handleCustomDNS)))
+	mux.Handle("POST /api/v1/custom-dns/import", auth(http.HandlerFunc(s.handleCustomDNSImport)))
+	mux.Handle("POST /api/v1/custom-dns/preview", auth(http.HandlerFunc(s.handleCustomDNSPreview)))
 	mux.Handle("GET /api/v1/profile-overlay", auth(http.HandlerFunc(s.handleProfileOverlay)))
 	mux.Handle("PUT /api/v1/profile-overlay", auth(http.HandlerFunc(s.handleProfileOverlay)))
 	mux.Handle("GET /api/v1/device-policy", auth(http.HandlerFunc(s.handleDevicePolicy)))
@@ -429,13 +433,14 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 		dnsUpstream = config.MihomoDNSUpstream
 	}
 	storeFakeIP := cfg.Mihomo.StoreFakeIP
+	macTUNIPv6 := cfg.Transparent.MacTUNIPv6
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
 		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, LANPrefixLen: lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen), UpstreamInterface: cfg.Gateway.UpstreamInterface},
 		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain, BypassGateway: cfg.DHCP.BypassGateway, BypassDNS: append([]string{}, cfg.DHCP.BypassDNS...)},
 		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream, IPv6: cfg.DNS.IPv6},
 		Mihomo:           MihomoConfigInput{StoreFakeIP: &storeFakeIP},
-		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
+		Transparent:      TransparentConfigInput{MacTUNIPv6: &macTUNIPv6, Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
 		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
 		LocalSystemDNS:   &LocalSystemDNSConfigInput{Enabled: cfg.LocalSystemDNS.Enabled},
 		DevicePolicy:     DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
@@ -1727,7 +1732,7 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "profile_overlay_failed", err.Error())
 		return
 	}
-	composition, err := mihomo.ComposeProfileOverlay(sourcePayload, overlay)
+	composition, err := s.composeDNSDraft(sourcePayload, overlay)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "profile_overlay_incompatible", err.Error())
 		return

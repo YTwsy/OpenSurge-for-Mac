@@ -6,7 +6,8 @@ import { Empty, PageHeader, SectionTitle } from '../components/Common'
 import type { OperationNotification } from '../components/OperationNotifications'
 import { TailscaleCard } from '../components/TailscaleCard'
 import { ProfileOverlayPanel } from '../components/ProfileOverlayPanel'
-import type { Overview, ProfileOverlay, Source } from '../types'
+import { CustomDNSCard } from '../components/CustomDNSCard'
+import type { CustomDNSDraft, Overview, ProfileOverlay, Source } from '../types'
 import { t } from '../i18n'
 
 type SourceAction =
@@ -14,9 +15,12 @@ type SourceAction =
   | { kind: 'refresh' | 'copy-path' | 'reveal' | 'export'; sourceID: string }
   | null
 
-export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overview | null; onChanged: () => void | Promise<void>; onNotify: (notification: OperationNotification) => void }) {
+export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDirtyChange, navigationRequest = 0 }: { overview: Overview | null; onChanged: () => void | Promise<void>; onNotify: (notification: OperationNotification) => void; onOpenNetwork: (target: 'none' | 'control') => void; onDirtyChange?: (dirty: boolean) => void; navigationRequest?: number }) {
   const [sources, setSources] = useState<Source[]>([])
   const [overlay, setOverlay] = useState<ProfileOverlay | null>(null)
+  const [customDNS, setCustomDNS] = useState<CustomDNSDraft | null>(null)
+  const [dnsLoadError, setDNSLoadError] = useState('')
+  const [dnsDirty, setDNSDirty] = useState(false)
   const [revision, setRevision] = useState('')
   const [name, setName] = useState('')
   const [url, setURL] = useState('')
@@ -28,12 +32,23 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
   const fileDragDepth = useRef(0)
   const running = overview?.status.gateway === 'running'
   const busy = activeAction !== null
+  const overlayNeedsApply = Boolean(overlay && !overlay.desired)
+  const dnsNeedsApply = Boolean(customDNS && !customDNS.desired)
+  const draftsNeedApply = overlayNeedsApply || dnsNeedsApply
+  // A refreshed source can contain a newer, unselected version. Applying DNS
+  // must not silently switch to that version; only reuse an exact current row.
+  const currentSource = sources.find(source => source.applied || source.desired)
 
   const refresh = useCallback(async () => {
     try {
-      const [response, profileOverlay] = await Promise.all([api.sources(), api.profileOverlay()])
+      const [response, profileOverlay, dns] = await Promise.all([
+        api.sources(), api.profileOverlay(),
+        api.customDNS().then(value => ({ value, error: '' }), cause => ({ value: null, error: cause instanceof Error ? cause.message : String(cause) })),
+      ])
       setSources(response.sources ?? [])
-      setOverlay(profileOverlay)
+      setOverlay(current => JSON.stringify(current) === JSON.stringify(profileOverlay) ? current : profileOverlay)
+      if (dns.value) setCustomDNS(dns.value)
+      setDNSLoadError(dns.error)
       setRevision(response.revision)
       setError('')
     } catch (cause) {
@@ -41,7 +56,16 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
     }
   }, [])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [refresh, overview?.status.gateway, overview?.revision])
+  useEffect(() => { onDirtyChange?.(dnsDirty) }, [dnsDirty, onDirtyChange])
+
+  const dnsSaved = async (value: CustomDNSDraft) => {
+    setCustomDNS(value)
+    setDNSLoadError('')
+    const response = await api.sources()
+    setSources(response.sources ?? [])
+    setRevision(response.revision)
+  }
 
   const run = async (action: Exclude<SourceAction, null>, operation: () => Promise<unknown>, successMessage: string) => {
     setActiveAction(action)
@@ -194,16 +218,15 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
         const previousApplied = versions.some(version => version.applied)
         const changed = diff?.previous_digest && diff.previous_digest !== source.digest
 		const overlayCompatible = source.overlay_compatible !== false
-		const overlayNeedsApply = Boolean(overlay && !overlay.desired)
-		const sourceNeedsOverlay = (source.applied || source.desired) && overlayNeedsApply
-		const state = t(sourceNeedsOverlay ? '附加配置待应用' : source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid && overlayCompatible ? '结构有效' : '存在冲突')
-		const action = t(sourceNeedsOverlay ? running ? '应用附加配置并重载' : '保存附加配置到下次启动' : source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本')
+		const sourceNeedsDrafts = (source.applied || source.desired) && draftsNeedApply
+		const state = t(sourceNeedsDrafts ? dnsNeedsApply ? overlayNeedsApply ? '附加配置与 DNS 待应用' : '自定义 DNS 待应用' : '附加配置待应用' : source.applied ? '运行版本' : source.desired ? running ? '待重载' : '下次启动版本' : previousApplied ? '新草稿' : source.valid && overlayCompatible ? '结构有效' : '存在冲突')
+		const action = t(sourceNeedsDrafts ? dnsNeedsApply ? running ? '应用配置与 DNS 并重载' : '保存配置与 DNS 到下次启动' : running ? '应用附加配置并重载' : '保存附加配置到下次启动' : source.applied ? '已运行' : source.desired ? running ? '应用并重载网关' : '等待下次启动' : running ? '校验、应用并重载' : '设为下次启动版本')
         const refreshing = activeAction?.kind === 'refresh' && activeAction.sourceID === source.id
         const copyingPath = activeAction?.kind === 'copy-path' && activeAction.sourceID === source.id
         const revealing = activeAction?.kind === 'reveal' && activeAction.sourceID === source.id
         const exporting = activeAction?.kind === 'export' && activeAction.sourceID === source.id
         return <article className="source-card" key={source.id}>
-          <div className="source-head"><div><small>{source.kind}</small><h3>{source.name}</h3></div><span className={source.applied ? 'pill ok' : source.desired ? 'pill' : source.valid ? 'pill ok' : 'pill bad'}>{state}</span></div>
+          <div className="source-head"><div><small>{source.kind}</small><h3>{source.name}</h3></div><span className={sourceNeedsDrafts ? 'pill' : source.applied ? 'pill ok' : source.desired ? 'pill' : source.valid ? 'pill ok' : 'pill bad'}>{state}</span></div>
           <p className="source-origin" title={origin}><span aria-hidden="true">⌁</span>{origin}</p>
           {!isLANBrowser() && source.snapshot_display_path && <div className="source-location">
             <span className="source-location-icon" aria-hidden="true">▤</span>
@@ -230,17 +253,24 @@ export function SourcesPage({ overview, onChanged, onNotify }: { overview: Overv
 		  {versions.length > 0 && <small className="source-history">{t('历史：')}{versions.slice(-3).map(version => `${version.digest.slice(0, 8)}${version.applied ? ` (${t('运行')})` : version.desired ? ` (${t('待应用')})` : ''}`).join(' · ')}</small>}
 		  <div className="source-actions">
 			{origin.startsWith('https://') && <button type="button" disabled={busy} onClick={() => void run({ kind: 'refresh', sourceID: source.id }, () => api.refreshSource(source.id), t('{{name}} 已刷新；新内容已保存为草稿。', { name: source.name }))}><ActionLabel active={refreshing} idle="刷新草稿" pending="正在刷新…" /></button>}
-			<button className="primary" type="button" disabled={busy || !revision || !source.valid || !overlayCompatible || (source.applied && !sourceNeedsOverlay) || (source.desired && !running && !sourceNeedsOverlay)} onClick={() => openApply(source)}>{action}</button>
+			<button className="primary" type="button" disabled={busy || dnsDirty || Boolean(dnsLoadError) || !customDNS || !revision || !source.valid || !overlayCompatible || (source.applied && !sourceNeedsDrafts) || (source.desired && !running && !sourceNeedsDrafts)} onClick={() => openApply(source)}>{action}</button>
+            {dnsDirty && <small>{t('请先保存自定义 DNS 草稿，再应用配置。')}</small>}
           </div>
         </article>
       })}</div> : <Empty text={t('尚未导入任何来源')} />}
     </section>
     <ProfileOverlayPanel overlay={overlay} sources={sources} onSaved={async saved => { setOverlay(saved); const response = await api.sources(); setSources(response.sources ?? []); setRevision(response.revision) }} />
+    <CustomDNSCard saved={customDNS} onSaved={dnsSaved} running={running} navigationRequest={navigationRequest} loadError={dnsLoadError}
+      onDirtyChange={setDNSDirty} applying={busy || Boolean(pending)}
+      onOpenNetwork={() => onOpenNetwork('control')} onCheckNetwork={() => onOpenNetwork('none')}
+      applyDisabled={Boolean(dnsLoadError) || !revision || !currentSource?.valid || currentSource.overlay_compatible === false}
+      onApply={currentSource && (dnsNeedsApply || (customDNS?.document.enabled && running && currentSource.desired && !currentSource.applied)) ? () => openApply(currentSource) : undefined} />
     {pending && <dialog className="reload-dialog" open aria-modal="true" aria-labelledby="source-apply-title">
-	  <h2 id="source-apply-title">{t(running ? overlay?.document.enabled ? '应用来源与附加配置并重载网关？' : '应用订阅并重载网关？' : '设为下次启动版本？')}</h2>
+	  <h2 id="source-apply-title">{t(running ? customDNS?.document.enabled || dnsNeedsApply ? '应用来源、附加配置与自定义 DNS 并重载网关？' : overlay?.document.enabled ? '应用来源与附加配置并重载网关？' : '应用订阅并重载网关？' : '设为下次启动版本？')}</h2>
+	  {(customDNS?.document.enabled || dnsNeedsApply) && <p>{t('本次会组合所选来源、已保存的全局附加配置和自定义 DNS 草稿；校验失败时保留现有配置。')}</p>}
 	  <p>{t(running ? overlay?.document.enabled ? 'OpenSurge 会组合订阅、全局附加配置和网关规则，验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : 'OpenSurge 会验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : overlay?.document.enabled ? '当前网关未运行。来源与全局附加配置的组合结果会保存为 desired 配置，并在下次启动成功后成为运行版本。' : '当前网关未运行。来源会保存为 desired 配置，并在下次启动成功后成为运行版本。')}</p>
 	  {running && <ul><li>{t('当前连接会中断并重新建立。')}</li><li>{t('验证失败不会停止现有网关。')}</li><li>{t('重载失败会恢复旧配置，并尽力恢复原网关。')}</li></ul>}
-	  <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setPending(null)}>{t('取消')}</button><button className="primary" type="button" autoFocus disabled={busy} onClick={() => void apply()}><ActionLabel active={activeAction?.kind === 'apply'} idle={running ? '确认应用并重载' : '确认设为下次启动版本'} pending="正在验证并应用…" /></button></div>
+	  <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setPending(null)}>{t('取消')}</button><button className="primary" type="button" autoFocus disabled={busy || dnsDirty || Boolean(dnsLoadError)} onClick={() => void apply()}><ActionLabel active={activeAction?.kind === 'apply'} idle={running ? '确认应用并重载' : '确认设为下次启动版本'} pending="正在验证并应用…" /></button></div>
     </dialog>}
   </>
 }

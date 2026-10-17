@@ -37,17 +37,22 @@ type PreparedState struct {
 	ConfigDirectory        string                   `json:"config_directory"`
 	APIAddr                string                   `json:"api_addr"`
 	Secret                 string                   `json:"secret"`
+	DNSAddr                string                   `json:"dns_addr,omitempty"`
+	DNSProbeName           string                   `json:"dns_probe_name,omitempty"`
 	DevicePolicyResolution *device.PolicyResolution `json:"device_policy_resolution,omitempty"`
 }
 
 type preparedDeps struct {
-	boot        func() (runtime.BootSession, error)
-	fingerprint func(int) (string, error)
-	matches     func(int, string) (bool, error)
-	start       func(string, string, string, string) (int, error)
-	stop        func(int, time.Duration) error
-	validate    func(string, string, string) error
-	version     func(context.Context, config.Config) (Version, error)
+	boot         func() (runtime.BootSession, error)
+	fingerprint  func(int) (string, error)
+	matches      func(int, string) (bool, error)
+	start        func(string, string, string, string) (int, error)
+	stop         func(int, time.Duration) error
+	validate     func(string, string, string) error
+	version      func(context.Context, config.Config) (Version, error)
+	reserveDNS   func() (string, func(), error)
+	dnsReady     func(context.Context, PreparedState) error
+	readyTimeout time.Duration
 }
 
 func defaultPreparedDeps() preparedDeps {
@@ -58,9 +63,11 @@ func defaultPreparedDeps() preparedDeps {
 		start: func(logPath, binary, directory, path string) (int, error) {
 			return process.StartDetachedWithLog(logPath, binary, "-d", directory, "-f", path)
 		},
-		stop:     process.StopPID,
-		validate: validateConfig,
-		version:  FetchVersion,
+		stop:       process.StopPID,
+		validate:   validateConfig,
+		version:    FetchVersion,
+		reserveDNS: reservePreparedDNS,
+		dnsReady:   probePreparedDNS,
 	}
 }
 
@@ -133,17 +140,67 @@ func prepareLocked(ctx context.Context, cfg config.Config, renderedFinal string,
 				// competing tsnet identity, nor an automatic recovery loop.
 				return PreparedState{}, fmt.Errorf("prepared engine controller unavailable: %w", err)
 			}
+			if previous.DNSAddr != "" {
+				probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				err := deps.dnsReady(probeCtx, previous)
+				cancel()
+				if err != nil {
+					return PreparedState{}, &preparedDNSError{err}
+				}
+			}
 			return previous, nil
 		}
 	}
 	if err := stopPreparedLocked(cfg, deps); err != nil {
 		return PreparedState{}, err
 	}
+	for attempt := 0; attempt < 3; attempt++ {
+		state, err := startPreparedAttempt(ctx, cfg, renderedFinal, directory, binary, wantDigest, boot, deps)
+		var dnsErr *preparedDNSError
+		if err == nil || !errors.As(err, &dnsErr) || ctx.Err() != nil || attempt == 2 {
+			return state, err
+		}
+		// A failed DNS bind can leave a live controller. Never start a second
+		// process until the exact prior owner and its listeners have exited.
+		if err := stopPreparedLocked(cfg, deps); err != nil {
+			return PreparedState{}, err
+		}
+	}
+	return PreparedState{}, fmt.Errorf("prepared DNS retry limit reached")
+}
+
+func startPreparedAttempt(ctx context.Context, cfg config.Config, renderedFinal, directory, binary, wantDigest string, boot runtime.BootSession, deps preparedDeps) (PreparedState, error) {
+	if err := ctx.Err(); err != nil {
+		return PreparedState{}, err
+	}
 	apiAddr, secret, err := newPreparedControllerIdentity()
 	if err != nil {
 		return PreparedState{}, err
 	}
-	rendered, err := RenderPreparedConfig(renderedFinal, apiAddr, secret)
+	needsDNS, err := preparedNeedsDNS(renderedFinal)
+	if err != nil {
+		return PreparedState{}, err
+	}
+	dnsAddr, probeName := "", ""
+	releaseDNS := func() {}
+	if needsDNS {
+		dnsAddr, releaseDNS, err = deps.reserveDNS()
+		if err != nil {
+			return PreparedState{}, &preparedDNSError{err}
+		}
+		defer releaseDNS()
+		if dnsAddr == apiAddr {
+			apiAddr, secret, err = newPreparedControllerIdentity()
+			if err != nil {
+				return PreparedState{}, err
+			}
+		}
+		probeName, err = newDNSProbeName()
+		if err != nil {
+			return PreparedState{}, err
+		}
+	}
+	rendered, err := renderPreparedConfig(renderedFinal, apiAddr, secret, dnsAddr, probeName)
 	if err != nil {
 		return PreparedState{}, err
 	}
@@ -177,6 +234,7 @@ func prepareLocked(ctx context.Context, cfg config.Config, renderedFinal string,
 	state := PreparedState{
 		BootSessionID: boot.ID, StartedAt: time.Now().UTC(), ConfigDigest: wantDigest,
 		ConfigDirectory: directory, APIAddr: apiAddr, Secret: secret,
+		DNSAddr: dnsAddr, DNSProbeName: probeName,
 	}
 	if cfg.DevicePolicy.Bundle != nil {
 		state.DevicePolicyResolution = cfg.DevicePolicy.Bundle.Resolution
@@ -187,6 +245,7 @@ func prepareLocked(ctx context.Context, cfg config.Config, renderedFinal string,
 	if err := savePrepared(cfg, state); err != nil {
 		return PreparedState{}, err
 	}
+	releaseDNS()
 	state.PID, err = deps.start(logPath, binary, directory, configPath)
 	if err != nil {
 		return PreparedState{}, errors.Join(err, runtime.RemoveState(preparedStatePath(cfg)))
@@ -217,6 +276,10 @@ func prepareLocked(ctx context.Context, cfg config.Config, renderedFinal string,
 // from a closed allowlist; new mihomo listener options cannot become active
 // merely because a future source or renderer starts including them.
 func RenderPreparedConfig(renderedFinal, apiAddr, secret string) (string, error) {
+	return renderPreparedConfig(renderedFinal, apiAddr, secret, "", "")
+}
+
+func renderPreparedConfig(renderedFinal, apiAddr, secret, dnsAddr, probeName string) (string, error) {
 	host, _, err := net.SplitHostPort(apiAddr)
 	if err != nil || host != "127.0.0.1" || strings.TrimSpace(secret) == "" {
 		return "", fmt.Errorf("prepared controller requires authenticated IPv4 loopback")
@@ -255,14 +318,8 @@ func RenderPreparedConfig(renderedFinal, apiAddr, secret string) (string, error)
 	setPreparedField(result, "tun", map[string]any{"enable": false, "auto-route": false})
 	setPreparedField(result, "listeners", []any{})
 	setPreparedField(result, "tunnels", []any{})
-	if index := mappingValueIndex(result, "dns"); index >= 0 {
-		dns := result.Content[index]
-		if dns.Kind != yaml.MappingNode {
-			return "", fmt.Errorf("prepared dns must be a mapping")
-		}
-		// Keep the resolver graph (including proxy-server-nameserver) but do
-		// not bind UDP/TCP DNS. DNS.enable=false would change node resolution.
-		setPreparedField(dns, "listen", "")
+	if err := bindPreparedDNS(result, renderedFinal, dnsAddr, probeName); err != nil {
+		return "", err
 	}
 	if err := validateNodeAliases(result); err != nil {
 		return "", err
@@ -298,9 +355,14 @@ func newPreparedControllerIdentity() (string, string, error) {
 }
 
 func waitPreparedReady(ctx context.Context, cfg config.Config, state PreparedState, deps preparedDeps) error {
-	readyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	timeout := deps.readyTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	readyCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var lastErr error
+	dnsFailed := false
 	for {
 		alive, err := preparedProcessMatches(state, deps)
 		if err != nil || !alive {
@@ -309,11 +371,21 @@ func waitPreparedReady(ctx context.Context, cfg config.Config, state PreparedSta
 		probeCtx, probeCancel := context.WithTimeout(readyCtx, 300*time.Millisecond)
 		_, lastErr = deps.version(probeCtx, PreparedConfig(cfg, state))
 		probeCancel()
+		dnsFailed = false
+		if lastErr == nil && state.DNSAddr != "" {
+			probeCtx, probeCancel := context.WithTimeout(readyCtx, 2*time.Second)
+			lastErr = deps.dnsReady(probeCtx, state)
+			probeCancel()
+			dnsFailed = lastErr != nil
+		}
 		if lastErr == nil {
 			return nil
 		}
 		select {
 		case <-readyCtx.Done():
+			if dnsFailed {
+				return &preparedDNSError{errors.Join(readyCtx.Err(), lastErr)}
+			}
 			return fmt.Errorf("prepared engine API not ready: %w", errors.Join(readyCtx.Err(), lastErr))
 		case <-time.After(100 * time.Millisecond):
 		}

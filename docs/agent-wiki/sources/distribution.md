@@ -30,6 +30,10 @@ Wails 接到 Installer 的 TERM 时只退出宿主，不显示交互退出确认
 
 PKG 固定以 `/` 为 install location，`packaging/gui-components.plist` 将 App 标为不可 relocatable，避免 Installer 把它放回构建工作区的 `payload/Applications`。应用、CLI、用户 Control Service、root Helper 与 Web 静态资源随包分发。
 
+安装包中的 mihomo 必须与本次源码、补丁和构建参数一致，并通过隔离核心检查。
+匹配来源记录且二进制摘要正确的构建缓存可以复用；缺失记录、输入不匹配或二进制
+损坏时必须重建，不能仅凭版本号或文件存在复用旧核心。详见 [构建与发布](releasing.md)。
+
 applied config、mihomo/dnsmasq、runtime 与 broker 位于 root-owned 的 `/Library/Application Support/OpenSurge`，Helper 位于 `/Library/PrivilegedHelperTools`。Control Service 经 admin 组只读访问 applied 状态，系统写入使用 Helper 的固定动作。
 
 preinstall 的 recovery 门禁只接受 `idle`、`complete`、`complete_static`。先停止精确安装路径中的 Swift / Wails 宿主，再循环 bootout 用户 Control Service 并重扫可信 PID；等待中迟到的 bootstrap 也要清理。开发副本和 Preview 不属于升级进程处理范围。随后使用**新包脚本目录携带的** `omg-recovery stop` 处理旧 runtime，按 ownership marker 释放睡眠接管，最后 bootout Helper。无法停止宿主、恢复未完成或网关清理失败时，都在覆盖 payload 前终止。

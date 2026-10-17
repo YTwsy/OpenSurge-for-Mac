@@ -120,6 +120,16 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 	cfg.Mihomo.Profile = profilePath
 	cfg.Mihomo.ProfileSourceDigest = sourceDigest
 	cfg.Mihomo.ProfileOverlayDigest = overlayDigest
+	customDNS, err := mihomo.CustomDNSFromProfile(payload)
+	if err != nil {
+		cleanupProfile()
+		return ProfileApplyResult{}, err
+	}
+	cfg.Mihomo.ProfileCustomDNSDigest = mihomo.CustomDNSDigest(customDNS)
+	if err := mihomo.ValidateCustomDNSCandidate(cfg, payload); err != nil {
+		cleanupProfile()
+		return ProfileApplyResult{}, err
+	}
 	gateway.ReportProgress(ctx, "validating_config")
 	if err := deps.validate(cfg); err != nil {
 		cleanupProfile()
@@ -645,6 +655,9 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	}
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
+	if input.Transparent.MacTUNIPv6 != nil {
+		cfg.Transparent.MacTUNIPv6 = *input.Transparent.MacTUNIPv6
+	}
 	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6
 	cfg.Transparent.IPv6SharedL2Ready = input.Transparent.IPv6SharedL2Ready
 	if cfg.Transparent.TUNIPv6 == "" {

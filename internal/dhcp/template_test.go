@@ -338,3 +338,20 @@ func TestDNSMasqAcceptsDownstreamIPv6RAConfig(t *testing.T) {
 		t.Fatalf("dnsmasq rejected IPv6 RA config: %v: %s", err, strings.TrimSpace(string(output)))
 	}
 }
+
+func TestCustomDNSOwnsSystemHostsWithoutDisablingDHCPNames(t *testing.T) {
+	cfg := config.Default()
+	cfg.Mihomo.ProfileCustomDNSDigest = strings.Repeat("a", 64)
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "no-hosts") || !strings.Contains(rendered, "domain=lan") || strings.Contains(rendered, "dhcp-ignore-names") {
+		t.Fatal(rendered)
+	}
+	cfg.Mihomo.ProfileCustomDNSDigest = ""
+	rendered, err = RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil || strings.Contains(rendered, "no-hosts") {
+		t.Fatalf("disabled: %v %s", err, rendered)
+	}
+}

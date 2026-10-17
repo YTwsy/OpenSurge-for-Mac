@@ -140,9 +140,21 @@ rules: ["MATCH,Manual"]
 			return err
 		}
 		var manual ProxyGroup
-		for _, group := range groups {
-			if group.Name == "Manual" {
-				manual = group
+		// Provider initialization is asynchronous relative to controller readiness.
+		// Wait for the actual member, not an arbitrary delay or an empty graph.
+		for deadline := time.Now().Add(3 * time.Second); ; {
+			for _, group := range groups {
+				if group.Name == "Manual" {
+					manual = group
+				}
+			}
+			if containsPreparedOption(manual.Options, "provider-node") || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+			groups, err = FetchProxyGroups(ctx, apiCfg)
+			if err != nil {
+				return err
 			}
 		}
 		if !containsPreparedOption(manual.Options, "extension-node") || !containsPreparedOption(manual.Options, "provider-node") {

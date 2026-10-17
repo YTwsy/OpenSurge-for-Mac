@@ -69,6 +69,7 @@ function networkNavigationHash(target: NetworkNavigationTarget) {
 export function App() {
   const [page, setPage] = useState<Page>(currentPage)
   const [dashboardNavigationRequest, setDashboardNavigationRequest] = useState(0)
+  const [sourcesNavigationRequest, setSourcesNavigationRequest] = useState(0)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [overviewConnection, setOverviewConnection] = useState('connecting')
   const overviewRequest = useRef(0)
@@ -78,6 +79,7 @@ export function App() {
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false)
   const { language, languageChanging, changeLanguage, beginLanguageRefresh } = useInterfaceLanguage(setError)
   const [devicesDirty, setDevicesDirty] = useState(false)
+  const [sourcesDirty, setSourcesDirty] = useState(false)
   const [connectionsView, setConnectionsView] = useState<ConnectionsViewState>(initialConnectionsView)
   const connectionsScroll = useRef<number | null>(null)
   const [policiesViewState, setPoliciesViewState] = useState<PoliciesViewState>({ search: '', scope: 'global', activeGroup: null })
@@ -90,8 +92,10 @@ export function App() {
   const policiesScrollPosition = useRef<number | null>(null)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
+  const sourcesDirtyRef = useRef(sourcesDirty)
   pageRef.current = page
   devicesDirtyRef.current = devicesDirty
+  sourcesDirtyRef.current = sourcesDirty
 
   useEffect(() => watchDesktopLinks(setError), [])
 
@@ -153,10 +157,17 @@ export function App() {
         return
       }
       if (pageRef.current === 'devices' && next !== 'devices') setDevicesDirty(false)
+      if (pageRef.current === 'sources' && next !== 'sources' && sourcesDirtyRef.current && !window.confirm(t('自定义 DNS 还有未保存的修改，确定离开并放弃这些修改吗？'))) {
+        history.pushState({}, '', '/sources#custom-dns')
+        setSourcesNavigationRequest(request => request + 1)
+        return
+      }
+      if (pageRef.current === 'sources' && next !== 'sources') setSourcesDirty(false)
       if (pageRef.current === 'policies' && next !== 'policies') policiesScrollPosition.current = window.scrollY
       if (pageRef.current === 'connections' && next !== 'connections') connectionsScroll.current = window.scrollY
       if (next === 'connections') setConnectionsView(current => ({ ...current, owner: new URLSearchParams(window.location.search).get('owner') || 'all' }))
       setPage(next)
+      if (next === 'sources') setSourcesNavigationRequest(request => request + 1)
     }
     window.addEventListener('popstate', onPop)
     return () => {
@@ -176,6 +187,8 @@ export function App() {
     }
     if (page === 'devices' && next !== 'devices' && devicesDirty && !window.confirm(t('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？'))) return false
     if (page === 'devices' && next !== 'devices') setDevicesDirty(false)
+    if (page === 'sources' && next !== 'sources' && sourcesDirty && !window.confirm(t('自定义 DNS 还有未保存的修改，确定离开并放弃这些修改吗？'))) return false
+    if (page === 'sources' && next !== 'sources') setSourcesDirty(false)
     if (page === 'policies' && next !== 'policies') policiesScrollPosition.current = window.scrollY
     if (page === 'connections' && next !== 'connections') connectionsScroll.current = window.scrollY
     history.pushState({}, '', next === 'connections' ? `/connections?owner=${encodeURIComponent(connectionsView.owner)}` : `/${next}${networkNavigationHash(networkTarget)}`)
@@ -204,6 +217,10 @@ export function App() {
       if (page === 'dashboard' && section === 'active-devices') {
         history.replaceState({}, '', '/dashboard#active-devices')
         setDashboardNavigationRequest(request => request + 1)
+      }
+      if (page === 'sources' && section === 'custom-dns') {
+        history.replaceState({}, '', '/sources#custom-dns')
+        setSourcesNavigationRequest(request => request + 1)
       }
       if (page === 'connections') {
         const owner = new URLSearchParams(query).get('owner') || 'all'
@@ -316,8 +333,12 @@ export function App() {
         <DeviceTrafficProvider gateway={overview?.status.gateway}>
           <PageErrorBoundary key={page}>
             {page === 'dashboard' && <DashboardPage overview={overview} onOpenConnections={openConnections} onOpenNetwork={action => go('network', action === 'cleanup' ? 'control' : action === 'stop' ? 'bottom' : 'none')} />}
-            {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} />}
-            {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} />}
+            {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} onOpenCustomDNS={() => {
+              if (!go('sources')) return
+              history.replaceState({}, '', '/sources#custom-dns')
+              setSourcesNavigationRequest(request => request + 1)
+            }} />}
+            {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} onOpenNetwork={target => go('network', target)} navigationRequest={sourcesNavigationRequest} onDirtyChange={setSourcesDirty} />}
             {page === 'devices' && <DevicesPage overview={overview} onOpenConnections={openConnections} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} onSuggestConnectionRefresh={suggestConnectionRefresh} />}
             {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} onSuggestConnectionRefresh={suggestConnectionRefresh} viewState={policiesViewState} onViewStateChange={updatePoliciesViewState} restoreScrollY={policiesScrollPosition.current} onScrollPositionChange={updatePoliciesScrollPosition} />}
             {page === 'connections' && <ConnectionsPage overview={overview} view={connectionsView} onViewChange={changeConnectionsView} restoreScrollY={connectionsScroll.current} />}

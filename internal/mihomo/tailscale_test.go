@@ -467,3 +467,19 @@ func assertRenderedRouteCoverage(t *testing.T, rendered, address string, want bo
 		t.Fatalf("route coverage for %s = %t, want %t:\n%s", address, matched, want, rendered)
 	}
 }
+
+func TestMacTUNIPv6OptOutFiltersOnlyTailnetIPv6Routes(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Transparent.MacTUNIPv6 = false
+	cfg.Tailscale.Enabled = true
+	cfg.Tailscale.PeerCIDRs = []string{"100.100.100.1/32", "fd7a:115c:a1e0::1/128"}
+	cfg.Tailscale.SubnetRoutes = []string{"10.203.77.0/24", "fd00:abcd::/64"}
+	got := renderTUNRouteAddresses(cfg, "192.168.48.0/22")
+	for _, addr := range []string{"1.1.1.1", "100.100.100.1", "10.203.77.1"} {
+		assertRenderedRouteCoverage(t, got, addr, true)
+	}
+	for _, addr := range []string{"2001:4860:4860::8888", "fdfe:dcba:9876::2", "fd7a:115c:a1e0::1", "fd00:abcd::1"} {
+		assertRenderedRouteCoverage(t, got, addr, false)
+	}
+}

@@ -38,12 +38,17 @@ func renderTUNRouteAddresses(cfg config.Config, lanPrefix string) string {
 	// Keep local/link-local/multicast and downstream ULA traffic off the system
 	// TUN. The full fake pool needs a route even without native upstream IPv6;
 	// a custom Tailnet IPv6 route must never replace ordinary host capture.
-	routes = append(routes, netip.MustParsePrefix("2000::/3"), netip.MustParsePrefix(config.MihomoFakeIPv6Range))
+	if cfg.Transparent.MacTUNIPv6Enabled() {
+		routes = append(routes, netip.MustParsePrefix("2000::/3"), netip.MustParsePrefix(config.MihomoFakeIPv6Range))
+	}
 	var out strings.Builder
 	for _, route := range routes {
 		out.WriteString("    - " + route.String() + "\n")
 	}
 	for _, value := range values {
+		if prefix, err := netip.ParsePrefix(value); err == nil && prefix.Addr().Is6() && !cfg.Transparent.MacTUNIPv6Enabled() {
+			continue
+		}
 		out.WriteString("    - " + value + "\n")
 	}
 	return strings.TrimRight(out.String(), "\n")

@@ -38,14 +38,30 @@ through the separate `opensurge-ipv6` packet listener with a device `IN-USER`
 and a source from `fdfe:dcba:9878::/64`. Neither path can match the local rules;
 they continue into device overrides and the imported/managed gateway rules.
 
+### Mac IPv6 takeover
+
+**Mac IPv6 takeover** in Network Settings is enabled by default, including for
+older configurations. Turn it off, save, and fully restart the gateway to remove
+the host TUN IPv6 address and public, fake IPv6, and Tailnet IPv6 capture routes.
+IPv4 and downstream IPv6 settings are preserved. Restarting only the proxy engine
+continues to use the applied network settings.
+
+This does not disable macOS IPv6 or change DNS AAAA or explicit proxy settings.
+The Mac can no longer reach fake IPv6 or Tailnet IPv6 through TUN while disabled.
+If AAAA remains enabled, verify your application's IPv4 fallback behavior. The
+switch can help diagnose applications repeatedly attempting IPv6 without a native
+IPv6 uplink; it does not guarantee that every application falls back to IPv4.
+
+The configuration field is `transparent.mac_tun_ipv6: true/false`.
+
 ### AAAA and local modes
 
 `dns.ipv6` and `transparent.tun_ipv6` are independent. Even when downstream
 IPv6 is set to `auto` and remains inactive because no native upstream IPv6 is
 available, enabling AAAA responses still makes mihomo DNS return fake IPv6
 addresses from `fdfe:dcba:9876::/64`. Some applications prefer those answers.
-These fake IPv6 answers are destination addresses. Local traffic uses the fixed
-system-TUN source identity `fdfe:dcba:9877::1/128`, independently of the AAAA
+These fake IPv6 answers are destination addresses. With Mac IPv6 takeover enabled,
+local traffic uses the fixed system-TUN source identity `fdfe:dcba:9877::1/128`, independently of the AAAA
 and downstream IPv6 settings. AAAA therefore does not need to be disabled merely
 to make local Direct mode effective.
 

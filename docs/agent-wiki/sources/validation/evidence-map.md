@@ -46,6 +46,43 @@
 | 总览图表渲染开销与切页连续性 | 受控对比中 Graphics and Media 平均 CPU 从 58.95% 降至 1.51%；明暗主题与 5 次快速切页检查通过 | 2026-10-09；macOS 14.8.5 arm64 / 系统 WebView；原实现 405daac，对比相同基线上的图表修复候选，渲染与采样实现现见 4046861 | [问题、方法与汇总结果 #84](https://github.com/YTwsy/OpenSurge-for-Mac/issues/84) | 每组 45 秒、合成 UI fixture、单核 CPU 口径；不证明网关吞吐量、全部 Mac 或完整睡眠唤醒场景；后续渲染改动需复验 |
 | 旧 Swift 面板展开/聚焦修复 | 四种实现未修复实际展开异常，整体回退到 0932641 | codex/release-v0.1.24；日期与完整环境未记载 | [失败与回退记录](../../tasks/finished_archived/swift-menubar-focus-regression.md) | 仅供旧 Swift 维护与回归追溯，不推导 Wails 当前行为 |
 
+## 订阅自身 DNS 与准备态
+
+默认自身 DNS 绑定与准备态私有监听的实现、支持矩阵见
+[profile 契约](../decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
+[当前任务的执行记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录)
+已有隔离真实核心证据：新缓存、hosts 别名、受控 DNS/节点/Provider、TCP/UDP 就绪及绑定
+竞争后的清理。IPv6 只覆盖引用语法到 IPv4 运行端点的转换。
+
+正式 1053 端口检查受现有监听占用阻塞，host-network Lab 需要管理员认证，尚未取得
+本次正式网关和完整交接的通过证据。单元与准备态真实核心通过不替代这些门槛；后续正式
+运行结论必须补齐记录中的复验项。
+
+## 文件式自定义 DNS
+
+已接入文件导入、草稿/预览、候选合成、Mac TUN 前提与 dnsmasq `no-hosts`，并对 DHCP
+名称和别名冲突设置应用阻断；实现契约见
+[自定义 DNS](../decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
+本轮用户明确接手后续验收。Go/Web/桌面代码检查只证明对应软件行为；新增功能的双入口
+真实 DNS 查询、真实连接、系统 hosts 冲突、DNS 缓存切换及完整交接尚未验收。
+这也不补齐上节 DNS-02/03 的正式 1053 与 Lab 缺口。执行记录及验收矩阵继续保留在
+[现有任务](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#文件式自定义-dns-实施记录)。
+
+## Mac 本机 IPv6 开关
+
+[本机 IPv6 契约](../decisions/local-system-dns-coordination.md#独立的-mac-ipv6-路径)
+新增独立关闭能力。配置/API、已应用状态和隔离真实核心解析检查不能证明实际 TUN
+地址与路由撤销，或应用自动回退 IPv4。该路径仍需按
+[本机模式门槛](test-gates.md#mac-本机模式隔离门槛)补齐关闭/开启、IPv4 连通及停止恢复，
+并单独复验夸克登录；旧版默认开启路径的历史结果不能代替新开关验收。
+
+已确认旧缓存核心会在无原生 IPv6、DNS AAAA 关闭时清除显式 host TUN IPv6 地址，
+导致 OpenSurge 的 IPv6 就绪检查失败。此前禁用 TUN 的解析测试漏掉了这一组合。
+当前构建改为确定性的无上游核心测试及启用 TUN 配置的隔离二进制测试，并校验
+缓存核心的源码、补丁、构建参数与二进制摘要，不匹配时重建。此证据限于配置解析和
+打包，不代表当前运行网关已升级，
+也不替代安装后完整启停、路由与实际应用复验。
+
 ## 使用与更新
 
 先确定具体路径再读对应报告。“最近已知通过”不等于当前 checkout 复验；未收录或未检索到

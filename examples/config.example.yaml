@@ -63,6 +63,8 @@ transparent:
   tun_strict_route: false
   # off | auto | always. Shared-L2 topologies additionally require the
   # readiness assertion below; transparent.mode must be "tun".
+  # Host TUN IPv6 only; independent of downstream IPv6 and DNS AAAA.
+  mac_tun_ipv6: true
   tun_ipv6: "off"
   ipv6_shared_l2_ready: false
   ipv6_packet_broker_binary: "opensurge-network"

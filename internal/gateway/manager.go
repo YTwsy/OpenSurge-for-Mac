@@ -224,6 +224,7 @@ func (m *Manager) resolveIPv6(deps gatewayDeps) ipv6Resolution {
 
 func appliedConfigFromState(cfg config.Config, state runtime.State) config.Config {
 	cfg.DNS.IPv6 = state.DNSIPv6
+	cfg.Transparent.MacTUNIPv6 = state.MacTUNIPv6
 	if state.LocalSystemDNS != nil {
 		cfg.LocalSystemDNS.Resolvers = state.LocalSystemDNS.Resolvers
 		cfg.LocalSystemDNS.Domains = state.LocalSystemDNS.Domains
@@ -480,7 +481,7 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 		ProfileDigest:       profileDigest,
 		LocalSystemProxy:    systemProxySnapshot,
 		LocalSystemDNS:      systemDNSSnapshot,
-		MacTUNIPv6:          m.cfg.Transparent.TUNEnabled(),
+		MacTUNIPv6:          m.cfg.Transparent.MacTUNIPv6Enabled(),
 		DNSIPv6:             m.cfg.DNS.IPv6,
 		TUNIPv6Requested:    ipv6Resolution.Requested,
 		IPv6PacketEffective: ipv6Resolution.Effective,

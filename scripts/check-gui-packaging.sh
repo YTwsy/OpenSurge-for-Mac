@@ -313,6 +313,14 @@ grep -Fq 'actions/attest@v4' "$RELEASE_WORKFLOW" || {
   echo "unsigned release workflow must attest the package provenance" >&2
   exit 1
 }
+grep -Fq 'OPENSURGE_MIHOMO_OUTPUT="$MIHOMO" OPENSURGE_MIHOMO_ARCH="$APP_ARCH"' "$ROOT/scripts/build-gui-installer.sh" &&
+  grep -Fq '"$ROOT/scripts/build-opensurge-mihomo.sh"' "$ROOT/scripts/build-gui-installer.sh" &&
+  grep -Fq 'OMG_PREPARED_MIHOMO_BINARY="$MIHOMO"' "$ROOT/scripts/build-gui-installer.sh" &&
+  grep -Fq 'TestMacTUNIPv6ConfigRealCore' "$ROOT/scripts/build-gui-installer.sh" &&
+  grep -Fq 'TestOpenSurgeIPv6WithoutNativeUplink' "$MIHOMO_BUILD" || {
+  echo "GUI package must validate or rebuild and test its exact core, including the absent IPv6 uplink matrix" >&2
+  exit 1
+}
 grep -Fq 'actions/upload-artifact@v7' "$RELEASE_WORKFLOW" || {
   echo "unsigned release workflow must use the Node 24 artifact uploader" >&2
   exit 1
@@ -370,4 +378,5 @@ grep -Fq 'verify-unsigned-gui-installer.sh' "$RELEASE_WORKFLOW" || {
 }
 
 python3 "$ROOT/tests/packaging/test_installer.py"
+python3 "$ROOT/tests/packaging/test_mihomo_cache.py"
 echo "GUI packaging checks passed"

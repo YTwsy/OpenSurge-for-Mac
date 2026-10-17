@@ -335,7 +335,9 @@ func localRoutingInbounds(cfg config.Config) []localRoutingInbound {
 	tunInbounds := []localRoutingInbound{
 		{match: []string{"IN-TYPE,TUN", "SRC-IP-CIDR," + localRoutingTUNSource}},
 	}
-	tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingHostTUNIPv6Source()))
+	if cfg.Transparent.MacTUNIPv6Enabled() {
+		tunInbounds = append(tunInbounds, localRoutingSystemTUNIPv6Inbound(localRoutingHostTUNIPv6Source()))
+	}
 	return append(tunInbounds, inbounds...)
 }
 

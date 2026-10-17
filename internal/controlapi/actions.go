@@ -306,7 +306,7 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(helperConnectionTimeout))
 	var request HelperRequest
-	if err := json.NewDecoder(ioLimitReader(conn, 20<<20)).Decode(&request); err != nil {
+	if err := json.NewDecoder(ioLimitReader(conn, 32<<20)).Decode(&request); err != nil {
 		_ = json.NewEncoder(conn).Encode(HelperResponse{Error: err.Error()})
 		return
 	}

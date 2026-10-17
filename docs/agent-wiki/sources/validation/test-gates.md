@@ -5,6 +5,11 @@
 不在这里复制完整断言清单。环境准备与清理见 [Lab 运行](lab-gates.md)，
 历史执行结果经 [证据入口](evidence-map.md) 定向读取。
 
+打包缓存改动运行 `python3 tests/packaging/test_mihomo_cache.py`，也包含在
+`scripts/check-gui-packaging.sh` 中。它以临时源码归档和假 Go 工具验证命中、输入失效、
+摘要损坏、缺失来源记录及失败不发布。真实核心另验证一次冷构建、相同输入命中及
+命中后二进制 IPv6 隔离检查；这些检查均不创建系统 TUN，不替代网络门槛。
+
 ## 快速门槛
 
 普通 Go 代码、解析与生成逻辑运行 `make test`（`go test ./...`）；Web 交互与文案按范围
@@ -13,6 +18,23 @@
 `GOCACHE` 指向 `/private/tmp` 的专用路径。
 
 ## Host-network 门槛
+
+订阅自身 DNS 与准备态的隔离真实核心检查：
+
+```sh
+OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
+  go test ./internal/mihomo ./internal/controlapi -count=1
+```
+
+其中 `TestDNSReferencesRealCore` 默认只运行准备态矩阵：IPv4/IPv6 引用形式、UDP/TCP、
+节点解析 policy、全局附加配置开关，使用全新临时缓存与受控上游/节点/Provider，并核对 hosts 别名、
+真实地址过滤、普通 Fake-IP 和停止后监听释放。`TestPreparedDNSBindRaceRealCore` 验证
+TCP 或 UDP 被竞争占用时的失败判定、清理和有界重试。测试不会停止已有网关。
+
+正式 DNS 1053 空闲时额外设置 `OMG_DNS_REFERENCE_GATEWAY_CORE=1`，运行同一矩阵的
+正式配置核心分支；占用时明确失败并保留现有服务。默认矩阵也用真实核心校验正式配置
+语法，但语法检查不证明端口绑定成功。正式分支复用 Manager 的 DNS 就绪检查，不启动完整 Gateway Manager，
+不接管 DHCP、pf、TUN 或系统 DNS，因此不能替代下列 host-network/TUN/workspace 门槛。
 
 涉及 DHCP/DNS、进程、PF/NAT、IPv4 forwarding、rollback 或清理时使用 `make lab-test`。
 通过要求 Lima 客户端取得 DHCP/DNS、完成 ICMP/NAT、直连和 mixed-port HTTPS，并恢复
@@ -112,6 +134,17 @@ OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/tools/bin/mihomo" \
 HTTP-only Global 的 UDP 拒绝，系统 TUN 的 IPv4/IPv6 精确来源不会匹配 packet listener。
 开启 AAAA 的无原生 IPv6 场景也需真实探针；范围以 [本机路由](../decisions/local-mac-routing-modes.md)
 与 [系统 DNS 契约](../decisions/local-system-dns-coordination.md) 为准。
+
+`transparent.mac_tun_ipv6` 关闭/开启需复验完整重启后的 host TUN 地址、路由、
+本机 IPv4 连通性和停止清理；关闭时不应存在公网、fake 或 Tailnet IPv6 捕获，
+下游 IPv6 listener 与设备规则需保持独立。隔离解析检查
+`OMG_PREPARED_MIHOMO_BINARY=... go test ./internal/mihomo -run TestMacTUNIPv6ConfigRealCore -count=1`
+检查本机开关与 DNS AAAA 的四种组合：显式空地址不得回填，开启时地址不得丢失。
+配置保留 `tun.enable: true`，但提供无效文件描述符且关闭自动路由，要求核心在创建
+接口前报错；不创建系统 TUN。打包必须针对即将入包的二进制运行该检查。
+核心构建另运行 overlay 中的 `TestOpenSurgeIPv6WithoutNativeUplink`，注入无原生
+IPv6 的检测结果，避免宿主已有 IPv6/TUN 掩盖冷启动缺陷；覆盖 DNS、本机、下游与
+顶层开关的独立性。两层检查均不替代该网络门槛或夸克等实际应用的 IPv4 回退验收。
 
 使用发布同源的 patched Mihomo，不能退回引导用的上游 v1.19.27。系统 DNS 验收要求
 `getaddrinfo` 随机新域名返回 fake A/AAAA、系统代理关闭、UDP/TCP DNS 捕获、Mihomo 重启
