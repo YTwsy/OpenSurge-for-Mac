@@ -81,6 +81,7 @@ transparent:
   tun_auto_route: %t
   tun_auto_detect_interface: %t
   tun_strict_route: %t
+  mac_tun_ipv6: %t
   tun_ipv6: %s
   ipv6_shared_l2_ready: %t
   ipv6_packet_broker_binary: %s
@@ -115,7 +116,7 @@ runtime:
 		q(strings.Join(cfg.Tailscale.AllowedDevices, ",")), q(cfg.Tailscale.ExitNode), cfg.Tailscale.ExitNodeAllowLANAccess,
 		q(cfg.PF.AnchorName), cfg.PF.RedirectTCPTo,
 		q(cfg.Transparent.Mode), q(cfg.Transparent.TUNDevice), q(cfg.Transparent.TUNStack), cfg.Transparent.TUNAutoRoute, cfg.Transparent.TUNAutoDetectInterface, cfg.Transparent.TUNStrictRoute,
-		q(cfg.Transparent.TUNIPv6), cfg.Transparent.IPv6SharedL2Ready, q(cfg.Transparent.IPv6PacketBrokerBinary), cfg.Transparent.IPv6PacketMTU,
+		cfg.Transparent.MacTUNIPv6, q(cfg.Transparent.TUNIPv6), cfg.Transparent.IPv6SharedL2Ready, q(cfg.Transparent.IPv6PacketBrokerBinary), cfg.Transparent.IPv6PacketMTU,
 		cfg.LocalSystemProxy.Enabled,
 		cfg.LocalSystemDNS.Enabled,
 		cfg.UpstreamProxy.Enabled, q(cfg.UpstreamProxy.Name), q(cfg.UpstreamProxy.Type), q(cfg.UpstreamProxy.Server), cfg.UpstreamProxy.Port, q(cfg.UpstreamProxy.Username), q(cfg.UpstreamProxy.Password), q(cfg.UpstreamProxy.MatchDomain),

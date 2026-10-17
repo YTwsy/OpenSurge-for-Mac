@@ -655,6 +655,9 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	}
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
+	if input.Transparent.MacTUNIPv6 != nil {
+		cfg.Transparent.MacTUNIPv6 = *input.Transparent.MacTUNIPv6
+	}
 	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6
 	cfg.Transparent.IPv6SharedL2Ready = input.Transparent.IPv6SharedL2Ready
 	if cfg.Transparent.TUNIPv6 == "" {

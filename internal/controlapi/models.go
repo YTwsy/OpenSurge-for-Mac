@@ -224,6 +224,8 @@ type MihomoConfigInput struct {
 }
 
 type TransparentConfigInput struct {
+	// Omitted by legacy clients; preserve the saved preference.
+	MacTUNIPv6        *bool  `json:"mac_tun_ipv6,omitempty"`
 	Mode              string `json:"mode"`
 	StrictRoute       bool   `json:"strict_route"`
 	TUNIPv6           string `json:"tun_ipv6"`

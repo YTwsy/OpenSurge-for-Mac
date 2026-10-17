@@ -1378,6 +1378,25 @@ describe('OpenSurge app shell', () => {
     expect(screen.getByRole('button', { name: '保存网络配置' })).toBeTruthy()
   })
 
+  it('saves the Mac IPv6 opt-out independently of DNS and downstream IPv6', async () => {
+    const base = configFor('isolated_lan')
+    const current = { ...base, transparent: { ...base.transparent, tun_ipv6: 'always' as const }, dns: { ...base.dns, ipv6: true } }
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(current)
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    const toggle = await screen.findByRole('checkbox', { name: '接管 Mac 本机 IPv6' })
+    expect((toggle as HTMLInputElement).checked).toBe(true)
+    await userEvent.click(toggle)
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalled())
+    const saved = vi.mocked(api.saveConfig).mock.calls[0][0]
+    expect(saved.transparent.mac_tun_ipv6).toBe(false)
+    expect(saved.transparent.tun_ipv6).toBe('always')
+    expect(saved.dns).toEqual(current.dns)
+  })
+
   it('saves the downstream IPv6 card without changing IPv4 settings', async () => {
     const current = {
       ...configFor('isolated_lan'),

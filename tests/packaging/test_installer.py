@@ -200,6 +200,20 @@ class InstallerScripts(unittest.TestCase):
         self.assertIn('package already exists', result.stdout)
         self.assertEqual(package.read_bytes(), b'previous artifact')
 
+    def test_builder_rejects_prebuilt_core_before_building(self):
+        package = self.root / 'fresh.pkg'
+        stale = self.root / 'mihomo'
+        marker = self.root / 'stale-core-executed'
+        self.write(stale, f'#!/bin/sh\ntouch "{marker}"\n', executable=True)
+        result = subprocess.run(['/bin/bash', str(REPO / 'scripts/build-gui-installer.sh')],
+                                env=dict(self.env, OPENSURGE_PKG_OUTPUT=str(package),
+                                         OPENSURGE_MIHOMO_BINARY=str(stale)),
+                                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=5)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('prebuilt mihomo is not accepted', result.stdout)
+        self.assertFalse(marker.exists())
+        self.assertFalse(package.exists())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

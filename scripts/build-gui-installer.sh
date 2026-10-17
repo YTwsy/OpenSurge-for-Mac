@@ -4,7 +4,12 @@ export COPYFILE_DISABLE=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${OPENSURGE_CONFIG:-$ROOT/examples/config.example.yaml}"
-MIHOMO="${OPENSURGE_MIHOMO_BINARY:-$ROOT/bin/mihomo}"
+# A version string does not identify the applied patch. The builder below
+# checks cache provenance and the binary digest before reusing an executable.
+if [[ -n "${OPENSURGE_MIHOMO_BINARY:-}" ]]; then
+  echo "prebuilt mihomo is not accepted; unset OPENSURGE_MIHOMO_BINARY (use OPENSURGE_MIHOMO_CACHE_DIR for a verified build cache)" >&2
+  exit 1
+fi
 DNSMASQ="${OPENSURGE_DNSMASQ_BINARY:-$(command -v dnsmasq || true)}"
 VERSION="${OPENSURGE_VERSION:-0.3.1}"
 BUILD_NUMBER="${OPENSURGE_BUILD_NUMBER:-1}"
@@ -20,6 +25,7 @@ PAYLOAD="$STAGING/payload"
 PKG_SCRIPTS="$STAGING/pkg-scripts"
 APP_ROOT="$PAYLOAD/Library/Application Support/OpenSurge"
 LICENSE_ROOT="$APP_ROOT/share/licenses"
+MIHOMO="$STAGING/mihomo"
 GO_BIN="${GO_BIN:-$(command -v go || true)}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 PNPM_BIN="${PNPM_BIN:-$(command -v pnpm || true)}"
@@ -38,8 +44,15 @@ export OPENSURGE_APP_ARCH="$APP_ARCH"
 [[ -x "$NODE_BIN" ]] || { echo "Node.js not found; set NODE_BIN" >&2; exit 1; }
 [[ -x "$PNPM_BIN" ]] || { echo "pnpm not found; set PNPM_BIN" >&2; exit 1; }
 [[ -f "$CONFIG" ]] || { echo "Config not found: $CONFIG" >&2; exit 1; }
-[[ -x "$MIHOMO" ]] || { echo "mihomo binary not found: $MIHOMO" >&2; exit 1; }
 [[ -x "$DNSMASQ" ]] || { echo "dnsmasq binary not found: $DNSMASQ" >&2; exit 1; }
+
+OPENSURGE_MIHOMO_OUTPUT="$MIHOMO" OPENSURGE_MIHOMO_ARCH="$APP_ARCH" \
+  "$ROOT/scripts/build-opensurge-mihomo.sh"
+# Inspect the exact executable that will be copied into the payload. The probe
+# cannot create a TUN or change host routes, even if the builder runs as root.
+cd "$ROOT"
+OMG_PREPARED_MIHOMO_BINARY="$MIHOMO" "$GO_BIN" test ./internal/mihomo \
+  -run '^TestMacTUNIPv6ConfigRealCore$' -count=1
 
 cd "$ROOT/web"
 export PATH="$(dirname "$NODE_BIN"):$PATH"

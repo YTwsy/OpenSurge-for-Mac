@@ -165,3 +165,35 @@ func TestSystemDNSInterruptedRecoveryAndForeignOwnership(t *testing.T) {
 		}
 	}
 }
+
+func TestMacTUNIPv6RestartUsesAppliedPreference(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		m, _, _, _ := dnsLifecycleFixture(t)
+		m.cfg.Transparent.MacTUNIPv6 = enabled
+		if err := m.Start(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		state, _, err := runtime.LoadState(m.paths.StateFile)
+		if err != nil || state.MacTUNIPv6 != enabled {
+			t.Fatal("applied host IPv6 missing", state, err)
+		}
+		m.cfg.Transparent.MacTUNIPv6 = !enabled // saved preference is not yet applied
+		applied := appliedConfigFromState(m.cfg, state)
+		if applied.Transparent.MacTUNIPv6 != enabled {
+			t.Fatal("restart used unapplied preference")
+		}
+		want := "disabled"
+		if enabled {
+			want = "ready"
+		}
+		if got := macTUNIPv6Status(state, true, "active", "ready"); got != want {
+			t.Fatalf("status=%s want=%s", got, want)
+		}
+		if err := m.RestartMihomo(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Stop(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

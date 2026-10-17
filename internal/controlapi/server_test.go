@@ -2847,3 +2847,47 @@ func performAuthorized(server *Server, method, path string, body []byte) *httpte
 	server.Handler().ServeHTTP(response, request)
 	return response
 }
+
+func TestControlConfigMacTUNIPv6PreservesLegacySaves(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	off, on := false, true
+	for _, value := range []*bool{&off, nil, &on} {
+		current, err := config.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input := controlConfigFrom(current, fileDigest(path))
+		if input.Transparent.MacTUNIPv6 == nil {
+			t.Fatal("GET must include the preference")
+		}
+		input.Transparent.MacTUNIPv6 = value
+		payload, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+			t.Fatal(err)
+		}
+		updated, err := config.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := current.Transparent.MacTUNIPv6
+		if value != nil {
+			want = *value
+		}
+		if updated.Transparent.MacTUNIPv6 != want {
+			t.Fatal("preference lost", updated.Transparent)
+		}
+		if updated.DNS.IPv6 != current.DNS.IPv6 || updated.Transparent.TUNIPv6 != current.Transparent.TUNIPv6 {
+			t.Fatal("changed other IPv6 controls")
+		}
+	}
+}

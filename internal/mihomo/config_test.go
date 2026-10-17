@@ -1003,3 +1003,46 @@ func assertOrdered(t *testing.T, value string, ordered ...string) {
 		position = next
 	}
 }
+
+func TestMacTUNIPv6OptOutPreservesDownstreamAndDNS(t *testing.T) {
+	for _, dns := range []bool{false, true} {
+		for _, downstream := range []string{config.TUNIPv6Off, config.TUNIPv6Always} {
+			cfg := config.Default()
+			cfg.Transparent.Mode = config.TransparentModeTUN
+			cfg.Transparent.MacTUNIPv6 = false
+			cfg.Transparent.TUNIPv6 = downstream
+			cfg.DNS.IPv6 = dns
+			rendered, err := RenderConfig(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var root map[string]any
+			if err := yaml.Unmarshal([]byte(rendered), &root); err != nil {
+				t.Fatal(err)
+			}
+			tun := root["tun"].(map[string]any)
+			addresses, exists := tun["inet6-address"].([]any)
+			if !exists || len(addresses) != 0 {
+				t.Fatal("must explicitly override core IPv6 defaults", tun)
+			}
+			if root["ipv6"] != true || root["dns"].(map[string]any)["ipv6"] != dns {
+				t.Fatal("changed shared IPv6 or DNS")
+			}
+			_, hasListener := root["listeners"]
+			if hasListener != (downstream != config.TUNIPv6Off) {
+				t.Fatal("changed downstream listener")
+			}
+			if strings.Contains(rendered, "SRC-IP-CIDR,fdfe:dcba:9877::1/128") {
+				t.Fatal("host IPv6 rule remains")
+			}
+			if !strings.Contains(rendered, "SRC-IP-CIDR,198.18.0.1/32") {
+				t.Fatal("host IPv4 rule missing")
+			}
+			for _, route := range tun["route-address"].([]any) {
+				if strings.Contains(route.(string), ":") {
+					t.Fatalf("IPv6 route remains: %s", route)
+				}
+			}
+		}
+	}
+}
