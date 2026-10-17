@@ -136,7 +136,7 @@ export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: Pr
 
         <section className={`overlay-expert-editor ${mode === 'yaml' ? 'open' : ''}`}>
           <button className="overlay-expert-toggle" type="button" aria-expanded={mode === 'yaml'} onClick={() => changeMode(mode === 'yaml' ? 'guided' : 'yaml')}>
-            <span><strong>{t('专家 Overlay YAML')}</strong><small>{t(expertOperations ? '当前包含 {{count}} 项专家操作。Provider、策略组、DNS 和低优先级规则在此维护。' : 'Provider、策略组、DNS 和低优先级规则仅在此维护。', { count: expertOperations })}</small></span><i aria-hidden="true">⌄</i>
+            <span><strong>{t('专家 Overlay YAML')}</strong><small>{t(expertOperations ? '当前包含 {{count}} 项专家操作。Provider、策略组、DNS 高级选项和低优先级规则在此维护。' : 'Provider、策略组、DNS 高级选项和低优先级规则在此维护。', { count: expertOperations })} {t('固定地址和域名解析策略也可使用下方独立的“自定义 DNS”。')}</small></span><i aria-hidden="true">⌄</i>
           </button>
           {mode === 'yaml' ? <div className="overlay-yaml-editor"><label htmlFor="profile-overlay-yaml">{t('附加配置 YAML')}</label><textarea id="profile-overlay-yaml" spellCheck={false} rows={24} value={yaml} onChange={event => { setYAML(event.target.value); setMessage('') }} /><p><strong>{t('边界：')}</strong>{t('不能设置 mixed-port、TUN、Controller、LAN binding，也不能覆盖 DNS 的监听、IPv6、模式或 Fake-IP 地址段。')}</p></div> : null}
         </section>

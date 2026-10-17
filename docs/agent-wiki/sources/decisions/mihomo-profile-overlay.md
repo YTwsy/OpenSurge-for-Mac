@@ -33,8 +33,10 @@ runtime mihomo config may normalize collection style or indentation.
 
 ## File-based custom DNS
 
-Network Settings exposes one optional **Custom DNS** draft, independently of the
-Global Extension. The control service stores `custom-dns.json` (schema version,
+Sources exposes one optional **Custom DNS** draft as a sibling of the Global
+Extension, with an independent enable flag. Network Settings shows a read-only
+status summary and links to `/sources#custom-dns`, which expands and focuses the
+editor. The control service stores `custom-dns.json` (schema version,
 enabled flag and portable YAML); absence means disabled. Saving uses an atomic
 Store `If-Match` comparison and never mutates the desired gateway config or a
 running process. Import and preview are also non-applying operations.
@@ -110,6 +112,14 @@ A formatted draft may be saved despite application blockers. Activation/disable
 uses existing full gateway start or source apply/reload; full reload restarts the
 owned dnsmasq and its cache. Engine-only recovery and page navigation never load a
 new DNS draft. Failed apply follows existing lifecycle rollback/state reporting.
+Sources accounts for both overlay and custom DNS desired state when enabling
+application of an otherwise current source. Disabling DNS still counts as pending
+until applied. Saving refreshes source compatibility; successful application
+refreshes source, overlay and DNS status. Applying uses only saved drafts and the
+existing source confirmation/transaction. With no exact desired/applied source
+row (including when only an older source version is current), the DNS editor links
+to Network Settings for stop/start rather than implicitly selecting a new source.
+Unsaved DNS edits survive status refreshes and guard navigation away from Sources.
 Exports contain only the canonical custom YAML; desktop uses a native save dialog,
 browser uses a file download. No original file paths or file watching are retained.
 
