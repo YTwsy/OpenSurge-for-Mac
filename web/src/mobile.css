@@ -10,6 +10,7 @@
 }
 
 @media (max-width: 900px) {
+  html:has(.app-shell:not(.desktop-shell)) { scrollbar-gutter: stable; }
   :root {
     --mobile-surface: #0d1b17;
     --mobile-soft: #13271f;
@@ -40,11 +41,11 @@
   .mobile-status { display: flex; align-items: center; gap: 7px; max-width: 38%; font-size: 11px; line-height: 1.4; }
   .mobile-status .status-dot { width: 6px; height: 6px; flex: none; }
   .mobile-nav-toggle, .mobile-nav-close { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 10px; border: 1px solid var(--mobile-line); border-radius: 12px; background: var(--mobile-surface); color: var(--mobile-text); box-shadow: none; }
-  .mobile-nav-toggle svg { width: 21px; height: 21px; }
-  .mobile-nav-backdrop { position: fixed; z-index: 60; inset: 0; background: #05130c88; backdrop-filter: blur(4px); }
-  .app-shell:not(.desktop-shell) .sidebar { position: fixed; z-index: 61; inset: 0 auto 0 0; display: flex; align-items: stretch; gap: 0; width: min(330px, calc(100vw - 32px)); height: 100dvh; padding: max(24px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)); background: var(--mobile-surface); border-right: 1px solid var(--mobile-line); box-shadow: 20px 0 70px #001a1640; overflow-y: auto; overscroll-behavior: contain; }
+  .mobile-nav-toggle svg, .mobile-nav-close svg { display: block; width: 21px; height: 21px; }
+  .mobile-nav-backdrop { position: fixed; z-index: 60; inset: 0; background: #05130c88; }
+  .app-shell:not(.desktop-shell) .sidebar { position: fixed; z-index: 61; inset: 0 auto 0 0; display: flex; align-items: stretch; gap: 0; width: min(330px, calc(100vw - 32px)); height: 100dvh; padding: max(24px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)); background: var(--mobile-surface); backdrop-filter: none; border-right: 1px solid var(--mobile-line); box-shadow: 20px 0 70px #001a1640; overflow-y: auto; overscroll-behavior: contain; }
   .app-shell:not(.desktop-shell) .sidebar[hidden] { display: none; }
-  .mobile-nav-close { position: absolute; right: 14px; top: max(20px, env(safe-area-inset-top)); font-size: 24px; }
+  .mobile-nav-close { position: absolute; right: 14px; top: max(20px, env(safe-area-inset-top)); }
   .sidebar .brand { flex: none; padding: 0 50px 26px 4px; min-height: 64px; }
   .sidebar .brand-mark { width: 38px; height: 38px; }
   .sidebar nav { display: grid; gap: 5px; flex: none; padding: 0 0 22px; overflow: visible; }
