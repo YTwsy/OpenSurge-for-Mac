@@ -4,6 +4,7 @@ import { copyText } from '../desktop'
 import { lanAPI, lanError, validManagementPassword, type LANAccess, type LANSettings } from '../lanAccess'
 import { t } from '../i18n'
 import { watchVisibleRefresh } from '../visibility'
+import { Select } from './Select'
 import '../lan-access.css'
 
 const initial: LANSettings = { enabled: false, interface: '', ipv4: '', prefix_len: 24, port: 61768 }
@@ -93,15 +94,18 @@ export function LANAccessCard() {
       <form className="lan-settings-form" onSubmit={event => void save(event)}>
         <label className="settings-row"><span>{t('允许局域网管理')}</span><input type="checkbox" role="switch" checked={draft.enabled} disabled={busy} onChange={event => setDraft(value => ({ ...value, enabled: event.target.checked }))} /></label>
         {draft.enabled && <div className="lan-config-fields">
-          <label>{t('局域网地址')}<select value={addressKey(draft)} disabled={busy} onChange={event => {
-            const value = current.addresses.find(item => addressKey(item) === event.target.value)
+          <label>{t('局域网地址')}<Select aria-label={t('局域网地址')} value={addressKey(draft)} disabled={busy} onChange={key => {
+            const value = current.addresses.find(item => addressKey(item) === key)
             if (value) setDraft(previous => ({ ...previous, ...value }))
           }}>
             {!addressExists && <option value={addressKey(draft)}>{draft.ipv4 ? `${draft.interface} · ${draft.ipv4}/${draft.prefix_len} (${t('不可用')})` : t('请选择局域网地址')}</option>}
             {current.addresses.map(address => <option key={addressKey(address)} value={addressKey(address)}>{address.interface} · {address.ipv4}/{address.prefix_len}</option>)}
-          </select></label>
+          </Select></label>
           {current.addresses.length === 0 && <p className="lan-hint">{t('没有可用的局域网 IPv4 地址，请先连接局域网。')}</p>}
-          <details><summary>{t('高级设置')}</summary><label>{t('管理端口')}<input type="number" min="1024" max="65535" required value={draft.port} disabled={busy} onChange={event => setDraft(value => ({ ...value, port: Number(event.target.value) }))} /></label></details>
+          <details className="lan-advanced">
+            <summary><span>{t('高级设置')}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></summary>
+            <div className="lan-advanced-content"><label>{t('管理端口')}<input type="number" min="1024" max="65535" required value={draft.port} disabled={busy} onChange={event => setDraft(value => ({ ...value, port: Number(event.target.value) }))} /></label></div>
+          </details>
           {!current.password_set && <>
             <label>{t('管理密码')}<input type="password" autoComplete="new-password" required value={password} disabled={busy} onChange={event => setPassword(event.target.value)} maxLength={512} /></label>
             <label>{t('确认管理密码')}<input type="password" autoComplete="new-password" required value={confirmation} disabled={busy} onChange={event => setConfirmation(event.target.value)} maxLength={512} /></label>
