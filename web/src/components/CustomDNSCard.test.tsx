@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { activateLanguage, prepareLanguage } from '../i18n'
 import type { CustomDNSDraft, CustomDNSPreview } from '../types'
 
@@ -14,8 +15,13 @@ import { CustomDNSCard } from './CustomDNSCard'
 const initial: CustomDNSDraft = { schema_version: 1, revision: 'dns-1', document: { schema_version: 1, enabled: false, yaml: 'hosts: {}\ndns: {}\n' }, desired: true, applied: false, hosts: 0, policies: 0 }
 const preview: CustomDNSPreview = { changes: [{ field: 'hosts.nas.home.arpa', before: '', after: '192.0.2.8', source: 'custom-dns' }], managed_changes: [], warnings: [], blockers: ['DHCP namespace conflict'], final_yaml: 'hosts: {nas.home.arpa: 192.0.2.8}', base_yaml: 'dns: {}', overlay_yaml: 'dns: {}', custom_yaml: '', mac_ready: true, downstream_ready: true, dns_references: [] }
 
+function Card() {
+  const [saved, setSaved] = useState(initial)
+  return <CustomDNSCard saved={saved} onSaved={setSaved} running onOpenNetwork={vi.fn()} />
+}
+
 async function open() {
-  render(<CustomDNSCard contextKey="r1:running" />)
+  render(<Card />)
   await screen.findByText('0 个映射 · 0 个上游策略')
   await userEvent.click(screen.getByText('自定义 DNS'))
 }
@@ -84,12 +90,24 @@ describe('CustomDNSCard', () => {
 
   it('renders the editor and preview in English', async () => {
     await prepareLanguage('en'); activateLanguage('en')
-    render(<CustomDNSCard contextKey="en" />)
+    render(<Card />)
     await screen.findByText('0 host mappings · 0 upstream policies')
     await userEvent.click(screen.getByText('Custom DNS'))
     vi.mocked(api.previewCustomDNS).mockResolvedValue(preview)
     await userEvent.click(screen.getByRole('button', { name: 'Preview' }))
     await screen.findByRole('region', { name: 'Final DNS configuration' })
     expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
+  })
+
+  it('keeps unsaved YAML when the parent refreshes application status', async () => {
+    const onDirty = vi.fn()
+    const props = { saved: initial, onSaved: vi.fn(), running: false, onOpenNetwork: vi.fn(), onDirtyChange: onDirty }
+    const view = render(<CustomDNSCard {...props} />)
+    await userEvent.click(screen.getByText('自定义 DNS'))
+    const editor = screen.getByRole('textbox', { name: '自定义 DNS YAML' })
+    fireEvent.change(editor, { target: { value: 'hosts: {nas.home.arpa: 192.0.2.30}' } })
+    view.rerender(<CustomDNSCard {...props} saved={{ ...initial, applied: true }} running />)
+    expect((editor as HTMLTextAreaElement).value).toContain('192.0.2.30')
+    expect(onDirty).toHaveBeenLastCalledWith(true)
   })
 })

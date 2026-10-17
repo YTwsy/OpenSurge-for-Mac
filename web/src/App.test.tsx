@@ -3,7 +3,7 @@ import { selectOption } from './test/select'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ControlConfig, GatewayPlan, Overview, ProfileOverlay, Source } from './types'
+import type { ControlConfig, CustomDNSDraft, GatewayPlan, Overview, ProfileOverlay, Source } from './types'
 
 vi.mock('./api', () => ({
   authenticationRequiredEvent: 'opensurge:authentication-required',
@@ -87,6 +87,8 @@ vi.mock('./api', () => ({
 	saveTailscale: vi.fn(),
 	forgetTailscaleIdentity: vi.fn(),
 	customDNS: vi.fn(async () => ({ schema_version: 1, revision: 'dns-revision', document: { schema_version: 1, enabled: false, yaml: 'hosts: {}\ndns: {}\n' }, desired: true, applied: false, hosts: 0, policies: 0 })),
+    saveCustomDNS: vi.fn(),
+    previewCustomDNS: vi.fn(),
     profileOverlay: vi.fn(async () => ({
       schema_version: 1,
       revision: 'overlay-revision',
@@ -229,6 +231,20 @@ function gatewayPlanForTest(): GatewayPlan {
   }
 }
 
+function dnsForApp(overrides: Partial<CustomDNSDraft> = {}): CustomDNSDraft {
+  return { schema_version: 1, revision: 'dns-revision', document: { schema_version: 1, enabled: false, yaml: 'hosts: {}\ndns: {}\n' }, desired: true, applied: false, hosts: 0, policies: 0, ...overrides }
+}
+
+function sourceForDNS(): Source {
+  return {
+    id: 'home', name: 'Home', kind: 'mihomo_profile', origin: 'file:home.yaml', digest: 'current', size: 100,
+    valid: true, validation: 'valid', desired: true, applied: true, versions: [], imported_at: '2026-10-18T00:00:00Z',
+    diff: { proxies_added: [], proxies_removed: [], groups_added: [], groups_removed: [], proxy_providers_added: [], proxy_providers_removed: [], rule_providers_added: [], rule_providers_removed: [], rule_count_delta: 0 },
+    inventory: { proxies: [], proxy_providers: [], proxy_groups: [], rule_providers: [], rule_count: 1, terminal_match: true, warnings: [] },
+    overlay_compatible: true,
+  }
+}
+
 describe('OpenSurge app shell', () => {
   const scrollIntoView = vi.fn()
   const scrollTo = vi.fn()
@@ -247,6 +263,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.config).mockResolvedValue(configFor('same_wifi_dhcp'))
     vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [] })
     vi.mocked(api.profileOverlay).mockResolvedValue(overlayForApp())
+    vi.mocked(api.customDNS).mockResolvedValue(dnsForApp())
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
@@ -1666,6 +1683,126 @@ describe('OpenSurge app shell', () => {
     resolveApply({ ...source, desired: true, applied: true })
     expect(await screen.findByText('订阅已应用，网关已使用新的运行配置。')).toBeTruthy()
     expect(screen.getByText('应用并重载网关成功')).toBeTruthy()
+  })
+
+  it('keeps only DNS status in Network and opens the independent editor in Sources', async () => {
+    vi.mocked(api.customDNS).mockResolvedValue(dnsForApp({ desired: false, hosts: 1 }))
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+    const summary = await screen.findByRole('region', { name: '自定义 DNS 状态' })
+    await within(summary).findByText('未应用修改')
+    expect(screen.queryByLabelText('自定义 DNS YAML')).toBeNull()
+    await userEvent.click(within(summary).getByRole('button', { name: '管理自定义 DNS' }))
+    expect(window.location.pathname + window.location.hash).toBe('/sources#custom-dns')
+    const editor = await screen.findByRole('textbox', { name: '自定义 DNS YAML' })
+    expect(editor.closest('details')?.open).toBe(true)
+    const overlayCard = screen.getByRole('heading', { name: '高级：全局附加配置' }).closest('details')
+    expect(overlayCard?.contains(editor)).toBe(false)
+    expect(document.activeElement).toBe(document.querySelector('#custom-dns summary'))
+    expect(api.applySource).not.toHaveBeenCalled()
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])('reapplies an active source for pending DNS enabled=%s and refreshes both states', async enabled => {
+    const source = sourceForDNS()
+    let dns = dnsForApp({ desired: false, document: { schema_version: 1, enabled, yaml: 'hosts: {}\ndns: {}\n' } })
+    vi.mocked(api.customDNS).mockImplementation(async () => dns)
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
+    vi.mocked(api.applySource).mockImplementation(async () => { dns = { ...dns, desired: true, applied: true }; return source })
+    window.history.replaceState({}, '', '/sources')
+    render(<App />)
+    const apply = await screen.findByRole('button', { name: '应用配置与 DNS 并重载' })
+    expect((apply as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText('自定义 DNS 待应用')).toBeTruthy()
+    await userEvent.click(apply)
+    expect(api.applySource).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog', { name: '应用来源、附加配置与自定义 DNS 并重载网关？' })
+    await userEvent.click(within(dialog).getByRole('button', { name: '确认应用并重载' }))
+    await waitFor(() => expect(api.applySource).toHaveBeenCalledWith('home', 'config-revision'))
+    await waitFor(() => expect(screen.queryByText('自定义 DNS 待应用')).toBeNull())
+    expect((await screen.findByRole('button', { name: '已运行' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(document.querySelector('#custom-dns summary')?.textContent).toContain('已应用')
+  })
+
+  it('saves pending DNS to the next start without starting a stopped gateway', async () => {
+    const source = { ...sourceForDNS(), applied: false }
+    let dns = dnsForApp({ desired: false, document: { schema_version: 1, enabled: true, yaml: 'dns: {}' } })
+    vi.mocked(api.customDNS).mockImplementation(async () => dns)
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [source] })
+    vi.mocked(api.applySource).mockImplementation(async () => { dns = { ...dns, desired: true }; return source })
+    window.history.replaceState({}, '', '/sources#custom-dns')
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '校验并保存到下次启动' }))
+    await userEvent.click(screen.getByRole('button', { name: '确认设为下次启动版本' }))
+    await waitFor(() => expect(screen.getByText('已保存，待启动')).toBeTruthy())
+    expect(api.gateway).not.toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: '前往网络设置启动' })).toBeTruthy()
+  })
+
+  it('marks a saved DNS edit pending and preserves it when applying fails', async () => {
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [sourceForDNS()] })
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
+    vi.mocked(api.customDNS).mockResolvedValue(dnsForApp({ applied: true }))
+    vi.mocked(api.saveCustomDNS).mockImplementation(async document => dnsForApp({ document, revision: 'dns-next', desired: false }))
+    vi.mocked(api.applySource).mockRejectedValue(new Error('candidate validation failed'))
+    window.history.replaceState({}, '', '/sources#custom-dns')
+    render(<App />)
+    const editor = await screen.findByRole('textbox', { name: '自定义 DNS YAML' })
+    await userEvent.click(screen.getByLabelText('启用自定义 DNS'))
+    fireEvent.change(editor, { target: { value: 'hosts: {nas.home.arpa: 192.0.2.10}' } })
+    await userEvent.click(screen.getByRole('button', { name: '保存草稿' }))
+    await screen.findByText('自定义 DNS 待应用')
+    expect(api.applySource).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: '校验并应用自定义 DNS' }))
+    await userEvent.click(screen.getByRole('button', { name: '确认应用并重载' }))
+    await within(document.querySelector('.source-feedback') as HTMLElement).findByText('candidate validation failed')
+    expect((editor as HTMLTextAreaElement).value).toBe('hosts: {nas.home.arpa: 192.0.2.10}')
+    expect(screen.getByText('自定义 DNS 待应用')).toBeTruthy()
+  })
+
+  it.each([false, true])('uses network startup without selecting an unrelated source (refreshed=%s)', async refreshed => {
+    const source = sourceForDNS()
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: refreshed ? [{ ...source, digest: 'new-draft', desired: false, applied: false, versions: [{ digest: source.digest, size: 100, valid: true, validation: 'valid', imported_at: source.imported_at, desired: true, applied: true }] }] : [] })
+    vi.mocked(api.customDNS).mockResolvedValue(dnsForApp({ desired: false }))
+    window.history.replaceState({}, '', '/sources#custom-dns')
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '前往网络设置启动' }))
+    expect(window.location.pathname + window.location.hash).toBe('/network#gateway-control')
+    expect(api.applySource).not.toHaveBeenCalled()
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
+  it('protects unsaved DNS edits when navigating away and keeps application disabled', async () => {
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [sourceForDNS()] })
+    vi.mocked(api.customDNS).mockResolvedValue(dnsForApp({ desired: false }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    window.history.replaceState({}, '', '/sources#custom-dns')
+    render(<App />)
+    const editor = await screen.findByRole('textbox', { name: '自定义 DNS YAML' })
+    fireEvent.change(editor, { target: { value: 'hosts: {nas.home.arpa: 192.0.2.20}' } })
+    expect((screen.getByRole('button', { name: '保存配置与 DNS 到下次启动' }) as HTMLButtonElement).disabled).toBe(true)
+    await userEvent.click(screen.getByRole('button', { name: '网络设置' }))
+    expect(confirm).toHaveBeenCalledWith('自定义 DNS 还有未保存的修改，确定离开并放弃这些修改吗？')
+    expect(window.location.pathname).toBe('/sources')
+    expect((editor as HTMLTextAreaElement).value).toContain('192.0.2.20')
+    confirm.mockRestore()
+  })
+
+  it('keeps Sources available when DNS loading fails and can retry in place', async () => {
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'config-revision', sources: [{ ...sourceForDNS(), desired: false, applied: false }] })
+    vi.mocked(api.customDNS).mockRejectedValue(new Error('DNS draft temporarily unavailable'))
+    window.history.replaceState({}, '', '/sources#custom-dns')
+    render(<App />)
+    await screen.findByText('DNS draft temporarily unavailable')
+    expect(screen.getByRole('heading', { name: 'Home' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '高级：全局附加配置' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: '设为下次启动版本' }) as HTMLButtonElement).disabled).toBe(true)
+    vi.mocked(api.customDNS).mockResolvedValue(dnsForApp())
+    await userEvent.click(screen.getByRole('button', { name: '重新载入草稿' }))
+    await screen.findByRole('textbox', { name: '自定义 DNS YAML' })
+    expect(screen.queryByText('DNS draft temporarily unavailable')).toBeNull()
+    expect((screen.getByRole('button', { name: '设为下次启动版本' }) as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('allows a pending global overlay to be applied to a stopped desired source', async () => {

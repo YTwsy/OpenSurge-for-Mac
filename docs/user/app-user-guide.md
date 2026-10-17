@@ -165,7 +165,10 @@ active, rather than overwriting those settings.
 
 ### Optional: Custom DNS
 
-Expand **Network Settings → Custom DNS** to import a hosts file or Mihomo YAML
+Expand **Sources → Custom DNS**, beside and independently enabled from the Global
+Profile Overlay. Network Settings retains draft status, mapping/policy counts and
+an application status; **Manage custom DNS** opens and focuses the Sources editor.
+Import a hosts file or Mihomo YAML
 containing only `hosts` / `dns`. This supports fixed service addresses, corporate
 DNS routing and real-IP exceptions for Mac TUN and downstream devices using
 OpenSurge DNS. Arbitrary dnsmasq/Surge configurations, remote subscriptions,
@@ -218,8 +221,12 @@ policies and alias chains cannot cover that namespace. Preview lists application
 blockers; a structurally valid draft can still be saved. While active, Mihomo's
 `use-system-hosts` controls system-hosts participation; `/etc/hosts` is not modified.
 
-**Saving a draft does not change the running gateway.** Use the existing stop/start
-workflow or reapply a source to activate it. Disabling also requires saving and
+**Saving a draft does not change the running gateway.** The current source shows
+pending DNS changes. Apply from its card or the Custom DNS section: validation and
+confirmation precede a running gateway reload, or saving for the next start when
+stopped. If no exact current source row can be reused, follow the Network Settings
+link and use the existing stop/start workflow. This never selects an unused source
+or a refreshed subscription version automatically. Disabling also requires saving and
 applying. Stopped policy preparation uses the saved draft; running policy views
 continue to show applied configuration. **Export draft** contains only the custom
 YAML: the desktop app opens a native save dialog and the browser downloads a file.
