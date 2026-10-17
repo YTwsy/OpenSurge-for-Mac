@@ -1,3 +1,4 @@
+import { isLANBrowser } from '../lanAccess'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { copyText } from '../desktop'
@@ -227,7 +228,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
         return <article className="source-card" key={source.id}>
           <div className="source-head"><div><small>{source.kind}</small><h3>{source.name}</h3></div><span className={sourceNeedsDrafts ? 'pill' : source.applied ? 'pill ok' : source.desired ? 'pill' : source.valid ? 'pill ok' : 'pill bad'}>{state}</span></div>
           <p className="source-origin" title={origin}><span aria-hidden="true">⌁</span>{origin}</p>
-          {source.snapshot_display_path && <div className="source-location">
+          {!isLANBrowser() && source.snapshot_display_path && <div className="source-location">
             <span className="source-location-icon" aria-hidden="true">▤</span>
             <div className="source-location-copy">
               <small>{t('本地快照')}</small>

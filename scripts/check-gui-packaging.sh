@@ -15,7 +15,7 @@ APP_ICON_SOURCE="$ROOT/apps/desktop/Resources/OpenSurgeAppIcon.png"
 MENU_BAR_ICON_SOURCE="$ROOT/apps/desktop/Resources/OpenSurgeMenuBarIcon.png"
 WEB_ICON_SOURCE="$ROOT/web/public/opensurge-icon.png"
 WEB_INDEX="$ROOT/web/index.html"
-WEB_APP="$ROOT/web/src/App.tsx"
+WEB_SHELL="$ROOT/web/src/components/AppShell.tsx"
 UNINSTALLER="$ROOT/scripts/uninstall-gui.sh"
 
 bash -n "$PREINSTALL" "$POSTINSTALL" "$RECOVERY_STATE" "$INSTALLED_PROCESSES" "$ROOT/scripts/uninstall-gui.sh" \
@@ -285,7 +285,7 @@ grep -Fq 'rel="icon" type="image/png" href="/opensurge-icon.png"' "$WEB_INDEX" |
   echo "Web GUI must expose the OpenSurge browser icon" >&2
   exit 1
 }
-grep -Fq 'className="brand-mark" src="/opensurge-icon.png"' "$WEB_APP" || {
+grep -Fq 'className="brand-mark" src="/opensurge-icon.png"' "$WEB_SHELL" || {
   echo "Web GUI sidebar must use the OpenSurge app icon" >&2
   exit 1
 }

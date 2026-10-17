@@ -1,0 +1,50 @@
+.connection-inspector {
+  --inspector-surface: #0e2019;
+  position: fixed; z-index: 45; right: 24px; bottom: 24px;
+  display: flex; flex-direction: column; width: min(480px, calc(100vw - 48px));
+  max-height: min(680px, calc(100dvh - 100px));
+  border: 1px solid var(--control-border); border-radius: 18px;
+  background: var(--inspector-surface); color: var(--control-text);
+  box-shadow: 0 18px 64px #00190f38, 0 2px 10px #00190f1a;
+  overflow: hidden; text-align: left;
+}
+html[data-theme="light"] .connection-inspector { --inspector-surface: #fff; }
+.connection-inspector:focus { outline: none; }
+.connection-inspector-header { display: flex; align-items: flex-start; justify-content: space-between; flex: none; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--control-border); background: var(--control-surface); cursor: grab; touch-action: none; user-select: none; }
+.connection-inspector.dragging .connection-inspector-header { cursor: grabbing; }
+.connection-inspector-drag-hint { margin-left: auto; font-size: 10px; opacity: .55; }
+.connection-inspector-header > div { min-width: 0; flex: 1; }
+.connection-inspector-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.connection-inspector-title h2 { margin: 0; font-size: 16px; line-height: 1.5; }
+.connection-inspector-state { display: inline-flex; align-items: center; gap: 5px; color: #8a9e94; font-size: 11px; line-height: 1.5; }
+.connection-inspector-state::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.connection-inspector-state.live { color: var(--control-accent); }
+.connection-inspector-header p { margin: 6px 0 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+button.connection-inspector-close { display: grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 7px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--inspector-surface); color: var(--control-text); }
+.connection-inspector-close svg { display: block; width: 20px; height: 20px; }
+.connection-inspector-close:hover { background: var(--control-hover); }
+.connection-inspector-body { padding: 16px 18px 18px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.connection-inspector-hint, .connection-inspector-sample { margin: 0; color: #82998c; font-size: 11px; line-height: 1.6; }
+html[data-theme="light"] :is(.connection-inspector-hint, .connection-inspector-sample, .connection-inspector-state) { color: #647b6d; }
+html[data-theme="light"] .connection-inspector-state.live { color: var(--control-accent); }
+.connection-inspector-notice { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--control-surface); font-size: 12px; line-height: 1.6; }
+.connection-inspector-rates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.connection-inspector-rates > div { padding: 12px; border: 1px solid var(--control-border); border-radius: 10px; }
+.connection-inspector-rates span { display: block; font-size: 11px; opacity: .7; }
+.connection-inspector-rates strong { display: block; margin-top: 6px; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.connection-inspector dl { margin: 0 0 14px; font-size: 12px; line-height: 1.6; }
+.connection-inspector dl > div { display: grid; grid-template-columns: 102px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--control-border); }
+.connection-inspector dt { opacity: .7; }
+.connection-inspector dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
+@media (max-width: 900px) {
+  .connection-inspector { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); width: calc(100% - 24px); max-height: min(56dvh, 520px); border-radius: 16px; }
+  .connection-inspector-header { padding: 12px 14px; gap: 8px; cursor: default; touch-action: auto; }
+  .connection-inspector-drag-hint { display: none; }
+  .connection-inspector-title h2 { font-size: 15px; }
+  .connection-inspector-header p { font-size: 12px; }
+  button.connection-inspector-close { width: 44px; height: 44px; }
+  .connection-inspector-body { padding: 12px 14px 14px; }
+  .connection-inspector dl > div { grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
+  /* Let the last list rows scroll above the non-modal panel, too. */
+  .connections-page.has-connection-detail { padding-bottom: calc(min(56dvh, 520px) + 24px); }
+}

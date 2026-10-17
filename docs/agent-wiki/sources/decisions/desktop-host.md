@@ -58,6 +58,15 @@ unacknowledged privileged mutation.
 
 Credentials are read from the current user Control Store `control-token` file (mode `0600`), without a Keychain fallback. Bootstrap `expires_at` accepts RFC3339 with or without fractional seconds; bootstrap URLs and credentials must never enter errors or durable logs.
 
+App Settings also owns the local LAN-management controls: select an interface/address,
+set or reset the management password, enable/disable access, and share a URL-only QR
+code. The native relay calls the existing Control Service; the desktop host does not
+open the LAN listener or own its sessions. Only actual listening state displays a URL.
+Closing or quitting the desktop leaves this independent service setting in effect.
+Remote browsers use a separate HTTP password session and never receive native
+capabilities, local bootstrap grants, or Finder/export actions. The exact binding,
+password, revocation and network-change rules live in [Control API](../control-api.md#可选局域网管理).
+
 ## Main window and presentation
 
 The main window initially requests 1440 × 900 points and fits the available screen.

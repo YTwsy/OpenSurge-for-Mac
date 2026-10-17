@@ -62,9 +62,9 @@ export function DeviceTrafficPanel({ gateway, traffic, history, error, onOpenCon
               return <button className={`device-traffic-row ${expanded ? 'selected' : ''}`} type="button" key={key} aria-label={t('查看 {{name}} {{ip}} 流量趋势', { name, ip: device.ip })} aria-expanded={expanded} onClick={() => selectDevice(device)}>
                 <span className="traffic-device"><StatusDot status={online ? 'running' : 'stopped'} /><span><strong>{name}</strong><small>{deviceIdentityDetail(device, gateway)}</small></span></span>
                 <span className="traffic-ip"><code>{device.ip || '—'}</code></span>
-                <span className="traffic-connections">{device.active_connections}</span>
-                <RateCell rate={device.upload_rate} total={device.upload} />
-                <RateCell rate={device.download_rate} total={device.download} />
+                <span className="traffic-connections" data-label={t('连接')}>{device.active_connections}</span>
+                <RateCell label={`↑ ${t('上传')}`} rate={device.upload_rate} total={device.upload} />
+                <RateCell label={`↓ ${t('下载')}`} rate={device.download_rate} total={device.download} />
                 <span className="traffic-egress" title={device.primary_egress}><strong>{compactEgress(device.primary_egress)}</strong><small>{device.primary_egress || t('暂无出口')}</small></span>
               </button>
             })}
@@ -91,8 +91,8 @@ export function DeviceTrafficPanel({ gateway, traffic, history, error, onOpenCon
   </section>
 }
 
-function RateCell({ rate = 0, total = 0 }: { rate?: number; total?: number }) {
-  return <span className="traffic-rate"><strong>{formatRate(rate)}</strong><small>{t('累计 {{total}}', { total: formatBytes(total) })}</small></span>
+function RateCell({ label, rate = 0, total = 0 }: { label: string; rate?: number; total?: number }) {
+  return <span className="traffic-rate" data-label={label}><strong>{formatRate(rate)}</strong><small>{t('累计 {{total}}', { total: formatBytes(total) })}</small></span>
 }
 
 function deviceName(device: DeviceTrafficRow) {

@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { activateLanguage, initialRequestedLanguage, prepareLanguage } from './i18n'
-import { markUIReady } from './desktop'
+import { isDesktop, markUIReady } from './desktop'
 
 function FirstFrame({ children }: { children: ReactNode }) {
   useEffect(() => {
@@ -16,13 +16,13 @@ async function start() {
   await prepareLanguage(language)
   activateLanguage(language)
 
-  const App = window.location.pathname === '/desktop-tray'
+  const App = isDesktop() && window.location.pathname === '/desktop-tray'
     ? (await import('./tray/TrayApp')).TrayApp
-    : window.location.pathname === '/desktop-tray-menu'
+    : isDesktop() && window.location.pathname === '/desktop-tray-menu'
     ? (await import('./tray/TrayApp')).TrayMenuApp
-    : window.location.pathname === '/desktop-settings'
+    : isDesktop() && window.location.pathname === '/desktop-settings'
     ? (await import('./settings/SettingsApp')).SettingsApp
-    : (await import('./App')).App
+    : isDesktop() ? (await import('./App')).App : (await import('./BrowserApp')).BrowserApp
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode><FirstFrame><App /></FirstFrame></StrictMode>,
