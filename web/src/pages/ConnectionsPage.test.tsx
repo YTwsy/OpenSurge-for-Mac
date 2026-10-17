@@ -52,7 +52,7 @@ describe('ConnectionsPage', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'HK' } })
     expect(screen.getAllByRole('row')).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: 'phone-v6.example.invalid' }))
-    expect(within(screen.getByRole('region', { name: '连接详情' })).getByText('Device group → HK')).toBeTruthy()
+    expect(within(screen.getByRole('dialog', { name: '连接详情' })).getByText('Device group → HK')).toBeTruthy()
     expect(screen.queryByText('本机进程')).toBeNull()
   })
 
@@ -75,6 +75,103 @@ describe('ConnectionsPage', () => {
     view.rerender(<Harness />)
     expect(screen.getByText('当前快照中已无此连接，以下保留最后一次观察详情。')).toBeTruthy()
     expect(screen.getByText('Safari')).toBeTruthy()
+  })
+
+  it('keeps one non-modal inspector while filtering and switching connections', () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: 'phone-v4.example.invalid' }))
+    const inspector = screen.getByRole('dialog', { name: '连接详情' })
+    expect(inspector.getAttribute('aria-modal')).toBe('false')
+    expect(screen.getAllByRole('row')).toHaveLength(4)
+    fireEvent.click(screen.getByRole('button', { name: '查看 PS5 的连接' }))
+    expect(screen.getAllByRole('row')).toHaveLength(1)
+    expect(screen.getByRole('dialog', { name: '连接详情' })).toBe(inspector)
+    expect(within(inspector).getByText('当前活跃')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '查看 Phone 的连接' }))
+    fireEvent.click(screen.getByRole('button', { name: 'phone-v6.example.invalid' }))
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('dialog', { name: '连接详情' })).toBe(inspector)
+    expect(within(inspector).getByText('Device group → HK')).toBeTruthy()
+  })
+
+  it('updates in place without stealing focus or scroll, retaining the last owner and sample when missing', () => {
+    const view = render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: 'phone-v4.example.invalid' }))
+    const inspector = screen.getByRole('dialog', { name: '连接详情' })
+    const body = inspector.querySelector('.connection-inspector-body')!
+    body.scrollTop = 120
+    const search = screen.getByRole('searchbox')
+    search.focus()
+    fireEvent.change(search, { target: { value: 'phone' } })
+    const next = observation()
+    next.sampled_at = '2026-09-20T10:02:00Z'
+    next.devices[0].name = 'Renamed Phone'
+    next.connections[0].rule_payload = 'updated-rule'
+    vi.mocked(useConnections).mockReturnValue({ snapshot: next, error: '' })
+    view.rerender(<Harness />)
+    expect(screen.getByRole('dialog', { name: '连接详情' })).toBe(inspector)
+    expect(document.activeElement).toBe(search)
+    expect(body.scrollTop).toBe(120)
+    expect(within(inspector).getByText('RuleSet · updated-rule')).toBeTruthy()
+    const lastSample = within(inspector).getByText(/^采样时间 /).textContent
+    const gone = observation()
+    gone.connections = []
+    gone.devices = []
+    gone.sampled_at = '2026-09-20T10:03:00Z'
+    vi.mocked(useConnections).mockReturnValue({ snapshot: gone, error: '' })
+    view.rerender(<Harness />)
+    expect(within(inspector).getByText('Renamed Phone')).toBeTruthy()
+    expect(within(inspector).getByText('已离开当前快照')).toBeTruthy()
+    expect(within(inspector).getByText(/^采样时间 /).textContent).toBe(lastSample)
+    expect(document.activeElement).toBe(search)
+    expect(body.scrollTop).toBe(120)
+  })
+
+  it.each(['request', 'core'])('distinguishes a %s failure from a disappeared connection', failure => {
+    const view = render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: 'mac.example.invalid' }))
+    const next = observation()
+    if (failure === 'core') { next.connections = []; next.connection_error = 'unavailable' }
+    vi.mocked(useConnections).mockReturnValue({ snapshot: next, error: failure === 'request' ? 'offline' : '' })
+    view.rerender(<Harness />)
+    const inspector = within(screen.getByRole('dialog', { name: '连接详情' }))
+    expect(inspector.getByText('更新暂不可用')).toBeTruthy()
+    expect(inspector.queryByText('已离开当前快照')).toBeNull()
+    expect(inspector.getByText('Safari')).toBeTruthy()
+    expect(inspector.getByText('上传速率').parentElement?.textContent).toBe('上传速率—')
+    vi.mocked(useConnections).mockReturnValue({ snapshot: observation(), error: '' })
+    view.rerender(<Harness />)
+    expect(inspector.getByText('当前活跃')).toBeTruthy()
+    expect(inspector.getByText('上传速率').parentElement?.textContent).toBe('上传速率2 B/s')
+    fireEvent.click(screen.getByRole('button', { name: '暂停画面更新' }))
+    expect(inspector.getByText('画面已暂停')).toBeTruthy()
+    expect(inspector.getByText('上传速率').parentElement?.textContent).toBe('上传速率—')
+  })
+
+  it('respects nested controls and restores focus only when closing from the inspector', () => {
+    render(<Harness />)
+    const target = screen.getByRole('button', { name: 'mac.example.invalid' })
+    fireEvent.click(target)
+    fireEvent.keyDown(screen.getByRole('dialog', { name: '连接详情' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(target)
+    fireEvent.click(target)
+    const protocol = screen.getByRole('combobox', { name: '连接协议' })
+    protocol.focus()
+    fireEvent.click(protocol)
+    fireEvent.keyDown(protocol, { key: 'Escape' })
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(screen.getByRole('dialog', { name: '连接详情' })).toBeTruthy()
+    const search = screen.getByRole('searchbox')
+    search.focus()
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(search)
+    fireEvent.click(target)
+    fireEvent.change(search, { target: { value: 'phone' } })
+    fireEvent.click(screen.getByRole('button', { name: '关闭连接详情' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(search)
   })
 
   it('paginates large samples and resets the page when changing filters', () => {

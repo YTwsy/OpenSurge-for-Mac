@@ -236,15 +236,12 @@
   .connection-table-wrap { overflow: visible; }
   .connection-table, .connection-table tbody { display: block; width: 100%; min-width: 0; }
   .connection-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .connection-table tr:not(.connection-detail-row) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; padding: 18px 16px; border-top: 1px solid var(--mobile-line); }
-  .connection-table tr:not(.connection-detail-row) > td { display: block; padding: 0; border: 0; font-size: 12px; line-height: 1.6; min-width: 0; }
-  .connection-table tr:not(.connection-detail-row) > td:first-child { grid-column: 1 / -1; }
+  .connection-table tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; padding: 18px 16px; border-top: 1px solid var(--mobile-line); }
+  .connection-table tbody tr > td { display: block; padding: 0; border: 0; font-size: 12px; line-height: 1.6; min-width: 0; }
+  .connection-table tbody tr > td:first-child { grid-column: 1 / -1; }
   .connection-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; color: var(--mobile-muted); font-size: 10px; }
   .connection-table .connection-target { min-height: 28px; font-size: 15px; font-weight: 650; }
   .connection-table td small { font-size: 11px; margin-top: 3px; }
-  .connection-detail-row, .connection-detail-row > td { display: block; width: 100%; }
-  .connection-detail { padding: 16px; }
-  .connection-detail dl > div { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
   .connection-pagination { padding: 16px; }
   .connection-pagination > div { width: 100%; }
   .connection-pagination button { flex: 1; }

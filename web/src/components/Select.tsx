@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ComponentProps, type ReactNode } from 'react'
+import { Children, isValidElement, useEffect, useId, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ComponentProps, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import './controls.css'
 
@@ -18,7 +18,7 @@ export function Select({ children, value, onChange, className = '', display, ...
   const selected = options.findIndex(option => option.value === String(value))
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
-  const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 280 })
+  const [position, setPosition] = useState<CSSProperties>({ left: 0, top: 0, width: 0, maxHeight: 280 })
   const trigger = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const search = useRef({ text: '', time: 0 })
@@ -47,8 +47,8 @@ export function Select({ children, value, onChange, className = '', display, ...
       const above = rect.top - 12
       const up = below < Math.min(options.length * 34 + 8, 280) && above > below
       const maxHeight = Math.max(40, Math.min(280, up ? above : below))
-      const height = Math.min(list.current?.scrollHeight ?? maxHeight, maxHeight)
-      setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: up ? rect.top - height - 6 : rect.bottom + 6, width, maxHeight })
+      // Anchor the near edge; measuring before the final width can overestimate wrapped option height.
+      setPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), top: up ? undefined : rect.bottom + 6, bottom: up ? window.innerHeight - rect.top + 6 : undefined, width, maxHeight })
     }
     place()
     const outside = (event: PointerEvent) => {
@@ -97,7 +97,7 @@ export function Select({ children, value, onChange, className = '', display, ...
           if (index >= 0) { setOpen(true); setActive(index) }
         }
       }}>
-      {display ?? <><span className="select-value">{options[selected]?.label ?? '\u00a0'}</span><span className="select-chevron" aria-hidden="true">⌄</span></>}
+      {display ?? <><span className="select-value">{options[selected]?.label ?? '\u00a0'}</span><svg className="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></>}
     </button>
     {open && createPortal(<div ref={list} id={id} role="listbox" aria-label={props['aria-label']} className="select-popup" style={position}>
       {options.map((option, index) => <div key={option.value} id={`${id}-${index}`} role="option" aria-selected={index === selected}

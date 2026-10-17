@@ -102,9 +102,9 @@ export function LANAccessCard() {
             {current.addresses.map(address => <option key={addressKey(address)} value={addressKey(address)}>{address.interface} · {address.ipv4}/{address.prefix_len}</option>)}
           </Select></label>
           {current.addresses.length === 0 && <p className="lan-hint">{t('没有可用的局域网 IPv4 地址，请先连接局域网。')}</p>}
-          <details className="lan-advanced">
+          <details className="lan-disclosure">
             <summary><span>{t('高级设置')}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></summary>
-            <div className="lan-advanced-content"><label>{t('管理端口')}<input type="number" min="1024" max="65535" required value={draft.port} disabled={busy} onChange={event => setDraft(value => ({ ...value, port: Number(event.target.value) }))} /></label></div>
+            <div className="lan-disclosure-content"><label>{t('管理端口')}<input type="number" min="1024" max="65535" required value={draft.port} disabled={busy} onChange={event => setDraft(value => ({ ...value, port: Number(event.target.value) }))} /></label></div>
           </details>
           {!current.password_set && <>
             <label>{t('管理密码')}<input type="password" autoComplete="new-password" required value={password} disabled={busy} onChange={event => setPassword(event.target.value)} maxLength={512} /></label>
@@ -119,7 +119,7 @@ export function LANAccessCard() {
         <QRCodeSVG value={current.url} size={164} marginSize={4} level="M" title={t('扫码打开管理页面')} />
         <div><strong>{t('扫码打开管理页面')}</strong><code>{current.url}</code><button type="button" onClick={() => { void copyText(current.url!).then(() => setNotice(t('访问地址已复制。'))).catch(() => setError(t('无法复制，请选择并复制访问地址。'))) }}>{t('复制访问地址')}</button><p className="lan-hint">{t('二维码只包含地址，打开后仍需输入管理密码。')}</p></div>
       </div>}
-      {current.password_set && <details className="lan-reset"><summary>{t('重设管理密码')}</summary><form className="lan-password-form" onSubmit={event => void reset(event)}>
+      {current.password_set && <details className="lan-reset lan-disclosure"><summary><span>{t('重设管理密码')}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></summary><form className="lan-password-form lan-disclosure-content" onSubmit={event => void reset(event)}>
         <label>{t('新管理密码')}<input type="password" autoComplete="new-password" value={resetPassword} onChange={event => setResetPassword(event.target.value)} required disabled={busy} maxLength={512} /></label>
         <label>{t('确认新密码')}<input type="password" autoComplete="new-password" value={resetConfirmation} onChange={event => setResetConfirmation(event.target.value)} required disabled={busy} maxLength={512} /></label>
         <p className="lan-hint">{t('修改后所有局域网浏览器需要重新登录。')}</p><button type="submit" disabled={busy}>{t('保存密码')}</button>

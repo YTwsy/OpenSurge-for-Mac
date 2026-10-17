@@ -46,6 +46,5 @@ html[data-theme="light"] .settings-app { --settings-text: #253c31; --settings-mu
   .settings-app .lan-share { align-items: center; text-align: center; padding-top: 16px; gap: 12px; }
   .settings-app .lan-share > div { justify-items: center; width: 100%; }
   .settings-app .lan-share code { font-size: 12px; }
-  .settings-app .lan-reset > summary { min-height: 36px; padding-top: 6px; }
   .settings-app .lan-password-form input { min-height: 44px; font-size: 16px; }
 }
