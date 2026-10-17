@@ -35,6 +35,10 @@
 当前行为见 [桌面宿主](../decisions/desktop-host.md) 与 [分发契约](../distribution.md)，检查见
 [桌面方法](desktop-smoke.md) 和 [安装验收](desktop-smoke.md#安装验收)。
 
+可选 HTTP 局域网管理新增独立的密码与监听边界。现有桌面或网关历史记录不覆盖这条新
+入口；认证单元测试、浏览器 fixture 不能推导物理手机可达、二维码实际扫描或远程启停
+成功。宣称这些能力已验收前，须按 [局域网管理门槛](test-gates.md#局域网管理) 补充对应证据。
+
 | 具体路径 | 最近已知结果 | 版本与环境 | 原记录 | 当前适用性与未覆盖项 |
 | --- | --- | --- | --- | --- |
 | Next 的 v0.3 Wails 开发迁移与主线归并 | 开发已完成，PR #81 已合入 master | master 405daac 是合入基线，不是全部平台的被测版本 | [已完成迁移计划](../../tasks/finished_archived/desktop-migration-v0.3.md) | 历史阶段表不再指导新开发；迁移完成不扩大安装验收范围 |

@@ -47,6 +47,40 @@ Prerelease builds display their complete `rc.N` version. They are not offered an
 older stable release, while the stable release with the same base version is
 still detected when it becomes available.
 
+## Manage from another LAN device
+
+LAN management is off by default. In a build that includes this feature, open
+**App Settings & Updates → LAN management** on the Mac:
+
+1. Turn on **Allow LAN management** and select the Mac IPv4 address on the LAN
+   shared with your phone or other device.
+2. Set and confirm a management password of 12–128 characters; spaces are allowed.
+   The default port is `61768`. Change it under **Advanced settings** if occupied.
+3. Select **Save and enable**. Once the status says **Listening**, copy the URL or
+   scan its QR code from a device on the same subnet.
+4. Enter the management password in that device's browser to open the shared
+   control panel. The QR contains only the URL; it never carries a password or logs you in.
+
+The endpoint uses HTTP, without transport encryption for passwords or sessions.
+Enable it only on a trusted LAN. This version supports private IPv4 addresses;
+IPv6 management URLs, HTTPS and public access are not provided. The browser can
+manage status, sources, devices, policies and networking. Finder actions, copying
+Mac file paths and exporting local copies remain available only on the Mac.
+
+In a remote browser, expand quick settings at the bottom of the sidebar for
+**Change management password** and **Sign out**. These actions are hidden on the
+gateway Mac. Changing the password requires the current password and signs out every LAN browser. If you
+forget it, use **Reset management password** in the Mac settings. Sessions require
+a new login after 12 idle hours or a Control Service restart. Authentication loss
+never automatically replays an earlier network operation.
+
+An interface, IPv4 or prefix change pauses access. Select and save the address
+again on the Mac; an old QR may no longer work. Remote operations such as restoring
+DHCP can disconnect your browser, so check the actual result on the Mac. Turning
+off and saving **Allow LAN management** releases the port and signs out all LAN
+sessions. Quitting only the desktop app leaves the Control Service and enabled LAN
+entry running. Stopping the gateway does not close this management entry.
+
 ## First-time setup
 
 ### 1. Prepare the proxy configuration

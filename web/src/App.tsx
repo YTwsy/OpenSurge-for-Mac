@@ -1,3 +1,5 @@
+import { isLANBrowser, isRemoteLANBrowser } from './lanAccess'
+import { LANSessionControls } from './components/LANSessionControls'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
 import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from './desktop'
@@ -302,11 +304,13 @@ export function App() {
           <input type="checkbox" checked={theme === 'dark'} onChange={event => setTheme(event.target.checked ? 'dark' : 'light')} />
         </label>
         {isDesktop() && <button type="button" className="sidebar-control-row desktop-settings-link" onClick={() => { void desktopAction('show-settings').catch(cause => setError(cause instanceof Error ? cause.message : String(cause))) }}><span className="sidebar-control-copy"><strong>{t('设置…')}</strong></span><kbd>⌘,</kbd></button>}
+        {!isDesktop() && isRemoteLANBrowser() && <LANSessionControls />}
       </div></div></div>
       </div>
     </aside>
     <main className="workspace">
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>{t('Web GUI 与 OpenSurge 的安全连接已过期')}</h1><p>{t('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。')}</p></div></section> : <>
+        {isLANBrowser() && page === 'network' && <p className="lan-network-notice">{t('修改 Mac 网络地址或恢复自动 DHCP 可能断开当前页面。断开后请在 Mac 上确认结果和新的管理地址，勿重复提交。')}</p>}
         {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network', 'control')} />}
         {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>{t('重试')}</button></div>}
         <DeviceTrafficProvider gateway={overview?.status.gateway}>

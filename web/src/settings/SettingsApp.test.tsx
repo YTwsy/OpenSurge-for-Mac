@@ -10,6 +10,7 @@ import { SettingsApp } from './SettingsApp'
 import type { TraySnapshot } from '../tray/types'
 
 vi.mock('../api', () => ({ api: { uiPreferences: vi.fn(), setUIPreferences: vi.fn() } }))
+vi.mock('../components/LANAccessCard', () => ({ LANAccessCard: () => <section aria-label="LAN Management" /> }))
 vi.mock('../desktop', () => ({ isDesktop: () => true, desktopAction: vi.fn() }))
 const initial = { login: { state: 'disabled', sequence: 1, failed: false }, update: { current: 'v0.3.0-rc.1', checking: false, checked: false, failed: false, sequence: 1 }, uninstall: 'available' }
 const runtime: TraySnapshot = { indicator: 'stopped', sequence: 1, can_quit: true, can_uninstall: true, service_actions: true, status: {

@@ -139,6 +139,7 @@ vi.mock('./api', () => ({
 import { api, RequestError, waitForOperation } from './api'
 import { App } from './App'
 import { clearOperations, recordOperation } from './operations'
+import { setBrowserSession } from './lanAccess'
 
 const overview: Overview = {
   schema_version: 1,
@@ -233,6 +234,7 @@ describe('OpenSurge app shell', () => {
   const scrollTo = vi.fn()
 
   beforeEach(() => {
+    setBrowserSession({ mode: 'local' })
     clearOperations()
     window.history.replaceState({}, '', '/dashboard')
     window.localStorage.clear()
@@ -248,7 +250,7 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.profileOverlay).mockResolvedValue(overlayForApp())
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })
   })
-  afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+  afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); setBrowserSession({ mode: 'local' }); document.querySelector('meta[name="opensurge-desktop-session"]')?.remove() })
 
   it('keeps the sidebar running when saved configuration is pending', async () => {
     vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true, doctor_healthy: false,
@@ -349,6 +351,36 @@ describe('OpenSurge app shell', () => {
     expect(api.setUIPreferences).toHaveBeenCalledWith({ language: 'en' })
     expect(document.documentElement.lang).toBe('en')
     await waitFor(() => expect(window.localStorage.getItem('opensurge-ui-language')).toBe('en'))
+  })
+
+  it('shows remote LAN session actions only inside the expanded quick settings', async () => {
+    setBrowserSession({ mode: 'lan', authenticated: true, local_client: false })
+    render(<App />)
+    const disclosure = await screen.findByRole('button', { name: /^快捷设置：/ })
+    expect(screen.queryByRole('button', { name: '修改管理密码' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '退出登录' })).toBeNull()
+    await userEvent.click(disclosure)
+    const menu = document.getElementById(disclosure.getAttribute('aria-controls')!)!
+    expect(within(menu).getByRole('button', { name: '修改管理密码' })).toBeTruthy()
+    expect(within(menu).getByRole('button', { name: '退出登录' })).toBeTruthy()
+    await userEvent.click(disclosure)
+    expect(screen.queryByRole('button', { name: '修改管理密码' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '退出登录' })).toBeNull()
+  })
+
+  it.each(['local browser', 'LAN URL on gateway Mac', 'desktop app'])('hides LAN session actions in the %s', async entry => {
+    setBrowserSession({ mode: entry === 'local browser' ? 'local' : 'lan', authenticated: true, local_client: entry === 'LAN URL on gateway Mac' })
+    if (entry === 'desktop app') {
+      const marker = document.createElement('meta')
+      marker.name = 'opensurge-desktop-session'
+      marker.content = 'local-ui-test'
+      document.head.append(marker)
+    }
+    const { container } = render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: /^快捷设置：/ }))
+    expect(container.querySelector('.lan-session-controls')).toBeNull()
+    expect(screen.queryByRole('button', { name: '修改管理密码' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '退出登录' })).toBeNull()
   })
 
   it('does not restore a stale language while a language save is pending', async () => {

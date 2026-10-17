@@ -19,6 +19,20 @@
 被接管的主机资源。运行前读取 [Lab 前提](lab-gates.md)，每轮检查当次 artifacts，收尾执行
 `make lab-down`、`make lab-status`。未完成清理不能记为完整通过。
 
+## 局域网管理
+
+认证和监听契约先运行 `make test`、`make web-test`、`make web-build`、`make desktop-test`
+以及 `go test -race ./internal/controlapi -run '^TestLAN'`。回归覆盖默认关闭、私有密码哈希、
+本地/局域网凭据隔离、真实前缀与 peer、Host/Origin、限速、过期/退出/改密撤销、SSE 关闭、
+监听失败、本地可恢复性、地址变化暂停与旧请求竞争。UI fixture 另检查手机尺寸登录、
+改密/退出、设置草稿冲突、二维码只含实际地址、HTTP 的 operation ID 后备。
+
+这些结果不证明物理设备可达性。真实 LAN 验收必须记录被测提交、macOS/浏览器与拓扑，
+由同网段另一设备扫码后登录，验证读状态、修改策略与退出；另从不允许的子网连接，
+验证地址/前缀变化后的暂停、端口释放与本机恢复，以及 Control Service 重启后重新登录。
+远程启停、DHCP 恢复或配置应用还须结合 `make lab-test`，涉及透明代理时补
+`make lab-test-tun`，核对 operation 结果与清理。不能以浏览器页面成功代替数据面证据。
+
 ## 策略控制面门槛
 
 `make policy-control-test` 启动真实 Mihomo 与 CLI，不开启 DHCP、PF、TUN，也不需 sudo。
