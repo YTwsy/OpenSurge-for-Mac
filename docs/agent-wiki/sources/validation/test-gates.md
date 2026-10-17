@@ -14,6 +14,23 @@
 
 ## Host-network 门槛
 
+订阅自身 DNS 与准备态的隔离真实核心检查：
+
+```sh
+OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
+  go test ./internal/mihomo ./internal/controlapi -count=1
+```
+
+其中 `TestDNSReferencesRealCore` 默认只运行准备态矩阵：IPv4/IPv6 引用形式、UDP/TCP、
+节点解析 policy、全局附加配置开关，使用全新临时缓存与受控上游/节点/Provider，并核对 hosts 别名、
+真实地址过滤、普通 Fake-IP 和停止后监听释放。`TestPreparedDNSBindRaceRealCore` 验证
+TCP 或 UDP 被竞争占用时的失败判定、清理和有界重试。测试不会停止已有网关。
+
+正式 DNS 1053 空闲时额外设置 `OMG_DNS_REFERENCE_GATEWAY_CORE=1`，运行同一矩阵的
+正式配置核心分支；占用时明确失败并保留现有服务。默认矩阵也用真实核心校验正式配置
+语法，但语法检查不证明端口绑定成功。正式分支复用 Manager 的 DNS 就绪检查，不启动完整 Gateway Manager，
+不接管 DHCP、pf、TUN 或系统 DNS，因此不能替代下列 host-network/TUN/workspace 门槛。
+
 涉及 DHCP/DNS、进程、PF/NAT、IPv4 forwarding、rollback 或清理时使用 `make lab-test`。
 通过要求 Lima 客户端取得 DHCP/DNS、完成 ICMP/NAT、直连和 mixed-port HTTPS，并恢复
 被接管的主机资源。运行前读取 [Lab 前提](lab-gates.md)，每轮检查当次 artifacts，收尾执行

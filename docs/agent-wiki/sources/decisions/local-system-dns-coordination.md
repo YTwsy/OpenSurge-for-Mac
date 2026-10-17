@@ -32,6 +32,31 @@ TUN 与路由检查通过、DHCP/DNS 和 pf 就绪，再持久化 DNS 写入意�
 导入 DNS 中的 `system`（含旧 `dhcp://system` 写法）在接管开启时必须拒绝，
 避免引擎递归解析自己；改用显式解析器，或明确关闭该协同功能。
 
+订阅自身 DNS 的引用绑定发生在最终解析配置合成后，正式端点仍为受管的 1053，
+不改变本页的系统 DNS 接管目的地址或恢复顺序。准备态如需自身 DNS，只开启同一核心的
+私有 loopback DNS，不调用系统 DNS 协同；引用分类、歧义声明及就绪检查见
+[profile 契约](mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
+
+## 文件式自定义 DNS 的双入口约束
+
+网络页的自定义 DNS 先于系统 DNS 协同合成到同一份 Mihomo 配置，随后沿既有引用绑定和
+生命周期处理。启用候选必须同时满足 TUN、自动路由、系统 DNS 协同及 dnsmasq 使用
+`127.0.0.1#1053` 上游；不满足时可保存草稿，禁止应用，不自动修改网络设置。
+自定义候选还会拒绝指回自身网关 DNS 监听的已知转发环；系统接管使用的公网目的地址
+不等同于本地监听，显式引擎上游仍沿受管出站接口处理。
+
+生效期间 dnsmasq 加入 `no-hosts`，系统 hosts 是否使用交给 Mihomo `use-system-hosts`；
+自定义 hosts 非空时生成 `use-hosts: true`，同一草稿的显式 false 报冲突。关闭并应用后
+恢复原 dnsmasq 行为，始终不修改 `/etc/hosts`。DHCP 的单标签、配置域及未来租约范围
+继续由 dnsmasq 所有；自定义 hosts/policy/别名链的交集在应用前拒绝，不加入
+`dhcp-ignore-names`，也不声称实现 DHCP 动态名称同步或 mDNS 接管。
+
+保存草稿不改变运行态。通过既有启动或来源应用进行完整切换；来源应用的完整 reload
+会重启所属 dnsmasq，避免沿用旧服务缓存。客户端 TTL 缓存仍由客户端管理。
+Mac 和下游的 UDP/TCP、固定 A/AAAA、公司上游与真实连接验收仍待用户执行；
+当前结构检查不能当作这两个入口的运行证据。详见
+[自定义 DNS 契约](mihomo-profile-overlay.md#file-based-custom-dns)。
+
 ## 独立的 Mac IPv6 路径
 
 Mac 的系统 TUN 始终使用 `fdfe:dcba:9877::1/126`，不依赖 `dns.ipv6`、

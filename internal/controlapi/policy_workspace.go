@@ -27,11 +27,12 @@ type PolicyWorkspaceRequest struct {
 }
 
 type PolicyWorkspaceInput struct {
-	Request              PolicyWorkspaceRequest `json:"request"`
-	Revision             string                 `json:"revision"`
-	ExpectedGatewayState string                 `json:"expected_gateway_state"`
-	Source               []byte                 `json:"source,omitempty"`
-	Overlay              []byte                 `json:"overlay,omitempty"`
+	Request              PolicyWorkspaceRequest    `json:"request"`
+	Revision             string                    `json:"revision"`
+	ExpectedGatewayState string                    `json:"expected_gateway_state"`
+	Source               []byte                    `json:"source,omitempty"`
+	Overlay              []byte                    `json:"overlay,omitempty"`
+	CustomDNS            *mihomo.CustomDNSDocument `json:"custom_dns,omitempty"`
 }
 
 const (
@@ -155,6 +156,10 @@ func validatePolicyWorkspaceRequest(request PolicyWorkspaceRequest) error {
 }
 
 func (s *Server) policyWorkspaceInput(request PolicyWorkspaceRequest) (PolicyWorkspaceInput, error) {
+	return s.policyWorkspaceDraftInput(request, false)
+}
+
+func (s *Server) policyWorkspaceDraftInput(request PolicyWorkspaceRequest, preview bool) (PolicyWorkspaceInput, error) {
 	cfg, err := config.LoadRuntime(s.configPath)
 	if err != nil {
 		return PolicyWorkspaceInput{}, err
@@ -166,15 +171,20 @@ func (s *Server) policyWorkspaceInput(request PolicyWorkspaceRequest) (PolicyWor
 	} else {
 		input.ExpectedGatewayState = policyWorkspaceGatewayStopped
 	}
-	if err != nil || exists {
+	if err != nil || (exists && !preview) {
 		return input, err
-	} // Running views never consume drafts.
+	} // Running views never consume drafts; preview is read-only.
 	var overlay mihomo.ProfileOverlayDocument
 	var overlayRevision string
 	input.Overlay, overlay, overlayRevision, err = s.loadProfileOverlay()
 	if err != nil {
 		return input, err
 	}
+	customDNS, _, err := s.loadCustomDNS()
+	if err != nil {
+		return input, err
+	}
+	input.CustomDNS = &customDNS
 	if cfg.Mihomo.ProfileMode != config.MihomoProfileModeImported {
 		return input, nil
 	}
@@ -185,7 +195,13 @@ func (s *Server) policyWorkspaceInput(request PolicyWorkspaceRequest) (PolicyWor
 	// The persisted imported profile already represents this composition. Its
 	// root-owned copy is authoritative and remains usable when an optional user
 	// source-library snapshot has been deleted or is temporarily unavailable.
-	if cfg.Mihomo.ProfileOverlayDigest == effectiveOverlayRevision {
+	needsDNSRecovery := false
+	if cfg.Mihomo.ProfileOverlayDigest != "" {
+		if data, readErr := os.ReadFile(cfg.Mihomo.Profile); readErr == nil {
+			needsDNSRecovery = mihomo.NeedsDNSSourceRecovery(data)
+		}
+	}
+	if !preview && cfg.Mihomo.ProfileOverlayDigest == effectiveOverlayRevision && cfg.Mihomo.ProfileCustomDNSDigest == mihomo.CustomDNSDigest(customDNS) && !needsDNSRecovery {
 		return input, nil
 	}
 	digest := cfg.Mihomo.ProfileSourceDigest
@@ -250,6 +266,12 @@ func policyWorkspaceProfilePath(configPath, digest string) string {
 }
 
 func workspaceCandidate(configPath string, cfg config.Config, input PolicyWorkspaceInput) (config.Config, *policyWorkspaceBase, error) {
+	return materializeWorkspaceCandidate(configPath, cfg, input, nil)
+}
+
+// A preview writes only into its caller-owned temporary directory, records
+// composition changes, and reports entry blockers separately from syntax.
+func materializeWorkspaceCandidate(configPath string, cfg config.Config, input PolicyWorkspaceInput, preview *mihomo.CustomDNSComposition) (config.Config, *policyWorkspaceBase, error) {
 	if err := config.PrepareDevicePolicy(&cfg); err != nil {
 		return cfg, nil, err
 	}
@@ -261,7 +283,19 @@ func workspaceCandidate(configPath string, cfg config.Config, input PolicyWorksp
 			return cfg, nil, err
 		}
 	}
-	if !document.Enabled && cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported && cfg.Mihomo.ProfileOverlayDigest == "" {
+	customDNS := mihomo.DefaultCustomDNSDocument()
+	if input.CustomDNS != nil {
+		var err error
+		customDNS, err = mihomo.NormalizeCustomDNS(*input.CustomDNS)
+		if err != nil {
+			return cfg, nil, err
+		}
+	}
+	effectiveOverlayDigest := ""
+	if document.Enabled {
+		effectiveOverlayDigest = mihomo.ProfileOverlayDigest(input.Overlay)
+	}
+	if !document.Enabled && !customDNS.Enabled && cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported && cfg.Mihomo.ProfileOverlayDigest == "" && cfg.Mihomo.ProfileCustomDNSDigest == "" {
 		if len(input.Source) > 0 && cfg.Mihomo.ProfileSourceDigest != "" && cfg.Mihomo.ProfileSourceDigest != mihomo.ProfileOverlayDigest(input.Source) {
 			return cfg, nil, fmt.Errorf("selected profile changed")
 		}
@@ -298,10 +332,22 @@ func workspaceCandidate(configPath string, cfg config.Config, input PolicyWorksp
 		base.Source = []byte(text)
 		base.SourceDigest = mihomo.ProfileOverlayDigest(base.Source)
 	} else if len(base.Source) == 0 {
-		if cfg.Mihomo.ProfileOverlayDigest != "" {
+		if cfg.Mihomo.ProfileOverlayDigest != "" || cfg.Mihomo.ProfileCustomDNSDigest != "" {
 			// Legacy applied profiles can already include an overlay. Without their
 			// raw source, reapplying a different overlay would duplicate additions.
-			if cfg.Mihomo.ProfileOverlayDigest == mihomo.ProfileOverlayDigest(input.Overlay) {
+			if cfg.Mihomo.ProfileOverlayDigest == effectiveOverlayDigest && cfg.Mihomo.ProfileCustomDNSDigest == mihomo.CustomDNSDigest(customDNS) {
+				data, err := os.ReadFile(cfg.Mihomo.Profile)
+				if err != nil {
+					return cfg, nil, err
+				}
+				if preview == nil {
+					if err := mihomo.ValidateCustomDNSCandidate(cfg, data); err != nil {
+						return cfg, nil, err
+					}
+				}
+				if mihomo.NeedsDNSSourceRecovery(data) {
+					return cfg, nil, fmt.Errorf("original DNS listener metadata and raw source are unavailable; reimport the selected source to rebuild DNS references")
+				}
 				return cfg, nil, nil
 			}
 			return cfg, nil, fmt.Errorf("raw source is unavailable; import or select the source before changing its extension")
@@ -313,9 +359,9 @@ func workspaceCandidate(configPath string, cfg config.Config, input PolicyWorksp
 		base.Source = data
 		base.SourceDigest = mihomo.ProfileOverlayDigest(data)
 	}
-	if !document.Enabled && base.ProfileMode == config.MihomoProfileModeManaged {
+	if !document.Enabled && !customDNS.Enabled && base.ProfileMode == config.MihomoProfileModeManaged {
 		cfg.Mihomo.ProfileMode, cfg.Mihomo.Profile = base.ProfileMode, base.ProfilePath
-		cfg.Mihomo.ProfileSourceDigest, cfg.Mihomo.ProfileOverlayDigest = "", ""
+		cfg.Mihomo.ProfileSourceDigest, cfg.Mihomo.ProfileOverlayDigest, cfg.Mihomo.ProfileCustomDNSDigest = "", "", ""
 		cfg.UpstreamProxy = base.UpstreamProxy
 		return cfg, nil, nil
 	}
@@ -323,7 +369,19 @@ func workspaceCandidate(configPath string, cfg config.Config, input PolicyWorksp
 	if err != nil {
 		return cfg, nil, err
 	}
-	payload := []byte(composition.ProfileYAML)
+	customComposition, err := mihomo.ComposeCustomDNS([]byte(composition.ProfileYAML), customDNS)
+	if err != nil {
+		return cfg, nil, err
+	}
+	payload := []byte(customComposition.ProfileYAML)
+	cfg.Mihomo.ProfileCustomDNSDigest = mihomo.CustomDNSDigest(customDNS)
+	if preview == nil {
+		if err := mihomo.ValidateCustomDNSCandidate(cfg, payload); err != nil {
+			return cfg, nil, err
+		}
+	} else {
+		*preview = customComposition
+	}
 	digest := mihomo.ProfileOverlayDigest(payload)
 	base.EffectivePath = policyWorkspaceProfilePath(configPath, digest)
 	if err := writeWorkspaceArtifact(base.EffectivePath, payload, 0o640); err != nil {

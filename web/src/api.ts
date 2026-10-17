@@ -1,4 +1,4 @@
-import type { APIError, ConnectionObservation, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
+import type { CustomDNSDocument, CustomDNSDraft, CustomDNSImport, CustomDNSPreview, APIError, ConnectionObservation, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
 import { getOperation, markOperationConnection, operationStatusUnknownMessage, recordOperation } from './operations'
 import { desktopAction, desktopHeaders, isDesktop } from './desktop'
 import { t } from './i18n'
@@ -125,6 +125,10 @@ export const api = {
 	tailscaleDiscovery: () => request<TailscaleDiscoveryResponse>('/api/v1/tailscale/discovery'),
 	saveTailscale: (revision: string, settings: TailscaleUpdate) => trackedRequest<TailscaleResponse>('apply-tailscale', '/api/v1/tailscale', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(settings) }),
 	forgetTailscaleIdentity: (revision: string) => request<TailscaleResponse>('/api/v1/tailscale/forget-identity', { method: 'POST', headers: { 'If-Match': `"${revision}"` } }),
+  customDNS: () => request<CustomDNSDraft>('/api/v1/custom-dns'),
+  saveCustomDNS: (document: CustomDNSDocument, revision: string) => request<CustomDNSDraft>('/api/v1/custom-dns', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(document) }),
+  importCustomDNS: (document: CustomDNSDocument, format: 'hosts' | 'yaml', content: string) => request<CustomDNSImport>('/api/v1/custom-dns/import', { method: 'POST', body: JSON.stringify({ document, format, content }) }),
+  previewCustomDNS: (document: CustomDNSDocument) => request<CustomDNSPreview>('/api/v1/custom-dns/preview', { method: 'POST', body: JSON.stringify(document) }),
 	profileOverlay: () => request<ProfileOverlay>('/api/v1/profile-overlay'),
 	saveProfileOverlayDocument: (document: ProfileOverlayDocument, revision: string) => request<ProfileOverlay>('/api/v1/profile-overlay', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify({ document }) }),
 	saveProfileOverlayYAML: (yaml: string, revision: string) => request<ProfileOverlay>('/api/v1/profile-overlay', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify({ yaml }) }),

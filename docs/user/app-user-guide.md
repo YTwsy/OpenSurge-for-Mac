@@ -98,6 +98,20 @@ preview on Sources to compare the raw source, overlay changes, effective source,
 and final mihomo config. Refreshing a subscription only creates a new draft and
 never changes the running gateway automatically.
 
+**DNS references and sources** in the final-config preview lists resolver
+targets, binding results and their provenance. Confirmed references from node
+resolution to the subscription's own DNS are bound to the current core without
+enabling the global overlay. While the gateway is stopped, the prepared core
+opens a private loopback DNS listener only when that dependency exists, and
+checks both TCP and UDP readiness. This does not start the gateway or change
+system DNS. Independent local and external resolvers retain their targets.
+Follow specific diagnostics for ambiguous references, cycles or missing original
+listener metadata; another proxy client's running DNS is not compatibility
+evidence. Preview is configuration inference; node tests and the relevant
+network gates establish runtime behavior. Supported forms and explicit service
+declarations are described in the
+[DNS reference contract](../agent-wiki/sources/decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding).
+
 Each imported-source card shows the local snapshot managed by OpenSurge. You
 can copy its full path or select **Finder 中显示** (Show in Finder) to reveal
 the file. Do not edit the managed snapshot because its digest, history, and
@@ -148,6 +162,69 @@ default, requires TUN, and affects only Mac applications that honor system
 proxy settings; it does not replace TUN or change downstream devices. Startup
 is rejected when HTTP/HTTPS proxying, PAC, or proxy auto-discovery is already
 active, rather than overwriting those settings.
+
+### Optional: Custom DNS
+
+Expand **Network Settings → Custom DNS** to import a hosts file or Mihomo YAML
+containing only `hosts` / `dns`. This supports fixed service addresses, corporate
+DNS routing and real-IP exceptions for Mac TUN and downstream devices using
+OpenSurge DNS. Arbitrary dnsmasq/Surge configurations, remote subscriptions,
+scripts, mDNS, bypass devices and dynamic DHCP name synchronization are outside
+this feature.
+
+Both formats use UTF-8 and have a 2 MiB limit. A hosts file contains a literal IP
+followed by names, with optional `#` comments:
+
+```text
+192.168.50.10 nas.home.arpa storage.home.arpa
+2001:db8::10 nas.home.arpa
+```
+
+Repeated names accumulate unique addresses. Replace the documentation IPv6
+address with a reachable one; AAAA responses still depend on the network's IPv6
+DNS setting. Hosts import replaces the draft's whole hosts section while retaining
+DNS settings. YAML import replaces only the sections it includes. Review the
+replacement, choose **Accept imported content**, then **Save draft**.
+
+**Download example** provides a combined fixed-address/corporate DNS fragment:
+
+```yaml
+hosts:
+  nas.home.arpa: 192.168.50.10
+dns:
+  nameserver-policy:
+    '+.corp.example': [10.20.0.53]
+  fake-ip-filter-mode: blacklist
+  fake-ip-filter:
+    - '+.corp.example'
+```
+
+The policy chooses the upstream; blacklist entries request real answers. This
+creates no VPN, routes, NAS addresses or DHCP reservations: the resolver and
+service must already be reachable. If the source uses whitelist/rule mode, this
+example explicitly replaces its filter mode and list; inspect **Preview** first.
+Within the same mode, blacklist/whitelist append unique entries; rule mode prepends
+custom rules. Whitelist matches mean Fake-IP, not real-IP exceptions.
+
+Custom values override matching subscription/global-overlay keys; removing an
+override restores inheritance. IP and resolver lists replace the whole value for
+that key. Hosts take precedence over upstream policy and can also affect node and
+provider resolution; more specific names may win over wildcards.
+
+Enabling requires the managed DNS upstream, TUN auto-route and Mac system DNS
+coordination. While DHCP is enabled, single-label names and the DHCP suffix
+(default `lan`) remain reserved for lease resolution. Custom hosts, upstream
+policies and alias chains cannot cover that namespace. Preview lists application
+blockers; a structurally valid draft can still be saved. While active, Mihomo's
+`use-system-hosts` controls system-hosts participation; `/etc/hosts` is not modified.
+
+**Saving a draft does not change the running gateway.** Use the existing stop/start
+workflow or reapply a source to activate it. Disabling also requires saving and
+applying. Stopped policy preparation uses the saved draft; running policy views
+continue to show applied configuration. **Export draft** contains only the custom
+YAML: the desktop app opens a native save dialog and the browser downloads a file.
+A successful preview does not establish live DNS/connection acceptance on either
+entry path.
 
 ### 3. Start OpenSurge
 

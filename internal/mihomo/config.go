@@ -2,7 +2,10 @@ package mihomo
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -105,6 +108,31 @@ func RenderConfig(cfg config.Config) (string, error) {
 	if err := tmpl.Execute(&out, data); err != nil {
 		return "", err
 	}
+	if len(data.DNSReferences) > 0 {
+		if hasSelfDNSReference(data.DNSReferences) {
+			root, err := decodeSingleYAMLMapping(out.Bytes())
+			if err != nil {
+				return "", err
+			}
+			// Stable for this final graph, and outside all user names. This is
+			// runtime-only policy; it never enters the saved subscription/desired.
+			digest := sha256.Sum256(out.Bytes())
+			probeName := "opensurge-ready-" + hex.EncodeToString(digest[:16]) + ".invalid"
+			if err := addDNSReadinessProbe(dnsValue(root, "dns"), probeName); err != nil {
+				return "", err
+			}
+			setPreparedField(root, dnsProbeKey, probeName)
+			setPreparedField(root, dnsBindingsKey, data.DNSReferences)
+			return encodeYAMLNode(root)
+		}
+		root := mappingNode()
+		setPreparedField(root, dnsBindingsKey, data.DNSReferences)
+		metadata, err := encodeYAMLNode(root)
+		if err != nil {
+			return "", err
+		}
+		out.WriteString("\n" + metadata)
+	}
 	return out.String(), nil
 }
 
@@ -131,6 +159,7 @@ type templateData struct {
 	IPv6PacketMTU          int
 	IPv6DeviceUsers        string
 	DNSResolverFields      string
+	DNSReferences          []DNSReference
 	PolicySections         string
 }
 
@@ -146,13 +175,33 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	}
 	var imported *importedProfile
 	dnsResolverFields := defaultDNSResolverFieldsYAML
+	var dnsReferences []DNSReference
 	if cfg.Mihomo.ProfileMode == config.MihomoProfileModeImported {
+		if cfg.Mihomo.ProfileCustomDNSDigest != "" {
+			data, err := os.ReadFile(cfg.Mihomo.Profile)
+			if err != nil {
+				return templateData{}, err
+			}
+			if err := ValidateCustomDNSCandidate(cfg, data); err != nil {
+				return templateData{}, err
+			}
+		}
 		loaded, err := loadImportedProfile(cfg.Mihomo.Profile)
 		if err != nil {
 			return templateData{}, err
 		}
 		imported = &loaded
 		dnsResolverFields = loaded.dnsResolverFields
+		if cfg.Mihomo.ProfileOverlayDigest != "" && !loaded.dnsSourceStored {
+			targets, _ := decodeSingleYAMLMapping([]byte(dnsResolverFields))
+			refs, _ := dnsTargets(targets)
+			for _, ref := range refs {
+				address := parseDNSAddress(ref.node.Value)
+				if address.ip.IsLoopback() || strings.EqualFold(address.host, "localhost") {
+					return templateData{}, fmt.Errorf("%s: original DNS listener metadata is unavailable in this legacy composed profile; reselect its saved raw source to rebuild DNS references", ref.field)
+				}
+			}
+		}
 	}
 	if err := resolveDevicePolicy(&cfg, imported); err != nil {
 		return templateData{}, err
@@ -161,6 +210,16 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	if err != nil {
 		return templateData{}, err
 	}
+	if imported != nil {
+		dnsResolverFields, dnsReferences, err = bindDNSReferences(dnsResolverFields, imported.dnsSource)
+		if err != nil {
+			return templateData{}, err
+		}
+	}
+	if err := validateCustomDNSForwardingLoops(cfg, dnsResolverFields); err != nil {
+		return templateData{}, err
+	}
+
 	policySections, err := renderPolicySections(cfg, imported)
 	if err != nil {
 		return templateData{}, err
@@ -194,6 +253,7 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 		IPv6PacketMTU:          transparent.IPv6PacketMTU,
 		IPv6DeviceUsers:        renderIPv6DeviceUsers(cfg),
 		DNSResolverFields:      indentYAMLBlock(dnsResolverFields, "  "),
+		DNSReferences:          dnsReferences,
 		PolicySections:         policySections,
 	}, nil
 }

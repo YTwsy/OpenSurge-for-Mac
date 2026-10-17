@@ -85,6 +85,7 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 			return nil
 		},
 		SaveRecovery: h.saveRecovery,
+		SaveDNSFile:  h.saveDNSFile,
 		SetLanguage:  h.setLanguage,
 		SetTrayAppearance: func(theme string) {
 			native.SetAppearance(h.popup, theme)
@@ -126,6 +127,16 @@ func (h *desktopHost) actions() *desktopactions.Actions {
 			})
 		},
 	}
+}
+
+// Export uses the same native save panel as recovery cards. No renderer path
+// is accepted; the user chooses the destination in the macOS dialog.
+func (h *desktopHost) saveDNSFile(name, text string) (bool, error) {
+	filename, err := h.app.Dialog.SaveFile().SetFilename(name).AddFilter("YAML", "*.yaml").AttachToWindow(h.main).PromptForSingleSelection()
+	if err != nil || filename == "" {
+		return false, err
+	}
+	return true, os.WriteFile(filename, []byte(text), 0600)
 }
 
 func (h *desktopHost) saveRecovery(ctx context.Context) (bool, error) {

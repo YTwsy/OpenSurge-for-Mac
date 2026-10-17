@@ -26,6 +26,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	cfg.Mihomo.Profile = filepath.Join(dir, "profile.yaml")
 	cfg.Mihomo.ProfileSourceDigest = strings.Repeat("a", 64)
 	cfg.Mihomo.ProfileOverlayDigest = strings.Repeat("b", 64)
+	cfg.Mihomo.ProfileCustomDNSDigest = strings.Repeat("c", 64)
 	if err := os.WriteFile(cfg.Mihomo.Profile, []byte("rules:\n  - MATCH,DIRECT\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	if loaded.LocalSystemDNS.Enabled {
 		t.Fatal("explicit system DNS opt-out lost during serialization")
 	}
-	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP || loaded.Mihomo.ProfileSourceDigest != cfg.Mihomo.ProfileSourceDigest || loaded.Mihomo.ProfileOverlayDigest != cfg.Mihomo.ProfileOverlayDigest {
+	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP || loaded.Mihomo.ProfileSourceDigest != cfg.Mihomo.ProfileSourceDigest || loaded.Mihomo.ProfileOverlayDigest != cfg.Mihomo.ProfileOverlayDigest || loaded.Mihomo.ProfileCustomDNSDigest != cfg.Mihomo.ProfileCustomDNSDigest {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 }

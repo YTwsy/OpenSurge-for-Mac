@@ -142,3 +142,32 @@ func TestSettingsCapabilities(t *testing.T) {
 		t.Fatalf("calls=%d theme=%q", calls, theme)
 	}
 }
+
+func TestDNSExportIsBoundedAndUsesNativeSaveSelection(t *testing.T) {
+	calls := 0
+	a := &Actions{SaveDNSFile: func(name, text string) (bool, error) {
+		calls++
+		if name != "custom-dns.yaml" || text != "hosts: {}\n" {
+			t.Fatalf("unexpected export: %q %q", name, text)
+		}
+		return true, nil
+	}}
+	for _, tc := range []struct {
+		body string
+		want int
+	}{
+		{`{"filename":"custom-dns.yaml","text":"hosts: {}\n"}`, 200},
+		{`{"filename":"/tmp/custom-dns.yaml","text":"hosts: {}"}`, 400},
+		{`{"filename":"custom-dns.yaml","text":"hosts: {}","url":"https://example.com"}`, 400},
+		{`{"filename":"custom-dns.yaml","text":""}`, 400},
+	} {
+		w := httptest.NewRecorder()
+		a.ServeHTTP(w, httptest.NewRequest("POST", "/desktop/v1/save-dns-file", strings.NewReader(tc.body)))
+		if w.Code != tc.want {
+			t.Fatalf("got %d: %s", w.Code, w.Body.String())
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("save panel calls=%d", calls)
+	}
+}

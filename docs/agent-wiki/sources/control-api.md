@@ -94,6 +94,25 @@ Mac、路由器和受保护地址的建议池。同一条路径还挂在网络�
 `same_lan` 不运行 DHCP 服务，因此地址池与租期整组必须禁用并明确标记为运行时不使用；
 保留字段值只用于日后切换 topology，不能暗示当前模式会应用它们。
 
+## 自定义 DNS 草稿
+
+- `GET /api/v1/custom-dns` 返回 `document`（`schema_version: 1`、`enabled`、`yaml`）、
+  revision/ETag、映射/策略数及 desired/applied；未保存过的草稿默认关闭。
+- `PUT /api/v1/custom-dns` 接收同一 document，并要求 `If-Match`。Store 在锁内比较和
+  原子写入，冲突返回 409；格式无效返回 422，不覆盖上次有效草稿。允许保存有应用前提
+  冲突的格式合法草稿。此操作不写网关配置或改变进程。
+- `POST /api/v1/custom-dns/import` 接收 `{document, format: "hosts"|"yaml", content}`，
+  返回规范化 document 和将替换的 sections；不保存，由界面确认采用。
+- `POST /api/v1/custom-dns/preview` 接收未保存 document，基于已保存网络设置及当前来源/
+  overlay 生成只读预览，返回自定义/受管前后变化、双入口前提、blockers、DNS 引用和
+  最终 DNS 片段。临时文件随请求清理；不启动核心或修改原始来源、草稿、desired/applied。
+
+单个可导入/导出的文本最多 2 MiB；JSON 请求上限为单 document 14 MiB、导入 26 MiB，
+用于容纳 JSON 转义和当前草稿加导入内容，解析后仍独立执行文本限制。Helper 的整个请求
+上限为 32 MiB，以容纳来源/overlay 的 base64 与新草稿；各输入继续按自身格式校验。
+输入正文没有服务器文件路径或远程抓取权限。完整格式、覆盖和生效语义归
+[自定义 DNS 契约](decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
+
 ## 操作进度、重试与 SSE
 
 初次启动、停止、重载、Mihomo 恢复、路由器 DHCP 关闭/恢复 OFFER 检查，以及设备策略/

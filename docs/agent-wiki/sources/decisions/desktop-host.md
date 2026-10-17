@@ -36,6 +36,11 @@ before forwarding. Session/bootstrap endpoints, foreign origins and redirects ar
 Desktop bindings remain limited to explicit capabilities: never expose general shell
 execution or bind gateway managers into the GUI process.
 
+Custom DNS exports use the authenticated `save-dns-file` capability. It accepts
+only the two fixed suggested YAML filenames and at most 2 MiB of text; a native
+Save dialog chooses the actual destination. Import/normalization remains in the
+shared Control API. The renderer cannot supply a filesystem destination path.
+
 The preview's native client accepts only explicit-port HTTP loopback discovery,
 dials IPv4 loopback directly, and refuses redirects. It validates the returned
 bootstrap URL against the discovered service origin before exchanging it. Discovery

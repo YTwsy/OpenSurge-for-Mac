@@ -243,7 +243,23 @@ function ProfileOverlayPreviewDialog({ preview, tab, onTabChange, onClose }: { p
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [onClose])
   const content = tab === 'source' ? preview.source_yaml : tab === 'overlay' ? preview.overlay_yaml : tab === 'effective' ? preview.effective_profile_yaml : preview.final_mihomo_yaml
-  return <dialog className="profile-overlay-preview-dialog" open aria-modal="true" aria-labelledby="overlay-preview-title"><header><div><small>COMPOSITION PREVIEW</small><h2 id="overlay-preview-title">{t('最终配置预览')}</h2><p>{t(preview.validation)}</p></div><button type="button" autoFocus aria-label={t('关闭最终配置预览')} onClick={onClose}>×</button></header><nav aria-label={t('配置预览层级')}><button type="button" className={tab === 'changes' ? 'active' : ''} onClick={() => onTabChange('changes')}>{t('变化摘要')}</button><button type="button" className={tab === 'source' ? 'active' : ''} onClick={() => onTabChange('source')}>{t('原始来源')}</button><button type="button" className={tab === 'overlay' ? 'active' : ''} onClick={() => onTabChange('overlay')}>{t('附加配置')}</button><button type="button" className={tab === 'effective' ? 'active' : ''} onClick={() => onTabChange('effective')}>{t('有效来源')}</button><button type="button" className={tab === 'final' ? 'active' : ''} onClick={() => onTabChange('final')}>{t('最终 mihomo')}</button></nav>{tab === 'changes' ? <div className="overlay-preview-changes"><OverlayMetric value={`+${preview.diff.proxies_added.length}/-${preview.diff.proxies_removed.length}`} label="节点" /><OverlayMetric value={`+${preview.diff.groups_added.length}/-${preview.diff.groups_removed.length}`} label="策略组" /><OverlayMetric value={signed(preview.diff.rule_count_delta)} label="规则" /><OverlayMetric value={preview.effective_inventory.rule_count} label="最终规则数" /><div><strong>{t('组合顺序')}</strong><p>{t('OpenSurge 系统与设备规则 → 高优先级自定义规则 → 订阅规则 → 专家低优先级规则 → 最终 MATCH')}</p></div></div> : <pre tabIndex={0}>{content}</pre>}<footer><span>{t('预览可能包含节点参数，仅通过本机认证控制面展示。')}</span><button type="button" onClick={onClose}>{t('完成')}</button></footer></dialog>
+  return <dialog className="profile-overlay-preview-dialog" open aria-modal="true" aria-labelledby="overlay-preview-title"><header><div><small>COMPOSITION PREVIEW</small><h2 id="overlay-preview-title">{t('最终配置预览')}</h2><p>{t(preview.validation)}</p></div><button type="button" autoFocus aria-label={t('关闭最终配置预览')} onClick={onClose}>×</button></header><nav aria-label={t('配置预览层级')}><button type="button" className={tab === 'changes' ? 'active' : ''} onClick={() => onTabChange('changes')}>{t('变化摘要')}</button><button type="button" className={tab === 'source' ? 'active' : ''} onClick={() => onTabChange('source')}>{t('原始来源')}</button><button type="button" className={tab === 'overlay' ? 'active' : ''} onClick={() => onTabChange('overlay')}>{t('附加配置')}</button><button type="button" className={tab === 'effective' ? 'active' : ''} onClick={() => onTabChange('effective')}>{t('有效来源')}</button><button type="button" className={tab === 'final' ? 'active' : ''} onClick={() => onTabChange('final')}>{t('最终 mihomo')}</button></nav>{tab === 'changes' ? <div className="overlay-preview-changes"><OverlayMetric value={`+${preview.diff.proxies_added.length}/-${preview.diff.proxies_removed.length}`} label="节点" /><OverlayMetric value={`+${preview.diff.groups_added.length}/-${preview.diff.groups_removed.length}`} label="策略组" /><OverlayMetric value={signed(preview.diff.rule_count_delta)} label="规则" /><OverlayMetric value={preview.effective_inventory.rule_count} label="最终规则数" /><div><strong>{t('组合顺序')}</strong><p>{t('OpenSurge 系统与设备规则 → 高优先级自定义规则 → 订阅规则 → 专家低优先级规则 → 最终 MATCH')}</p></div><DNSReferencePreview references={preview.dns_references} /></div> : <pre tabIndex={0}>{content}</pre>}<footer><span>{t('预览可能包含节点参数，仅通过本机认证控制面展示。')}</span><button type="button" onClick={onClose}>{t('完成')}</button></footer></dialog>
+}
+
+
+function DNSReferencePreview({ references }: { references: ProfileOverlayPreview['dns_references'] }) {
+  if (!references?.length) return null
+  return <div className="dns-reference-preview"><details>
+    <summary>{t('DNS 引用与来源')}</summary>
+    <p>{t('以下结果来自配置推导；实际 DNS 查询在运行时验证。自身 DNS 兼容不依赖附加配置开关。')}</p>
+    <ul>{references.map(reference => <li key={reference.field}>
+      <strong>{reference.field}</strong>
+      <span>{reference.source === 'subscription' ? t('订阅来源') : reference.source === 'global-overlay' ? t('全局附加配置') : t('OpenSurge 受管设置')} · {reference.service === 'self' ? t('自身 DNS：绑定受管端点') : t('独立解析器：保留目标')}</span>
+      <code>{reference.target}</code>
+      {reference.overrides ? <span>{t('覆盖原目标：{{target}}', { target: reference.overrides.target })}</span> : null}
+      {reference.effective !== reference.target ? <code>→ {reference.effective}</code> : null}
+    </li>)}</ul>
+  </details></div>
 }
 
 function shareLinkErrorMessage(error: ProxyShareLinkError) {

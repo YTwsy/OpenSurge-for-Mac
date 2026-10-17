@@ -17,6 +17,7 @@ type Actions struct {
 	OpenBrowser           func(context.Context) error
 	CopyText              func(string) error
 	SaveRecovery          func(context.Context) (bool, error)
+	SaveDNSFile           func(string, string) (bool, error)
 	SetLanguage           func(string)
 	SetTrayAppearance     func(string)
 	ToggleTrayMenu        func()
@@ -44,6 +45,7 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	type request struct {
 		URL      string `json:"url"`
+		Filename string `json:"filename"`
 		Text     string `json:"text"`
 		Language string `json:"language"`
 		Page     string `json:"page"`
@@ -55,7 +57,11 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Full     bool   `json:"full"`
 	}
 	var payload request
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256<<10))
+	limit := int64(256 << 10)
+	if r.URL.Path == "/desktop/v1/save-dns-file" {
+		limit = 14 << 20
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&payload) != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		http.Error(w, "invalid desktop request", http.StatusBadRequest)
@@ -91,6 +97,18 @@ func (a *Actions) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		err = a.OpenExternal(payload.URL)
 	case "/desktop/v1/copy-text":
 		err = a.CopyText(payload.Text)
+	case "/desktop/v1/save-dns-file":
+		if (payload.Filename != "custom-dns.yaml" && payload.Filename != "custom-dns-example.yaml") || len(payload.Text) == 0 || len(payload.Text) > 2<<20 || strings.ContainsRune(payload.Text, 0) || payload != (request{Filename: payload.Filename, Text: payload.Text}) {
+			http.Error(w, "invalid DNS file export", http.StatusBadRequest)
+			return
+		}
+		if a.SaveDNSFile == nil {
+			http.NotFound(w, r)
+			return
+		}
+		var saved bool
+		saved, err = a.SaveDNSFile(payload.Filename, payload.Text)
+		result = map[string]any{"saved": saved}
 	case "/desktop/v1/save-recovery-card":
 		var saved bool
 		saved, err = a.SaveRecovery(r.Context())

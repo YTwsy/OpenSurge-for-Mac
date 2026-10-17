@@ -1,3 +1,4 @@
+import { CustomDNSCard } from '../components/CustomDNSCard'
 import { Select } from '../components/Select'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { api, waitForOperation } from '../api'
@@ -541,6 +542,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify }: { ove
         <div className="network-save-bar" aria-live="polite"><span className={configDirty ? 'dirty' : ''}><i aria-hidden="true">{configDirty ? '•' : '✓'}</i>{t(configDirty ? '有未保存的修改' : '当前配置已保存')}</span><button className="primary" disabled={!configurationEditable} onClick={() => void save()}>{configSaving ? <><span className="button-spinner" aria-hidden="true" />{t('正在保存…')}</> : t('保存网络配置')}</button></div>
       </section>
     </>}
+    {config && <CustomDNSCard contextKey={`${savedConfig?.revision}:${overview?.status.gateway}`} />}
     {config && gatewayInterrupted && <section className="section gateway-lifecycle-control interrupted-runtime-control">
       <SectionTitle title="安全清理旧状态" subtitle="Mac 重启已经结束上一次网关运行；清理磁盘上的旧运行记录后，才能继续恢复或重新启动。" />
       <div className="gateway-lifecycle-row">
