@@ -27,6 +27,13 @@ html[data-theme="light"] .devices-workbench-page {
 :root .devices-workbench-page .page-header small { color: var(--device-accent); font-size: 10px; letter-spacing: .12em; }
 :root .devices-workbench-page .page-header p { font-size: 13px; color: var(--device-muted); }
 :root .devices-workbench-page .workbench-register { flex-shrink: 0; font-size: 13px; }
+:root .devices-workbench-page .device-page-state { display: flex; align-items: center; gap: 16px; min-height: 148px; padding: 24px; border-color: var(--device-border); background: var(--device-surface); }
+:root .devices-workbench-page .device-page-state > .button-spinner { width: 24px; height: 24px; color: var(--device-accent); }
+:root .devices-workbench-page .device-page-state > div { min-width: 0; }
+:root .devices-workbench-page .device-page-state strong { font-size: 14px; font-weight: 600; }
+:root .devices-workbench-page .device-page-state p { margin: 8px 0 0; color: var(--device-muted); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+:root .devices-workbench-page .device-page-state button { margin-top: 16px; padding: 9px 16px; border: 1px solid var(--device-border); border-radius: 9px; background: var(--device-soft); color: var(--device-accent); font: inherit; cursor: pointer; }
+:root .devices-workbench-page .local-routing-loading { align-items: center; }
 :root .devices-workbench-page .local-routing-section { margin: 0 0 24px; padding: 0; border-color: var(--device-border); background: var(--device-surface); }
 :root .devices-workbench-page .local-routing-card { padding: 18px 20px; border: 0; border-radius: 14px; background: transparent; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 12px 18px; }
 :root .devices-workbench-page .local-mac-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }

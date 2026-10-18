@@ -94,7 +94,7 @@ export function LocalRoutingCard({
       >{t(modeDetails[mode].label)}</button>)}
     </div>
     {!running && <div className="local-routing-note">{t('启动网关后可以切换本机模式。')}</div>}
-    {running && !routing && !error && <div className="local-routing-note">{t('正在读取本机设置…')}</div>}
+    {running && !routing && !error && <div className="local-routing-note local-routing-loading" role="status"><span className="button-spinner" aria-hidden="true" /><span>{t('正在读取本机设置…')}</span></div>}
     {mode && <div className="local-routing-state" role="status">
       <strong>{t(mode.description)}</strong>
       <small>{t('即时生效，仅影响本机的新连接；局域网访问和下游设备不受影响。')}</small>

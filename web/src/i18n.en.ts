@@ -1,4 +1,7 @@
 export const englishMessages: Record<string, string> = {
+  '正在加载设备与规则…': 'Loading devices and rules…',
+  '正在读取已保存的设备和分流设置。': 'Reading saved devices and routing settings.',
+  '设备与规则加载失败': 'Could not load devices and rules',
   '打开导航': 'Open navigation',
   '关闭导航': 'Close navigation',
   '页面导航': 'Page navigation',

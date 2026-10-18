@@ -34,7 +34,7 @@ html[data-theme="light"] .settings-app { --settings-text: #253c31; --settings-mu
 .settings-app input[role="switch"]:disabled { opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .settings-app input[role="switch"]::before { transition: none; } }
 @media (max-width: 600px) {
-  .settings-app { padding: 28px 16px max(24px, env(safe-area-inset-bottom)); font-size: 14px; }
+  .settings-app { padding-inline: 16px; padding-bottom: max(24px, env(safe-area-inset-bottom)); font-size: 14px; }
   .settings-header { margin-bottom: 20px; }
   .settings-section { border-radius: 14px; }
   .settings-row { min-height: 64px; gap: 12px; }
