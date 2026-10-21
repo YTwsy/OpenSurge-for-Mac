@@ -1,7 +1,8 @@
 # 已知验证范围与证据入口
 
 本页只维护影响能力判断的摘要、原记录链接与当前适用性。验证方法见 [test-gates](test-gates.md)；
-完整执行记录保留在归档、提交/PR 或独立制品中，不在当前来源累计日期报告。
+单次执行的检查步骤、环境限制、失败经过和临时阻塞保留在对应 `tasks/` 记录中，
+提交/PR 与制品作为补充证据。本页不记录执行安排或累计日期报告。
 
 文档核对点：2026-10-05，`master@405daacba9720731608dba46dd2c7592e62b40d5` 上的
 `codex/docs-concepts-sources` 文档工作树。它不是下列报告的被测提交；本次没有重新运行验收。
@@ -15,12 +16,12 @@
 | 具体路径 | 最近已知结果 | 被测日期、版本与环境 | 原执行记录 | 当前适用性与未覆盖项 |
 | --- | --- | --- | --- | --- |
 | 独立下游 LAN 的 DHCP/DNS、NAT、显式代理、TUN 与受控出口 | 记录了一次成功及停止清理 | 2026-07-06；Mac + Ethernet/AP + Pixel，提交与系统版本未记载 | [物理手机 smoke](../../tasks/finished_archived/real-device-smoke.md#当前验证进度) | 只对应原拓扑与受控上游；不证明当前 master、完整订阅或真实远端出口 |
-| 同 LAN 下游 Mac 的 IPv6 TCP、MAC/InUser 与 selector | 强制 IPv6 HTTPS 和浏览器 TCP 成功；同窗口 UDP/443 仍走 IPv4 | 2026-08-13；same_wifi_dhcp、无原生上游 IPv6；提交与 macOS 版本未记载 | [下游 Mac smoke](../../tasks/finished_archived/real-device-smoke.md#2026-08-13-同-LAN-下游-macOS-IPv6-smoke) | 不证明 IPv6 UDP/GUA、竞争 RA 复核、停止撤销、睡眠或其他客户端 |
+| 同 LAN 下游 Mac 的 IPv6 TCP、MAC/InUser 与 selector | 强制 IPv6 HTTPS 和浏览器 TCP 成功；同窗口 UDP/443 仍走 IPv4 | 2026-08-13；same_wifi_dhcp、无原生上游 IPv6；提交与 macOS 版本未记载 | [下游 Mac smoke](../../tasks/finished_archived/real-device-smoke.md#2026-08-13-同-lan-下游-macos-ipv6-smoke) | 不证明 IPv6 UDP/GUA、竞争 RA 复核、停止撤销、睡眠或其他客户端 |
 | same-LAN 的受控 LAN 代理出口 | Pixel 的路由、DNS、Mihomo 与出口 IP 观察一致 | 2026-07-09；Pixel + LAN HTTP 代理；被测提交未记载 | [出口观察](../../tasks/finished_archived/same-lan-tun-smoke.md#proxy-egress-proof) | 不包含 imported provider 切换；后续配置/捕获变化需复验 |
 | same-LAN 的 imported provider 切换 | DIRECT 与 egress-proxy 两次浏览器请求及停止清理成功 | 2026-07-10；人工 Android，无 ADB；被测提交未记载 | [人工 Android 记录](../../tasks/finished_archived/same-lan-tun-smoke.md#manual-android-evidence) | 受控本地代理；不代表真实订阅节点、远端出口或 ADB 门槛通过 |
 | 同 Wi-Fi DHCP 接管与出口切换 | 单手机手工租约/DNS/出口成功，runner 停止清理 | 2026-07-11；专用 Wi-Fi、Android、静态 Mac；被测提交未记载 | [手工手机记录](../../tasks/finished_archived/same-lan-tun-smoke.md#2026-07-11-manual-phone-validation) | 未扩展为完整路由器/Mac/客户端 DHCP 恢复或双设备兼容验收 |
 | 每设备策略早期 Virtual Lab | 两 VM 身份、独立 selector、UDP REJECT 与停止清理通过 | 2026-07-11；提交 7b14586，两台 Lima VM | [原 Lab 记录](../../tasks/finished_archived/device-policy-validation.md#2026-07-11-virtual-lab) | artifact 路径按原记录保留，本次未取得；后续 /22、连接刷新等新断言仍需复验 |
-| same-WiFi 双设备与完整 DHCP 恢复 | 原记录明确该轮未执行真机门槛 | 原实现落地时，具体日期与被测提交未记载 | [原未运行说明](../../tasks/finished_archived/device-policy-validation.md#原双设备-same-WiFi-门槛的未运行说明) | 保留 Experimental / cooperative IPv4 边界，不能借用虚拟 Lab 或单手机记录 |
+| same-WiFi 双设备与完整 DHCP 恢复 | 原记录明确该轮未执行真机门槛 | 原实现落地时，具体日期与被测提交未记载 | [原未运行说明](../../tasks/finished_archived/device-policy-validation.md#原双设备-same-wifi-门槛的未运行说明) | 保留 Experimental / cooperative IPv4 边界，不能借用虚拟 Lab 或单手机记录 |
 
 ## Tailscale
 
@@ -50,54 +51,28 @@
 
 默认自身 DNS 绑定与准备态私有监听的实现、支持矩阵见
 [profile 契约](../decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
-[当前任务的执行记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录)
-已有隔离真实核心证据：新缓存、hosts 别名、受控 DNS/节点/Provider、TCP/UDP 就绪及绑定
-竞争后的清理。IPv6 只覆盖引用语法到 IPv4 运行端点的转换。
-
-正式 1053 端口检查受现有监听占用阻塞，host-network Lab 需要管理员认证，尚未取得
-本次正式网关和完整交接的通过证据。单元与准备态真实核心通过不替代这些门槛；后续正式
-运行结论必须补齐记录中的复验项。
+现有证据覆盖隔离核心与准备态，正式网关及完整交接仍待完整验收。实际结果与待验项见
+[任务记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录)，
+验收方法见 [Host-network 门槛](test-gates.md#host-network-门槛)。
 
 ## 文件式自定义 DNS
 
-已接入文件导入、草稿/预览、候选合成、Mac TUN 前提与 dnsmasq `no-hosts`，并对 DHCP
-名称和别名冲突设置应用阻断；实现契约见
+已接入文件导入、草稿/预览、候选合成和 Mac/下游 DNS 双入口；实现契约见
 [自定义 DNS](../decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
-安装版 v0.3.2 build39 的有范围实机验收已覆盖 Mac/Android 的 UDP/TCP 固定地址、别名、
-指定上游与真实地址例外、草稿不影响运行态、应用后缓存切换及系统解析后的 HTTP 连接。
-手机保留 VPN，连接证据使用单独绑定 Wi-Fi 的探针；默认 VPN 解析不能作为网关 DNS 证据。
-原配置与运行态已恢复。被测提交、环境、失败记录与未覆盖项见
-[安装版实机记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)。
-
-安装版 build39 的预览读取 `runtime/policy-workspace/base.json` 存在权限阻塞；当前源码已
-改为 Helper 合成并返回 DNS 预览，安装版需更新 Control Service 与 Helper 后复验。
-该源码已通过全量 Go、Control API race，以及隔离的 root Helper/非 root 控制服务权限回归，
-范围见 [源码修复记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-实机反馈后的处理)；
-这些检查不运行网关或替代安装版、host-network 验收。
-显式 hosts IPv6 在 `dns.ipv6: false` 时仍返回 AAAA 被保留为手工固定地址优先的预期语义，
-普通上游与 Fake-IP AAAA 仍由开关控制，中英文指南已明确这个边界。
-一次来源应用遇到核心 2 秒就绪超时，旧网关回滚成功，但 DHCP 接管阶段退回确认状态；
-该问题未修复，单独记录在 [重载与恢复任务](../../tasks/reload-readiness-and-recovery-state.md)。
-本轮不补齐系统 hosts 冲突、完整准备态交接、DNS-02/03 专项矩阵或 Virtual Lab 缺口，
-不能据此把自定义 DNS 的完整验收矩阵标为完成。
+已有部分双入口实机证据，完整验收矩阵尚未完成，范围见
+[实机任务记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)。
+预览权限修复已有软件回归证据，安装态仍待复验，见
+[修复记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-实机反馈后的处理)。
+来源重载后的恢复状态一致性仍有待处理项，见
+[重载与恢复任务](../../tasks/reload-readiness-and-recovery-state.md)。
 
 ## Mac 本机 IPv6 开关
 
 [本机 IPv6 契约](../decisions/local-system-dns-coordination.md#独立的-mac-ipv6-路径)
-新增独立关闭能力。安装版 v0.3.2 build39 在无原生上游 IPv6 的 Mac 上，已完成本机开关与
-AAAA 的四组合完整启停、实际 TUN 地址与公网/fake IPv6 路由检查，以及 Mac IPv4 和 Android
-Wi-Fi HTTPS 回归。显式使用当前 fake-AAAA 的 IPv6 HTTPS 在普通源地址和绑定 TUN IPv6 源地址
-时均成功，核心日志记录对应来源；初次直接域名的强制 IPv6 请求曾失败，未据此宣称所有应用
-解析/缓存与 IPv4 回退兼容。范围见上述实机记录。
-
-本轮按用户安排未运行 [本机模式 Lab](test-gates.md#mac-本机模式隔离门槛)，下游 IPv6 始终
-关闭，不证明下游 IPv6 隔离、原生 IPv6、公网 IPv6 DIRECT 或夸克登录；对应门槛仍待复验。
-
-已确认旧缓存核心会在无原生 IPv6、DNS AAAA 关闭时清除显式 host TUN IPv6 地址，
-导致 OpenSurge 的 IPv6 就绪检查失败。此前禁用 TUN 的解析测试漏掉了这一组合。
-当前构建改为确定性的无上游核心测试及启用 TUN 配置的隔离二进制测试，并校验
-缓存核心的源码、补丁、构建参数与二进制摘要，不匹配时重建。该构建证据本身限于配置解析
-和打包；安装版实机结果单独限定在上文范围，不由构建通过推导其他网络或应用兼容结论。
+支持独立控制 Mac 系统 TUN 的 IPv6 路径。已有本机开关及其与 AAAA 设置独立性的部分
+实机证据，不扩展为下游 IPv6、原生公网 IPv6 或全部应用兼容结论。具体结果与未覆盖项见
+[实机任务记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)，
+验收方法见 [本机模式门槛](test-gates.md#mac-本机模式隔离门槛)。
 
 ## 使用与更新
 

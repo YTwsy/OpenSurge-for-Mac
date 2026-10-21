@@ -139,15 +139,9 @@ Unsaved DNS edits survive status refreshes and guard navigation away from Source
 Exports contain only the canonical custom YAML; desktop uses a native save dialog,
 browser uses a file download. No original file paths or file watching are retained.
 
-Real-network acceptance remains scoped by the matrix in the
-[current task](../../tasks/issue-93-dns-references-and-issue-82-overrides.md).
-Installed acceptance covers selected dual-entry UDP/TCP, cache switching and
-system-resolution/service paths; it does not complete the full matrix or Lab gates.
-The tested build39 predates the Helper preview path and cannot read the root-only
-workspace base from its Control Service. Source regression results and installed
-revalidation must be recorded separately; a successful source apply does not
-establish preview availability. The independently deferred reload timeout/recovery
-state issue is tracked in [its own task](../../tasks/reload-readiness-and-recovery-state.md).
+Validation requirements are maintained in [test gates](../validation/test-gates.md),
+and current evidence scope in the [evidence map](../validation/evidence-map.md#文件式自定义-dns).
+Environment-specific results, blockers and follow-up work remain in the linked tasks.
 
 ## Global profile overlay and optional sources
 

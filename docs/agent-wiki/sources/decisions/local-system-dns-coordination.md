@@ -57,12 +57,11 @@ TUN 与路由检查通过、DHCP/DNS 和 pf 就绪，再持久化 DNS 写入意�
 开关，关闭时仍可返回 AAAA。这是保留手工固定地址的预期行为，不表示 IPv6 路径已就绪。
 若固定名称只应使用 IPv4，仅保留它的 IPv4 hosts 映射。
 
-Mac 和下游的运行证据必须分别收集，不能由结构检查推导。预览由 Helper 在私有临时目录中
-读取 root-only workspace base 并合成，仅返回 DNS 区块和诊断，不修改敏感文件权限或应用
-配置。安装版 build39 的 Control Service 仍直接读取该文件并出现权限错误，需要同时更新
-Control Service 与 Helper 后复验，正式来源应用成功不代表旧版预览可用。
-具体范围见 [安装版实机记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)
-与 [自定义 DNS 契约](mihomo-profile-overlay.md#file-based-custom-dns)。
+预览由 Helper 在私有临时目录中读取 root-only workspace base 并合成，仅返回 DNS 区块和
+诊断，不修改敏感文件权限或应用配置。Control Service 与 Helper 必须配套支持该接口；细节见
+[自定义 DNS 契约](mihomo-profile-overlay.md#file-based-custom-dns)。
+Mac 和下游的运行证据分别判断，当前验收范围见
+[证据入口](../validation/evidence-map.md#文件式自定义-dns)。
 
 ## 独立的 Mac IPv6 路径
 
@@ -99,4 +98,4 @@ Doctor 另检查当前 DNS 所有权；Web 的 DNS 状态明确写为“启动�
 虚拟 bridge，因此该夹具关闭 Mac DNS 协同；真实系统解析由 isolated-LAN 的本机模式门槛
 验证。完整网络回归还需基础 Lab、TUN 和受影响的下游 IPv6 拓扑门槛。
 
-本机 DNS 与路由验收见 [本机模式门槛](../validation/test-gates.md#Mac-本机模式隔离门槛)。实际运行结果须从对应 artifacts 核对；这些门槛不证明订阅稳定性或所有独立 DoH、VPN DNS、内容过滤扩展。
+本机 DNS 与路由验收见 [本机模式门槛](../validation/test-gates.md#mac-本机模式隔离门槛)。实际运行结果须从对应 artifacts 核对；这些门槛不证明订阅稳定性或所有独立 DoH、VPN DNS、内容过滤扩展。
