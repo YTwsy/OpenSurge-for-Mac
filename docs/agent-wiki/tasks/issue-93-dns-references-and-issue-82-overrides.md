@@ -567,3 +567,43 @@ base 并在临时目录合成，只返回 DNS/hosts 区块与诊断，结束后�
   socket 请求真实 Helper 分发与预览，检查无非 DNS 凭据泄露、无配置写入、无权限放宽和
   临时候选残留。仅使用隔离临时目录，不执行引擎、不改变宿主网络或已安装服务。
 - `git diff --check`：通过。本次不重建/安装 PKG、不运行 Virtual Lab，不复测实际网关流量。
+
+## 2026-10-21 build41 替换安装与预览复验
+
+文档分层整理先提交为 `2fe32e3797d07384b93e5afd1dac42c137d246cc`，随后从该提交的干净
+Git 导出构建 v0.3.2 build41 / arm64（macOS 13.0+），包含 `319034a` 的预览权限修复。
+安装包为 `artifacts/gui-installer/OpenSurge-for-Mac-0.3.2-arm64-build41-2fe32e3-unsigned.pkg`，
+SHA-256 为 `507f9756508d0f03474dc42aa342f08ec45c1bd55236fb1162ca63cc18c887fc`。
+原 build39、build40 保留。安装包未签名、未公证，App 为本地 ad-hoc 签名。
+
+安装前确认实际仍运行 build39：网关/TUN 健康，Mac HTTPS 返回 200；未保存的 DNS
+候选仍复现 workspace base 的 `permission denied`，失败预览不改配置或运行态。
+配置、原 profile、来源、全局附加配置、偏好、恢复记录与恢复卡均先备份。
+
+升级通过正常停止与恢复接口完成：停止网关后选择保留固定 IP 并结束本轮接管，满足
+安装器检查后执行 PKG 替换安装。安装后重新准备恢复记录、验证固定 IP、主动探测确认
+没有竞争 DHCP，使用新 Helper 启动原 desired 配置。确认网关和 TUN 健康、config/profile
+原样后，恢复原接管记录与恢复卡，保留最初接管前的恢复快照。
+
+| 检查 | 结果与范围 |
+| --- | --- |
+| 构建与包验证 | Web 350 项、全量 Go、桌面 race、9 项安装脚本和 15 项缓存测试通过；真实核心配置检查、16 份嵌入 Web 文件一致性和 9 个可执行文件载荷核对通过 |
+| 实际安装与服务 | PackageKit 安装成功；实际 App 为 build41，桌面程序、root Helper、共享及用户 Control Service 的摘要与包内载荷一致 |
+| 真实权限边界 | Control Service 以普通用户运行，直接读取 base 仍被拒；经 root Helper 的预览成功。base 内容、root 所有权、`0600` 与父目录原权限保持不变 |
+| 预览合成 | 启用、禁用、再次启用的未保存候选均成功；固定 hosts 和指定上游策略正确出现，无权限或合成阻塞 |
+| 约束与清理 | DHCP 单标签名称仍触发应用阻断；预览后无临时候选残留，config、草稿、来源、profile 与 runtime 未被预览改动 |
+| 原生桌面入口 | 实际 Sources 编辑器中输入临时 hosts/policy、启用并预览，最终 DNS 配置可见且无权限错误；未保存、未应用，重新载入原草稿后回到运行中的总览 |
+| 网络与恢复 | 原 config/profile、用户配置、恢复记录和恢复卡逐字节一致；系统 DNS 恢复快照除验证时间外一致，代理快照及运行配置字段一致；网关/TUN 健康，Mac IPv4 HTTPS 返回 200 |
+| 下游恢复检查 | 原 USB Android 单独绑定既有 Wi-Fi 的 HTTPS 返回 200；代理与 Private DNS 设置未变，临时探针删除 |
+
+API、权限与恢复断言 29 项通过，原生 UI 另行实际操作确认。进程身份检查在沙箱内无法
+执行 `ps`，以正常主机权限原样复核通过。
+
+脱敏机器记录位于
+`artifacts/installed-acceptance/2026-10-21-v0.3.2-build41-tkwuxmn6/acceptance-results.json`；
+包旁的 `.build-info.json` 记录构建来源、安装状态和验证范围。原始安装日志、配置与私有
+基线备份只留在私有临时目录；公开记录不包含凭据、来源 URL、设备标识或网络地址。
+
+本轮补齐实际安装及预览权限修复回归，并检查升级后的基本连通性。未应用新的 DNS 草稿，
+未重跑完整来源 apply/reload、Virtual Lab、下游 IPv6 或全部应用兼容矩阵；前文其他
+未覆盖项保持原范围。

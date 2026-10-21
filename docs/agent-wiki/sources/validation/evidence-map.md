@@ -61,8 +61,8 @@
 [自定义 DNS](../decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
 已有部分双入口实机证据，完整验收矩阵尚未完成，范围见
 [实机任务记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)。
-预览权限修复已有软件回归证据，安装态仍待复验，见
-[修复记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-实机反馈后的处理)。
+预览权限修复已通过安装态复验，范围见
+[安装态复验记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-build41-替换安装与预览复验)。
 来源重载后的恢复状态一致性仍有待处理项，见
 [重载与恢复任务](../../tasks/reload-readiness-and-recovery-state.md)。
 
