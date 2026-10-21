@@ -141,6 +141,18 @@ func TestStartRollsBackWhenMihomoStartFails(t *testing.T) {
 	} else if exists {
 		t.Fatalf("runtime state still exists after rollback")
 	}
+
+	// A readiness failure whose process cannot be stopped must retain ownership
+	// rather than letting the enclosing rollback erase a still-live engine.
+	mihomoManager.startPID = 1234
+	mihomoManager.stopErr = errors.New("controlled cleanup failure")
+	manager.deps.processFingerprint = fakeProcessFingerprint
+	manager.deps.processMatches = func(int, string) (bool, error) { return true, nil }
+	err = manager.Start(t.Context())
+	state, exists, stateErr := runtime.LoadState(paths.StateFile)
+	if err == nil || !strings.Contains(err.Error(), "controlled cleanup failure") || stateErr != nil || !exists || state.PIDMihomo != 1234 || state.MihomoProcessFingerprint == "" {
+		t.Fatalf("failed startup lost runtime ownership: state=%+v exists=%t err=%v stateErr=%v", state, exists, err, stateErr)
+	}
 }
 
 func TestPreflightRejectsSameGatewayAndUpstreamInterface(t *testing.T) {
@@ -470,7 +482,8 @@ func TestReloadValidationFailureLeavesRunningGatewayUntouched(t *testing.T) {
 		},
 	}
 	err := manager.Reload(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "candidate rejected") {
+	var reloadErr *ReloadError
+	if !errors.As(err, &reloadErr) || reloadErr.Phase != ReloadValidation || !strings.Contains(err.Error(), "candidate rejected") {
 		t.Fatalf("Reload() error=%v", err)
 	}
 	if dhcpManager.stopCalled || mihomoManager.stopCalled {
@@ -547,6 +560,26 @@ func TestReloadStopsBeforeRestartAndWritesFreshState(t *testing.T) {
 	}
 	if err != nil || !exists || state.PIDDNSMasq != 21 || state.PIDMihomo != 22 || state.ProfileDigest != profileDigest {
 		t.Fatalf("fresh runtime state=%#v exists=%v err=%v", state, exists, err)
+	}
+	manager.deps.processMatches = func(int, string) (bool, error) { return true, nil }
+	dhcpManager.stopErr = errors.New("controlled stop failure")
+	err = manager.Reload(t.Context())
+	var reloadErr *ReloadError
+	if !errors.As(err, &reloadErr) || reloadErr.Phase != ReloadStop {
+		t.Fatalf("stop failure lost reload phase: %v", err)
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || !exists {
+		t.Fatalf("partial stop erased runtime: exists=%t err=%v", exists, err)
+	}
+	dhcpManager.stopErr = nil
+	mihomoManager.startPID = 0
+	mihomoManager.startErr = errors.New("controlled readiness failure")
+	err = manager.Reload(t.Context())
+	if !errors.As(err, &reloadErr) || reloadErr.Phase != ReloadStart {
+		t.Fatalf("start failure lost reload phase: %v", err)
+	}
+	if _, exists, err := runtime.LoadState(paths.StateFile); err != nil || exists {
+		t.Fatalf("failed start did not clean runtime: exists=%t err=%v", exists, err)
 	}
 }
 
@@ -1209,7 +1242,7 @@ func (f *fakeMihomo) ValidateWrittenConfigContext(ctx context.Context) error {
 	return f.ValidateWrittenConfig()
 }
 
-func (f *fakeMihomo) Start() (int, error) {
+func (f *fakeMihomo) StartContext(context.Context) (int, error) {
 	f.startCalled = true
 	if f.events != nil {
 		*f.events = append(*f.events, "mihomo-start")

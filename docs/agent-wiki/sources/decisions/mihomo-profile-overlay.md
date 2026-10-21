@@ -358,9 +358,12 @@ origin cannot be recovered. An unchanged independent profile without such a
 dependency remains readable.
 
 Real-core prepared DNS tests cover aliases, filters, controlled upstreams,
-node/Provider connectivity, both transports and bind-race cleanup. Formal port
-1053 and host-network handoff still require the corresponding unoccupied-port
-and Lab gates; see the [DNS task evidence](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录).
+node/Provider connectivity, both transports and bind-race cleanup. The DNS task
+is archived using its completed Mac/Android end-to-end and installed-preview
+checks, without an additional Virtual Lab requirement. The full formal-port
+self-reference and handoff matrices remain outside that evidence scope; see the
+[core results](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录)
+and [completed acceptance scope](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-完成与归档).
 
 ## Gateway-owned fields
 

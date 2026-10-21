@@ -208,7 +208,7 @@ func TestFormalDNSReadinessCannotBorrowAnUnownedListener(t *testing.T) {
 	manager := Manager{}
 	// This test process does not own the formal DNS port, regardless of whether
 	// another installed client does. No DNS query is sent without ownership.
-	if err := manager.waitForDNS(os.Getpid(), "opensurge-ready-test.invalid", 20*time.Millisecond); err == nil {
+	if err := manager.waitForDNS(t.Context(), os.Getpid(), "opensurge-ready-test.invalid", 20*time.Millisecond); err == nil {
 		t.Fatal("unowned DNS listener passed formal readiness")
 	}
 }

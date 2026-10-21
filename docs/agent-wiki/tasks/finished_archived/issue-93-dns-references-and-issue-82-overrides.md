@@ -2,14 +2,14 @@
 
 配套说明：[DNS 流程与 YAML 示例](issue-93-dns-references-and-issue-82-overrides/dns-flow-examples.md)，包含监听启动、自身引用、hosts 别名解析及独立本地 DNS 的对照。
 
-- 状态：DNS-02、DNS-03 的实现与隔离核心回归已推进；正式 1053 与 host-network Lab 验收待补。原 DNS-04、DNS-05 由文件式简化方案替代；该方案实现已落地，新增双入口网络验收由用户后续统一执行。
+- 状态：已完成并归档（2026-10-21）。用户确认以已完成的端到端测试收尾，不再追加 Virtual Lab；实现、双入口实机验收及 build41 安装态预览复验见文末记录。各轮原始未覆盖项保留为证据范围，不再充当本任务待办。
 - 创建日期：2026-10-16；兼容开发与方案修订：2026-10-17。
 - 目标分支：`codex/release-v0.3.2`；任务创建基线：`538fed9`。
 - 需求：[Issue #93](https://github.com/YTwsy/OpenSurge-for-Mac/issues/93)、[Issue #82](https://github.com/YTwsy/OpenSurge-for-Mac/issues/82)，以及本次关于默认兼容、可选高级配置的讨论。
 - 本轮范围：用户在方案修订后授权开始实现，并接手后续验收。本轮落地导入、界面、覆盖、候选接入及主要文档，执行软件回归；不运行新增真实核心查询或 host-network Lab。
 - 既有工作：此前授权的 DNS-02、DNS-03 及所需 DNS-01 契约保留，实际检查与未覆盖项仍以文末原记录为准。
 
-## 当前基线与目标
+## 任务创建时的基线与目标
 
 `hosts` 保留已由 `1e5386f` 实现，并通过 [PR #95](https://github.com/YTwsy/OpenSurge-for-Mac/pull/95) 合入当前基线。
 它覆盖导入、全局附加配置合成、最终网关配置和准备态配置。此处只记录已合入的代码范围，不代替该 PR 的验证记录。
@@ -353,7 +353,7 @@ Mac TUN / 下游入口分别显示配置前提是否满足；“配置检查通�
 直接查询 `127.0.0.1:1053` 只属于核心诊断，不能代替任一入口。
 使用随机/未缓存名称、受控 DNS 查询日志和实际连接核对上游来源；AAAA 答案测试与 IPv6 传输/拓扑验收分开记录。
 
-按实际改动执行 [验证门槛](../sources/validation/test-gates.md)：
+按实际改动执行 [验证门槛](../../sources/validation/test-gates.md)：
 
 - Go 合成、校验、API：`make test`，补真实核心的 DNS 行为集成检查；`mihomo -t` 不证明运行时解析。
 - DHCP/DNS、配置生成、进程及恢复：`make lab-test`；TUN 路径：`make lab-test-tun`。
@@ -364,8 +364,8 @@ Mac TUN / 下游入口分别显示配置前提是否满足；“配置检查通�
 - Web 改动：`make web-test`、`make web-build` 并更新 `internal/webui/dist`；桌面桥接变更按需补桌面门槛。
 - Lab 收尾：`make lab-down`、`make lab-status`；记录实际版本、环境、检查结果和未覆盖项。
 
-实现完成后更新 [profile 契约](../sources/decisions/mihomo-profile-overlay.md)、
-[系统 DNS 契约](../sources/decisions/local-system-dns-coordination.md) 和用户指南；仅在概念关系变化时更新 Concept/索引。
+实现完成后更新 [profile 契约](../../sources/decisions/mihomo-profile-overlay.md)、
+[系统 DNS 契约](../../sources/decisions/local-system-dns-coordination.md) 和用户指南；仅在概念关系变化时更新 Concept/索引。
 新的能力证据或阻塞按仓库规则维护 evidence-map；本次实际验证范围见文末记录。
 已选实施阶段完成并提炼长期规则后归档本任务；完整本地域扩展不作为本轮待完成事项。
 
@@ -396,7 +396,7 @@ Mac TUN / 下游入口分别显示配置前提是否满足；“配置检查通�
 - 支持节点解析及节点解析 policy 中明确的 IPv4/IPv6 UDP/TCP loopback 自身引用；正式
   输出为受管 1053。普通/ bootstrap / fallback / direct 自身依赖，以及尚未验证的
   respect-rules、代理/接口参数组合，在应用前明确报错。详细矩阵和用途声明格式已进入
-  [profile 契约](../sources/decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
+  [profile 契约](../../sources/decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
 - 正式启动对含自身引用的配置补充 UDP/TCP 监听归属与实际应答检查；运行配置使用稳定的
   `.invalid` TXT 探针，避免重复渲染改变配置摘要。准备态替换为其私有随机探针。
   正式就绪失败沿现有启动清理路径停止新进程，不把 controller 已启动视为 DNS 成功。
@@ -607,3 +607,17 @@ API、权限与恢复断言 29 项通过，原生 UI 另行实际操作确认。
 本轮补齐实际安装及预览权限修复回归，并检查升级后的基本连通性。未应用新的 DNS 草稿，
 未重跑完整来源 apply/reload、Virtual Lab、下游 IPv6 或全部应用兼容矩阵；前文其他
 未覆盖项保持原范围。
+
+## 2026-10-21 完成与归档
+
+用户确认本任务已完成端到端测试，要求将任务及配套 DNS 流程目录归档，不再追加 Virtual
+Lab 作为完成条件。收尾采用已有 build39 的 Mac/Android 双入口解析、应用、缓存切换与
+恢复证据，以及 build41 的安装、真实 Helper 权限、原生桌面预览和连通性复验。上述历史
+记录的日期、版本、结果和未覆盖项保持原样；不据此补写未执行的矩阵为通过。
+
+重载等待与回滚后恢复阶段问题已在[独立修复记录](reload-readiness-and-recovery-state.md#2026-10-21-实现与验证)
+完成源码及隔离真实核心验收，与本任务一起归档。持续有效的行为与边界已经由
+[profile 契约](../../sources/decisions/mihomo-profile-overlay.md)、
+[生命周期](../../sources/decisions/gateway-lifecycle.md)、
+[系统 DNS 契约](../../sources/decisions/local-system-dns-coordination.md) 维护，
+[证据入口](../../sources/validation/evidence-map.md) 保留到实机结果和范围说明的直接链接。

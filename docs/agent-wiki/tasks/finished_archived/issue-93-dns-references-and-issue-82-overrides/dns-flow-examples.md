@@ -1,6 +1,6 @@
 # DNS 流程与 YAML 示例
 
-记录 2026-10-17 讨论中的结构解释。阶段进度和验证结果以[任务入口](../issue-93-dns-references-and-issue-82-overrides.md)为准；OpenSurge 的支持范围以 [profile 契约](../../sources/decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding)为准。
+记录 2026-10-17 讨论中的结构解释。阶段进度和验证结果以[任务入口](../issue-93-dns-references-and-issue-82-overrides.md)为准；OpenSurge 的支持范围以 [profile 契约](../../../sources/decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding)为准。
 以下 YAML 是说明原生 Mihomo 语义的配置片段，示例域名和节点不能直接用于真实连接，也不构成新的验收证据。
 
 ## 谁提供 DNS，谁向 DNS 查询
