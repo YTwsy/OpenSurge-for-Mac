@@ -277,7 +277,7 @@ func startDNSGatewayCore(t *testing.T, ctx context.Context, cfg config.Config, f
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := (Manager{}).waitForDNS(cmd.Process.Pid, probeName, 4*time.Second); err != nil {
+			if err := (Manager{}).waitForDNS(t.Context(), cmd.Process.Pid, probeName, 4*time.Second); err != nil {
 				logPreparedFailure(t, cfg)
 				t.Fatal(err)
 			}

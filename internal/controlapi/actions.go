@@ -47,6 +47,7 @@ type ConfigurationRunner interface {
 type ProfileApplyResult struct {
 	Revision string
 	Reloaded bool
+	Rollback *ConfigurationRollback
 }
 
 // Candidate starts fit inside the existing Helper and Web deadlines. The
@@ -135,6 +136,8 @@ type HelperResponse struct {
 	DHCPServers  []string                 `json:"dhcp_servers,omitempty"`
 	Revision     string                   `json:"revision,omitempty"`
 	Reloaded     bool                     `json:"reloaded,omitempty"`
+	ReloadPhase  gateway.ReloadPhase      `json:"reload_phase,omitempty"`
+	Rollback     *ConfigurationRollback   `json:"rollback,omitempty"`
 	Progress     *gateway.Progress        `json:"progress,omitempty"`
 	Workspace    *PolicyWorkspaceResponse `json:"workspace,omitempty"`
 	DNSPreview   *CustomDNSPreview        `json:"custom_dns_preview,omitempty"`
@@ -168,7 +171,7 @@ func (c HelperClient) ProbeDHCP(ctx context.Context, configPath, interfaceName s
 
 func (c HelperClient) ApplyProfile(ctx context.Context, configPath, revision string, payload []byte, sourceDigest, overlayDigest string) (ProfileApplyResult, error) {
 	response, err := c.call(ctx, HelperRequest{Action: "config-apply-profile", ConfigPath: configPath, Revision: revision, Payload: payload, SourceDigest: sourceDigest, OverlayDigest: overlayDigest})
-	return ProfileApplyResult{Revision: response.Revision, Reloaded: response.Reloaded}, err
+	return ProfileApplyResult{Revision: response.Revision, Reloaded: response.Reloaded, Rollback: response.Rollback}, err
 }
 
 func (c HelperClient) ApplyDevicePolicy(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
@@ -183,7 +186,7 @@ func (c HelperClient) ApplyControlConfig(ctx context.Context, configPath, revisi
 
 func (c HelperClient) ApplyTailscale(ctx context.Context, configPath, revision string, payload []byte) (ProfileApplyResult, error) {
 	response, err := c.call(ctx, HelperRequest{Action: "config-apply-tailscale", ConfigPath: configPath, Revision: revision, Payload: payload})
-	return ProfileApplyResult{Revision: response.Revision, Reloaded: response.Reloaded}, err
+	return ProfileApplyResult{Revision: response.Revision, Reloaded: response.Reloaded, Rollback: response.Rollback}, err
 }
 
 func (c HelperClient) ForgetTailscaleIdentity(ctx context.Context, configPath, revision string) (string, error) {
@@ -230,7 +233,11 @@ func (c HelperClient) call(ctx context.Context, request HelperRequest) (HelperRe
 			continue
 		}
 		if !response.OK {
-			return HelperResponse{}, fmt.Errorf("%s", response.Error)
+			err := errors.New(response.Error)
+			if response.ReloadPhase != "" {
+				err = &helperReloadError{message: response.Error, phase: response.ReloadPhase}
+			}
+			return response, err
 		}
 		return response, nil
 	}
@@ -488,6 +495,7 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 		case "config-apply-profile":
 			result, applyErr := runner.ApplyProfile(ctx, configPath, request.Revision, request.Payload, request.SourceDigest, request.OverlayDigest)
 			response.Revision, response.Reloaded, err = result.Revision, result.Reloaded, applyErr
+			response.Rollback = result.Rollback
 		case "config-apply-device-policy":
 			response.Revision, err = runner.ApplyDevicePolicy(ctx, configPath, request.Revision, request.Payload)
 		case "config-apply-control":
@@ -495,6 +503,7 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 		case "config-apply-tailscale":
 			result, applyErr := runner.ApplyTailscale(ctx, configPath, request.Revision, request.Payload)
 			response.Revision, response.Reloaded, err = result.Revision, result.Reloaded, applyErr
+			response.Rollback = result.Rollback
 		case "config-forget-tailscale-identity":
 			response.Revision, err = runner.ForgetTailscaleIdentity(ctx, configPath, request.Revision)
 		}
@@ -502,6 +511,10 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 	response.OK = err == nil
 	if err != nil {
 		response.Error = err.Error()
+		var reloadErr *gateway.ReloadError
+		if errors.As(err, &reloadErr) {
+			response.ReloadPhase = reloadErr.Phase
+		}
 	}
 	_ = json.NewEncoder(conn).Encode(response)
 }

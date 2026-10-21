@@ -983,7 +983,7 @@ func (s *Server) runOperationLocked(op Operation, topology string, recoveryBefor
 			s.recordStartRecoveryFailure(topology, recoveryBefore, err)
 		}
 		if op.Kind == "reload" {
-			s.recordReloadRecoveryFailure(topology, recoveryBefore, err)
+			s.recordReloadRecoveryFailure(topology, recoveryBefore, err, nil)
 		}
 	} else {
 		op.State = "succeeded"
@@ -1022,29 +1022,6 @@ func (s *Server) recordStartRecoveryFailure(topology string, recoveryBefore Reco
 	}
 	recoveryBefore.Required = true
 	appendRecoveryNote(&recoveryBefore, "gateway start failed and runtime changes were rolled back; router DHCP may remain disabled; resolve the error and retry, or abandon takeover and recover the LAN: "+startErr.Error())
-	_ = s.store.SaveRecovery(recoveryBefore)
-}
-
-func (s *Server) recordReloadRecoveryFailure(topology string, recoveryBefore RecoveryState, reloadErr error) {
-	if topology != config.GatewayModeSameWiFiDHCP || strings.Contains(reloadErr.Error(), "reload stop failed") {
-		return
-	}
-	cfg, err := config.LoadRuntime(s.configPath)
-	if err != nil {
-		return
-	}
-	_, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
-	restartFailed := strings.Contains(reloadErr.Error(), "reload start failed after gateway stop")
-	if stateErr != nil || (!restartFailed && exists) {
-		return
-	}
-	recoveryBefore.Topology = topology
-	recoveryBefore.Stage = RecoveryRouterDHCPDisabledConfirmed
-	recoveryBefore.Required = true
-	if recoveryBefore.RecoveryNotes != "" {
-		recoveryBefore.RecoveryNotes += "; "
-	}
-	recoveryBefore.RecoveryNotes += "gateway reload failed after services stopped; router DHCP remains disabled; retry start or recover the LAN"
 	_ = s.store.SaveRecovery(recoveryBefore)
 }
 
@@ -1769,11 +1746,11 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 	if err == nil && gatewayActive && !result.Reloaded {
 		err = fmt.Errorf("running gateway did not reload the selected profile")
 	}
+	if err != nil && gatewayActive {
+		s.recordReloadRecoveryFailure(cfg.Gateway.Mode, recovery, err, result.Rollback)
+	}
 	s.finishOperation(operation, err)
 	if err != nil {
-		if gatewayActive {
-			s.recordReloadRecoveryFailure(cfg.Gateway.Mode, recovery, err)
-		}
 		status := http.StatusInternalServerError
 		code := "config_apply_failed"
 		if strings.Contains(err.Error(), "revision conflict") {

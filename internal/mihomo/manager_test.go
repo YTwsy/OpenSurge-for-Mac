@@ -96,7 +96,7 @@ func TestWaitForTUNWaitsForEnabledRuntimeState(t *testing.T) {
 	if err := os.WriteFile(manager.paths.MihomoLog, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.waitForTUN(os.Getpid(), time.Second); err != nil {
+	if err := manager.waitForTUN(t.Context(), os.Getpid(), time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if requests.Load() < 2 {
@@ -120,7 +120,7 @@ func TestWaitForTUNReturnsLoggedStartupFailure(t *testing.T) {
 	if err := os.WriteFile(manager.paths.MihomoLog, []byte("[error] Start TUN listening error: configure tun interface: add route: 1.0.0.0/8: file exists\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := manager.waitForTUN(os.Getpid(), time.Second)
+	err := manager.waitForTUN(t.Context(), os.Getpid(), time.Second)
 	if err == nil || !strings.Contains(err.Error(), "1.0.0.0/8: file exists") {
 		t.Fatalf("waitForTUN() error = %v", err)
 	}

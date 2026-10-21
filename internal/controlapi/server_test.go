@@ -19,6 +19,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
+	"open-mihomo-gateway/internal/gateway"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
@@ -1917,7 +1918,7 @@ func TestGatewayReloadStopFailurePreservesActiveTakeoverStage(t *testing.T) {
 	}
 	server.runner = actionRunnerFunc(func(_ context.Context, _, _ string) error {
 		_ = runtime.RemoveState(paths.StateFile)
-		return errors.New("reload stop failed: pf unload failed")
+		return &gateway.ReloadError{Phase: gateway.ReloadStop, Err: errors.New("pf unload failed")}
 	})
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/reload", nil)
 	request.Host = "127.0.0.1:61767"
