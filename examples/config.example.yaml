@@ -32,6 +32,15 @@ dns:
   # Controls AAAA answers independently from downstream IPv6 takeover.
   ipv6: false
 
+# Optional check before managed DNS returns hosts/Fake-IP. Uses the patched core.
+# The service needs independent upstreams; never forward it back to OpenSurge.
+external_dns_filter:
+  enabled: false
+  server: "" # Literal IPv4:port or [IPv6]:port, e.g. 192.168.50.2:5353.
+  timeout_ms: 2000 # 100..10000; failure returns SERVFAIL, never bypasses.
+  blocked_addresses: "" # Comma-separated extra sinks; 0.0.0.0 and :: are built in.
+  bypass_domains: "" # Comma-separated domain suffixes, including subdomains.
+
 mihomo:
   binary: "./bin/mihomo"
   config: "./runtime/mihomo.yaml"

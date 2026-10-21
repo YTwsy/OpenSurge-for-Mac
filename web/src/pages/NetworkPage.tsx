@@ -1,3 +1,4 @@
+import { ExternalDNSFilterSettings } from '../components/ExternalDNSFilterSettings'
 import { CustomDNSSummary } from '../components/CustomDNSStatus'
 import { Select } from '../components/Select'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
@@ -477,6 +478,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
                 <input aria-label={t('上游 DNS')} placeholder={t('1.1.1.1 或 127.0.0.1#1053')} value={config.dns.upstream} onChange={event => setConfig({ ...config, dns: { ...config.dns, upstream: event.target.value } })} />
                 <small>{t('推荐路径进入 mihomo fake-IP DNS。公共 DNS 仅用于对照；启用 TUN 时仍可能被 dns-hijack 捕获，并不保证绕过代理。')}</small>
               </ConfigField>
+              <ExternalDNSFilterSettings value={config.external_dns_filter} onChange={external_dns_filter => setConfig({ ...config, external_dns_filter })} />
               <ConfigField label="透明代理模式" setting="transparent.mode" hint={config.gateway.mode === 'isolated_lan' ? 'tun 让未设置显式代理的下游流量进入 mihomo TUN；off 不做透明捕获。旁路由模式与局域网 DHCP 接管模式必须使用 TUN。' : '当前拓扑必须使用 mihomo TUN，因此该选项已锁定。'}>
                 <Select aria-label={t('透明代理模式')} value={config.transparent.mode} disabled={config.gateway.mode !== 'isolated_lan'} onChange={value => {
                   const mode = value as 'off' | 'tun'

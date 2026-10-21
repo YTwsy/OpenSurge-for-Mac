@@ -28,6 +28,11 @@ OpenSurge 为已确认的自身 DNS 引用绑定正式或准备态端点，独�
 准备态只在有此依赖时开启私有监听，不接管系统 DNS 或下游流量；两种状态沿现有生命周期
 交接。默认兼容不依赖可选的高级自定义解析开关。
 
+可选外部 DNS 服务负责先给出 DNS 检查结果，OpenSurge 随后才进入既有 hosts / Fake-IP /
+解析策略；正常外部真实地址不会替代 Fake-IP，后续设备策略仍由 mihomo 执行。
+这一依赖共用于受管服务入口，完整边界见
+[外部 DNS 过滤契约](../../sources/decisions/mihomo-profile-overlay.md#external-dns-filtering-before-fake-ip)。
+
 系统 DNS 协同负责 OpenSurge 对本机设置的临时接管与恢复。AAAA 答案、Mac 本机 IPv6
 路由与下游 IPv6 接管在本项目中分别管理。
 

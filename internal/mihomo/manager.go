@@ -94,7 +94,11 @@ func (m Manager) StartContext(ctx context.Context) (int, error) {
 	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o640); err != nil {
 		return 0, err
 	}
-	pid, err := process.StartDetachedWithLog(m.paths.MihomoLog, binary, "-d", configDir, "-f", m.paths.MihomoConfig)
+	args, err := engineConfigArgs(configDir, m.paths.MihomoConfig, false)
+	if err != nil {
+		return 0, err
+	}
+	pid, err := process.StartDetachedWithLog(m.paths.MihomoLog, binary, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -204,7 +208,11 @@ func validateConfigWithTimeout(timeout time.Duration, binary string, configDir s
 
 func validateConfigContext(ctx context.Context, timeout time.Duration, binary string, configDir string, configPath string) error {
 	var output bytes.Buffer
-	if err := process.RunBufferedContext(ctx, timeout, &output, binary, "-d", configDir, "-t", "-f", configPath); err != nil {
+	args, err := engineConfigArgs(configDir, configPath, true)
+	if err != nil {
+		return err
+	}
+	if err := process.RunBufferedContext(ctx, timeout, &output, binary, args...); err != nil {
 		return fmt.Errorf("mihomo config validation failed: %w: %s", err, strings.TrimSpace(output.String()))
 	}
 	return nil

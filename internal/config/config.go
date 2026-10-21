@@ -10,18 +10,19 @@ import (
 )
 
 type Config struct {
-	Gateway          GatewayConfig
-	DHCP             DHCPConfig
-	DevicePolicy     DevicePolicyConfig
-	DNS              DNSConfig
-	Mihomo           MihomoConfig
-	Tailscale        TailscaleConfig
-	PF               PFConfig
-	Transparent      TransparentConfig
-	LocalSystemProxy LocalSystemProxyConfig
-	LocalSystemDNS   LocalSystemDNSConfig
-	UpstreamProxy    UpstreamProxyConfig
-	Runtime          RuntimeConfig
+	Gateway           GatewayConfig
+	DHCP              DHCPConfig
+	DevicePolicy      DevicePolicyConfig
+	DNS               DNSConfig
+	ExternalDNSFilter ExternalDNSFilterConfig
+	Mihomo            MihomoConfig
+	Tailscale         TailscaleConfig
+	PF                PFConfig
+	Transparent       TransparentConfig
+	LocalSystemProxy  LocalSystemProxyConfig
+	LocalSystemDNS    LocalSystemDNSConfig
+	UpstreamProxy     UpstreamProxyConfig
+	Runtime           RuntimeConfig
 }
 
 // DevicePolicyConfig points at the optional JSON control-plane file that
@@ -235,7 +236,8 @@ func Default() Config {
 			Domain:     "lan",
 			BypassDNS:  []string{},
 		},
-		DevicePolicy: DevicePolicyConfig{},
+		DevicePolicy:      DevicePolicyConfig{},
+		ExternalDNSFilter: ExternalDNSFilterConfig{TimeoutMS: 2000, BlockedAddresses: []string{}, BypassDomains: []string{}},
 		DNS: DNSConfig{
 			Listen:   "192.168.50.1",
 			Port:     53,

@@ -273,6 +273,41 @@ YAML: the desktop app opens a native save dialog and the browser downloads a fil
 A successful preview does not establish live DNS/connection acceptance on either
 entry path.
 
+### Optional: External DNS filtering
+
+With the gateway stopped, open **Network Settings → Advanced Mihomo / DNS settings
+→ External DNS filtering**, enable the option and enter your own service endpoint,
+for example `192.168.50.2:5353` or `[2001:db8::2]:5353`. Use a literal IP and port.
+The service must support ordinary UDP DNS; truncated replies are retried over TCP.
+Keep downstream DNS upstream at `127.0.0.1#1053`, save, then start the gateway.
+This option is off by default and requires the OpenSurge core containing this
+feature; older cores explicitly fail to start with filtering enabled.
+
+Managed DNS queries are checked before the existing hosts, Fake-IP and resolver
+logic. A normal external answer permits that logic; its real IP does not replace
+Fake-IP. NXDOMAIN, REFUSED, SERVFAIL, empty answers and sink replies containing
+`0.0.0.0` / `::` are returned directly. Configure any other sink IPs under
+**Additional blocking IPs**. The default timeout is 2000 ms, adjustable from 100 to
+10000 ms. An unavailable service fails the query instead of automatically allowing it.
+
+The service needs its own upstreams and a direct route from the Mac. Never forward
+it back to OpenSurge. Ordinary DNS has no universal advertising marker, so configure
+sink IPs to match the service's rules. Current validation uses a controlled service
+and isolated core; real Numa / SmartDNS versions and host-network paths remain unverified.
+
+**Domain suffixes excluded from filtering** includes each domain and its subdomains, separated by
+commas. Single-label names, `.local`, `.localhost`, `.lan`, `home.arpa`, reverse
+queries and configured DHCP / system search / MagicDNS namespaces retain their
+local path. Add suffixes for other private hosts names; public fixed hosts names
+are still checked first. While enabled, dnsmasq caching and system-hosts shortcuts
+are disabled, while DHCP lease names remain available.
+
+Mac coverage depends on existing system DNS and TUN capture. Client caches,
+application DoH, direct IP traffic, existing connections and proxy requests that
+never use managed DNS are outside scope. To disable, stop the gateway, clear the
+switch, save and start again. Client-side cached answers still need to expire or
+be refreshed separately.
+
 ### 3. Start OpenSurge
 
 For **Same-LAN DHCP takeover**, follow **Gateway controls** in Network Settings:

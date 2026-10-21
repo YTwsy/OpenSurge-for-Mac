@@ -143,6 +143,85 @@ Validation requirements are maintained in [test gates](../validation/test-gates.
 and current evidence scope in the [evidence map](../validation/evidence-map.md#文件式自定义-dns).
 Environment-specific results, blockers and follow-up work remain in the linked tasks.
 
+## External DNS filtering before Fake-IP
+
+The opt-in `external_dns_filter` section belongs to saved gateway configuration,
+not to the Sources drafts. Network Settings exposes it under advanced Mihomo/DNS;
+saving is allowed only while stopped, and the next full start applies it. The
+Control API preserves the current value when an older client omits the section.
+Runtime state records the applied filter; engine-only recovery uses that snapshot,
+with filtering disabled for legacy state that has no snapshot.
+
+| Field | Contract |
+| --- | --- |
+| `enabled` | Default false; disabled restores the original DNS path |
+| `server` | One literal `IPv4:port` or `[IPv6]:port`, directly reachable from the Mac; no hostname, URL, scoped address, multicast, unspecified or Fake-IP target |
+| `timeout_ms` | Default 2000, inclusive range 100–10000; one deadline covers UDP and TCP fallback |
+| `blocked_addresses` | At most 64 extra literal sink addresses; `0.0.0.0` and `::` always stop processing |
+| `bypass_domains` | At most 128 ASCII domain suffixes, including exact names and subdomains; no wildcards |
+
+The gateway YAML stores the two lists as comma-separated strings, matching the
+other gateway list fields; the Control API uses JSON arrays. Enabling requires
+managed dnsmasq upstream (`127.0.0.1#1053`, including its empty/default shorthand).
+Known local DNS listener loops are rejected before startup. The external service
+must use independent upstreams and must not forward queries back to OpenSurge.
+
+The pinned core's `opensurge-external-filter` middleware runs at the shared DNS
+service entrance, before hosts, Fake-IP allocation/reuse and resolver caches.
+Ordinary internal resolver calls do not enter it; an explicit node self-DNS
+reference does. The check uses the original name/type over UDP, retries truncated
+replies over TCP, and uses direct sockets bound to the downstream interface for a
+LAN target or upstream interface otherwise when TUN is enabled. It does not use
+proxy rules or bootstrap DNS. Loopback needs no physical interface binding. The
+endpoint still requires a working direct route; this feature creates no route or
+forwarding service for it.
+
+Only a rebuilt question plus DNSSEC DO/CD flags is sent; client ECS, cookies,
+answers and arbitrary additional records are omitted. Concurrent identical checks
+share one request, with at most 64 different checks in flight, but there is no
+allow/block decision cache. A reverse-forwarded identical question waits for the
+bounded check and fails instead of recursively spawning requests.
+
+- Any non-NOERROR reply, NOERROR with no answers, or answer containing a default
+  or configured sink is returned without entering hosts/Fake-IP. This includes a
+  sink at the end of a CNAME answer chain. Authentication flags and additional
+  records are not forwarded as trusted DNSSEC data.
+- Other answers permit the original hosts/Fake-IP/resolver behavior. The external
+  real address is not substituted for Fake-IP. Real-IP exceptions and resolver
+  policies remain in force after the check.
+- Timeout, transport failure, malformed/mismatched reply or concurrency exhaustion
+  returns SERVFAIL. There is no automatic fail-open fallback.
+
+Ordinary DNS has no universal advertising marker. NXDOMAIN, REFUSED, SERVFAIL and
+NODATA retain their DNS meaning; NODATA is not evidence that an advertisement was
+identified. Sink addresses must match the user's service configuration. CNAME-only
+answers without a recognized sink are not classified as blocked.
+
+Single-label names, `local`, `localhost`, `lan`, `home.arpa`, reverse zones,
+configured DHCP domain while DHCP or system DNS coordination is active, captured
+system search domains, enabled MagicDNS suffixes, and explicit bypass suffixes
+retain the existing local path. The runtime-generated readiness name is bypassed
+only for its exact TXT query. Public fixed hosts names are checked first; private
+hosts outside those namespaces need an explicit bypass suffix. No new lease or
+mDNS synchronization is introduced.
+
+While enabled, dnsmasq uses `cache-size=0` and `no-hosts`, preserving its DHCP lease
+names. This prevents its answer cache or system hosts from bypassing checks. On
+disable, the normal cache returns and `no-hosts` remains only if custom DNS still
+requires it. Client caches, existing connections, direct IP use, application DoH
+and explicit proxy requests that never perform managed DNS remain outside scope.
+Mac coverage depends on the existing system DNS/TUN capture; the filter does not
+automatically enable either or require TUN for downstream DNS-only use.
+
+Composition strips `dns.opensurge-external-filter` from raw subscriptions and
+rejects it in global/custom DNS overlays. Only gateway configuration can create
+it, including in a prepared workspace. Validation/start add the capability flag
+`-require-opensurge-dns-filter`; an older core must fail rather than silently ignore
+unknown YAML. Build input hashing covers the patch and DNS overlay sources.
+
+Validation methods: [external DNS filter gates](../validation/test-gates.md#外部-dns-过滤).
+Current limits: [evidence map](../validation/evidence-map.md#外部-dns-过滤).
+
 ## Global profile overlay and optional sources
 
 The Web GUI's **Global Extension** is an independent, versioned draft in
@@ -272,7 +351,7 @@ snapshot that crossed a concurrent start/stop transition.
 
 The profile's top-level `dns` section is merged at field level. OpenSurge
 rejects the imported values for `enable`, `listen`, `ipv6`, `enhanced-mode`,
-and `fake-ip-range`, but preserves the remaining resolver and filtering fields.
+`fake-ip-range`, and `opensurge-external-filter`, but preserves the remaining resolver and filtering fields.
 This includes `default-nameserver`, `nameserver`, `nameserver-policy`,
 `proxy-server-nameserver`, `direct-nameserver`, `fake-ip-filter`, and fallback
 settings. Proxy server hostnames can depend on these fields, so discarding them

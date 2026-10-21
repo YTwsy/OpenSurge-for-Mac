@@ -171,6 +171,24 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("dns.ipv6 must be a boolean")
 		}
 		cfg.DNS.IPv6 = enabled
+	case "external_dns_filter.enabled":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("external_dns_filter.enabled must be a boolean")
+		}
+		cfg.ExternalDNSFilter.Enabled = enabled
+	case "external_dns_filter.server":
+		cfg.ExternalDNSFilter.Server = value
+	case "external_dns_filter.timeout_ms":
+		timeout, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("external_dns_filter.timeout_ms must be a number")
+		}
+		cfg.ExternalDNSFilter.TimeoutMS = timeout
+	case "external_dns_filter.blocked_addresses":
+		cfg.ExternalDNSFilter.BlockedAddresses = splitCommaSeparated(value)
+	case "external_dns_filter.bypass_domains":
+		cfg.ExternalDNSFilter.BypassDomains = splitCommaSeparated(value)
 	case "mihomo.binary":
 		cfg.Mihomo.Binary = value
 	case "mihomo.config":

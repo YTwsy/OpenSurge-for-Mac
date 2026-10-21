@@ -111,11 +111,14 @@ export type Operation = {
 }
 export type MihomoRecoveryStatus = { state: 'idle' | 'observing' | 'recovering' | 'failed'; reason?: 'process_missing' | 'controller_refused'; error?: string }
 export type SleepPreventionStatus = { enabled: boolean; active: boolean; error?: string }
+export type ExternalDNSFilterConfig = { enabled: boolean; server: string; timeout_ms: number; blocked_addresses: string[]; bypass_domains: string[] }
+
 export type ControlConfig = {
   schema_version: number; revision: string
   gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; lan_prefix_len: number; upstream_interface: string }
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string; bypass_gateway: string; bypass_dns: string[] }
   dns: { listen: string; upstream: string; ipv6: boolean }
+  external_dns_filter?: ExternalDNSFilterConfig
   mihomo: { store_fake_ip: boolean }
   transparent: { mac_tun_ipv6?: boolean; mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }

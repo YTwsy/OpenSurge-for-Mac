@@ -210,3 +210,7 @@ same-wifi-dhcp-verify-device-policy-recovery:
 same-wifi-dhcp-stop: same-lan-stop-wifi-dhcp
 
 same-wifi-dhcp-status: same-lan-status-wifi-dhcp
+
+.PHONY: lab-test-external-dns-filter
+lab-test-external-dns-filter:
+	bash ./tests/lab/external-dns-filter-gate.sh

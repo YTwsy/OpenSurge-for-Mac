@@ -1,62 +1,72 @@
 # 外部 DNS 过滤：在 Fake-IP 应答前检查
 
-记录日期：2026-10-21。状态：设计草案，尚未实现或验收。
+记录日期：2026-10-21。状态：已进入实现；主机网络验收按用户要求暂缓。
+关联：[Issue #102](https://github.com/YTwsy/OpenSurge-for-Mac/issues/102)、
+[PR #103](https://github.com/YTwsy/OpenSurge-for-Mac/pull/103)。
 
-目标：支持用户自行部署的 Numa、SmartDNS 等 DNS 过滤服务，通过地址和端口接入；
-在受管 DNS 查询生成 Fake-IP 前执行过滤，保留 OpenSurge 的设备策略与代理分流。
+目标是接入用户自行部署的 DNS 过滤服务，在受管查询生成 Fake-IP 前检查，同时保留
+OpenSurge 的设备策略与代理分流。普通 `nameserver` 只在需要真实解析时使用，无法保证
+Fake-IP 查询经过过滤；本次实现因此位于公共 DNS 服务入口。
 
-## 现有流程
-
-```mermaid
-flowchart TD
-    LAN["下游 DNS"] --> D["dnsmasq"]
-    D --> M["mihomo DNS"]
-    MAC["Mac 系统 DNS / TUN 捕获的 DNS"] --> M
-    M -->|适用 Fake-IP| F["本地生成 Fake-IP 并回复"]
-    M -->|需要真实解析| U["nameserver 等上游<br/>可配置 Numa / SmartDNS"]
-    F -. 后续业务连接 .-> P["mihomo 按设备策略与规则分流"]
-```
-
-`nameserver` 是按需使用的解析后端。Fake-IP 可以直接生成，后续代理又可能使用远端解析，
-因此把上游改成 Numa / SmartDNS，并不保证它检查每个业务域名。
-
-## 拟议流程
-
-在 mihomo 的公共 DNS 处理路径加入可选检查，覆盖下游入口与 Mac/TUN DNS 入口。
-外部服务继续使用自己的上游，不需要反向转发给 OpenSurge。
+## 已实现路径
 
 ```mermaid
 flowchart TD
-    LAN["下游 DNS"] --> D["dnsmasq"]
-    D --> M["mihomo DNS 公共入口"]
-    MAC["Mac 系统 DNS / TUN 捕获的 DNS"] --> M
-    M --> E["查询外部 DNS 过滤服务<br/>用户提供地址与端口"]
-    E -->|拒答 / 约定的屏蔽应答| B["返回相应结果，不生成 Fake-IP"]
-    E -->|正常解析结果| C["继续原有 DNS / Fake-IP 逻辑"]
-    E -->|超时 / 服务错误| X["建议返回 DNS 服务失败，不静默绕过"]
-    C -. 后续业务连接 .-> P["mihomo 按设备策略与规则分流"]
+    LAN["下游 DNS"] --> D["dnsmasq：停用转发缓存"]
+    D --> M["mihomo 公共 DNS 入口"]
+    MAC["已由 TUN 捕获的 Mac DNS"] --> M
+    M --> E["外部服务：原始查询名与类型"]
+    E -->|拒答、空答或屏蔽地址| B["返回对应 DNS 结果"]
+    E -->|正常回答| C["既有 hosts / Fake-IP / 解析策略"]
+    E -->|超时、不可用、无效回答| X["SERVFAIL"]
+    C -. 后续连接 .-> P["既有设备策略与代理分流"]
 ```
 
-正常应答只用于本次检查；应使用 Fake-IP 的查询仍由 mihomo 生成应答，
-外部服务返回的真实 IP 不直接替代 Fake-IP。
+- 网络设置新增默认关闭的外部过滤配置，支持 IP:端口、超时、额外屏蔽 IP 和旁路域后缀；
+  配置保存、旧客户端兼容、applied 状态和引擎恢复沿现有控制面规则处理。
+- 补丁核心先执行检查，再进入 hosts、Fake-IP 与解析缓存；并发同名检查合并，但不缓存
+  允许/拒绝决定。UDP 截断回退 TCP，超时与反向递归有界，失败不自动放行。
+- 订阅不能注入过滤字段；不支持该功能的旧核心会因能力参数而显式失败。准备态保留
+  配置，但私有 DNS 仍只按自身引用依赖开启；就绪探针只旁路精确 TXT 名称。
+- dnsmasq 保留 DHCP 名称，关闭转发缓存与系统 hosts 快捷应答。本地域、反向查询、
+  系统私有搜索域、DHCP / MagicDNS 域和明确旁路域沿原路径处理。
+- 新增受控 DNS fixture、隔离真实核心检查与可选 Lab 断言。长期配置和行为规范已迁移至
+  [过滤契约](../sources/decisions/mihomo-profile-overlay.md#external-dns-filtering-before-fake-ip)，
+  可复跑命令见 [测试门槛](../sources/validation/test-gates.md#外部-dns-过滤)。
 
-## 直观对比
+## 2026-10-21 实现与验证
 
-| 项目 | 现有流程 | 拟议流程 |
-| --- | --- | --- |
-| 外部 DNS 的位置 | 需要真实解析时使用的上游 | 生成 Fake-IP 前的检查环节 |
-| Fake-IP 查询 | 可以不查询外部 DNS | 受管查询先检查，再按原配置应答 |
-| 代理分流 | mihomo 执行 | 继续由 mihomo 执行 |
-| 外部服务部署 | 用户自行部署 | 用户自行部署，OpenSurge 只负责接入 |
-| 外部服务是否缓存 Fake-IP | 普通上游接法不会收到 Fake-IP | 检查接法同样不向其传递 Fake-IP |
+被测工作树：`codex/docs-external-dns-filter`，基于 `e5cda70` 的本次实现；记录随实现提交。
+环境：macOS 14.8.5（23J423）、Go 1.25.3 darwin/arm64。真实核心为从固定上游源码与当前
+补丁构建的 `1.19.30-opensurge.1` arm64；测试只监听随机 loopback 地址，使用临时缓存和
+受控 DNS/HTTP 服务，不接管主机接口、路由、系统 DNS 或安装态网关。
 
-## 保留的边界
+已完成的验证：
 
-- 普通 DNS 应答没有专用的“广告”标记；拒答、空应答、屏蔽地址和服务错误的解释待验证。
-- 检查会增加外部 DNS 依赖与查询开销；本地域名、固定映射、内部解析、缓存和递归保护的边界待设计。
-- 目标范围是受管 DNS 入口，不承诺覆盖自带 DoH、直接使用 IP、已有连接或未发起 DNS 的显式代理请求。
-- 仅记录方向；后续实现须按 DNS、TUN、本机及相关 IPv6 路径分别验收。
+- `make test`：全部 Go 包通过。
+- `make web-test`：39 个文件、351 项通过；`make web-build` 通过并更新内嵌资源，
+  i18n 检查覆盖 1906 条英文消息。
+- 核心构建内的 DNS 过滤与 IPv6 无原生上游配置测试通过；核心 DNS 过滤 `-race` 通过。
+  覆盖 A/AAAA、CNAME sink、NODATA/错误、TCP fallback、请求元数据隔离、旁路与递归保护。
+- 隔离 `TestExternalDNSFilterRealCore` 通过：UDP/TCP、Fake-IP、hosts、real-IP 例外、
+  同名策略改变、断服失败、禁用恢复与停止释放。相关配置、控制 API 和应用状态竞态回归通过。
+- 设置当前补丁核心后，`go test ./internal/mihomo ./internal/controlapi -count=1` 全部通过，
+  包含准备态、自身 DNS 引用矩阵、绑定竞争与既有控制面回归。未开启正式 1053 分支。
+- `python3 tests/packaging/test_mihomo_cache.py`：15 项通过。新增补丁、DNS overlay、
+  构建脚本均参与输入失效检查；假构建工具已同步校验新增文件。
+- 三个 Lab 脚本的 `bash -n` 与 `git diff --check` 通过。
 
-现有契约：[系统 DNS 与 TUN](../sources/decisions/local-system-dns-coordination.md)、
-[DNS 配置合成](../sources/decisions/mihomo-profile-overlay.md)、
-[验证门槛](../sources/validation/test-gates.md)。
+复验期间，旧 DNS 引用测试夹具遇到一次 TCP 临时端口对应的 UDP 端口已被占用；已为
+新旧受控 DNS 夹具加入最多八次分配重试，不停止或替换任何既有 socket 所有者。
+
+未运行、不得据此宣称通过：
+
+- 用户明确选择“暂不运行主机网络验收”。本轮未启动 Lab 虚拟机或执行 DHCP、PF/NAT、
+  TUN、Mac 系统 DNS 与三种下游 IPv6 的实际主机网络门槛，也未替换安装态服务。
+- 已提供 `make lab-test-external-dns-filter` 入口，但脚本存在和语法通过不代表网络通过。
+  恢复验收时还须核对每轮 artifacts 与最终 `lab-down` / `lab-status` 清理。
+- 未验证 Numa / SmartDNS 的具体版本、真实部署和屏蔽规则；本轮只证明受控普通 DNS
+  应答契约。尚无吞吐量、延迟基线或长期运行数据。
+- 客户端缓存、独立 DoH、直接 IP、既有连接以及不发起受管 DNS 的代理请求不在保证范围。
+
+当前证据摘要见 [evidence map](../sources/validation/evidence-map.md#外部-dns-过滤)。

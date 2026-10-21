@@ -99,6 +99,9 @@ TAILSCALE_TEST_TOKEN=""
 TAILSCALE_NATIVE_IP=""
 TAILSCALE_NATIVE_ROUTE_INTERFACE=""
 
+# shellcheck source=external-dns-filter.sh
+source "$ROOT/tests/lab/external-dns-filter.sh"
+
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "required command not found: $1" >&2
@@ -379,6 +382,7 @@ write_config() {
     -e "s|__TRANSPARENT_MODE__|$(sed_escape "$transparent_mode")|g" \
     -e "s|__RUNTIME_DIR__|$(sed_escape "$runtime_dir")|g" \
     "$CONFIG_TEMPLATE" >"$CONFIG"
+  write_external_dns_filter_config
 }
 
 write_client_config() {
@@ -785,6 +789,9 @@ collect_artifacts() {
     ipv6-state.evidence.json; do
     cp "$STATE_DIR/$evidence" "$artifact_dir/$evidence" 2>/dev/null || true
   done
+  if [[ "$EXTERNAL_DNS_FILTER_EVIDENCE_STARTED" == true ]]; then
+    cp "$STATE_DIR/external-dns-filter-evidence.txt" "$artifact_dir/" 2>/dev/null || true
+  fi
   "$BINARY" status --config "$CONFIG" >"$artifact_dir/gateway-status.txt" 2>&1 || true
   "$BINARY" leases --config "$CONFIG" >"$artifact_dir/leases.txt" 2>&1 || true
   /sbin/ifconfig "$(lab_interface)" >"$artifact_dir/interface.txt" 2>&1 || true
@@ -2834,6 +2841,7 @@ run_ipv6_userspace_test() {
   cleanup_test() {
     status=$?
     collect_artifacts || true
+    stop_external_dns_filter
     restore_client_control_dns
     if [[ "$topology" == "same_lan" ]]; then
       for client in $CLIENTS; do
@@ -2862,6 +2870,7 @@ run_ipv6_userspace_test() {
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
+  start_external_dns_filter
 
   start_egress_probe
   egress_probe_started=1
@@ -2933,6 +2942,7 @@ run_ipv6_userspace_test() {
   grep -Fq 'type: opensurge-packet' "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_one")\": \"device:$client_one\"" "$STATE_DIR/mihomo.yaml"
   grep -Fq "\"$(client_mac "$client_two")\": \"device:$client_two\"" "$STATE_DIR/mihomo.yaml"
+  assert_external_dns_filter
   assert_out_of_lan_device_dormant
   if [[ "$topology" == "same_wifi_dhcp" ]]; then
     grep -Fq -- "- AND,((IN-TYPE,TUN),(IN-USER,device:$client_one)),REJECT" "$STATE_DIR/mihomo.yaml"
@@ -3036,6 +3046,7 @@ run_ipv6_userspace_test() {
     done
   fi
   stop_sudo_keepalive
+  stop_external_dns_filter
   trap - EXIT INT TERM
   collect_artifacts
   echo "virtual LAN $topology userspace IPv6 TCP, UDP, QUIC carrier, HTTP/3-only DIRECT and SOCKS5 UDP, HTTP-only fail-closed, device identity, upstream-router IPv6 block, and rollback test passed"
@@ -3527,7 +3538,7 @@ run_test() {
   require_cached_sudo
   ensure_lab_state_writable
   echo "Lab public HTTPS probe: $TEST_URL"
-  if [[ "$mode" == "tun" && -z "${OMG_LAB_MIHOMO_BINARY:-}" ]]; then
+  if [[ ( "$mode" == "tun" || "$EXTERNAL_DNS_FILTER_TEST" == true ) && -z "${OMG_LAB_MIHOMO_BINARY:-}" ]]; then
     # Host IPv6 is independent of native upstream availability, so every TUN
     # gate uses the same patched core shipped by OpenSurge.
     build_ipv6_lab_binaries
@@ -3546,6 +3557,7 @@ run_test() {
   cleanup_test() {
     status=$?
     collect_artifacts || true
+    stop_external_dns_filter
     restore_client_control_dns
     if [[ "$gateway_started" == 1 ]]; then
       sudo -n "$BINARY" stop --config "$CONFIG" || true
@@ -3562,6 +3574,7 @@ run_test() {
     exit "$status"
   }
   trap cleanup_test EXIT INT TERM
+  start_external_dns_filter
 
   if [[ "$TUN_EGRESS_PROFILE" == 1 ]]; then
     build_egress_probe
@@ -3646,6 +3659,7 @@ run_test() {
     fi
   fi
 
+  assert_external_dns_filter
   "$BINARY" status --config "$CONFIG"
   "$BINARY" leases --config "$CONFIG"
   lease_count=$(awk 'NF >= 4 { count++ } END { print count + 0 }' "$STATE_DIR/dnsmasq.leases")
@@ -3674,6 +3688,7 @@ run_test() {
     dns_fixture_started=0
   fi
   [[ ! -e "$STATE_DIR/state.json" ]] || { echo "gateway state was not removed" >&2; exit 1; }
+  stop_external_dns_filter
   trap - EXIT INT TERM
   collect_artifacts
   echo "virtual LAN ${mode} test passed"
