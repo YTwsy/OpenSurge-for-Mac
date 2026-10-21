@@ -51,27 +51,31 @@
 
 默认自身 DNS 绑定与准备态私有监听的实现、支持矩阵见
 [profile 契约](../decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
-现有证据覆盖隔离核心与准备态，正式网关及完整交接仍待完整验收。实际结果与待验项见
-[任务记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录)，
+实现与任务已完成归档；自身引用的证据覆盖隔离核心与准备态，正式自身引用全矩阵和完整
+交接未由这些结果证明。各轮实际结果与范围见
+[归档记录](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录)，
 验收方法见 [Host-network 门槛](test-gates.md#host-network-门槛)。
 
 ## 文件式自定义 DNS
 
 已接入文件导入、草稿/预览、候选合成和 Mac/下游 DNS 双入口；实现契约见
 [自定义 DNS](../decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
-已有部分双入口实机证据，完整验收矩阵尚未完成，范围见
-[实机任务记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)。
+已完成 Mac/Android 双入口端到端检查，具体路径、版本和未覆盖项见
+[实机记录](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)。
 预览权限修复已通过安装态复验，范围见
-[安装态复验记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-build41-替换安装与预览复验)。
-来源重载后的恢复状态一致性仍有待处理项，见
-[重载与恢复任务](../../tasks/reload-readiness-and-recovery-state.md)。
+[安装态复验记录](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-build41-替换安装与预览复验)。
+按用户确认以这些端到端结果收尾，Virtual Lab 不作为该任务追加完成条件，见
+[归档范围](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-完成与归档)。
+来源重载后的恢复状态一致性已修复，通过控制面回归和隔离真实核心验收，见
+[重载与恢复记录](../../tasks/finished_archived/reload-readiness-and-recovery-state.md#2026-10-21-实现与验证)；
+该修复未替换安装态服务，也未复验真实 DHCP/TUN 数据面。
 
 ## Mac 本机 IPv6 开关
 
 [本机 IPv6 契约](../decisions/local-system-dns-coordination.md#独立的-mac-ipv6-路径)
 支持独立控制 Mac 系统 TUN 的 IPv6 路径。已有本机开关及其与 AAAA 设置独立性的部分
 实机证据，不扩展为下游 IPv6、原生公网 IPv6 或全部应用兼容结论。具体结果与未覆盖项见
-[实机任务记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)，
+[实机任务记录](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)，
 验收方法见 [本机模式门槛](test-gates.md#mac-本机模式隔离门槛)。
 
 ## 使用与更新

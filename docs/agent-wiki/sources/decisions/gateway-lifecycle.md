@@ -53,7 +53,7 @@ IPv4：
    代理快照，检查现有代理冲突；DNS 读取失败不能当成自动配置；
 7. 在修改 host network 前保存 runtime state；
 8. 启用 IPv4 forwarding；
-9. 启动 mihomo；
+9. 启动 mihomo，保留 300ms 初始存活检查，再最多等待 10 秒确认 controller API 就绪；
 10. 最多等待 10 秒让 mihomo 运行时确认 TUN ready；若失败，先给 mihomo 3 秒
     SIGTERM 清理窗口，再按需 SIGKILL 并 rollback；
 11. 若下游 IPv6 生效，启动 BPF broker、记录 PID/fingerprint，再添加并等待 IPv6
@@ -67,6 +67,13 @@ IPv4：
 Rollback 是 start 契约的一部分。先按所有权恢复系统 DNS，再恢复可能已写入的系统代理，
 再尝试停止已经启动的服务、卸载 PF 状态并恢复 forwarding。DNS 或系统代理恢复失败时保留
 runtime state 和服务，避免 macOS 继续指向已经停止的本机代理端口。
+
+初始进程、API、按需 DNS、TUN 与 IPv6 packet listener 的就绪等待均接受生命周期 context，
+单次探测与轮询受同一阶段 deadline 约束。错误区分超时、取消、提前退出和明确 listener
+失败，保留阶段耗时、最后探测错误及有界的明确启动日志；`connection refused` 本身不解释
+慢启动原因。失败先使用独立的 3 秒 TERM 清理窗口，必要时 KILL。若清理仍报错，启动器
+返回所属 PID，由 Gateway Manager 记录身份并保留可重试的 runtime，不能遗失进程所有权。
+启动成功后的进程寿命不绑定到该请求；请求取消也不能取消已修改主机状态的 rollback。
 
 在 `same_wifi_dhcp` 中，gateway start 发生前，恢复状态机已经可能把 Mac 设为
 固定 IPv4，并要求操作者关闭路由器 DHCP。gateway rollback 只恢复本次 start
@@ -153,9 +160,17 @@ runtime state 不存在，则尝试用旧 config 重新 start。只有新 start 
 记录新 profile digest 且 `runtime/mihomo.yaml` 已重新生成后，控制面才可把来源标记为
 applied。网关停止时应用 profile 只更新 desired，留待下次正常 start。
 
-来源应用失败后的恢复阶段必须与最终 runtime 状态一致；旧网关成功恢复后不能被报告为
-待启动，也不能仅凭恢复阶段判断网关已停止。已知一致性缺口与后续验收见
-[重载与恢复任务](../../tasks/reload-readiness-and-recovery-state.md)。
+来源应用失败后的恢复阶段必须与最终 runtime 状态一致。ReloadError 明确区分候选校验、
+stop 与 start 失败；Helper 的失败响应同时保留阶段和配置回滚结果。配置恢复后只在 runtime
+不存在时启动旧配置，恢复使用独立、有界的 90 秒 context；即使原请求取消，也要尝试完成
+已停止旧网关的恢复。结果还须检查当前 boot 的进程、controller、TUN 与 IPv4 takeover
+健康状态，不能以 state 文件存在冒充旧网关恢复成功。候选 start 失败后残留的健康进程
+仍不等于旧 applied 配置；没有确认旧网关恢复时保留候选文件作为恢复材料。
+
+控制面在 operation 完成前协调 DHCP 恢复记录：健康旧网关恢复保留原运行/客户端验收
+阶段；确认 stopped 且 runtime 已消失才提供重新启动；stop 部分失败、degraded、interrupted
+或无法确认的状态保留恢复要求与原始错误。源码及隔离真实核心验证范围见
+[重载与恢复记录](../../tasks/finished_archived/reload-readiness-and-recovery-state.md#2026-10-21-实现与验证)。
 
 ## 过程反馈与完成边界
 

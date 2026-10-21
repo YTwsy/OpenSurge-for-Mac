@@ -19,6 +19,18 @@
 
 ## Host-network 门槛
 
+启动等待与回滚状态一致性的隔离检查可运行：
+
+```sh
+OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
+  go test ./internal/mihomo -run '^TestStartupReadinessRealCore$' -count=1
+```
+
+该测试用 2.5 秒可控启动延迟调用正式 `Manager.StartContext`，仅开启随机 loopback
+controller，并检查停止后监听释放。普通 Go 回归另覆盖 deadline、取消、提前退出、残留
+进程所有权、来源事务与 DHCP 恢复阶段；这些结果用于等待/状态逻辑验收，不证明 DHCP、
+PF/NAT 或 TUN 数据面。是否需要进一步网络门槛按本次改动与要声明的能力范围确定。
+
 订阅自身 DNS 与准备态的隔离真实核心检查：
 
 ```sh

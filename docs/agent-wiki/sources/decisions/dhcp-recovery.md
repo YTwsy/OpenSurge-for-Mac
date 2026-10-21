@@ -82,6 +82,12 @@ DHCP 接管期间成功 reload 保留原有 `gateway_active`、`client_validated
 降回 `router_dhcp_disabled_confirmed`，供用户重试启动或进入恢复。候选预检失败不执行
 stop，也不改变恢复阶段；具体重载顺序见 [生命周期契约](gateway-lifecycle.md)。
 
+来源 apply 包含旧配置回滚时，按事务结束后的状态处理：旧网关已确认恢复健康，保留原有
+运行阶段及客户端验收/跳过记录，来源应用本身仍报告失败。只有最终确认 stopped 且无
+runtime 才降回待启动。残留候选、部分 stop、interrupted 或健康状态不可确认时，不能仅凭
+state 文件或错误文本声称恢复成功，也不能引导在残留网关上重复启动。原始错误和需要先
+完成清理的说明追加到恢复记录，不抹掉已有证据。
+
 ## 验证边界
 
 `client_validation_skipped` 和 `complete_static` 是明确的流程选择，不构成客户端验收或自动获取恢复证据。真实同 LAN 方法见 [物理网络验收](../validation/physical-network.md)，历史结果见 [证据入口](../validation/evidence-map.md#物理网络)，物理上游断链见 [恢复门槛](../validation/test-gates.md#same-WiFi-上游断链恢复门槛)。
