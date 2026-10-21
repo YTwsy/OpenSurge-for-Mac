@@ -137,6 +137,7 @@ type HelperResponse struct {
 	Reloaded     bool                     `json:"reloaded,omitempty"`
 	Progress     *gateway.Progress        `json:"progress,omitempty"`
 	Workspace    *PolicyWorkspaceResponse `json:"workspace,omitempty"`
+	DNSPreview   *CustomDNSPreview        `json:"custom_dns_preview,omitempty"`
 	PolicyResult *mihomo.ProxyDelayResult `json:"policy_result,omitempty"`
 }
 
@@ -335,6 +336,11 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile" || request.Action == "config-apply-tailscale") {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
 	}
+	if err == nil && request.Action == "custom-dns-preview" {
+		// Preview renders profiles but never executes mihomo or dnsmasq. Keep
+		// the same trust checks for files it can read without requiring binaries.
+		err = requireTrustedProfileInputs(cfg, allowedRoot)
+	}
 	if err == nil && request.Action == "policy-workspace" {
 		if _, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile); stateErr != nil {
 			err = stateErr
@@ -406,10 +412,10 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 		}()
 	}
 	response := HelperResponse{}
-	if err == nil && policyManager != nil && strings.HasPrefix(request.Action, "config-") {
-		// Serialize configuration edits with policy requests. The DirectRunner
-		// then holds the cross-process lifecycle lock continuously across prepared
-		// cleanup, validation, persistence, reload, and rollback.
+	if err == nil && policyManager != nil && (strings.HasPrefix(request.Action, "config-") || request.Action == "custom-dns-preview") {
+		// Serialize configuration edits and DNS previews with policy requests.
+		// Each runner also holds the cross-process lifecycle lock; preview only
+		// renders private temporary artifacts and never cleans up an engine.
 		policyManager.mu.Lock()
 		defer policyManager.mu.Unlock()
 	}
@@ -428,6 +434,14 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 		}
 		runner := DirectRunner{}
 		switch request.Action {
+		case "custom-dns-preview":
+			if request.Workspace == nil {
+				err = fmt.Errorf("custom DNS preview snapshot is required")
+			} else {
+				var preview CustomDNSPreview
+				preview, err = runner.PreviewCustomDNS(ctx, configPath, *request.Workspace)
+				response.DNSPreview = &preview
+			}
 		case "policy-workspace":
 			if request.Workspace == nil || policyManager == nil {
 				err = fmt.Errorf("policy workspace lease is required")
@@ -518,7 +532,7 @@ func retrySystemSleepRelease(ctx context.Context, manager *systemSleepLeaseManag
 }
 
 func loadHelperConfig(action, configPath string) (config.Config, error) {
-	if action == "stop" || action == "restart-mihomo" || action == "policy-workspace" || action == "policy-workspace-hold" {
+	if action == "stop" || action == "restart-mihomo" || action == "policy-workspace" || action == "policy-workspace-hold" || action == "custom-dns-preview" {
 		return config.LoadRuntime(configPath)
 	}
 	return config.Load(configPath)
@@ -546,7 +560,7 @@ func reconcilePreparedPolicyEngine(allowedRoot string) error {
 
 func helperActionAllowed(action string) bool {
 	switch action {
-	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "config-apply-tailscale", "config-forget-tailscale-identity", "sleep-prevention-hold", "policy-workspace", "policy-workspace-hold":
+	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "config-apply-tailscale", "config-forget-tailscale-identity", "sleep-prevention-hold", "policy-workspace", "policy-workspace-hold", "custom-dns-preview":
 		return true
 	default:
 		return false
@@ -625,6 +639,10 @@ func requireTrustedStartInputs(cfg config.Config, allowedRoot string) error {
 			return fmt.Errorf("dhcp.binary: %w", err)
 		}
 	}
+	return requireTrustedProfileInputs(cfg, allowedRoot)
+}
+
+func requireTrustedProfileInputs(cfg config.Config, allowedRoot string) error {
 	if cfg.Mihomo.Profile != "" {
 		if err := requireTrustedFile(cfg.Mihomo.Profile, allowedRoot, false); err != nil {
 			return fmt.Errorf("mihomo.profile: %w", err)

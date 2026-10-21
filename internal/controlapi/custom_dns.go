@@ -1,6 +1,7 @@
 package controlapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/mihomo"
+	"open-mihomo-gateway/internal/runtime"
 )
 
 var errCustomDNSRevision = errors.New("custom DNS changed while it was being edited; reload before saving")
@@ -37,6 +39,28 @@ type CustomDNSPreview struct {
 	MacReady        bool                     `json:"mac_ready"`
 	DownstreamReady bool                     `json:"downstream_ready"`
 	DNSReferences   []mihomo.DNSReference    `json:"dns_references"`
+}
+
+type CustomDNSPreviewRunner interface {
+	PreviewCustomDNS(context.Context, string, PolicyWorkspaceInput) (CustomDNSPreview, error)
+}
+
+func (c HelperClient) PreviewCustomDNS(ctx context.Context, configPath string, input PolicyWorkspaceInput) (CustomDNSPreview, error) {
+	response, err := c.call(ctx, HelperRequest{Action: "custom-dns-preview", ConfigPath: configPath, Workspace: &input})
+	if err != nil {
+		return CustomDNSPreview{}, err
+	}
+	if response.DNSPreview == nil {
+		return CustomDNSPreview{}, fmt.Errorf("helper returned no custom DNS preview")
+	}
+	return *response.DNSPreview, nil
+}
+
+func (DirectRunner) PreviewCustomDNS(ctx context.Context, configPath string, input PolicyWorkspaceInput) (CustomDNSPreview, error) {
+	if os.Geteuid() != 0 {
+		return CustomDNSPreview{}, fmt.Errorf("privileged helper is required")
+	}
+	return previewCustomDNS(ctx, configPath, input)
 }
 
 func (s *Store) customDNSLocked() (mihomo.CustomDNSDocument, string, error) {
@@ -167,33 +191,66 @@ func (s *Server) handleCustomDNSPreview(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnprocessableEntity, "custom_dns_invalid", err.Error())
 		return
 	}
-	preview := CustomDNSPreview{Changes: []mihomo.CustomDNSChange{}, Warnings: []string{}, Blockers: []string{}, ManagedChanges: []mihomo.CustomDNSChange{}, DNSReferences: []mihomo.DNSReference{}, CustomYAML: doc.YAML}
-	cfg, err := config.LoadRuntime(s.configPath)
-	if err != nil {
-		writeError(w, http.StatusUnprocessableEntity, "custom_dns_preview_failed", err.Error())
-		return
-	}
-	preview.MacReady = cfg.ManageSystemDNS()
-	preview.DownstreamReady = strings.TrimSpace(cfg.DNS.Upstream) == "" || cfg.DNS.Upstream == config.MihomoDNSUpstream
 	input, err := s.policyWorkspaceDraftInput(PolicyWorkspaceRequest{Action: "read"}, true)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "custom_dns_preview_failed", err.Error())
 		return
 	}
 	input.CustomDNS = &doc
-	preview.OverlayYAML = mihomo.CustomDNSProfileSection(input.Overlay)
-	temporary, err := os.MkdirTemp(s.store.Dir(), ".custom-dns-preview-*")
+	preview, err := s.dnsPreviewRunner.PreviewCustomDNS(r.Context(), s.configPath, input)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "custom_dns_preview_failed", err.Error())
+		writeError(w, http.StatusBadGateway, "custom_dns_preview_failed", err.Error())
 		return
 	}
-	defer os.RemoveAll(temporary)
+	writeJSON(w, http.StatusOK, preview)
+}
+
+// The Helper owns composition because its recovery metadata is root-only. It
+// accepts a draft snapshot, never a caller-selected base/runtime/output path,
+// and returns only the DNS sections already exposed by the preview endpoint.
+// No prepared engine, desired config, recovery record or network is changed.
+func previewCustomDNS(ctx context.Context, configPath string, input PolicyWorkspaceInput) (preview CustomDNSPreview, err error) {
+	if input.Request.Action != "read" || input.Request.Group != "" || input.Request.Policy != "" || len(input.Request.Names) != 0 || input.CustomDNS == nil {
+		return preview, fmt.Errorf("custom DNS preview requires a read-only draft snapshot")
+	}
+	doc, err := mihomo.NormalizeCustomDNS(*input.CustomDNS)
+	if err != nil {
+		return preview, err
+	}
+	input.CustomDNS = &doc
+	cfg, err := config.LoadRuntime(configPath)
+	if err != nil {
+		return preview, err
+	}
+	err = runtime.WithLifecycleLock(cfg, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if input.Revision == "" || input.Revision != fileDigest(configPath) {
+			return fmt.Errorf("config revision conflict; refresh custom DNS preview")
+		}
+		temporary, err := os.MkdirTemp(cfg.Runtime.Dir, ".custom-dns-preview-*")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(temporary)
+		preview = composeCustomDNSPreview(cfg, input, temporary)
+		return ctx.Err()
+	})
+	return preview, err
+}
+
+func composeCustomDNSPreview(cfg config.Config, input PolicyWorkspaceInput, temporary string) CustomDNSPreview {
+	doc := *input.CustomDNS
+	preview := CustomDNSPreview{Changes: []mihomo.CustomDNSChange{}, Warnings: []string{}, Blockers: []string{}, ManagedChanges: []mihomo.CustomDNSChange{}, DNSReferences: []mihomo.DNSReference{}, CustomYAML: doc.YAML}
+	preview.MacReady = cfg.ManageSystemDNS()
+	preview.DownstreamReady = strings.TrimSpace(cfg.DNS.Upstream) == "" || cfg.DNS.Upstream == config.MihomoDNSUpstream
+	preview.OverlayYAML = mihomo.CustomDNSProfileSection(input.Overlay)
 	composition := mihomo.CustomDNSComposition{}
 	candidate, base, err := materializeWorkspaceCandidate(filepath.Join(temporary, "config.yaml"), cfg, input, &composition)
 	if err != nil {
 		preview.Blockers = append(preview.Blockers, err.Error())
-		writeJSON(w, http.StatusOK, preview)
-		return
+		return preview
 	}
 	if base != nil {
 		preview.BaseYAML = mihomo.CustomDNSProfileSection(base.Source)
@@ -249,7 +306,7 @@ func (s *Server) handleCustomDNSPreview(w http.ResponseWriter, r *http.Request) 
 	if doc.Enabled {
 		preview.Warnings = append(preview.Warnings, "configuration preview only; actual Mac TUN and downstream DNS queries have not been tested")
 	}
-	writeJSON(w, http.StatusOK, preview)
+	return preview
 }
 
 // composeDNSDraft keeps source selection/preview and workspace startup on the

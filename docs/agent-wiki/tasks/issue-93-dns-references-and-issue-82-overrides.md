@@ -488,3 +488,73 @@ TypeScript、生产构建及嵌入资源刷新）、`make test`（Go 全量，�
 保存草稿与应用到网关各自保留清晰的操作区。同步浅色/深色主题、窄卡片布局及英文文案。
 隔离的 React 界面预览使用虚拟数据检查上述布局；Web 全量 315 项通过，最后的卡片头
 调整后定向 94 项交互回归及 `make web-build` 通过。仅改变呈现，不扩展真实网络验收范围。
+
+## 2026-10-21 安装版实机验收（部分范围）
+
+用户授权使用当前安装版测试 Mac 本机 IPv6 开关和自定义 DNS，允许必要网关重启并要求恢复
+原配置，明确本轮不运行 Virtual Lab。被测版本为 v0.3.2 build39，构建记录来源提交
+`4ab752b51a758fdd359e83b991e523c2c7370aa5`；macOS 14.8.5 / arm64，Mihomo
+`1.19.30-opensurge.1`，现有 `same_wifi_dhcp` 网关。以下结果属于该安装环境，不是后来源码
+或所有平台的验收。没有修改产品代码、重建安装包、提交或发布。
+
+USB 只承载 ADB 控制，Android 的数据走现有 Wi-Fi。手机原有 VPN 会接管默认解析；显式查询
+Mac DNS 的结果与默认 VPN 解析分开记录。最终下游系统解析/HTTP/HTTPS 使用临时 Java 探针
+对自身 socket/解析单独绑定既有 Wi-Fi 网络，不关闭 VPN、不改手机 DNS/代理设置。最初 `nc`
+二进制 DNS 探针的间歇空响应由该探针复核取代，不据此判定 UDP DNS 功能失败。
+
+| 实际检查 | 结果与证据范围 |
+| --- | --- |
+| 自定义 DNS 预览 | 失败：Control Service 读取 `runtime/policy-workspace/base.json` 时 permission denied；Mac/downstream 前提标志均为 ready。未调整该目录权限 |
+| 保存草稿 | 保存后 runtime state、进程与运行配置未变，desired/applied 正确显示待应用 |
+| 正式应用及禁用 | 通过原来源 apply 接口，由安装版 Helper 执行最终校验与完整 reload；成功后 desired/applied 一致，禁用并应用恢复原 DNS |
+| 固定 A、hosts 别名、指定 DNS 上游与真实地址例外 | Mac 和 Android 显式查询网关，UDP/TCP 均得到预期地址；受控上游记录命中；dnsmasq 启用 `no-hosts` |
+| 真实系统解析和服务访问 | Mac 系统解析后 HTTP 成功；Android 绑定 Wi-Fi 后，hosts 与 policy 域名的系统解析/HTTP 均成功，Wi-Fi HTTPS 返回 200；默认 VPN 的 UnknownHost 不归因于网关 DNS |
+| 应用与缓存切换 | 先缓存受控上游的 300 秒 TTL 答案；仅改草稿仍返回旧值，应用 hosts 覆盖后四条 UDP/TCP 查询路径均立即得到新值，dnsmasq PID 改变 |
+| AAAA 关闭语义 | 普通 policy AAAA 在两端 UDP/TCP 均为空；显式 hosts 中的文档 IPv6 地址在同样条件下仍被返回，与用户指南的统一受开关控制说明不一致 |
+| Mac 本机 IPv6 / AAAA 四组合 | 均完整停止、保存两项偏好、启动；开启时实际 TUN 地址和公网/fake IPv6 受管路由存在，关闭时撤销。AAAA 独立控制普通 fake-AAAA；四组合的 Mac IPv4 HTTPS 与 Android Wi-Fi HTTPS 均成功 |
+| IPv6 实际请求 | 初次直接域名的强制 IPv6 curl 失败；之后显式使用当前 DNS 返回的 fake-AAAA，普通源和绑定 TUN IPv6 源的 HTTPS 均返回 200，核心日志记录该 TUN IPv6 来源。不将复验通过推导为全部应用解析/缓存兼容 |
+| 一次来源 reload 失败与回滚 | 新核心 API 未在现有 2 秒窗口就绪，事务恢复旧配置和运行网关；但 DHCP 接管记录退回 `router_dhcp_disabled_confirmed`。实际运行与记录核对后恢复原接管记录；后续复测成功，原失败保留 |
+| 最终恢复 | 系统 config 与原 profile、来源列表、全局附加配置、偏好和接管记录按备份逐字节核对；原先不存在的 DNS 草稿文件恢复为不存在。原配置重新加载，网关/TUN ready，Mac IPv4 与 Android Wi-Fi HTTPS 再次通过。手机临时探针删除，原 VPN/DNS/代理设置保留 |
+
+来源应用会把 profile 引用规范化到新的持久化路径。仅恢复 DNS 开关不足以声称原配置逐字节
+一致；本次经 macOS 管理员认证，在生命周期锁内核对唯一差异为该引用且有效 profile 内容
+相同后，原子恢复原系统配置，再重载原配置对齐 applied digest。来源列表中测试更新的派生
+`effective_digest` 也恢复到原备份。操作历史和运行日志保留本次测试痕迹，不回滚审计记录。
+
+脱敏机器结果保存在本地 `artifacts/installed-acceptance/2026-10-21-v0.3.2-build39-os8ecntjag/acceptance-results.json`；
+原始配置、凭据相关材料、ADB 标识、网络地址和日志仅留私有临时证据目录，不写入本文或公开制品。
+
+未覆盖：Virtual Lab、完整 DNS-02/03 自身引用矩阵、准备态到正式态的全量交接、系统 hosts
+冲突、whitelist/rule 全矩阵、文件选择/导出等原生 UI、原生 IPv6 出口、下游 IPv6（始终 off）、
+夸克登录、所有应用 IPv4 自动回退、睡眠/重启恢复及其他 macOS/架构。上表只补充相应路径证据，
+本任务的完整验收项保持未完成。上表保留 build39 的原始观察，后续处理不改写其被测版本。
+
+## 2026-10-21 实机反馈后的处理
+
+用户确认保留显式 hosts 的 AAAA 行为：启用 hosts 后，手工 IPv6 映射优先于 `dns.ipv6`，
+普通上游与 Fake-IP 的 AAAA 仍由开关控制。同步修正中英文 App 指南、本机路由说明和领域
+契约；这次调整文档语义，不改 Mihomo 或生成配置。返回地址与 IPv6 路径可达性分别验证。
+
+重载的 2 秒 API 就绪超时和旧网关回滚后 DHCP 阶段误报，转入
+[独立任务](reload-readiness-and-recovery-state.md)，按用户要求本次不修复。
+
+预览权限修复改为由 Helper 接收控制服务组装的草稿快照，在生命周期锁下读取 root-only
+base 并在临时目录合成，只返回 DNS/hosts 区块与诊断，结束后删除候选文件。不放宽 base
+权限，不启动准备态或网关进程，不保存草稿或 desired config。配置 revision 不符或 Helper
+不可用时明确报错。现有安装版 build39 未替换，仍需新 Control Service 与 Helper 配套安装
+后复验预览入口；源码回归不写成安装版已修复，也不扩大原实机或 Lab 证据范围。
+
+本次源码检查（2026-10-21，当前工作区，尚未提交）：
+
+- `GOCACHE=/private/tmp/opensurge-go-cache make test`：正常主机权限下全量通过，包含既有
+  来源应用/回滚事务回归；沙箱首轮的 boot-session 读取被拒及进程启动失败由原命令主机
+  重跑复核，不修改产品逻辑规避环境限制。
+- `go test -race ./internal/controlapi -count=1`：正常主机权限下通过。新增回归覆盖从基线
+  反复预览、缺失来源库快照、禁用后恢复继承、过期 revision、取消、生命周期锁竞争、
+  合成错误和临时文件清理；草稿、原 profile、desired config 与 base 保持不变。
+- `TestCustomDNSPreviewRootHelperPermissions`：编译测试二进制后，以 root 设置
+  `OMG_TEST_ROOT_DNS_PREVIEW=1` 执行；managed/imported 两项均通过。实际 UID 65534
+  子进程先确认无法读取 root 的 `0700` 目录/`0600` base，再通过组授权 `0660` Unix
+  socket 请求真实 Helper 分发与预览，检查无非 DNS 凭据泄露、无配置写入、无权限放宽和
+  临时候选残留。仅使用隔离临时目录，不执行引擎、不改变宿主网络或已安装服务。
+- `git diff --check`：通过。本次不重建/安装 PKG、不运行 Virtual Lab，不复测实际网关流量。

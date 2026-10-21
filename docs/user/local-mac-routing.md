@@ -60,6 +60,12 @@ The configuration field is `transparent.mac_tun_ipv6: true/false`.
 IPv6 is set to `auto` and remains inactive because no native upstream IPv6 is
 available, enabling AAAA responses still makes mihomo DNS return fake IPv6
 addresses from `fdfe:dcba:9876::/64`. Some applications prefer those answers.
+
+Disabling AAAA controls upstream and Fake-IP IPv6 answers. With hosts enabled,
+explicit IPv6 mappings can still answer AAAA. Those answers do not establish a
+working Mac or downstream IPv6 path; retain only IPv4 hosts mappings for fixed
+names that should use IPv4 alone.
+
 These fake IPv6 answers are destination addresses. With Mac IPv6 takeover enabled,
 local traffic uses the fixed system-TUN source identity `fdfe:dcba:9877::1/128`, independently of the AAAA
 and downstream IPv6 settings. AAAA therefore does not need to be disabled merely

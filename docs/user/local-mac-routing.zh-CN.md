@@ -51,6 +51,11 @@ IPv4 回退行为。没有原生 IPv6 出口时，可用此开关排查应用反
 `dns.ipv6` 与 `transparent.tun_ipv6` 相互独立。即使“何时为下游启用 IPv6”设为
 `auto` 且因没有原生上游 IPv6 而未实际启用下游 IPv6，开启“允许 AAAA 查询”仍会让
 mihomo DNS 返回 `fdfe:dcba:9876::/64` 中的 fake IPv6。一些应用会优先使用这类 AAAA。
+
+关闭 AAAA 只控制普通上游解析与 Fake-IP 的 IPv6 答案；启用 hosts 后，显式 IPv6 映射
+仍可返回 AAAA。这个答案不保证本机或下游 IPv6 路径可达；若固定名称只应使用 IPv4，
+请仅保留对应的 IPv4 hosts 映射。
+
 fake IPv6 是 DNS 返回的目标地址；开启本机 IPv6 接管时，本机流量的系统 TUN 源身份固定使用
 `fdfe:dcba:9877::1/128`，不会随 AAAA 或下游 IPv6 开关切换。因此不需要为了让本机
 直连生效而关闭 AAAA。

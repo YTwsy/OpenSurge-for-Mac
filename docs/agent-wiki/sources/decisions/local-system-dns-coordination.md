@@ -53,9 +53,16 @@ TUN 与路由检查通过、DHCP/DNS 和 pf 就绪，再持久化 DNS 写入意�
 
 保存草稿不改变运行态。通过既有启动或来源应用进行完整切换；来源应用的完整 reload
 会重启所属 dnsmasq，避免沿用旧服务缓存。客户端 TTL 缓存仍由客户端管理。
-Mac 和下游的 UDP/TCP、固定 A/AAAA、公司上游与真实连接验收仍待用户执行；
-当前结构检查不能当作这两个入口的运行证据。详见
-[自定义 DNS 契约](mihomo-profile-overlay.md#file-based-custom-dns)。
+普通上游解析与 Fake-IP 的 AAAA 服从 `dns.ipv6`；启用 hosts 后，显式 IPv6 映射优先于该
+开关，关闭时仍可返回 AAAA。这是保留手工固定地址的预期行为，不表示 IPv6 路径已就绪。
+若固定名称只应使用 IPv4，仅保留它的 IPv4 hosts 映射。
+
+Mac 和下游的运行证据必须分别收集，不能由结构检查推导。预览由 Helper 在私有临时目录中
+读取 root-only workspace base 并合成，仅返回 DNS 区块和诊断，不修改敏感文件权限或应用
+配置。安装版 build39 的 Control Service 仍直接读取该文件并出现权限错误，需要同时更新
+Control Service 与 Helper 后复验，正式来源应用成功不代表旧版预览可用。
+具体范围见 [安装版实机记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)
+与 [自定义 DNS 契约](mihomo-profile-overlay.md#file-based-custom-dns)。
 
 ## 独立的 Mac IPv6 路径
 

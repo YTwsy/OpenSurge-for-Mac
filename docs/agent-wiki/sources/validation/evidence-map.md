@@ -63,25 +63,41 @@
 已接入文件导入、草稿/预览、候选合成、Mac TUN 前提与 dnsmasq `no-hosts`，并对 DHCP
 名称和别名冲突设置应用阻断；实现契约见
 [自定义 DNS](../decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
-本轮用户明确接手后续验收。Go/Web/桌面代码检查只证明对应软件行为；新增功能的双入口
-真实 DNS 查询、真实连接、系统 hosts 冲突、DNS 缓存切换及完整交接尚未验收。
-这也不补齐上节 DNS-02/03 的正式 1053 与 Lab 缺口。执行记录及验收矩阵继续保留在
-[现有任务](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#文件式自定义-dns-实施记录)。
+安装版 v0.3.2 build39 的有范围实机验收已覆盖 Mac/Android 的 UDP/TCP 固定地址、别名、
+指定上游与真实地址例外、草稿不影响运行态、应用后缓存切换及系统解析后的 HTTP 连接。
+手机保留 VPN，连接证据使用单独绑定 Wi-Fi 的探针；默认 VPN 解析不能作为网关 DNS 证据。
+原配置与运行态已恢复。被测提交、环境、失败记录与未覆盖项见
+[安装版实机记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)。
+
+安装版 build39 的预览读取 `runtime/policy-workspace/base.json` 存在权限阻塞；当前源码已
+改为 Helper 合成并返回 DNS 预览，安装版需更新 Control Service 与 Helper 后复验。
+该源码已通过全量 Go、Control API race，以及隔离的 root Helper/非 root 控制服务权限回归，
+范围见 [源码修复记录](../../tasks/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-实机反馈后的处理)；
+这些检查不运行网关或替代安装版、host-network 验收。
+显式 hosts IPv6 在 `dns.ipv6: false` 时仍返回 AAAA 被保留为手工固定地址优先的预期语义，
+普通上游与 Fake-IP AAAA 仍由开关控制，中英文指南已明确这个边界。
+一次来源应用遇到核心 2 秒就绪超时，旧网关回滚成功，但 DHCP 接管阶段退回确认状态；
+该问题未修复，单独记录在 [重载与恢复任务](../../tasks/reload-readiness-and-recovery-state.md)。
+本轮不补齐系统 hosts 冲突、完整准备态交接、DNS-02/03 专项矩阵或 Virtual Lab 缺口，
+不能据此把自定义 DNS 的完整验收矩阵标为完成。
 
 ## Mac 本机 IPv6 开关
 
 [本机 IPv6 契约](../decisions/local-system-dns-coordination.md#独立的-mac-ipv6-路径)
-新增独立关闭能力。配置/API、已应用状态和隔离真实核心解析检查不能证明实际 TUN
-地址与路由撤销，或应用自动回退 IPv4。该路径仍需按
-[本机模式门槛](test-gates.md#mac-本机模式隔离门槛)补齐关闭/开启、IPv4 连通及停止恢复，
-并单独复验夸克登录；旧版默认开启路径的历史结果不能代替新开关验收。
+新增独立关闭能力。安装版 v0.3.2 build39 在无原生上游 IPv6 的 Mac 上，已完成本机开关与
+AAAA 的四组合完整启停、实际 TUN 地址与公网/fake IPv6 路由检查，以及 Mac IPv4 和 Android
+Wi-Fi HTTPS 回归。显式使用当前 fake-AAAA 的 IPv6 HTTPS 在普通源地址和绑定 TUN IPv6 源地址
+时均成功，核心日志记录对应来源；初次直接域名的强制 IPv6 请求曾失败，未据此宣称所有应用
+解析/缓存与 IPv4 回退兼容。范围见上述实机记录。
+
+本轮按用户安排未运行 [本机模式 Lab](test-gates.md#mac-本机模式隔离门槛)，下游 IPv6 始终
+关闭，不证明下游 IPv6 隔离、原生 IPv6、公网 IPv6 DIRECT 或夸克登录；对应门槛仍待复验。
 
 已确认旧缓存核心会在无原生 IPv6、DNS AAAA 关闭时清除显式 host TUN IPv6 地址，
 导致 OpenSurge 的 IPv6 就绪检查失败。此前禁用 TUN 的解析测试漏掉了这一组合。
 当前构建改为确定性的无上游核心测试及启用 TUN 配置的隔离二进制测试，并校验
-缓存核心的源码、补丁、构建参数与二进制摘要，不匹配时重建。此证据限于配置解析和
-打包，不代表当前运行网关已升级，
-也不替代安装后完整启停、路由与实际应用复验。
+缓存核心的源码、补丁、构建参数与二进制摘要，不匹配时重建。该构建证据本身限于配置解析
+和打包；安装版实机结果单独限定在上文范围，不由构建通过推导其他网络或应用兼容结论。
 
 ## 使用与更新
 

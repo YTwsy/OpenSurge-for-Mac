@@ -88,6 +88,22 @@ possible node/provider use remain Mihomo semantics. Preview shows known direct
 node/provider host matches, direct-nameserver follow-policy state, before/after
 values, lower-layer DNS and subsequent managed changes.
 
+With hosts enabled, explicit IPv6 hosts mappings can answer AAAA even when
+`dns.ipv6` is false. This is an intentional fixed-address override; that switch
+controls ordinary upstream and Fake-IP AAAA answers, not removal of explicit
+addresses. DNS answers do not establish Mac or downstream IPv6 reachability.
+An IPv4-only fixed name should retain only IPv4 hosts mappings.
+
+The authenticated preview endpoint sends its server-assembled draft snapshot to
+the privileged Helper using the fixed `custom-dns-preview` action. The Helper
+checks the desired-config revision and renders under the shared lifecycle lock,
+using a private temporary directory below the managed runtime root. It reads the
+existing root-only workspace base without changing its permissions, returns only
+DNS/hosts sections and composition diagnostics, then removes temporary profiles.
+It never starts/stops a prepared or gateway engine or commits configuration.
+The browser cannot choose base, runtime or output paths. Control Service and
+Helper must both include this action; an unavailable/older Helper fails explicitly.
+
 The immutable candidate carries `x-opensurge-custom-dns` and the desired config
 stores `mihomo.profile_custom_dns_digest`. This is control-plane metadata, stripped
 from runtime/export output, and is not accepted as ownership metadata from raw
@@ -123,10 +139,15 @@ Unsaved DNS edits survive status refreshes and guard navigation away from Source
 Exports contain only the canonical custom YAML; desktop uses a native save dialog,
 browser uses a file download. No original file paths or file watching are retained.
 
-The implementation is configuration-level support. Mac system/TUN and downstream
-UDP/TCP DNS plus actual connections still require the acceptance matrix in the
-[current task](../../tasks/issue-93-dns-references-and-issue-82-overrides.md);
-unit tests or previews do not establish real-network acceptance.
+Real-network acceptance remains scoped by the matrix in the
+[current task](../../tasks/issue-93-dns-references-and-issue-82-overrides.md).
+Installed acceptance covers selected dual-entry UDP/TCP, cache switching and
+system-resolution/service paths; it does not complete the full matrix or Lab gates.
+The tested build39 predates the Helper preview path and cannot read the root-only
+workspace base from its Control Service. Source regression results and installed
+revalidation must be recorded separately; a successful source apply does not
+establish preview availability. The independently deferred reload timeout/recovery
+state issue is tracked in [its own task](../../tasks/reload-readiness-and-recovery-state.md).
 
 ## Global profile overlay and optional sources
 

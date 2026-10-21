@@ -153,6 +153,11 @@ runtime state 不存在，则尝试用旧 config 重新 start。只有新 start 
 记录新 profile digest 且 `runtime/mihomo.yaml` 已重新生成后，控制面才可把来源标记为
 applied。网关停止时应用 profile 只更新 desired，留待下次正常 start。
 
+已知安装版实测曾在 reload 的新核心 2 秒 API 就绪检查超时后成功恢复旧网关，但控制面
+DHCP 接管阶段仍退回 `router_dhcp_disabled_confirmed`。该阶段不能被当作网关已停止的证据；
+复验必须同时检查实际 runtime 与恢复记录是否一致。该偏差尚未修复，后续调查与验收见
+[独立任务](../../tasks/reload-readiness-and-recovery-state.md)，本次 DNS 预览修复不处理它。
+
 ## 过程反馈与完成边界
 
 生命周期通过 context 中的 `gateway.Progress` 回调报告真实阶段，包括校验、停止、启动、

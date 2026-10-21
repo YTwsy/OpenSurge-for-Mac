@@ -2713,6 +2713,10 @@ func newReadyMihomoTestServer(t *testing.T) *httptest.Server {
 
 type fakeRunner struct{}
 
+func (fakeRunner) PreviewCustomDNS(ctx context.Context, path string, input PolicyWorkspaceInput) (CustomDNSPreview, error) {
+	return previewCustomDNS(ctx, path, input)
+}
+
 func (fakeRunner) Run(_ context.Context, _, _ string) error { return nil }
 func (fakeRunner) StartPolicyWorkspace(_ context.Context, _ string, _ PolicyWorkspaceInput) error {
 	return nil

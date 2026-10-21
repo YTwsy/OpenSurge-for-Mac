@@ -38,6 +38,7 @@ type Options struct {
 	ConfigRunner      ConfigurationRunner
 	SleepRunner       SleepPreventionRunner
 	PolicyRunner      PolicyWorkspaceRunner
+	DNSPreviewRunner  CustomDNSPreviewRunner
 	DiscoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
 	DiscoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
@@ -85,6 +86,7 @@ type Server struct {
 	mihomoRecovery        *mihomoRecoveryController
 	sleepPrevention       *sleepPreventionController
 	policyWorkspaceRunner PolicyWorkspaceRunner
+	dnsPreviewRunner      CustomDNSPreviewRunner
 	policyWorkspaceLease  policyWorkspaceLease
 	lan                   *lanAccessController
 	token                 string
@@ -164,6 +166,13 @@ func New(options Options) (*Server, error) {
 			options.PolicyRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
 		}
 	}
+	if options.DNSPreviewRunner == nil {
+		if runner, ok := options.Runner.(CustomDNSPreviewRunner); ok {
+			options.DNSPreviewRunner = runner
+		} else {
+			options.DNSPreviewRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
+		}
+	}
 	if options.DiscoverNetwork == nil {
 		options.DiscoverNetwork = macosnetwork.Discover
 	}
@@ -211,6 +220,7 @@ func New(options Options) (*Server, error) {
 		networkRunner:         options.NetworkRunner,
 		configRunner:          options.ConfigRunner,
 		policyWorkspaceRunner: options.PolicyRunner,
+		dnsPreviewRunner:      options.DNSPreviewRunner,
 		discoverNetwork:       options.DiscoverNetwork,
 		discoverDefault:       options.DiscoverDefault,
 		listInterfaces:        options.ListInterfaces,

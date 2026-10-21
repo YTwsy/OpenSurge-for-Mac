@@ -172,7 +172,8 @@ policies are enabled by default; register devices and choose their egress on the
 Devices page. Select **保存网络配置** (Save network configuration) to save network settings.
 
 All three topologies expose the two experimental IPv6 settings. **IPv6 DNS
-queries** controls AAAA answers, while **Downstream IPv6 takeover** establishes
+queries** controls upstream and Fake-IP AAAA answers; explicit IPv6 mappings in
+enabled hosts can still answer AAAA. **Downstream IPv6 takeover** establishes
 the userspace TCP/UDP path. **Auto** takes over only when the upstream has a
 public IPv6 address (ULA does not count) and an IPv6 default route. **Always**
 can establish the downstream path without it, but real public-IPv6 `DIRECT`
@@ -218,8 +219,13 @@ followed by names, with optional `#` comments:
 ```
 
 Repeated names accumulate unique addresses. Replace the documentation IPv6
-address with a reachable one; AAAA responses still depend on the network's IPv6
-DNS setting. Hosts import replaces the draft's whole hosts section while retaining
+address with a reachable one. With hosts enabled, an explicit IPv6 mapping takes
+precedence and can answer AAAA even when **IPv6 DNS queries** is off. That setting
+controls upstream and Fake-IP AAAA answers; it does not remove manually specified
+addresses. An answer does not establish IPv6 reachability: configure and verify
+the Mac local IPv6 path and downstream IPv6 takeover separately. To make a fixed
+name IPv4-only, retain only its IPv4 hosts mapping.
+Hosts import replaces the draft's whole hosts section while retaining
 DNS settings. YAML import replaces only the sections it includes. Review the
 replacement, choose **Accept imported content**, then **Save draft**.
 
