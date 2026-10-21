@@ -32,14 +32,54 @@ TUN 与路由检查通过、DHCP/DNS 和 pf 就绪，再持久化 DNS 写入意�
 导入 DNS 中的 `system`（含旧 `dhcp://system` 写法）在接管开启时必须拒绝，
 避免引擎递归解析自己；改用显式解析器，或明确关闭该协同功能。
 
+订阅自身 DNS 的引用绑定发生在最终解析配置合成后，正式端点仍为受管的 1053，
+不改变本页的系统 DNS 接管目的地址或恢复顺序。准备态如需自身 DNS，只开启同一核心的
+私有 loopback DNS，不调用系统 DNS 协同；引用分类、歧义声明及就绪检查见
+[profile 契约](mihomo-profile-overlay.md#dns-reference-composition-and-binding)。
+
+## 文件式自定义 DNS 的双入口约束
+
+来源页的自定义 DNS 先于系统 DNS 协同合成到同一份 Mihomo 配置，随后沿既有引用绑定和
+生命周期处理。启用候选必须同时满足 TUN、自动路由、系统 DNS 协同及 dnsmasq 使用
+`127.0.0.1#1053` 上游；不满足时可保存草稿，禁止应用，不自动修改网络设置。
+自定义候选还会拒绝指回自身网关 DNS 监听的已知转发环；系统接管使用的公网目的地址
+不等同于本地监听，显式引擎上游仍沿受管出站接口处理。
+
+生效期间 dnsmasq 加入 `no-hosts`，系统 hosts 是否使用交给 Mihomo `use-system-hosts`；
+自定义 hosts 非空时生成 `use-hosts: true`，同一草稿的显式 false 报冲突。关闭并应用后
+恢复原 dnsmasq 行为，始终不修改 `/etc/hosts`。DHCP 的单标签、配置域及未来租约范围
+继续由 dnsmasq 所有；自定义 hosts/policy/别名链的交集在应用前拒绝，不加入
+`dhcp-ignore-names`，也不声称实现 DHCP 动态名称同步或 mDNS 接管。
+
+保存草稿不改变运行态。通过既有启动或来源应用进行完整切换；来源应用的完整 reload
+会重启所属 dnsmasq，避免沿用旧服务缓存。客户端 TTL 缓存仍由客户端管理。
+普通上游解析与 Fake-IP 的 AAAA 服从 `dns.ipv6`；启用 hosts 后，显式 IPv6 映射优先于该
+开关，关闭时仍可返回 AAAA。这是保留手工固定地址的预期行为，不表示 IPv6 路径已就绪。
+若固定名称只应使用 IPv4，仅保留它的 IPv4 hosts 映射。
+
+预览由 Helper 在私有临时目录中读取 root-only workspace base 并合成，仅返回 DNS 区块和
+诊断，不修改敏感文件权限或应用配置。Control Service 与 Helper 必须配套支持该接口；细节见
+[自定义 DNS 契约](mihomo-profile-overlay.md#file-based-custom-dns)。
+Mac 和下游的运行证据分别判断，当前验收范围见
+[证据入口](../validation/evidence-map.md#文件式自定义-dns)。
+
 ## 独立的 Mac IPv6 路径
 
-Mac 的系统 TUN 始终使用 `fdfe:dcba:9877::1/126`，不依赖 `dns.ipv6`、
-下游 `transparent.tun_ipv6` 或上游原生 IPv6 检测。补丁核心必须保留显式
-host TUN IPv6 配置。AAAA 只控制 DNS 答案，下游开关继续只控制 RA/BPF packet 路径。
+`transparent.mac_tun_ipv6` 默认 `true`，旧配置缺省时保留原行为。开启时 Mac
+系统 TUN 使用 `fdfe:dcba:9877::1/126`，不依赖 `dns.ipv6`、下游
+`transparent.tun_ipv6` 或上游原生 IPv6 检测。关闭时显式生成 `inet6-address: []`
+覆盖核心自带地址，并移除公网、fake IPv6 和 Tailnet IPv6 的系统 TUN 捕获路由及
+本机 IPv6 来源规则；IPv4 和下游 RA/BPF packet 路径保持原行为。
 
-统一生成 `route-address`：普通 IPv4 捕获减去 LAN/私有例外，公网 IPv6
-`2000::/3`，整个 fake IPv6 `/64`，以及单独的 Tailnet peer/subnet 精确路由。
+该开关不改 DNS AAAA 或 mihomo 顶层 IPv6，也不禁用 macOS 原生 IPv6；关闭后
+本机不能经 TUN 访问 fake IPv6 或 Tailnet IPv6，应用是否回退 IPv4 需实际验证。
+保存后完整重启网关生效；单独重启 mihomo 使用 runtime state 中已应用的值。
+Control API 旧客户端省略字段时保留当前设置。启动/Doctor 在关闭时仅检查 IPv4
+路由，状态依据已应用的开关显示 disabled。
+
+统一生成 `route-address`：普通 IPv4 捕获减去 LAN/私有例外；本机 IPv6 开启时加入公网 IPv6
+`2000::/3` 与整个 fake IPv6 `/64`。Tailnet peer/subnet 精确路由中的 IPv4 始终保留，
+IPv6 仅在本机 IPv6 开启时加入。
 不能让 Tailnet `/128` 替代普通 IPv6，也不能经 IPSet 合并丢掉 `/32` / `/128`
 优先级。link-local、multicast 和普通/下游 ULA 不加入 host 捕获。
 
@@ -58,4 +98,4 @@ Doctor 另检查当前 DNS 所有权；Web 的 DNS 状态明确写为“启动�
 虚拟 bridge，因此该夹具关闭 Mac DNS 协同；真实系统解析由 isolated-LAN 的本机模式门槛
 验证。完整网络回归还需基础 Lab、TUN 和受影响的下游 IPv6 拓扑门槛。
 
-本机 DNS 与路由验收见 [本机模式门槛](../validation/test-gates.md#Mac-本机模式隔离门槛)。实际运行结果须从对应 artifacts 核对；这些门槛不证明订阅稳定性或所有独立 DoH、VPN DNS、内容过滤扩展。
+本机 DNS 与路由验收见 [本机模式门槛](../validation/test-gates.md#mac-本机模式隔离门槛)。实际运行结果须从对应 artifacts 核对；这些门槛不证明订阅稳定性或所有独立 DoH、VPN DNS、内容过滤扩展。

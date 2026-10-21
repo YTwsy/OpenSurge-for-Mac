@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -46,6 +47,32 @@ func TestPreparedEngineRealCore(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer origin.Close()
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "CONNECT required", http.StatusMethodNotAllowed)
+			return
+		}
+		upstream, err := net.DialTimeout("tcp", origin.Listener.Addr().String(), time.Second)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer upstream.Close()
+		client, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+		defer client.Close()
+		if _, err := io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+			return
+		}
+		go func() {
+			_, _ = io.Copy(upstream, client)
+			_ = upstream.Close()
+		}()
+		_, _ = io.Copy(client, upstream)
+	}))
+	defer proxy.Close()
 	cfg := config.Default()
 	cfg.Runtime.Dir = t.TempDir()
 	cfg.Mihomo.Binary = binary
@@ -55,8 +82,20 @@ func TestPreparedEngineRealCore(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(cfg.Mihomo.Profile), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	profile := fmt.Sprintf(`proxies:
+	_, proxyPort, err := net.SplitHostPort(proxy.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := fmt.Sprintf(`hosts:
+  proxy.hosts.opensurge.test: 127.0.0.1
+  alias.hosts.opensurge.test: proxy.hosts.opensurge.test
+dns:
+  use-hosts: true
+  use-system-hosts: false
+  nameserver: [udp://127.0.0.1:1]
+proxies:
   - {name: extension-node, type: direct}
+  - {name: hosts-node, type: http, server: alias.hosts.opensurge.test, port: %s}
 proxy-providers:
   subscription:
     type: http
@@ -65,15 +104,21 @@ proxy-providers:
     interval: 3600
     health-check: {enable: false}
 proxy-groups:
-  - {name: Manual, type: select, proxies: [extension-node, DIRECT, REJECT], use: [subscription]}
+  - {name: Manual, type: select, proxies: [extension-node, hosts-node, DIRECT, REJECT], use: [subscription]}
 rules: ["MATCH,Manual"]
-`, origin.URL+"/provider.yaml")
+`, proxyPort, origin.URL+"/provider.yaml")
 	if err := os.WriteFile(cfg.Mihomo.Profile, []byte(profile), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	final, err := RenderConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.Mihomo.Config, []byte(final), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateConfigWithTimeout(3*time.Second, binary, filepath.Dir(cfg.Mihomo.Profile), cfg.Mihomo.Config); err != nil {
+		t.Fatalf("final gateway config validation: %v", err)
 	}
 	defer func() {
 		if err := StopPrepared(cfg); err != nil {
@@ -95,9 +140,21 @@ rules: ["MATCH,Manual"]
 			return err
 		}
 		var manual ProxyGroup
-		for _, group := range groups {
-			if group.Name == "Manual" {
-				manual = group
+		// Provider initialization is asynchronous relative to controller readiness.
+		// Wait for the actual member, not an arbitrary delay or an empty graph.
+		for deadline := time.Now().Add(3 * time.Second); ; {
+			for _, group := range groups {
+				if group.Name == "Manual" {
+					manual = group
+				}
+			}
+			if containsPreparedOption(manual.Options, "provider-node") || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+			groups, err = FetchProxyGroups(ctx, apiCfg)
+			if err != nil {
+				return err
 			}
 		}
 		if !containsPreparedOption(manual.Options, "extension-node") || !containsPreparedOption(manual.Options, "provider-node") {
@@ -109,6 +166,13 @@ rules: ["MATCH,Manual"]
 		result := MeasureProxyDelay(ctx, apiCfg, "extension-node", origin.URL+"/generate_204", 2*time.Second)
 		if result.Status != "reachable" || probes.Load() == 0 {
 			return fmt.Errorf("real local probe failed: %+v requests=%d", result, probes.Load())
+		}
+		// This proxy server can only be reached through the imported hosts
+		// alias -> static IP chain; no DNS listener or usable upstream exists.
+		beforeHostsProbe := probes.Load()
+		result = MeasureProxyDelay(ctx, apiCfg, "hosts-node", origin.URL+"/generate_204", 2*time.Second)
+		if result.Status != "reachable" || probes.Load() <= beforeHostsProbe {
+			return fmt.Errorf("imported hosts node probe failed: %+v requests=%d", result, probes.Load())
 		}
 		if err := assertPreparedRuntimeNoIngress(ctx, apiCfg); err != nil {
 			return err

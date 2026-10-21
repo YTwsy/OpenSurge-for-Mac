@@ -52,6 +52,7 @@ func (s *Server) handleTailscale(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	payload, _ := json.Marshal(input)
+	recovery, _ := s.store.Recovery()
 	ctx, operation, ok := s.beginRequestOperation(w, r, "apply-tailscale")
 	if !ok {
 		return
@@ -59,6 +60,9 @@ func (s *Server) handleTailscale(w http.ResponseWriter, r *http.Request) {
 	result, err := s.configRunner.ApplyTailscale(ctx, s.configPath, match, payload)
 	if err == nil && gatewayActive && !result.Reloaded {
 		err = fmt.Errorf("running gateway did not reload the Tailscale configuration")
+	}
+	if err != nil && gatewayActive {
+		s.recordReloadRecoveryFailure(cfg.Gateway.Mode, recovery, err, result.Rollback)
 	}
 	s.finishOperation(operation, err)
 	if err != nil {

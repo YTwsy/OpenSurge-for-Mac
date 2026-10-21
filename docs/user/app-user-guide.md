@@ -47,6 +47,40 @@ Prerelease builds display their complete `rc.N` version. They are not offered an
 older stable release, while the stable release with the same base version is
 still detected when it becomes available.
 
+## Manage from another LAN device
+
+LAN management is off by default. In a build that includes this feature, open
+**App Settings & Updates → LAN management** on the Mac:
+
+1. Turn on **Allow LAN management** and select the Mac IPv4 address on the LAN
+   shared with your phone or other device.
+2. Set and confirm a management password of 12–128 characters; spaces are allowed.
+   The default port is `61768`. Change it under **Advanced settings** if occupied.
+3. Select **Save and enable**. Once the status says **Listening**, copy the URL or
+   scan its QR code from a device on the same subnet.
+4. Enter the management password in that device's browser to open the shared
+   control panel. The QR contains only the URL; it never carries a password or logs you in.
+
+The endpoint uses HTTP, without transport encryption for passwords or sessions.
+Enable it only on a trusted LAN. This version supports private IPv4 addresses;
+IPv6 management URLs, HTTPS and public access are not provided. The browser can
+manage status, sources, devices, policies and networking. Finder actions, copying
+Mac file paths and exporting local copies remain available only on the Mac.
+
+In a remote browser, expand quick settings at the bottom of the sidebar for
+**Change management password** and **Sign out**. These actions are hidden on the
+gateway Mac. Changing the password requires the current password and signs out every LAN browser. If you
+forget it, use **Reset management password** in the Mac settings. Sessions require
+a new login after 12 idle hours or a Control Service restart. Authentication loss
+never automatically replays an earlier network operation.
+
+An interface, IPv4 or prefix change pauses access. Select and save the address
+again on the Mac; an old QR may no longer work. Remote operations such as restoring
+DHCP can disconnect your browser, so check the actual result on the Mac. Turning
+off and saving **Allow LAN management** releases the port and signs out all LAN
+sessions. Quitting only the desktop app leaves the Control Service and enabled LAN
+entry running. Stopping the gateway does not close this management entry.
+
 ## First-time setup
 
 ### 1. Prepare the proxy configuration
@@ -98,6 +132,20 @@ preview on Sources to compare the raw source, overlay changes, effective source,
 and final mihomo config. Refreshing a subscription only creates a new draft and
 never changes the running gateway automatically.
 
+**DNS references and sources** in the final-config preview lists resolver
+targets, binding results and their provenance. Confirmed references from node
+resolution to the subscription's own DNS are bound to the current core without
+enabling the global overlay. While the gateway is stopped, the prepared core
+opens a private loopback DNS listener only when that dependency exists, and
+checks both TCP and UDP readiness. This does not start the gateway or change
+system DNS. Independent local and external resolvers retain their targets.
+Follow specific diagnostics for ambiguous references, cycles or missing original
+listener metadata; another proxy client's running DNS is not compatibility
+evidence. Preview is configuration inference; node tests and the relevant
+network gates establish runtime behavior. Supported forms and explicit service
+declarations are described in the
+[DNS reference contract](../agent-wiki/sources/decisions/mihomo-profile-overlay.md#dns-reference-composition-and-binding).
+
 Each imported-source card shows the local snapshot managed by OpenSurge. You
 can copy its full path or select **Finder 中显示** (Show in Finder) to reveal
 the file. Do not edit the managed snapshot because its digest, history, and
@@ -124,7 +172,8 @@ policies are enabled by default; register devices and choose their egress on the
 Devices page. Select **保存网络配置** (Save network configuration) to save network settings.
 
 All three topologies expose the two experimental IPv6 settings. **IPv6 DNS
-queries** controls AAAA answers, while **Downstream IPv6 takeover** establishes
+queries** controls upstream and Fake-IP AAAA answers; explicit IPv6 mappings in
+enabled hosts can still answer AAAA. **Downstream IPv6 takeover** establishes
 the userspace TCP/UDP path. **Auto** takes over only when the upstream has a
 public IPv6 address (ULA does not count) and an IPv6 default route. **Always**
 can establish the downstream path without it, but real public-IPv6 `DIRECT`
@@ -148,6 +197,81 @@ default, requires TUN, and affects only Mac applications that honor system
 proxy settings; it does not replace TUN or change downstream devices. Startup
 is rejected when HTTP/HTTPS proxying, PAC, or proxy auto-discovery is already
 active, rather than overwriting those settings.
+
+### Optional: Custom DNS
+
+Expand **Sources → Custom DNS**, beside and independently enabled from the Global
+Profile Overlay. Network Settings retains draft status, mapping/policy counts and
+an application status; **Manage custom DNS** opens and focuses the Sources editor.
+Import a hosts file or Mihomo YAML
+containing only `hosts` / `dns`. This supports fixed service addresses, corporate
+DNS routing and real-IP exceptions for Mac TUN and downstream devices using
+OpenSurge DNS. Arbitrary dnsmasq/Surge configurations, remote subscriptions,
+scripts, mDNS, bypass devices and dynamic DHCP name synchronization are outside
+this feature.
+
+Both formats use UTF-8 and have a 2 MiB limit. A hosts file contains a literal IP
+followed by names, with optional `#` comments:
+
+```text
+192.168.50.10 nas.home.arpa storage.home.arpa
+2001:db8::10 nas.home.arpa
+```
+
+Repeated names accumulate unique addresses. Replace the documentation IPv6
+address with a reachable one. With hosts enabled, an explicit IPv6 mapping takes
+precedence and can answer AAAA even when **IPv6 DNS queries** is off. That setting
+controls upstream and Fake-IP AAAA answers; it does not remove manually specified
+addresses. An answer does not establish IPv6 reachability: configure and verify
+the Mac local IPv6 path and downstream IPv6 takeover separately. To make a fixed
+name IPv4-only, retain only its IPv4 hosts mapping.
+Hosts import replaces the draft's whole hosts section while retaining
+DNS settings. YAML import replaces only the sections it includes. Review the
+replacement, choose **Accept imported content**, then **Save draft**.
+
+**Download example** provides a combined fixed-address/corporate DNS fragment:
+
+```yaml
+hosts:
+  nas.home.arpa: 192.168.50.10
+dns:
+  nameserver-policy:
+    '+.corp.example': [10.20.0.53]
+  fake-ip-filter-mode: blacklist
+  fake-ip-filter:
+    - '+.corp.example'
+```
+
+The policy chooses the upstream; blacklist entries request real answers. This
+creates no VPN, routes, NAS addresses or DHCP reservations: the resolver and
+service must already be reachable. If the source uses whitelist/rule mode, this
+example explicitly replaces its filter mode and list; inspect **Preview** first.
+Within the same mode, blacklist/whitelist append unique entries; rule mode prepends
+custom rules. Whitelist matches mean Fake-IP, not real-IP exceptions.
+
+Custom values override matching subscription/global-overlay keys; removing an
+override restores inheritance. IP and resolver lists replace the whole value for
+that key. Hosts take precedence over upstream policy and can also affect node and
+provider resolution; more specific names may win over wildcards.
+
+Enabling requires the managed DNS upstream, TUN auto-route and Mac system DNS
+coordination. While DHCP is enabled, single-label names and the DHCP suffix
+(default `lan`) remain reserved for lease resolution. Custom hosts, upstream
+policies and alias chains cannot cover that namespace. Preview lists application
+blockers; a structurally valid draft can still be saved. While active, Mihomo's
+`use-system-hosts` controls system-hosts participation; `/etc/hosts` is not modified.
+
+**Saving a draft does not change the running gateway.** The current source shows
+pending DNS changes. Apply from its card or the Custom DNS section: validation and
+confirmation precede a running gateway reload, or saving for the next start when
+stopped. If no exact current source row can be reused, follow the Network Settings
+link and use the existing stop/start workflow. This never selects an unused source
+or a refreshed subscription version automatically. Disabling also requires saving and
+applying. Stopped policy preparation uses the saved draft; running policy views
+continue to show applied configuration. **Export draft** contains only the custom
+YAML: the desktop app opens a native save dialog and the browser downloads a file.
+A successful preview does not establish live DNS/connection acceptance on either
+entry path.
 
 ### 3. Start OpenSurge
 

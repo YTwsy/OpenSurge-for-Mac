@@ -46,6 +46,7 @@ mihomo:
   profile: %s
   profile_source_digest: %s
   profile_overlay_digest: %s
+  profile_custom_dns_digest: %s
   store_fake_ip: %t
   mixed_port: %d
   redir_port: %d
@@ -80,6 +81,7 @@ transparent:
   tun_auto_route: %t
   tun_auto_detect_interface: %t
   tun_strict_route: %t
+  mac_tun_ipv6: %t
   tun_ipv6: %s
   ipv6_shared_l2_ready: %t
   ipv6_packet_broker_binary: %s
@@ -108,13 +110,13 @@ runtime:
 		q(cfg.DHCP.Binary), cfg.DHCP.Enabled, q(cfg.DHCP.RangeStart), q(cfg.DHCP.RangeEnd), q(cfg.DHCP.LeaseTime), q(cfg.DHCP.Domain), q(cfg.DHCP.BypassGateway), q(strings.Join(cfg.DHCP.BypassDNS, ",")),
 		q(cfg.DevicePolicy.File), q(strings.Join(cfg.DevicePolicy.ProtectedIPv4, ",")),
 		q(cfg.DNS.Listen), cfg.DNS.Port, q(cfg.DNS.Upstream), cfg.DNS.IPv6,
-		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), q(cfg.Mihomo.ProfileSourceDigest), q(cfg.Mihomo.ProfileOverlayDigest), cfg.Mihomo.StoreFakeIP, cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
+		q(cfg.Mihomo.Binary), q(cfg.Mihomo.Config), q(cfg.Mihomo.ProfileMode), q(cfg.Mihomo.Profile), q(cfg.Mihomo.ProfileSourceDigest), q(cfg.Mihomo.ProfileOverlayDigest), q(cfg.Mihomo.ProfileCustomDNSDigest), cfg.Mihomo.StoreFakeIP, cfg.Mihomo.MixedPort, cfg.Mihomo.RedirPort, q(cfg.Mihomo.APIAddr), q(cfg.Mihomo.Secret),
 		cfg.Tailscale.Enabled, q(cfg.Tailscale.DisplayName), q(cfg.Tailscale.Hostname), q(cfg.Tailscale.ControlURL), q(cfg.Tailscale.AuthKeyFile), q(cfg.Tailscale.StateDir), cfg.Tailscale.AcceptRoutes,
 		q(strings.Join(cfg.Tailscale.MagicDNSSuffixes, ",")), q(strings.Join(cfg.Tailscale.PeerCIDRs, ",")), q(strings.Join(cfg.Tailscale.SubnetRoutes, ",")), cfg.Tailscale.AllowMac, cfg.Tailscale.AllowAllDevices,
 		q(strings.Join(cfg.Tailscale.AllowedDevices, ",")), q(cfg.Tailscale.ExitNode), cfg.Tailscale.ExitNodeAllowLANAccess,
 		q(cfg.PF.AnchorName), cfg.PF.RedirectTCPTo,
 		q(cfg.Transparent.Mode), q(cfg.Transparent.TUNDevice), q(cfg.Transparent.TUNStack), cfg.Transparent.TUNAutoRoute, cfg.Transparent.TUNAutoDetectInterface, cfg.Transparent.TUNStrictRoute,
-		q(cfg.Transparent.TUNIPv6), cfg.Transparent.IPv6SharedL2Ready, q(cfg.Transparent.IPv6PacketBrokerBinary), cfg.Transparent.IPv6PacketMTU,
+		cfg.Transparent.MacTUNIPv6, q(cfg.Transparent.TUNIPv6), cfg.Transparent.IPv6SharedL2Ready, q(cfg.Transparent.IPv6PacketBrokerBinary), cfg.Transparent.IPv6PacketMTU,
 		cfg.LocalSystemProxy.Enabled,
 		cfg.LocalSystemDNS.Enabled,
 		cfg.UpstreamProxy.Enabled, q(cfg.UpstreamProxy.Name), q(cfg.UpstreamProxy.Type), q(cfg.UpstreamProxy.Server), cfg.UpstreamProxy.Port, q(cfg.UpstreamProxy.Username), q(cfg.UpstreamProxy.Password), q(cfg.UpstreamProxy.MatchDomain),

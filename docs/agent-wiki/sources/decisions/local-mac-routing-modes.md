@@ -30,11 +30,12 @@ local/private `DIRECT` 保护。IPv6 本机入口只保护 `::1/128`、本项目
 `DIRECT`，否则 fake-AAAA 目的地址会绕过模式选择。
 
 `dns.ipv6: true` 会独立于 `transparent.tun_ipv6` 是否实际生效而返回
-`fdfe:dcba:9876::/64` fake AAAA。Mac 系统 TUN 始终显式使用
+`fdfe:dcba:9876::/64` fake AAAA。`transparent.mac_tun_ipv6` 默认开启，开启时 Mac 系统 TUN 显式使用
 `fdfe:dcba:9877::1/126`，与 AAAA、下游 IPv6 和上游原生 IPv6 检测独立。
 生成器只匹配其精确 `/128` 源身份，并要求系统 TUN 名 `DEFAULT-TUN`。下游 IPv6 使用独立
 `opensurge-ipv6` packet listener、`fdfe:dcba:9878::/64` 源和设备 `IN-USER`，不能命中
-本机规则。不要把本机源扩大成 fake-IP `/64`、host-TUN 子网或下游 `/64`。
+本机规则。关闭本机 IPv6 时移除上述 IPv6 来源规则与 TUN IPv6 地址、路由；
+DNS AAAA 和下游开关不变。不要把本机源扩大成 fake-IP `/64`、host-TUN 子网或下游 `/64`。
 
 `PASS/PASS` 表示 Rule，`DIRECT/DIRECT` 表示 Direct。Global 的 TCP 指向 mac-global；
 UDP 只有在 live `/proxies` 能确认当前目标支持 UDP 时才指向 mac-global，否则指向

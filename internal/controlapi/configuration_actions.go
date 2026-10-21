@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/netip"
@@ -27,6 +28,7 @@ type profileApplyDeps struct {
 	stateExists func(config.Config) (bool, error)
 	reload      func(context.Context, config.Config) error
 	start       func(context.Context, config.Config) error
+	status      func(context.Context, config.Config) (gateway.Status, error)
 }
 
 func defaultLockedProfileApplyDeps() profileApplyDeps {
@@ -52,6 +54,9 @@ func defaultLockedProfileApplyDeps() profileApplyDeps {
 		},
 		reload: func(ctx context.Context, cfg config.Config) error { return gateway.New(cfg).ReloadLocked(ctx) },
 		start:  func(ctx context.Context, cfg config.Config) error { return gateway.New(cfg).StartLocked(ctx) },
+		status: func(ctx context.Context, cfg config.Config) (gateway.Status, error) {
+			return gateway.New(cfg).Status(ctx)
+		},
 	}
 }
 
@@ -120,6 +125,16 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 	cfg.Mihomo.Profile = profilePath
 	cfg.Mihomo.ProfileSourceDigest = sourceDigest
 	cfg.Mihomo.ProfileOverlayDigest = overlayDigest
+	customDNS, err := mihomo.CustomDNSFromProfile(payload)
+	if err != nil {
+		cleanupProfile()
+		return ProfileApplyResult{}, err
+	}
+	cfg.Mihomo.ProfileCustomDNSDigest = mihomo.CustomDNSDigest(customDNS)
+	if err := mihomo.ValidateCustomDNSCandidate(cfg, payload); err != nil {
+		cleanupProfile()
+		return ProfileApplyResult{}, err
+	}
 	gateway.ReportProgress(ctx, "validating_config")
 	if err := deps.validate(cfg); err != nil {
 		cleanupProfile()
@@ -137,17 +152,11 @@ func applyProfile(ctx context.Context, configPath, revision string, payload []by
 	if err := deps.reload(ctx, cfg); err != nil {
 		gateway.ReportProgress(ctx, "restoring_config")
 		rollbackErr := writeAtomic(configPath, original, 0o640)
-		var restartErr error
-		if rollbackErr == nil {
-			stillRunning, stateErr := deps.stateExists(previousCfg)
-			if stateErr != nil {
-				rollbackErr = fmt.Errorf("inspect gateway after failed reload: %w", stateErr)
-			} else if !stillRunning {
-				restartErr = deps.start(ctx, previousCfg)
-			}
+		rollback, restartErr := restorePreviousGateway(ctx, previousCfg, rollbackErr == nil, err, deps)
+		if rollback.PreviousGatewayReady || (rollback.ConfigRestored && rollback.GatewayState == "stopped") {
+			cleanupProfile()
 		}
-		cleanupProfile()
-		return ProfileApplyResult{}, profileApplyRollbackError(err, rollbackErr, restartErr)
+		return ProfileApplyResult{Rollback: rollback}, profileApplyRollbackError(err, rollbackErr, restartErr, rollback)
 	}
 	result.Reloaded = true
 	return result, nil
@@ -259,17 +268,9 @@ func applyTailscale(ctx context.Context, configPath, revision string, payload []
 	if err := deps.reload(ctx, cfg); err != nil {
 		gateway.ReportProgress(ctx, "restoring_config")
 		rollbackErr := writeAtomic(configPath, original, 0o640)
-		rollbackKey()
-		var restartErr error
-		if rollbackErr == nil {
-			stillRunning, stateErr := deps.stateExists(previousCfg)
-			if stateErr != nil {
-				rollbackErr = fmt.Errorf("inspect gateway after failed reload: %w", stateErr)
-			} else if !stillRunning {
-				restartErr = deps.start(ctx, previousCfg)
-			}
-		}
-		return ProfileApplyResult{}, tailscaleApplyRollbackError(err, rollbackErr, restartErr)
+		rollbackErr = errors.Join(rollbackErr, restoreFile(authKeyPath, authSnapshot))
+		rollback, restartErr := restorePreviousGateway(ctx, previousCfg, rollbackErr == nil, err, deps)
+		return ProfileApplyResult{Rollback: rollback}, configurationApplyRollbackError("Tailscale", "config and auth key", err, rollbackErr, restartErr, rollback)
 	}
 	result.Reloaded = true
 	return result, nil
@@ -393,19 +394,21 @@ func restoreFile(path string, snapshot fileSnapshot) error {
 	return writeAtomic(path, snapshot.data, snapshot.mode)
 }
 
-func tailscaleApplyRollbackError(reloadErr, rollbackErr, restartErr error) error {
-	message := fmt.Sprintf("apply Tailscale reload failed: %v", reloadErr)
+func configurationApplyRollbackError(kind, restored string, reloadErr, rollbackErr, restartErr error, rollback *ConfigurationRollback) error {
+	message := ""
 	if rollbackErr != nil {
 		message += fmt.Sprintf("; restore previous config failed: %v", rollbackErr)
 	} else {
-		message += "; previous config and auth key restored"
+		message += "; previous " + restored + " restored"
 	}
 	if restartErr != nil {
 		message += fmt.Sprintf("; restart previous gateway failed: %v", restartErr)
-	} else if rollbackErr == nil {
+	} else if rollback.PreviousGatewayReady {
 		message += "; previous running gateway preserved or restored"
+	} else {
+		message += "; gateway recovery requires attention: " + rollback.GatewayState
 	}
-	return fmt.Errorf("%s", message)
+	return fmt.Errorf("apply %s reload failed: %w%s", kind, reloadErr, message)
 }
 
 func (DirectRunner) ForgetTailscaleIdentity(_ context.Context, configPath, revision string) (string, error) {
@@ -471,19 +474,8 @@ func validProfileCompositionDigest(value string) bool {
 	return err == nil && strings.ToLower(value) == value
 }
 
-func profileApplyRollbackError(reloadErr, rollbackErr, restartErr error) error {
-	message := fmt.Sprintf("apply profile reload failed: %v", reloadErr)
-	if rollbackErr != nil {
-		message += fmt.Sprintf("; restore previous config failed: %v", rollbackErr)
-	} else {
-		message += "; previous config restored"
-	}
-	if restartErr != nil {
-		message += fmt.Sprintf("; restart previous gateway failed: %v", restartErr)
-	} else if rollbackErr == nil {
-		message += "; previous running gateway preserved or restored"
-	}
-	return fmt.Errorf("%s", message)
+func profileApplyRollbackError(reloadErr, rollbackErr, restartErr error, rollback *ConfigurationRollback) error {
+	return configurationApplyRollbackError("profile", "config", reloadErr, rollbackErr, restartErr, rollback)
 }
 
 func (DirectRunner) ApplyDevicePolicy(ctx context.Context, configPath, revision string, payload []byte) (string, error) {
@@ -645,6 +637,9 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	}
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
+	if input.Transparent.MacTUNIPv6 != nil {
+		cfg.Transparent.MacTUNIPv6 = *input.Transparent.MacTUNIPv6
+	}
 	cfg.Transparent.TUNIPv6 = input.Transparent.TUNIPv6
 	cfg.Transparent.IPv6SharedL2Ready = input.Transparent.IPv6SharedL2Ready
 	if cfg.Transparent.TUNIPv6 == "" {

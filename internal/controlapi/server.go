@@ -38,6 +38,7 @@ type Options struct {
 	ConfigRunner      ConfigurationRunner
 	SleepRunner       SleepPreventionRunner
 	PolicyRunner      PolicyWorkspaceRunner
+	DNSPreviewRunner  CustomDNSPreviewRunner
 	DiscoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
 	DiscoverDefault   func(context.Context) (macosnetwork.Snapshot, error)
 	ListInterfaces    func(context.Context) ([]macosnetwork.InterfaceOption, error)
@@ -85,7 +86,9 @@ type Server struct {
 	mihomoRecovery        *mihomoRecoveryController
 	sleepPrevention       *sleepPreventionController
 	policyWorkspaceRunner PolicyWorkspaceRunner
+	dnsPreviewRunner      CustomDNSPreviewRunner
 	policyWorkspaceLease  policyWorkspaceLease
+	lan                   *lanAccessController
 	token                 string
 	baseURL               string
 
@@ -163,6 +166,13 @@ func New(options Options) (*Server, error) {
 			options.PolicyRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
 		}
 	}
+	if options.DNSPreviewRunner == nil {
+		if runner, ok := options.Runner.(CustomDNSPreviewRunner); ok {
+			options.DNSPreviewRunner = runner
+		} else {
+			options.DNSPreviewRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
+		}
+	}
 	if options.DiscoverNetwork == nil {
 		options.DiscoverNetwork = macosnetwork.Discover
 	}
@@ -202,7 +212,7 @@ func New(options Options) (*Server, error) {
 	if options.RevealInFinder == nil {
 		options.RevealInFinder = revealPathInFinder
 	}
-	return &Server{
+	server := &Server{
 		configPath:            configPath,
 		addr:                  options.Addr,
 		store:                 store,
@@ -210,6 +220,7 @@ func New(options Options) (*Server, error) {
 		networkRunner:         options.NetworkRunner,
 		configRunner:          options.ConfigRunner,
 		policyWorkspaceRunner: options.PolicyRunner,
+		dnsPreviewRunner:      options.DNSPreviewRunner,
 		discoverNetwork:       options.DiscoverNetwork,
 		discoverDefault:       options.DiscoverDefault,
 		listInterfaces:        options.ListInterfaces,
@@ -240,7 +251,9 @@ func New(options Options) (*Server, error) {
 		baseURL:         "http://" + options.Addr,
 		sessions:        map[string]time.Time{},
 		bootstraps:      map[string]bootstrapGrant{},
-	}, nil
+	}
+	server.lan = newLANAccessController(server)
+	return server, nil
 }
 
 func (s *Server) BootstrapURL() string {
@@ -257,80 +270,105 @@ func (s *Server) bootstrapURLFor(path string) string {
 }
 
 func (s *Server) Handler() http.Handler {
+	return s.securityHeaders(s.routes(s.auth, true))
+}
+
+func (s *Server) routes(auth func(http.Handler) http.Handler, local bool) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /bootstrap", s.exchangeBootstrap)
-	mux.HandleFunc("POST /api/v1/session/bootstrap", s.handleSessionBootstrap)
-	mux.Handle("GET /api/v1/overview", s.auth(http.HandlerFunc(s.handleOverview)))
-	mux.Handle("GET /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
-	mux.Handle("PUT /api/v1/config", s.auth(http.HandlerFunc(s.handleControlConfig)))
-	mux.Handle("GET /api/v1/menubar", s.auth(http.HandlerFunc(s.handleMenuBar)))
-	mux.Handle("GET /api/v1/ui-preferences", s.auth(http.HandlerFunc(s.handleUIPreferences)))
-	mux.Handle("PUT /api/v1/ui-preferences", s.auth(http.HandlerFunc(s.handleUIPreferences)))
-	mux.Handle("GET /api/v1/sleep-prevention", s.auth(http.HandlerFunc(s.handleSleepPrevention)))
-	mux.Handle("PUT /api/v1/sleep-prevention", s.auth(http.HandlerFunc(s.handleSleepPrevention)))
-	mux.Handle("GET /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
-	mux.Handle("POST /api/v1/gateway/plan", s.auth(http.HandlerFunc(s.handleGatewayPlan)))
-	mux.Handle("POST /api/v1/gateway/start", s.auth(http.HandlerFunc(s.handleGatewayAction)))
-	mux.Handle("POST /api/v1/gateway/stop", s.auth(http.HandlerFunc(s.handleGatewayAction)))
-	mux.Handle("POST /api/v1/gateway/reload", s.auth(http.HandlerFunc(s.handleGatewayAction)))
-	mux.Handle("POST /api/v1/gateway/restart-mihomo", s.auth(http.HandlerFunc(s.handleGatewayAction)))
-	mux.Handle("GET /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
-	mux.Handle("POST /api/v1/recovery", s.auth(http.HandlerFunc(s.handleRecovery)))
-	mux.Handle("GET /api/v1/recovery/card", s.auth(http.HandlerFunc(s.handleRecoveryCard)))
-	mux.Handle("POST /api/v1/recovery/discard", s.auth(http.HandlerFunc(s.handleRecoveryDiscard)))
-	mux.Handle("POST /api/v1/recovery/prepare", s.auth(http.HandlerFunc(s.handleRecoveryPrepare)))
-	mux.Handle("POST /api/v1/recovery/abandon-takeover", s.auth(http.HandlerFunc(s.handleAbandonTakeover)))
-	mux.Handle("POST /api/v1/recovery/router-restored", s.auth(http.HandlerFunc(s.handleRouterRestored)))
-	mux.Handle("POST /api/v1/recovery/manual-finish", s.auth(http.HandlerFunc(s.handleManualRecoveryFinish)))
-	mux.Handle("POST /api/v1/recovery/client-validated", s.auth(http.HandlerFunc(s.handleClientValidated)))
-	mux.Handle("POST /api/v1/recovery/client-validation-skip", s.auth(http.HandlerFunc(s.handleClientValidationSkip)))
-	mux.Handle("POST /api/v1/recovery/keep-static", s.auth(http.HandlerFunc(s.handleKeepStaticFinish)))
-	mux.Handle("GET /api/v1/network/discovery", s.auth(http.HandlerFunc(s.handleNetworkDiscovery)))
-	mux.Handle("GET /api/v1/network/defaults", s.auth(http.HandlerFunc(s.handleNetworkDefaults)))
-	mux.Handle("GET /api/v1/network/interfaces", s.auth(http.HandlerFunc(s.handleNetworkInterfaces)))
-	mux.Handle("POST /api/v1/network/apply-static", s.auth(http.HandlerFunc(s.handleApplyStatic)))
-	mux.Handle("POST /api/v1/network/dhcp-probe", s.auth(http.HandlerFunc(s.handleDHCPProbe)))
-	mux.Handle("POST /api/v1/network/restore-dhcp", s.auth(http.HandlerFunc(s.handleRestoreDHCP)))
-	mux.Handle("GET /api/v1/sources", s.auth(http.HandlerFunc(s.handleSources)))
-	mux.Handle("POST /api/v1/sources", s.auth(http.HandlerFunc(s.handleSources)))
-	mux.Handle("POST /api/v1/sources/{id}/refresh", s.auth(http.HandlerFunc(s.handleSourceRefresh)))
-	mux.Handle("POST /api/v1/sources/{id}/apply", s.auth(http.HandlerFunc(s.handleSourceApply)))
-	mux.Handle("GET /api/v1/sources/{id}/preview", s.auth(http.HandlerFunc(s.handleSourcePreview)))
-	mux.Handle("GET /api/v1/sources/{id}/snapshot-location", s.auth(http.HandlerFunc(s.handleSourceSnapshotLocation)))
-	mux.Handle("POST /api/v1/sources/{id}/reveal", s.auth(http.HandlerFunc(s.handleSourceReveal)))
-	mux.Handle("POST /api/v1/sources/{id}/export", s.auth(http.HandlerFunc(s.handleSourceExport)))
-	mux.Handle("GET /api/v1/tailscale", s.auth(http.HandlerFunc(s.handleTailscale)))
-	mux.Handle("GET /api/v1/tailscale/discovery", s.auth(http.HandlerFunc(s.handleTailscaleDiscovery)))
-	mux.Handle("PUT /api/v1/tailscale", s.auth(http.HandlerFunc(s.handleTailscale)))
-	mux.Handle("POST /api/v1/tailscale/forget-identity", s.auth(http.HandlerFunc(s.handleTailscaleForgetIdentity)))
-	mux.Handle("GET /api/v1/profile-overlay", s.auth(http.HandlerFunc(s.handleProfileOverlay)))
-	mux.Handle("PUT /api/v1/profile-overlay", s.auth(http.HandlerFunc(s.handleProfileOverlay)))
-	mux.Handle("GET /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
-	mux.Handle("PUT /api/v1/device-policy", s.auth(http.HandlerFunc(s.handleDevicePolicy)))
-	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(s.handleDevices)))
-	mux.Handle("GET /api/v1/device-traffic", s.auth(http.HandlerFunc(s.handleDeviceTraffic)))
-	mux.Handle("GET /api/v1/connections", s.auth(http.HandlerFunc(s.handleConnections)))
-	mux.Handle("POST /api/v1/devices/{device}/connections/refresh", s.auth(http.HandlerFunc(s.handleDeviceConnectionRefresh)))
-	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", s.auth(http.HandlerFunc(s.handleDeviceSelection)))
-	mux.Handle("GET /api/v1/policies", s.auth(http.HandlerFunc(s.handlePolicies)))
-	mux.Handle("POST /api/v1/policy-workspace", s.auth(http.HandlerFunc(s.handlePolicyWorkspace)))
-	mux.Handle("POST /api/v1/policies/{group}/selection", s.auth(http.HandlerFunc(s.handlePolicySelection)))
-	mux.Handle("POST /api/v1/policies/{group}/connections/refresh", s.auth(http.HandlerFunc(s.handlePolicyConnectionRefresh)))
-	mux.Handle("GET /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
-	mux.Handle("POST /api/v1/local-routing", s.auth(http.HandlerFunc(s.handleLocalRouting)))
-	mux.Handle("POST /api/v1/local-routing/connections/refresh", s.auth(http.HandlerFunc(s.handleLocalConnectionRefresh)))
-	mux.Handle("GET /api/v1/proxy-health", s.auth(http.HandlerFunc(s.handleProxyHealth)))
-	mux.Handle("POST /api/v1/proxy-health/tests", s.auth(http.HandlerFunc(s.handleProxyHealthTests)))
-	mux.Handle("GET /api/v1/connectivity", s.auth(http.HandlerFunc(s.handleConnectivity)))
-	mux.Handle("POST /api/v1/connectivity/tests", s.auth(http.HandlerFunc(s.handleConnectivityTests)))
-	mux.Handle("GET /api/v1/providers", s.auth(http.HandlerFunc(s.handleProviders)))
-	mux.Handle("GET /api/v1/doctor", s.auth(http.HandlerFunc(s.handleDoctor)))
-	mux.Handle("POST /api/v1/doctor", s.auth(http.HandlerFunc(s.handleDoctor)))
-	mux.Handle("GET /api/v1/diagnostics", s.auth(http.HandlerFunc(s.handleDiagnostics)))
-	mux.Handle("POST /api/v1/providers/{name}/refresh", s.auth(http.HandlerFunc(s.handleProviderRefresh)))
-	mux.Handle("GET /api/v1/operations/{id}", s.auth(http.HandlerFunc(s.handleOperation)))
-	mux.Handle("GET /api/v1/operations", s.auth(http.HandlerFunc(s.handleOperations)))
-	mux.Handle("GET /api/v1/events", s.auth(http.HandlerFunc(s.handleEvents)))
+	if local {
+		mux.HandleFunc("GET /bootstrap", s.exchangeBootstrap)
+		mux.HandleFunc("POST /api/v1/session/bootstrap", s.handleSessionBootstrap)
+		mux.HandleFunc("GET /api/v1/auth/session", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
+			writeJSON(w, http.StatusOK, map[string]string{"mode": "local"})
+		})
+		mux.Handle("GET /api/v1/lan-access", auth(http.HandlerFunc(s.lan.handleConfig)))
+		mux.Handle("PUT /api/v1/lan-access", auth(http.HandlerFunc(s.lan.handleConfig)))
+		mux.Handle("POST /api/v1/lan-access/password", auth(http.HandlerFunc(s.lan.handleResetPassword)))
+	} else {
+		mux.HandleFunc("GET /api/v1/auth/session", s.lan.handleSession)
+		mux.HandleFunc("POST /api/v1/auth/login", s.lan.handleLogin)
+		mux.HandleFunc("POST /api/v1/auth/logout", s.lan.handleLogout)
+		mux.Handle("POST /api/v1/auth/password", auth(http.HandlerFunc(s.lan.handleChangePassword)))
+	}
+	mux.Handle("GET /api/v1/overview", auth(http.HandlerFunc(s.handleOverview)))
+	mux.Handle("GET /api/v1/config", auth(http.HandlerFunc(s.handleControlConfig)))
+	mux.Handle("PUT /api/v1/config", auth(http.HandlerFunc(s.handleControlConfig)))
+	mux.Handle("GET /api/v1/menubar", auth(http.HandlerFunc(s.handleMenuBar)))
+	mux.Handle("GET /api/v1/ui-preferences", auth(http.HandlerFunc(s.handleUIPreferences)))
+	mux.Handle("PUT /api/v1/ui-preferences", auth(http.HandlerFunc(s.handleUIPreferences)))
+	mux.Handle("GET /api/v1/sleep-prevention", auth(http.HandlerFunc(s.handleSleepPrevention)))
+	mux.Handle("PUT /api/v1/sleep-prevention", auth(http.HandlerFunc(s.handleSleepPrevention)))
+	mux.Handle("GET /api/v1/gateway/plan", auth(http.HandlerFunc(s.handleGatewayPlan)))
+	mux.Handle("POST /api/v1/gateway/plan", auth(http.HandlerFunc(s.handleGatewayPlan)))
+	mux.Handle("POST /api/v1/gateway/start", auth(http.HandlerFunc(s.handleGatewayAction)))
+	mux.Handle("POST /api/v1/gateway/stop", auth(http.HandlerFunc(s.handleGatewayAction)))
+	mux.Handle("POST /api/v1/gateway/reload", auth(http.HandlerFunc(s.handleGatewayAction)))
+	mux.Handle("POST /api/v1/gateway/restart-mihomo", auth(http.HandlerFunc(s.handleGatewayAction)))
+	mux.Handle("GET /api/v1/recovery", auth(http.HandlerFunc(s.handleRecovery)))
+	mux.Handle("POST /api/v1/recovery", auth(http.HandlerFunc(s.handleRecovery)))
+	mux.Handle("GET /api/v1/recovery/card", auth(http.HandlerFunc(s.handleRecoveryCard)))
+	mux.Handle("POST /api/v1/recovery/discard", auth(http.HandlerFunc(s.handleRecoveryDiscard)))
+	mux.Handle("POST /api/v1/recovery/prepare", auth(http.HandlerFunc(s.handleRecoveryPrepare)))
+	mux.Handle("POST /api/v1/recovery/abandon-takeover", auth(http.HandlerFunc(s.handleAbandonTakeover)))
+	mux.Handle("POST /api/v1/recovery/router-restored", auth(http.HandlerFunc(s.handleRouterRestored)))
+	mux.Handle("POST /api/v1/recovery/manual-finish", auth(http.HandlerFunc(s.handleManualRecoveryFinish)))
+	mux.Handle("POST /api/v1/recovery/client-validated", auth(http.HandlerFunc(s.handleClientValidated)))
+	mux.Handle("POST /api/v1/recovery/client-validation-skip", auth(http.HandlerFunc(s.handleClientValidationSkip)))
+	mux.Handle("POST /api/v1/recovery/keep-static", auth(http.HandlerFunc(s.handleKeepStaticFinish)))
+	mux.Handle("GET /api/v1/network/discovery", auth(http.HandlerFunc(s.handleNetworkDiscovery)))
+	mux.Handle("GET /api/v1/network/defaults", auth(http.HandlerFunc(s.handleNetworkDefaults)))
+	mux.Handle("GET /api/v1/network/interfaces", auth(http.HandlerFunc(s.handleNetworkInterfaces)))
+	mux.Handle("POST /api/v1/network/apply-static", auth(http.HandlerFunc(s.handleApplyStatic)))
+	mux.Handle("POST /api/v1/network/dhcp-probe", auth(http.HandlerFunc(s.handleDHCPProbe)))
+	mux.Handle("POST /api/v1/network/restore-dhcp", auth(http.HandlerFunc(s.handleRestoreDHCP)))
+	mux.Handle("GET /api/v1/sources", auth(http.HandlerFunc(s.handleSources)))
+	mux.Handle("POST /api/v1/sources", auth(http.HandlerFunc(s.handleSources)))
+	mux.Handle("POST /api/v1/sources/{id}/refresh", auth(http.HandlerFunc(s.handleSourceRefresh)))
+	mux.Handle("POST /api/v1/sources/{id}/apply", auth(http.HandlerFunc(s.handleSourceApply)))
+	mux.Handle("GET /api/v1/sources/{id}/preview", auth(http.HandlerFunc(s.handleSourcePreview)))
+	if local {
+		mux.Handle("GET /api/v1/sources/{id}/snapshot-location", auth(http.HandlerFunc(s.handleSourceSnapshotLocation)))
+		mux.Handle("POST /api/v1/sources/{id}/reveal", auth(http.HandlerFunc(s.handleSourceReveal)))
+		mux.Handle("POST /api/v1/sources/{id}/export", auth(http.HandlerFunc(s.handleSourceExport)))
+	}
+	mux.Handle("GET /api/v1/tailscale", auth(http.HandlerFunc(s.handleTailscale)))
+	mux.Handle("GET /api/v1/tailscale/discovery", auth(http.HandlerFunc(s.handleTailscaleDiscovery)))
+	mux.Handle("PUT /api/v1/tailscale", auth(http.HandlerFunc(s.handleTailscale)))
+	mux.Handle("POST /api/v1/tailscale/forget-identity", auth(http.HandlerFunc(s.handleTailscaleForgetIdentity)))
+	mux.Handle("GET /api/v1/custom-dns", auth(http.HandlerFunc(s.handleCustomDNS)))
+	mux.Handle("PUT /api/v1/custom-dns", auth(http.HandlerFunc(s.handleCustomDNS)))
+	mux.Handle("POST /api/v1/custom-dns/import", auth(http.HandlerFunc(s.handleCustomDNSImport)))
+	mux.Handle("POST /api/v1/custom-dns/preview", auth(http.HandlerFunc(s.handleCustomDNSPreview)))
+	mux.Handle("GET /api/v1/profile-overlay", auth(http.HandlerFunc(s.handleProfileOverlay)))
+	mux.Handle("PUT /api/v1/profile-overlay", auth(http.HandlerFunc(s.handleProfileOverlay)))
+	mux.Handle("GET /api/v1/device-policy", auth(http.HandlerFunc(s.handleDevicePolicy)))
+	mux.Handle("PUT /api/v1/device-policy", auth(http.HandlerFunc(s.handleDevicePolicy)))
+	mux.Handle("GET /api/v1/devices", auth(http.HandlerFunc(s.handleDevices)))
+	mux.Handle("GET /api/v1/device-traffic", auth(http.HandlerFunc(s.handleDeviceTraffic)))
+	mux.Handle("GET /api/v1/connections", auth(http.HandlerFunc(s.handleConnections)))
+	mux.Handle("POST /api/v1/devices/{device}/connections/refresh", auth(http.HandlerFunc(s.handleDeviceConnectionRefresh)))
+	mux.Handle("POST /api/v1/devices/{device}/selectors/{slot}", auth(http.HandlerFunc(s.handleDeviceSelection)))
+	mux.Handle("GET /api/v1/policies", auth(http.HandlerFunc(s.handlePolicies)))
+	mux.Handle("POST /api/v1/policy-workspace", auth(http.HandlerFunc(s.handlePolicyWorkspace)))
+	mux.Handle("POST /api/v1/policies/{group}/selection", auth(http.HandlerFunc(s.handlePolicySelection)))
+	mux.Handle("POST /api/v1/policies/{group}/connections/refresh", auth(http.HandlerFunc(s.handlePolicyConnectionRefresh)))
+	mux.Handle("GET /api/v1/local-routing", auth(http.HandlerFunc(s.handleLocalRouting)))
+	mux.Handle("POST /api/v1/local-routing", auth(http.HandlerFunc(s.handleLocalRouting)))
+	mux.Handle("POST /api/v1/local-routing/connections/refresh", auth(http.HandlerFunc(s.handleLocalConnectionRefresh)))
+	mux.Handle("GET /api/v1/proxy-health", auth(http.HandlerFunc(s.handleProxyHealth)))
+	mux.Handle("POST /api/v1/proxy-health/tests", auth(http.HandlerFunc(s.handleProxyHealthTests)))
+	mux.Handle("GET /api/v1/connectivity", auth(http.HandlerFunc(s.handleConnectivity)))
+	mux.Handle("POST /api/v1/connectivity/tests", auth(http.HandlerFunc(s.handleConnectivityTests)))
+	mux.Handle("GET /api/v1/providers", auth(http.HandlerFunc(s.handleProviders)))
+	mux.Handle("GET /api/v1/doctor", auth(http.HandlerFunc(s.handleDoctor)))
+	mux.Handle("POST /api/v1/doctor", auth(http.HandlerFunc(s.handleDoctor)))
+	mux.Handle("GET /api/v1/diagnostics", auth(http.HandlerFunc(s.handleDiagnostics)))
+	mux.Handle("POST /api/v1/providers/{name}/refresh", auth(http.HandlerFunc(s.handleProviderRefresh)))
+	mux.Handle("GET /api/v1/operations/{id}", auth(http.HandlerFunc(s.handleOperation)))
+	mux.Handle("GET /api/v1/operations", auth(http.HandlerFunc(s.handleOperations)))
+	mux.Handle("GET /api/v1/events", auth(http.HandlerFunc(s.handleEvents)))
+	mux.Handle("/api/", http.NotFoundHandler())
 	if s.static != nil {
 		mux.Handle("/", s.static)
 	} else {
@@ -338,7 +376,7 @@ func (s *Server) Handler() http.Handler {
 			http.Error(w, "Web UI is not built", http.StatusServiceUnavailable)
 		})
 	}
-	return s.securityHeaders(mux)
+	return mux
 }
 
 func (s *Server) handleControlConfig(w http.ResponseWriter, r *http.Request) {
@@ -405,13 +443,14 @@ func controlConfigFrom(cfg config.Config, revision string) ControlConfig {
 		dnsUpstream = config.MihomoDNSUpstream
 	}
 	storeFakeIP := cfg.Mihomo.StoreFakeIP
+	macTUNIPv6 := cfg.Transparent.MacTUNIPv6
 	return ControlConfig{
 		SchemaVersion: SchemaVersion, Revision: revision,
 		Gateway:          GatewayConfigInput{Mode: cfg.Gateway.Mode, Interface: cfg.Gateway.Interface, LANIP: cfg.Gateway.LANIP, LANPrefixLen: lan.PrefixLenOrDefault(cfg.Gateway.LANPrefixLen), UpstreamInterface: cfg.Gateway.UpstreamInterface},
 		DHCP:             DHCPConfigInput{Enabled: cfg.DHCP.Enabled, RangeStart: cfg.DHCP.RangeStart, RangeEnd: cfg.DHCP.RangeEnd, LeaseTime: cfg.DHCP.LeaseTime, Domain: cfg.DHCP.Domain, BypassGateway: cfg.DHCP.BypassGateway, BypassDNS: append([]string{}, cfg.DHCP.BypassDNS...)},
 		DNS:              DNSConfigInput{Listen: cfg.DNS.Listen, Upstream: dnsUpstream, IPv6: cfg.DNS.IPv6},
 		Mihomo:           MihomoConfigInput{StoreFakeIP: &storeFakeIP},
-		Transparent:      TransparentConfigInput{Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
+		Transparent:      TransparentConfigInput{MacTUNIPv6: &macTUNIPv6, Mode: cfg.Transparent.Mode, StrictRoute: cfg.Transparent.TUNStrictRoute, TUNIPv6: cfg.Transparent.TUNIPv6, IPv6SharedL2Ready: cfg.Transparent.IPv6SharedL2Ready},
 		LocalSystemProxy: LocalSystemProxyConfigInput{Enabled: cfg.LocalSystemProxy.Enabled},
 		LocalSystemDNS:   &LocalSystemDNSConfigInput{Enabled: cfg.LocalSystemDNS.Enabled},
 		DevicePolicy:     DevicePolicyConfigInput{Enabled: cfg.DevicePolicy.File != "", ProtectedIPv4: append([]string{}, cfg.DevicePolicy.ProtectedIPv4...)},
@@ -432,6 +471,8 @@ func (s *Server) Serve(ctx context.Context) error {
 	defer s.sleepPrevention.Close()
 	defer s.policyWorkspaceLease.Close()
 	httpServer := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
+	s.lan.start(ctx)
+	defer s.lan.close()
 	go s.monitorMihomoRecovery(ctx)
 	go func() {
 		<-ctx.Done()
@@ -456,12 +497,16 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "invalid_host", "request host is not allowed")
 			return
 		}
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+		setControlSecurityHeaders(w)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func setControlSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
 }
 
 func (s *Server) auth(next http.Handler) http.Handler {
@@ -938,7 +983,7 @@ func (s *Server) runOperationLocked(op Operation, topology string, recoveryBefor
 			s.recordStartRecoveryFailure(topology, recoveryBefore, err)
 		}
 		if op.Kind == "reload" {
-			s.recordReloadRecoveryFailure(topology, recoveryBefore, err)
+			s.recordReloadRecoveryFailure(topology, recoveryBefore, err, nil)
 		}
 	} else {
 		op.State = "succeeded"
@@ -977,29 +1022,6 @@ func (s *Server) recordStartRecoveryFailure(topology string, recoveryBefore Reco
 	}
 	recoveryBefore.Required = true
 	appendRecoveryNote(&recoveryBefore, "gateway start failed and runtime changes were rolled back; router DHCP may remain disabled; resolve the error and retry, or abandon takeover and recover the LAN: "+startErr.Error())
-	_ = s.store.SaveRecovery(recoveryBefore)
-}
-
-func (s *Server) recordReloadRecoveryFailure(topology string, recoveryBefore RecoveryState, reloadErr error) {
-	if topology != config.GatewayModeSameWiFiDHCP || strings.Contains(reloadErr.Error(), "reload stop failed") {
-		return
-	}
-	cfg, err := config.LoadRuntime(s.configPath)
-	if err != nil {
-		return
-	}
-	_, exists, stateErr := runtime.LoadState(runtime.NewPaths(cfg).StateFile)
-	restartFailed := strings.Contains(reloadErr.Error(), "reload start failed after gateway stop")
-	if stateErr != nil || (!restartFailed && exists) {
-		return
-	}
-	recoveryBefore.Topology = topology
-	recoveryBefore.Stage = RecoveryRouterDHCPDisabledConfirmed
-	recoveryBefore.Required = true
-	if recoveryBefore.RecoveryNotes != "" {
-		recoveryBefore.RecoveryNotes += "; "
-	}
-	recoveryBefore.RecoveryNotes += "gateway reload failed after services stopped; router DHCP remains disabled; retry start or recover the LAN"
 	_ = s.store.SaveRecovery(recoveryBefore)
 }
 
@@ -1697,7 +1719,7 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "profile_overlay_failed", err.Error())
 		return
 	}
-	composition, err := mihomo.ComposeProfileOverlay(sourcePayload, overlay)
+	composition, err := s.composeDNSDraft(sourcePayload, overlay)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "profile_overlay_incompatible", err.Error())
 		return
@@ -1724,11 +1746,11 @@ func (s *Server) handleSourceApply(w http.ResponseWriter, r *http.Request) {
 	if err == nil && gatewayActive && !result.Reloaded {
 		err = fmt.Errorf("running gateway did not reload the selected profile")
 	}
+	if err != nil && gatewayActive {
+		s.recordReloadRecoveryFailure(cfg.Gateway.Mode, recovery, err, result.Rollback)
+	}
 	s.finishOperation(operation, err)
 	if err != nil {
-		if gatewayActive {
-			s.recordReloadRecoveryFailure(cfg.Gateway.Mode, recovery, err)
-		}
 		status := http.StatusInternalServerError
 		code := "config_apply_failed"
 		if strings.Contains(err.Error(), "revision conflict") {

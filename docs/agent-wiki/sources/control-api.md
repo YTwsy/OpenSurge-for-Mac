@@ -1,10 +1,10 @@
 # Control API 与配置应用
 
-本页维护本地 API 的认证、存储、配置事务、进度与诊断接口。原生 relay 的凭据边界见 [桌面宿主](decisions/desktop-host.md)，展示与交互规则见 [GUI 控制面](decisions/gui-control-plane.md)。
+本页维护本地与可选局域网 API 的认证、存储、配置事务、进度与诊断接口。原生 relay 的凭据边界见 [桌面宿主](decisions/desktop-host.md)，展示与交互规则见 [GUI 控制面](decisions/gui-control-plane.md)。
 
 ## 服务与权限
 
-- `cmd/opensurge-control` 是只监听 `127.0.0.1` 的 Go Control API，并嵌入
+- `cmd/opensurge-control` 是默认监听 `127.0.0.1` 的 Go Control API，并嵌入
   `web/` 构建出的 React 应用；
 - `apps/desktop/` 是 Wails + 系统 WebView 宿主，主窗口与菜单栏面板都复用
   React/TypeScript；认证、窗口与固定原生能力见 [Desktop host](decisions/desktop-host.md)；
@@ -37,6 +37,49 @@ Web GUI 从一次性 bootstrap 链接换取的 HttpOnly 会话使用 12 小时�
 重试，仍失败才显示友好错误和“重新连接”。v0.3 的启动与显式重新连接都不使用
 `kickstart -k`，只唤醒已有服务，不强制重启 Control Service 或操作网关数据面。
 Preview 默认不管理已安装服务；旧 Swift 的重启实现只供历史版本维护。
+
+## 可选局域网管理
+
+局域网入口由同一个 Control Service 管理，复用业务 handler、operation 和 Helper；
+默认关闭。本机设置通过 `GET/PUT /api/v1/lan-access` 开启、关闭或重新确认绑定，
+`POST /api/v1/lan-access/password` 重设密码；写入要求当前 revision 的 `If-Match`。
+这些接口仅在本地认证入口提供。局域网浏览器不能修改开放范围或绕过旧密码重设。
+
+第一版只使用 HTTP、一个管理密码和 IPv4。选择当前启用接口上的 RFC1918 地址及实际
+前缀，默认端口 `61768`，可改为 `1024–65535`。排除 loopback、点对点接口、IPv6 和
+链路本地地址；绑定精确 `IPv4:port`，不监听通配地址。客户端必须来自保存的真实子网，
+判断使用 TCP peer，不相信转发头。Host 必须是该 IP 和端口，所有非 GET/HEAD 请求
+必须携带同源 Origin；不开放 CORS。不能把端口转发或 VPN 可达性等同于局域网授权。
+
+首次开启必须同时设定 12–128 字符密码。`lan-access.json` 在用户 Control Store
+下以 `0600` 原子保存设置与 Argon2id 哈希（随机 16 字节盐，19 MiB、2 次迭代、1 路），
+不保存明文。公开响应只有 `password_set`；二维码只编码已成功监听的 HTTP 地址。
+HTTP 不保护传输中的密码或会话，所以用户界面明确提示仅在受信任的 LAN 开启。
+此版不实现 HTTPS、设备绑定、多用户或公网入口。
+
+局域网 `GET /api/v1/auth/session` 返回认证模式与状态；`POST auth/login` 用密码建立
+独立的 `opensurge_lan_session`，`POST auth/logout` 撤销当前会话，`POST auth/password`
+要求旧密码并撤销全部局域网会话。cookie 为 host-only、HttpOnly、SameSite=Strict，
+HTTP 下不设置 Secure。闲置期限 12 小时、有效请求滑动续期，最多 64 个内存会话，
+不跨服务重启。登录和改密共享每 peer 每分钟 5 次、全局每分钟 60 次的检查限制，
+同时最多 2 个密码计算；超限返回 429。密码和会话不进入 URL、localStorage 或日志。
+401 时卸载受保护界面、停止其观察并显示密码页；重新登录保留路由，不重放网络写操作。
+本机浏览器仍使用前述 bootstrap 恢复提示；两个入口不互相接受凭据。
+session 和 login 响应的 `local_client` 根据实际 TCP peer 与当前本机 LAN 地址比较，
+不读取转发头；仅用于在网关 Mac 隐藏快捷设置中的改密、退出操作，不改变认证或权限。
+桌面 App 和本机认证入口也不显示这两项，远程浏览器在侧栏底部快捷设置中提供。
+
+监听与网关启停独立。退出桌面 App 不停止独立运行的 Control Service；关闭局域网开关
+或停止 Control Service 则释放端口。端口占用和配置损坏只使局域网入口不可用，不影响
+本机控制面。每次请求检查绑定，后台每两秒检查接口/IP/前缀；发现变化立即拒绝新请求，
+监控随后关闭监听、撤销会话并持久化暂停。存储暂时不可写时保持当前进程关闭并重试保存。
+地址恢复后仍需在本机重新选择并保存；不能静默跟随另一地址或扩大子网。
+
+局域网入口提供同一套网关、来源、策略、设备与诊断业务权限，但不提供 bootstrap、
+`/desktop*`、本机来源路径复制/Finder/导出副本接口。远程网络页提示地址修改、恢复 DHCP
+等操作可能断开管理连接；结果继续遵守 operation 的“未确认、只查询、不自动重试写入”契约。
+HTTP 环境的 operation ID 使用 `crypto.getRandomValues` 作为 `randomUUID` 不可用时的后备。
+真实 LAN 和远程生命周期证据要求见 [局域网管理门槛](validation/test-gates.md#局域网管理)。
 
 ## 来源、凭据与应用
 
@@ -93,6 +136,25 @@ Mac、路由器和受保护地址的建议池。同一条路径还挂在网络�
 `isolated_lan` 不使用这条建议路径，继续由操作者手工配置独立下游接口和子网。
 `same_lan` 不运行 DHCP 服务，因此地址池与租期整组必须禁用并明确标记为运行时不使用；
 保留字段值只用于日后切换 topology，不能暗示当前模式会应用它们。
+
+## 自定义 DNS 草稿
+
+- `GET /api/v1/custom-dns` 返回 `document`（`schema_version: 1`、`enabled`、`yaml`）、
+  revision/ETag、映射/策略数及 desired/applied；未保存过的草稿默认关闭。
+- `PUT /api/v1/custom-dns` 接收同一 document，并要求 `If-Match`。Store 在锁内比较和
+  原子写入，冲突返回 409；格式无效返回 422，不覆盖上次有效草稿。允许保存有应用前提
+  冲突的格式合法草稿。此操作不写网关配置或改变进程。
+- `POST /api/v1/custom-dns/import` 接收 `{document, format: "hosts"|"yaml", content}`，
+  返回规范化 document 和将替换的 sections；不保存，由界面确认采用。
+- `POST /api/v1/custom-dns/preview` 接收未保存 document，基于已保存网络设置及当前来源/
+  overlay 生成只读预览，返回自定义/受管前后变化、双入口前提、blockers、DNS 引用和
+  最终 DNS 片段。临时文件随请求清理；不启动核心或修改原始来源、草稿、desired/applied。
+
+单个可导入/导出的文本最多 2 MiB；JSON 请求上限为单 document 14 MiB、导入 26 MiB，
+用于容纳 JSON 转义和当前草稿加导入内容，解析后仍独立执行文本限制。Helper 的整个请求
+上限为 32 MiB，以容纳来源/overlay 的 base64 与新草稿；各输入继续按自身格式校验。
+输入正文没有服务器文件路径或远程抓取权限。完整格式、覆盖和生效语义归
+[自定义 DNS 契约](decisions/mihomo-profile-overlay.md#file-based-custom-dns)。
 
 ## 操作进度、重试与 SSE
 

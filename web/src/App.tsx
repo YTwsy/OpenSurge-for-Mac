@@ -1,3 +1,5 @@
+import { isLANBrowser, isRemoteLANBrowser } from './lanAccess'
+import { LANSessionControls } from './components/LANSessionControls'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, authenticationRequiredEvent, RequestError } from './api'
 import { desktopAction, isDesktop, watchControlEvents, watchDesktopLinks } from './desktop'
@@ -26,6 +28,8 @@ import { getOperations, operationStatusUnknownMessage, subscribeOperations } fro
 import type { Overview } from './types'
 import { t } from './i18n'
 import { releaseCodename } from './release'
+import { AppShell } from './components/AppShell'
+import './mobile.css'
 
 type Page = 'dashboard' | 'network' | 'sources' | 'devices' | 'policies' | 'connections' | 'connectivity' | 'diagnostics'
 type NetworkNavigationTarget = 'none' | 'control' | 'bottom'
@@ -67,6 +71,7 @@ function networkNavigationHash(target: NetworkNavigationTarget) {
 export function App() {
   const [page, setPage] = useState<Page>(currentPage)
   const [dashboardNavigationRequest, setDashboardNavigationRequest] = useState(0)
+  const [sourcesNavigationRequest, setSourcesNavigationRequest] = useState(0)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [overviewConnection, setOverviewConnection] = useState('connecting')
   const overviewRequest = useRef(0)
@@ -76,6 +81,7 @@ export function App() {
   const [quickSettingsOpen, setQuickSettingsOpen] = useState(false)
   const { language, languageChanging, changeLanguage, beginLanguageRefresh } = useInterfaceLanguage(setError)
   const [devicesDirty, setDevicesDirty] = useState(false)
+  const [sourcesDirty, setSourcesDirty] = useState(false)
   const [connectionsView, setConnectionsView] = useState<ConnectionsViewState>(initialConnectionsView)
   const connectionsScroll = useRef<number | null>(null)
   const [policiesViewState, setPoliciesViewState] = useState<PoliciesViewState>({ search: '', scope: 'global', activeGroup: null })
@@ -88,8 +94,10 @@ export function App() {
   const policiesScrollPosition = useRef<number | null>(null)
   const pageRef = useRef(page)
   const devicesDirtyRef = useRef(devicesDirty)
+  const sourcesDirtyRef = useRef(sourcesDirty)
   pageRef.current = page
   devicesDirtyRef.current = devicesDirty
+  sourcesDirtyRef.current = sourcesDirty
 
   useEffect(() => watchDesktopLinks(setError), [])
 
@@ -151,10 +159,17 @@ export function App() {
         return
       }
       if (pageRef.current === 'devices' && next !== 'devices') setDevicesDirty(false)
+      if (pageRef.current === 'sources' && next !== 'sources' && sourcesDirtyRef.current && !window.confirm(t('自定义 DNS 还有未保存的修改，确定离开并放弃这些修改吗？'))) {
+        history.pushState({}, '', '/sources#custom-dns')
+        setSourcesNavigationRequest(request => request + 1)
+        return
+      }
+      if (pageRef.current === 'sources' && next !== 'sources') setSourcesDirty(false)
       if (pageRef.current === 'policies' && next !== 'policies') policiesScrollPosition.current = window.scrollY
       if (pageRef.current === 'connections' && next !== 'connections') connectionsScroll.current = window.scrollY
       if (next === 'connections') setConnectionsView(current => ({ ...current, owner: new URLSearchParams(window.location.search).get('owner') || 'all' }))
       setPage(next)
+      if (next === 'sources') setSourcesNavigationRequest(request => request + 1)
     }
     window.addEventListener('popstate', onPop)
     return () => {
@@ -174,6 +189,8 @@ export function App() {
     }
     if (page === 'devices' && next !== 'devices' && devicesDirty && !window.confirm(t('设备页还有尚未保存的修改，确定离开并放弃这些修改吗？'))) return false
     if (page === 'devices' && next !== 'devices') setDevicesDirty(false)
+    if (page === 'sources' && next !== 'sources' && sourcesDirty && !window.confirm(t('自定义 DNS 还有未保存的修改，确定离开并放弃这些修改吗？'))) return false
+    if (page === 'sources' && next !== 'sources') setSourcesDirty(false)
     if (page === 'policies' && next !== 'policies') policiesScrollPosition.current = window.scrollY
     if (page === 'connections' && next !== 'connections') connectionsScroll.current = window.scrollY
     history.pushState({}, '', next === 'connections' ? `/connections?owner=${encodeURIComponent(connectionsView.owner)}` : `/${next}${networkNavigationHash(networkTarget)}`)
@@ -202,6 +219,10 @@ export function App() {
       if (page === 'dashboard' && section === 'active-devices') {
         history.replaceState({}, '', '/dashboard#active-devices')
         setDashboardNavigationRequest(request => request + 1)
+      }
+      if (page === 'sources' && section === 'custom-dns') {
+        history.replaceState({}, '', '/sources#custom-dns')
+        setSourcesNavigationRequest(request => request + 1)
       }
       if (page === 'connections') {
         const owner = new URLSearchParams(query).get('owner') || 'all'
@@ -281,14 +302,7 @@ export function App() {
   const displayLabel = gatewayStatusLabel(displayState)
   const displayDetail = overviewConnection === 'connected' ? gatewayStatusDetail(overview?.presentation, overview?.drift, overview?.status.gateway) : ''
 
-  return <div className={`app-shell${isDesktop() ? ' desktop-shell' : ''}`}>
-    {isDesktop() && <div className="desktop-titlebar" aria-hidden="true" />}
-    <aside className="sidebar">
-      <div className="brand"><img className="brand-mark" src="/opensurge-icon.png" alt="" aria-hidden="true" /><div><strong>OpenSurge</strong><small>for Mac</small></div></div>
-      <nav aria-label="OpenSurge sections">
-        {nav.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => go(item.id)}><span aria-hidden="true">{item.icon}</span>{t(item.label)}</button>)}
-      </nav>
-      <div className="sidebar-footer">
+  return <AppShell page={page} nav={nav} status={displayState} statusLabel={displayLabel} onNavigate={go} footer={<div className="sidebar-footer">
       <button type="button" className="sidebar-status" aria-label={t('快捷设置：{{status}}', { status: displayLabel })} aria-expanded={quickSettingsOpen} aria-controls="sidebar-quick-settings" onClick={() => setQuickSettingsOpen(open => !open)}><StatusDot status={displayState} /><span className="sidebar-status-copy"><strong>{displayLabel}</strong>{displayDetail && <small className="sidebar-status-detail">{displayDetail}</small>}<small>{import.meta.env.VITE_OPENSURGE_RELEASE_TAG} {releaseCodename(import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</small></span><svg className="sidebar-status-gear" viewBox="0 0 24 24" aria-hidden="true"><path fillRule="evenodd" d="M10 3h4l.5 2.3 1.3.8 2.2-.7 2 3.4-1.7 1.6v3.2l1.7 1.6-2 3.4-2.2-.7-1.3.8L14 21h-4l-.5-2.3-1.3-.8-2.2.7-2-3.4 1.7-1.6v-3.2L4 8.8l2-3.4 2.2.7 1.3-.8L10 3Zm5 9a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z" /></svg></button>
       <div className={`sidebar-settings-reveal ${quickSettingsOpen ? 'expanded' : ''}`} id="sidebar-quick-settings" aria-hidden={!quickSettingsOpen} inert={!quickSettingsOpen}><div className="sidebar-settings-inner"><div className="sidebar-controls">
         <label className="sidebar-control-row sidebar-switch" title={t('阻止空闲睡眠和合盖睡眠。合盖运行可能明显增加耗电与发热，请勿放入不通风的包内。')}>
@@ -302,18 +316,28 @@ export function App() {
           <input type="checkbox" checked={theme === 'dark'} onChange={event => setTheme(event.target.checked ? 'dark' : 'light')} />
         </label>
         {isDesktop() && <button type="button" className="sidebar-control-row desktop-settings-link" onClick={() => { void desktopAction('show-settings').catch(cause => setError(cause instanceof Error ? cause.message : String(cause))) }}><span className="sidebar-control-copy"><strong>{t('设置…')}</strong></span><kbd>⌘,</kbd></button>}
+        {!isDesktop() && isRemoteLANBrowser() && <LANSessionControls />}
       </div></div></div>
-      </div>
-    </aside>
-    <main className="workspace">
+      </div>} overlays={<>
+        {!authenticationRequired && <div className="bottom-right-stack">
+          <ConnectionRefreshPrompts suggestions={connectionRefreshSuggestions} onDismiss={dismissConnectionRefreshSuggestion} onRefreshed={refresh} />
+          <OperationProgress onOpenDiagnostics={() => go('diagnostics')} />
+        </div>}
+        <OperationNotifications notifications={notifications} onDismiss={dismissNotification} />
+      </>}>
       {authenticationRequired ? <section className="session-expired" role="alert"><span aria-hidden="true">!</span><div><h1>{t('Web GUI 与 OpenSurge 的安全连接已过期')}</h1><p>{t('请点击 macOS 菜单栏中的 OpenSurge 图标，然后选择“打开 OpenSurge 面板”。')}</p></div></section> : <>
+        {isLANBrowser() && page === 'network' && <p className="lan-network-notice">{t('修改 Mac 网络地址或恢复自动 DHCP 可能断开当前页面。断开后请在 Mac 上确认结果和新的管理地址，勿重复提交。')}</p>}
         {overview?.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage) && <RecoveryBanner recovery={overview.recovery.stage} onOpen={() => go('network', 'control')} />}
         {error && <div className="error-banner" role="alert"><span>!</span><p>{error}</p><button onClick={() => void refresh()}>{t('重试')}</button></div>}
         <DeviceTrafficProvider gateway={overview?.status.gateway}>
           <PageErrorBoundary key={page}>
             {page === 'dashboard' && <DashboardPage overview={overview} onOpenConnections={openConnections} onOpenNetwork={action => go('network', action === 'cleanup' ? 'control' : action === 'stop' ? 'bottom' : 'none')} />}
-            {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} />}
-            {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} />}
+            {page === 'network' && <NetworkPage overview={overview} onChanged={refresh} onNavigate={() => go('devices')} onNotify={notify} onOpenCustomDNS={() => {
+              if (!go('sources')) return
+              history.replaceState({}, '', '/sources#custom-dns')
+              setSourcesNavigationRequest(request => request + 1)
+            }} />}
+            {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} onOpenNetwork={target => go('network', target)} navigationRequest={sourcesNavigationRequest} onDirtyChange={setSourcesDirty} />}
             {page === 'devices' && <DevicesPage overview={overview} onOpenConnections={openConnections} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} onSuggestConnectionRefresh={suggestConnectionRefresh} />}
             {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} onSuggestConnectionRefresh={suggestConnectionRefresh} viewState={policiesViewState} onViewStateChange={updatePoliciesViewState} restoreScrollY={policiesScrollPosition.current} onScrollPositionChange={updatePoliciesScrollPosition} />}
             {page === 'connections' && <ConnectionsPage overview={overview} view={connectionsView} onViewChange={changeConnectionsView} restoreScrollY={connectionsScroll.current} />}
@@ -322,11 +346,5 @@ export function App() {
           </PageErrorBoundary>
         </DeviceTrafficProvider>
       </>}
-    </main>
-    {!authenticationRequired && <div className="bottom-right-stack">
-      <ConnectionRefreshPrompts suggestions={connectionRefreshSuggestions} onDismiss={dismissConnectionRefreshSuggestion} onRefreshed={refresh} />
-      <OperationProgress onOpenDiagnostics={() => go('diagnostics')} />
-    </div>}
-    <OperationNotifications notifications={notifications} onDismiss={dismissNotification} />
-  </div>
+  </AppShell>
 }

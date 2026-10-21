@@ -181,6 +181,8 @@ func applyValue(cfg *Config, section, key, value string) error {
 		cfg.Mihomo.Profile = value
 	case "mihomo.profile_source_digest":
 		cfg.Mihomo.ProfileSourceDigest = value
+	case "mihomo.profile_custom_dns_digest":
+		cfg.Mihomo.ProfileCustomDNSDigest = value
 	case "mihomo.profile_overlay_digest":
 		cfg.Mihomo.ProfileOverlayDigest = value
 	case "mihomo.store_fake_ip":
@@ -287,6 +289,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("transparent.tun_strict_route must be a boolean")
 		}
 		cfg.Transparent.TUNStrictRoute = enabled
+	case "transparent.mac_tun_ipv6":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("transparent.mac_tun_ipv6 must be a boolean")
+		}
+		cfg.Transparent.MacTUNIPv6 = enabled
 	case "transparent.tun_ipv6":
 		cfg.Transparent.TUNIPv6 = strings.ToLower(value)
 	case "transparent.ipv6_shared_l2_ready":

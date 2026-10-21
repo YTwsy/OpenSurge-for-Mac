@@ -26,6 +26,7 @@ type Manager struct {
 
 const (
 	configValidationTimeout   = 90 * time.Second
+	apiStartupTimeout         = 10 * time.Second
 	tunStartupTimeout         = 10 * time.Second
 	startupProcessStopTimeout = 3 * time.Second
 )
@@ -68,13 +69,27 @@ func (m Manager) ValidateWrittenConfigContext(ctx context.Context) error {
 }
 
 func (m Manager) Start() (int, error) {
+	return m.StartContext(context.Background())
+}
+
+// StartContext bounds readiness by the lifecycle request without tying the
+// successfully started, detached process to that request's lifetime.
+func (m Manager) StartContext(ctx context.Context) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	binary, err := resolveBinary(m.cfg.Mihomo.Binary)
 	if err != nil {
 		return 0, err
 	}
 	configDir := m.configDir()
-	if _, err := os.Stat(m.paths.MihomoConfig); err != nil {
+	rendered, err := os.ReadFile(m.paths.MihomoConfig)
+	if err != nil {
 		return 0, fmt.Errorf("prepared mihomo config: %w", err)
+	}
+	dnsProbe, err := finalDNSProbeName(string(rendered))
+	if err != nil {
+		return 0, err
 	}
 	if err := os.WriteFile(m.paths.MihomoLog, nil, 0o640); err != nil {
 		return 0, err
@@ -83,46 +98,60 @@ func (m Manager) Start() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := process.RequireAlive(pid, 300*time.Millisecond); err != nil {
-		m.stopStartedProcess(pid)
-		return 0, err
+	settledAt := time.Now().Add(300 * time.Millisecond)
+	if err := m.waitForReadiness(ctx, pid, "process", apiStartupTimeout, time.Second, func(context.Context) (bool, error) {
+		return !time.Now().Before(settledAt), nil
+	}); err != nil {
+		return m.failedStart(pid, err)
 	}
-	if err := m.waitForAPI(pid, 2*time.Second); err != nil {
-		m.stopStartedProcess(pid)
-		return 0, err
+	if err := m.waitForAPI(ctx, pid, apiStartupTimeout); err != nil {
+		return m.failedStart(pid, err)
+	}
+	if dnsProbe != "" {
+		if err := m.waitForDNS(ctx, pid, dnsProbe, 10*time.Second); err != nil {
+			return m.failedStart(pid, err)
+		}
 	}
 	if m.cfg.Transparent.TUNEnabled() {
-		if err := m.waitForTUN(pid, tunStartupTimeout); err != nil {
-			m.stopStartedProcess(pid)
-			return 0, err
+		if err := m.waitForTUN(ctx, pid, tunStartupTimeout); err != nil {
+			return m.failedStart(pid, err)
 		}
 	}
 	if m.cfg.Transparent.TUNIPv6 != config.TUNIPv6Off {
-		if err := m.waitForIPv6PacketListener(pid, tunStartupTimeout); err != nil {
-			m.stopStartedProcess(pid)
-			return 0, err
+		if err := m.waitForIPv6PacketListener(ctx, pid, tunStartupTimeout); err != nil {
+			return m.failedStart(pid, err)
 		}
 	}
 	return pid, nil
 }
 
-func (m Manager) waitForIPv6PacketListener(pid int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if !process.IsAlive(pid) {
-			return fmt.Errorf("mihomo pid %d exited while the IPv6 packet listener was starting", pid)
+func (m Manager) waitForDNS(ctx context.Context, pid int, probeName string, timeout time.Duration) error {
+	return m.waitForReadiness(ctx, pid, "DNS", timeout, 2*time.Second, func(probeCtx context.Context) (bool, error) {
+		err := verifyPreparedDNSSockets(probeCtx, PreparedState{PID: pid, DNSAddr: "*:1053"})
+		if err == nil {
+			for _, network := range []string{"udp", "tcp"} {
+				err = queryPreparedDNS(probeCtx, network, gatewayDNSEndpoint, probeName)
+				if err != nil {
+					break
+				}
+			}
 		}
+		return err == nil, err
+	})
+}
+
+func (m Manager) waitForIPv6PacketListener(ctx context.Context, pid int, timeout time.Duration) error {
+	return m.waitForReadiness(ctx, pid, "IPv6 packet listener", timeout, timeout, func(context.Context) (bool, error) {
 		data, _ := os.ReadFile(m.paths.MihomoLog)
 		logText := string(data)
 		if strings.Contains(logText, "OpenSurge packet listener ready:") {
-			return nil
+			return true, nil
 		}
 		if detail := ipv6PacketStartupError(logText); detail != "" {
-			return fmt.Errorf("mihomo IPv6 packet listener failed to start: %s", detail)
+			return true, fmt.Errorf("mihomo IPv6 packet listener failed to start: %s", detail)
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("mihomo IPv6 packet listener not ready after %s", timeout)
+		return false, fmt.Errorf("listener has not reported ready")
+	})
 }
 
 func ipv6PacketStartupError(logText string) string {
@@ -136,13 +165,21 @@ func ipv6PacketStartupError(logText string) string {
 	return detail
 }
 
-func (m Manager) stopStartedProcess(pid int) {
+func (m Manager) failedStart(pid int, cause error) (int, error) {
+	if err := m.stopStartedProcess(pid); err != nil {
+		// Return ownership to the gateway so failed cleanup cannot orphan a
+		// live engine while the runtime is reported stopped.
+		return pid, errors.Join(cause, fmt.Errorf("cleanup failed mihomo startup: %w", err))
+	}
+	return 0, cause
+}
+
+func (m Manager) stopStartedProcess(pid int) error {
 	stopPID := m.stopPID
 	if stopPID == nil {
 		stopPID = process.StopPID
 	}
-	_ = stopPID(pid, startupProcessStopTimeout)
-	_ = m.cleanupIPv6PacketSocket()
+	return errors.Join(stopPID(pid, startupProcessStopTimeout), m.cleanupIPv6PacketSocket())
 }
 
 func (m Manager) Check() error {
@@ -173,60 +210,36 @@ func validateConfigContext(ctx context.Context, timeout time.Duration, binary st
 	return nil
 }
 
-func (m Manager) waitForAPI(pid int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		if !process.IsAlive(pid) {
-			return fmt.Errorf("mihomo pid %d exited during startup", pid)
+func (m Manager) waitForAPI(ctx context.Context, pid int, timeout time.Duration) error {
+	return m.waitForReadiness(ctx, pid, "API", timeout, 250*time.Millisecond, func(ctx context.Context) (bool, error) {
+		version, err := FetchVersion(ctx, m.cfg)
+		if err == nil && strings.TrimSpace(version.Version) == "" {
+			err = fmt.Errorf("controller returned an empty version")
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
-		_, err := FetchVersion(ctx, m.cfg)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		time.Sleep(100 * time.Millisecond)
-	}
-	if lastErr != nil {
-		return fmt.Errorf("mihomo API not ready after %s: %w", timeout, lastErr)
-	}
-	return fmt.Errorf("mihomo API not ready after %s", timeout)
+		return err == nil, err
+	})
 }
 
-func (m Manager) waitForTUN(pid int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for time.Now().Before(deadline) {
-		if !process.IsAlive(pid) {
-			return fmt.Errorf("mihomo pid %d exited while TUN was starting", pid)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+func (m Manager) waitForTUN(ctx context.Context, pid int, timeout time.Duration) error {
+	return m.waitForReadiness(ctx, pid, "TUN", timeout, 300*time.Millisecond, func(ctx context.Context) (bool, error) {
 		state, err := FetchTUNRuntimeState(ctx, m.cfg)
 		if err == nil && state.Enabled {
 			if m.cfg.Transparent.TUNAutoRoute {
-				err = macosnetwork.VerifyMacTUNRoutes(ctx, state.Device)
+				err = macosnetwork.VerifyMacTUNRoutes(ctx, state.Device, m.cfg.Transparent.MacTUNIPv6Enabled())
 			}
 			if err == nil {
-				cancel()
-				return nil
+				return true, nil
 			}
-		}
-		cancel()
-		if err != nil {
-			lastErr = err
 		}
 		if detail := tunStartupError(m.paths.MihomoLog); detail != "" {
 			detail = enrichTUNRouteError(detail)
-			return fmt.Errorf("mihomo TUN failed to start: %s", detail)
+			return true, fmt.Errorf("mihomo TUN failed to start: %s", detail)
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	if lastErr != nil {
-		return fmt.Errorf("mihomo TUN not ready after %s: %w", timeout, lastErr)
-	}
-	return fmt.Errorf("mihomo TUN not ready after %s: runtime config still reports disabled", timeout)
+		if err == nil {
+			err = fmt.Errorf("runtime config still reports TUN disabled")
+		}
+		return false, err
+	})
 }
 
 func enrichTUNRouteError(detail string) string {

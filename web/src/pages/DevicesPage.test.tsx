@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { selectOption } from '../test/select'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DevicePolicyDocument, DevicesResponse, LocalRouting, LocalRoutingMode, Overview, PolicySet } from '../types'
@@ -60,6 +60,12 @@ function devicesResponse(overrides: Partial<DevicesResponse> = {}): DevicesRespo
   return { drift: false, applied: false, devices: [], desired_devices: [], applied_devices: [], changed_devices: [], leases: [], observed_devices: [], ...overrides }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(complete => { resolve = complete })
+  return { promise, resolve }
+}
+
 function renderPage(customOverview = overview) {
   const onChanged = vi.fn(async () => {})
   const onNavigate = vi.fn()
@@ -98,6 +104,75 @@ describe('DevicesPage', () => {
   })
 
   afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans') })
+
+  it('shows loading feedback until device settings arrive and loads Mac settings independently', async () => {
+    const policyLoad = deferred<DevicePolicyDocument>()
+    const routingLoad = deferred<LocalRouting>()
+    vi.mocked(api.devicePolicy).mockReturnValueOnce(policyLoad.promise)
+    vi.mocked(api.localRouting).mockReturnValueOnce(routingLoad.promise)
+    renderPage()
+
+    expect(screen.getByText('正在加载设备与规则…').closest('[role="status"]')).toBeTruthy()
+    expect(screen.getByText('正在读取本机设置…').closest('[role="status"]')).toBeTruthy()
+    expect((screen.getByRole('button', { name: '按规则' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByText('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')).toBeNull()
+    expect(screen.queryByRole('button', { name: '前往网络设置' })).toBeNull()
+
+    await act(async () => { policyLoad.resolve(documentFor(basePolicy)) })
+    expect(await screen.findByRole('tablist', { name: '设备与规则' })).toBeTruthy()
+    expect(screen.queryByText('正在加载设备与规则…')).toBeNull()
+    expect(screen.getByText('正在读取本机设置…')).toBeTruthy()
+
+    await act(async () => { routingLoad.resolve(localRouting()) })
+    expect(screen.queryByText('正在读取本机设置…')).toBeNull()
+    expect((screen.getByRole('button', { name: '按规则' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('shows initialization guidance only after configuration confirms device management is disabled', async () => {
+    const configLoad = deferred<Awaited<ReturnType<typeof api.config>>>()
+    vi.mocked(api.config).mockReturnValueOnce(configLoad.promise)
+    renderPage()
+
+    expect(screen.getByText('正在加载设备与规则…')).toBeTruthy()
+    expect(screen.queryByText('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')).toBeNull()
+
+    await act(async () => { configLoad.resolve({ device_policy: { enabled: false }, dhcp: { bypass_gateway: '', bypass_dns: [] } } as never) })
+    expect(await screen.findByText('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')).toBeTruthy()
+    expect(screen.queryByText('正在加载设备与规则…')).toBeNull()
+    expect(api.devicePolicy).not.toHaveBeenCalled()
+  })
+
+  it('shows a retryable read failure without initialization guidance and recovers after retry', async () => {
+    const retryLoad = deferred<DevicePolicyDocument>()
+    vi.mocked(api.devicePolicy).mockRejectedValueOnce(new Error('连接暂时中断')).mockReturnValueOnce(retryLoad.promise)
+    renderPage()
+
+    const failure = await screen.findByRole('alert')
+    expect(within(failure).getByText('设备与规则加载失败')).toBeTruthy()
+    expect(within(failure).getByText('连接暂时中断')).toBeTruthy()
+    expect(screen.queryByText('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')).toBeNull()
+
+    await userEvent.click(within(failure).getByRole('button', { name: '重试' }))
+    expect(screen.getByText('正在加载设备与规则…')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    await act(async () => { retryLoad.resolve(documentFor(basePolicy)) })
+    expect(await screen.findByRole('tablist', { name: '设备与规则' })).toBeTruthy()
+    expect(screen.queryByText('正在加载设备与规则…')).toBeNull()
+  })
+
+  it('starts reading device policy while auxiliary source information is still pending', async () => {
+    const sourcesLoad = deferred<Awaited<ReturnType<typeof api.sources>>>()
+    vi.mocked(api.sources).mockReturnValueOnce(sourcesLoad.promise)
+    renderPage()
+
+    await waitFor(() => expect(api.devicePolicy).toHaveBeenCalledTimes(1))
+    expect(screen.getByText('正在加载设备与规则…')).toBeTruthy()
+    expect(screen.queryByText('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')).toBeNull()
+
+    await act(async () => { sourcesLoad.resolve({ revision: 'sources-r1', sources: [] }) })
+    expect(await screen.findByRole('tablist', { name: '设备与规则' })).toBeTruthy()
+  })
 
   it('shows applied egress fallback and skipped ruleset and template routes without marking settings as unsaved', async () => {
     const policy: PolicySet = {

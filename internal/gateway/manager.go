@@ -46,7 +46,7 @@ type mihomoService interface {
 	WriteConfig() error
 	ValidateWrittenConfig() error
 	ValidateWrittenConfigContext(context.Context) error
-	Start() (int, error)
+	StartContext(context.Context) (int, error)
 	Stop(int) error
 	Running(int) bool
 }
@@ -224,6 +224,7 @@ func (m *Manager) resolveIPv6(deps gatewayDeps) ipv6Resolution {
 
 func appliedConfigFromState(cfg config.Config, state runtime.State) config.Config {
 	cfg.DNS.IPv6 = state.DNSIPv6
+	cfg.Transparent.MacTUNIPv6 = state.MacTUNIPv6
 	if state.LocalSystemDNS != nil {
 		cfg.LocalSystemDNS.Resolvers = state.LocalSystemDNS.Resolvers
 		cfg.LocalSystemDNS.Domains = state.LocalSystemDNS.Domains
@@ -480,7 +481,7 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 		ProfileDigest:       profileDigest,
 		LocalSystemProxy:    systemProxySnapshot,
 		LocalSystemDNS:      systemDNSSnapshot,
-		MacTUNIPv6:          m.cfg.Transparent.TUNEnabled(),
+		MacTUNIPv6:          m.cfg.Transparent.MacTUNIPv6Enabled(),
 		DNSIPv6:             m.cfg.DNS.IPv6,
 		TUNIPv6Requested:    ipv6Resolution.Requested,
 		IPv6PacketEffective: ipv6Resolution.Effective,
@@ -515,8 +516,14 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 	if err := checkCanceled(); err != nil {
 		return err
 	}
-	mihomoPID, err := mihomoManager.Start()
+	mihomoPID, err := mihomoManager.StartContext(ctx)
 	if err != nil {
+		if mihomoPID > 0 {
+			state.PIDMihomo = mihomoPID
+			var identityErr error
+			state.MihomoProcessFingerprint, identityErr = processFingerprint(deps, mihomoPID)
+			err = errors.Join(err, identityErr, deps.saveState(m.paths.StateFile, state))
+		}
 		return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 	}
 	state.PIDMihomo = mihomoPID
@@ -706,13 +713,13 @@ func (m Manager) reload(ctx context.Context) error {
 		}
 	}
 	if err := m.validateReloadCandidate(ctx); err != nil {
-		return fmt.Errorf("reload candidate validation failed: %w", err)
+		return &ReloadError{Phase: ReloadValidation, Err: err}
 	}
 	if err := m.stop(ctx); err != nil {
-		return fmt.Errorf("reload stop failed: %w", err)
+		return &ReloadError{Phase: ReloadStop, Err: err}
 	}
 	if err := m.start(ctx); err != nil {
-		return fmt.Errorf("reload start failed after gateway stop: %w", err)
+		return &ReloadError{Phase: ReloadStart, Err: err}
 	}
 	return nil
 }
@@ -806,8 +813,14 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 		return errors.Join(fmt.Errorf("archive mihomo log before restart: %w", err), restoreSystemProxy())
 	}
 	ReportProgress(ctx, "starting_mihomo")
-	newPID, err := mihomoManager.Start()
+	newPID, err := mihomoManager.StartContext(ctx)
 	if err != nil {
+		if newPID > 0 {
+			state.PIDMihomo = newPID
+			var identityErr error
+			state.MihomoProcessFingerprint, identityErr = processFingerprint(deps, newPID)
+			err = errors.Join(err, identityErr, deps.saveState(m.paths.StateFile, state))
+		}
 		return errors.Join(fmt.Errorf("start replacement mihomo process: %w", err), restoreSystemProxy())
 	}
 	state.PIDMihomo = newPID

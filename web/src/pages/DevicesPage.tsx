@@ -51,6 +51,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
   const [registrationSeed, setRegistrationSeed] = useState<{ token: number; draft: RegistrationDraft } | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [reloadOpen, setReloadOpen] = useState(false)
   const [reloading, setReloading] = useState(false)
@@ -75,9 +76,12 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
   const openSurgeRenewalNames = (overview?.topology === 'same_wifi_dhcp' ? policy.devices : []).filter(device => desiredGatewayTarget(device) === 'opensurge' && appliedGatewayTarget(appliedByID.get(device.id)) === 'upstream_router').map(displayDeviceName)
 
   const refresh = useCallback(async (discardDraft = false) => {
+    setLoading(true)
+    setError('')
     try {
-      const [devices, config, sources, tailscale, overlay] = await Promise.all([api.devices(), api.config(), api.sources().catch(() => ({ revision: '', sources: [] })), api.tailscale().catch(() => null), api.profileOverlay().catch(() => null)])
-      const nextDocument = config.device_policy.enabled ? await api.devicePolicy() : null
+      const configRequest = api.config()
+      const documentRequest = configRequest.then(config => config.device_policy.enabled ? api.devicePolicy() : null)
+      const [devices, config, sources, tailscale, overlay, nextDocument] = await Promise.all([api.devices(), configRequest, api.sources().catch(() => ({ revision: '', sources: [] })), api.tailscale().catch(() => null), api.profileOverlay().catch(() => null), documentRequest])
       const imported = sources.sources.filter(source => source.applied && source.valid).flatMap(source => {
         // Effective inventory follows the current overlay draft, so expose it only when that draft is actually applied.
         const inventory = overlay?.applied ? source.effective_inventory ?? source.inventory : source.inventory
@@ -100,7 +104,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
       setError('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
-    }
+    } finally { setLoading(false) }
   }, [])
 
   const refreshDeviceObservation = useCallback(async () => {
@@ -288,7 +292,7 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
   return <div className="devices-workbench-page">
     <PageHeader eyebrow="DEVICES" title="设备与规则" description="分别设置当前 Mac 和下游设备如何选择出口；两者互不影响。" action={document && <button className="primary workbench-register" type="button" aria-expanded={registrationOpen} aria-controls="device-registration" onClick={() => { setRegistrationOpen(value => !value); setRegistrationSeed(null) }}>{t(registrationOpen ? '收起登记' : '登记新设备')}</button>} />
     {message && <div className="notice ok-notice" role="status">{message}</div>}
-    {error && <div className="notice warn" role="alert">{error}{revisionConflict && <button className="inline-action" type="button" onClick={() => void discardDraft()}>{t('放弃本地修改并加载最新版本')}</button>}</div>}
+    {error && document && <div className="notice warn" role="alert">{error}{revisionConflict && <button className="inline-action" type="button" onClick={() => void discardDraft()}>{t('放弃本地修改并加载最新版本')}</button>}</div>}
     <section className="section local-routing-section">
       <LocalRoutingCard running={overview?.status.gateway === 'running'} interfaceName={overview?.status.interface} lanIP={overview?.status.lan_ip} healthByName={proxyHealth.byName} testing={proxyHealth.testing} onHealthTest={proxyHealth.test} onChanged={async () => { await onChanged(); await proxyHealth.refresh() }} onPolicies={() => onNavigate('policies')} onOpenConnections={onOpenConnections ? () => onOpenConnections('gateway-local') : undefined} onSuggestConnectionRefresh={onSuggestConnectionRefresh} />
     </section>
@@ -347,7 +351,11 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
       {data?.drift && !dirty
         ? <PendingReloadBar data={data} running={overview?.status.gateway === 'running'} onReload={() => setReloadOpen(true)} onDashboard={() => onNavigate('dashboard')} />
         : <div className={`sticky-save ${dirty ? 'has-changes' : 'is-saved'}`}><div><strong>{t(dirty ? '有未保存的设备修改' : '设备配置已保存')}</strong><small>{dirty ? t('保存只更新 desired；运行中还需重载') : `revision ${document.revision.slice(0, 10)}`}</small></div><button className="primary" type="button" disabled={!dirty || saving || rebinding} onClick={() => void save()}>{t(saving ? '正在验证并保存…' : '保存设备配置')}</button></div>}
-    </> : <section className="section"><Empty text={t('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')} /><button type="button" onClick={() => onNavigate('network')}>{t('前往网络设置')}</button></section>}
+    </> : loading ? <section className="section device-page-state" role="status" aria-live="polite" aria-atomic="true">
+      <span className="button-spinner" aria-hidden="true" /><div><strong>{t('正在加载设备与规则…')}</strong><p>{t('正在读取已保存的设备和分流设置。')}</p></div>
+    </section> : error ? <section className="section device-page-state" role="alert">
+      <div><strong>{t('设备与规则加载失败')}</strong><p>{error}</p><button type="button" onClick={() => void refresh()}>{t('重试')}</button></div>
+    </section> : <section className="section"><Empty text={t('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')} /><button type="button" onClick={() => onNavigate('network')}>{t('前往网络设置')}</button></section>}
     {reloadOpen && <ReloadDialog busy={reloading} routerBypassRenewalNames={routerBypassRenewalNames} openSurgeRenewalNames={openSurgeRenewalNames} onCancel={() => setReloadOpen(false)} onConfirm={() => void reload()} />}
     {rebindRequest && <RebindDialog request={rebindRequest} busy={rebinding} running={overview?.status.gateway === 'running'} includesDraft={dirty} onCancel={() => setRebindRequest(null)} onConfirm={() => void applyObservedIPv4()} />}
   </div>

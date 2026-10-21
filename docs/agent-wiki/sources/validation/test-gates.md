@@ -5,6 +5,11 @@
 不在这里复制完整断言清单。环境准备与清理见 [Lab 运行](lab-gates.md)，
 历史执行结果经 [证据入口](evidence-map.md) 定向读取。
 
+打包缓存改动运行 `python3 tests/packaging/test_mihomo_cache.py`，也包含在
+`scripts/check-gui-packaging.sh` 中。它以临时源码归档和假 Go 工具验证命中、输入失效、
+摘要损坏、缺失来源记录及失败不发布。真实核心另验证一次冷构建、相同输入命中及
+命中后二进制 IPv6 隔离检查；这些检查均不创建系统 TUN，不替代网络门槛。
+
 ## 快速门槛
 
 普通 Go 代码、解析与生成逻辑运行 `make test`（`go test ./...`）；Web 交互与文案按范围
@@ -14,10 +19,53 @@
 
 ## Host-network 门槛
 
+启动等待与回滚状态一致性的隔离检查可运行：
+
+```sh
+OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
+  go test ./internal/mihomo -run '^TestStartupReadinessRealCore$' -count=1
+```
+
+该测试用 2.5 秒可控启动延迟调用正式 `Manager.StartContext`，仅开启随机 loopback
+controller，并检查停止后监听释放。普通 Go 回归另覆盖 deadline、取消、提前退出、残留
+进程所有权、来源事务与 DHCP 恢复阶段；这些结果用于等待/状态逻辑验收，不证明 DHCP、
+PF/NAT 或 TUN 数据面。是否需要进一步网络门槛按本次改动与要声明的能力范围确定。
+
+订阅自身 DNS 与准备态的隔离真实核心检查：
+
+```sh
+OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
+  go test ./internal/mihomo ./internal/controlapi -count=1
+```
+
+其中 `TestDNSReferencesRealCore` 默认只运行准备态矩阵：IPv4/IPv6 引用形式、UDP/TCP、
+节点解析 policy、全局附加配置开关，使用全新临时缓存与受控上游/节点/Provider，并核对 hosts 别名、
+真实地址过滤、普通 Fake-IP 和停止后监听释放。`TestPreparedDNSBindRaceRealCore` 验证
+TCP 或 UDP 被竞争占用时的失败判定、清理和有界重试。测试不会停止已有网关。
+
+正式 DNS 1053 空闲时额外设置 `OMG_DNS_REFERENCE_GATEWAY_CORE=1`，运行同一矩阵的
+正式配置核心分支；占用时明确失败并保留现有服务。默认矩阵也用真实核心校验正式配置
+语法，但语法检查不证明端口绑定成功。正式分支复用 Manager 的 DNS 就绪检查，不启动完整 Gateway Manager，
+不接管 DHCP、pf、TUN 或系统 DNS，因此不能替代下列 host-network/TUN/workspace 门槛。
+
 涉及 DHCP/DNS、进程、PF/NAT、IPv4 forwarding、rollback 或清理时使用 `make lab-test`。
 通过要求 Lima 客户端取得 DHCP/DNS、完成 ICMP/NAT、直连和 mixed-port HTTPS，并恢复
 被接管的主机资源。运行前读取 [Lab 前提](lab-gates.md)，每轮检查当次 artifacts，收尾执行
 `make lab-down`、`make lab-status`。未完成清理不能记为完整通过。
+
+## 局域网管理
+
+认证和监听契约先运行 `make test`、`make web-test`、`make web-build`、`make desktop-test`
+以及 `go test -race ./internal/controlapi -run '^TestLAN'`。回归覆盖默认关闭、私有密码哈希、
+本地/局域网凭据隔离、真实前缀与 peer、Host/Origin、限速、过期/退出/改密撤销、SSE 关闭、
+监听失败、本地可恢复性、地址变化暂停与旧请求竞争。UI fixture 另检查手机尺寸登录、
+改密/退出、设置草稿冲突、二维码只含实际地址、HTTP 的 operation ID 后备。
+
+这些结果不证明物理设备可达性。真实 LAN 验收必须记录被测提交、macOS/浏览器与拓扑，
+由同网段另一设备扫码后登录，验证读状态、修改策略与退出；另从不允许的子网连接，
+验证地址/前缀变化后的暂停、端口释放与本机恢复，以及 Control Service 重启后重新登录。
+远程启停、DHCP 恢复或配置应用还须结合 `make lab-test`，涉及透明代理时补
+`make lab-test-tun`，核对 operation 结果与清理。不能以浏览器页面成功代替数据面证据。
 
 ## 策略控制面门槛
 
@@ -98,6 +146,17 @@ OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/tools/bin/mihomo" \
 HTTP-only Global 的 UDP 拒绝，系统 TUN 的 IPv4/IPv6 精确来源不会匹配 packet listener。
 开启 AAAA 的无原生 IPv6 场景也需真实探针；范围以 [本机路由](../decisions/local-mac-routing-modes.md)
 与 [系统 DNS 契约](../decisions/local-system-dns-coordination.md) 为准。
+
+`transparent.mac_tun_ipv6` 关闭/开启需复验完整重启后的 host TUN 地址、路由、
+本机 IPv4 连通性和停止清理；关闭时不应存在公网、fake 或 Tailnet IPv6 捕获，
+下游 IPv6 listener 与设备规则需保持独立。隔离解析检查
+`OMG_PREPARED_MIHOMO_BINARY=... go test ./internal/mihomo -run TestMacTUNIPv6ConfigRealCore -count=1`
+检查本机开关与 DNS AAAA 的四种组合：显式空地址不得回填，开启时地址不得丢失。
+配置保留 `tun.enable: true`，但提供无效文件描述符且关闭自动路由，要求核心在创建
+接口前报错；不创建系统 TUN。打包必须针对即将入包的二进制运行该检查。
+核心构建另运行 overlay 中的 `TestOpenSurgeIPv6WithoutNativeUplink`，注入无原生
+IPv6 的检测结果，避免宿主已有 IPv6/TUN 掩盖冷启动缺陷；覆盖 DNS、本机、下游与
+顶层开关的独立性。两层检查均不替代该网络门槛或夸克等实际应用的 IPv4 回退验收。
 
 使用发布同源的 patched Mihomo，不能退回引导用的上游 v1.19.27。系统 DNS 验收要求
 `getaddrinfo` 随机新域名返回 fake A/AAAA、系统代理关闭、UDP/TCP DNS 捕获、Mihomo 重启

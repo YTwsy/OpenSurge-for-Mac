@@ -313,11 +313,14 @@ RA/DHCPv6 或使用 RA Guard。
 OpenSurge for Mac 可以渲染托管的 mihomo 配置，也可以导入已有 mihomo profile。
 在 imported 模式下，OpenSurge 仍然接管 LAN 绑定、`allow-lan`、DNS 监听与
 fake-IP 网段、TUN、`external-controller` 和 runtime 路径等网关关键字段。导入的
-profile 会贡献 `proxies`、`proxy-providers`、`proxy-groups`、`rule-providers`、
+profile 会贡献 `hosts`、`proxies`、`proxy-providers`、`proxy-groups`、`rule-providers`、
 `rules`，以及不改变网关边界的 DNS 解析器/过滤字段。保留
 `nameserver-policy`、`proxy-server-nameserver`、`fake-ip-filter` 等字段，可以让依赖
 专用 DNS 的代理节点域名继续正确解析，同时不允许 profile 替换网关 DNS 监听或
 TUN DNS 契约。
+
+`hosts` 中的 IP、域名别名和通配映射会保留到最终配置。原订阅中指向本机 DNS
+监听端口的解析地址暂不自动协调；保留 hosts 不代表旧监听端口依赖已修复。
 
 导入 profile 不是使用高级配置的前置条件。Web GUI 的“全局附加配置”可以在 managed
 最小 profile 上独立增加节点、Provider、手动策略组与规则。网关停止时，“策略”页会通过

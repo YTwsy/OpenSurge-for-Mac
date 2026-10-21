@@ -26,6 +26,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	cfg.Mihomo.Profile = filepath.Join(dir, "profile.yaml")
 	cfg.Mihomo.ProfileSourceDigest = strings.Repeat("a", 64)
 	cfg.Mihomo.ProfileOverlayDigest = strings.Repeat("b", 64)
+	cfg.Mihomo.ProfileCustomDNSDigest = strings.Repeat("c", 64)
 	if err := os.WriteFile(cfg.Mihomo.Profile, []byte("rules:\n  - MATCH,DIRECT\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestRenderRoundTrip(t *testing.T) {
 	if loaded.LocalSystemDNS.Enabled {
 		t.Fatal("explicit system DNS opt-out lost during serialization")
 	}
-	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP || loaded.Mihomo.ProfileSourceDigest != cfg.Mihomo.ProfileSourceDigest || loaded.Mihomo.ProfileOverlayDigest != cfg.Mihomo.ProfileOverlayDigest {
+	if loaded.Gateway.Mode != cfg.Gateway.Mode || loaded.DHCP.RangeStart != cfg.DHCP.RangeStart || loaded.DHCP.BypassGateway != cfg.DHCP.BypassGateway || len(loaded.DHCP.BypassDNS) != 2 || !loaded.LocalSystemProxy.Enabled || loaded.Mihomo.StoreFakeIP || loaded.Mihomo.ProfileSourceDigest != cfg.Mihomo.ProfileSourceDigest || loaded.Mihomo.ProfileOverlayDigest != cfg.Mihomo.ProfileOverlayDigest || loaded.Mihomo.ProfileCustomDNSDigest != cfg.Mihomo.ProfileCustomDNSDigest {
 		t.Fatalf("round trip mismatch: %#v", loaded)
 	}
 }
@@ -103,5 +104,32 @@ func TestRenderRoundTripPreservesTailscaleWithoutAuthKey(t *testing.T) {
 	}
 	if strings.Contains(Render(loaded), "tskey-") {
 		t.Fatal("rendered gateway config unexpectedly contains an auth key")
+	}
+}
+
+func TestMacTUNIPv6DefaultAndRoundTrip(t *testing.T) {
+	cfg := Default()
+	if !cfg.Transparent.MacTUNIPv6 {
+		t.Fatal("legacy default must preserve host IPv6")
+	}
+	cfg.Transparent.Mode = TransparentModeTUN
+	cfg.Transparent.MacTUNIPv6 = false
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := Render(cfg)
+	for _, legacy := range []bool{false, true} {
+		content := body
+		if legacy {
+			content = strings.ReplaceAll(content, "  mac_tun_ipv6: false\n", "")
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.Transparent.MacTUNIPv6 != legacy {
+			t.Fatalf("legacy=%v: host IPv6=%v", legacy, loaded.Transparent.MacTUNIPv6)
+		}
 	}
 }

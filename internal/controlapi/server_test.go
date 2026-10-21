@@ -19,6 +19,7 @@ import (
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
+	"open-mihomo-gateway/internal/gateway"
 	"open-mihomo-gateway/internal/macosnetwork"
 	"open-mihomo-gateway/internal/mihomo"
 	"open-mihomo-gateway/internal/runtime"
@@ -1917,7 +1918,7 @@ func TestGatewayReloadStopFailurePreservesActiveTakeoverStage(t *testing.T) {
 	}
 	server.runner = actionRunnerFunc(func(_ context.Context, _, _ string) error {
 		_ = runtime.RemoveState(paths.StateFile)
-		return errors.New("reload stop failed: pf unload failed")
+		return &gateway.ReloadError{Phase: gateway.ReloadStop, Err: errors.New("pf unload failed")}
 	})
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:61767/api/v1/gateway/reload", nil)
 	request.Host = "127.0.0.1:61767"
@@ -2713,6 +2714,10 @@ func newReadyMihomoTestServer(t *testing.T) *httptest.Server {
 
 type fakeRunner struct{}
 
+func (fakeRunner) PreviewCustomDNS(ctx context.Context, path string, input PolicyWorkspaceInput) (CustomDNSPreview, error) {
+	return previewCustomDNS(ctx, path, input)
+}
+
 func (fakeRunner) Run(_ context.Context, _, _ string) error { return nil }
 func (fakeRunner) StartPolicyWorkspace(_ context.Context, _ string, _ PolicyWorkspaceInput) error {
 	return nil
@@ -2846,4 +2851,48 @@ func performAuthorized(server *Server, method, path string, body []byte) *httpte
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	return response
+}
+
+func TestControlConfigMacTUNIPv6PreservesLegacySaves(t *testing.T) {
+	cfg := config.Default()
+	cfg.Transparent.Mode = config.TransparentModeTUN
+	cfg.Runtime.Dir = t.TempDir()
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	off, on := false, true
+	for _, value := range []*bool{&off, nil, &on} {
+		current, err := config.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		input := controlConfigFrom(current, fileDigest(path))
+		if input.Transparent.MacTUNIPv6 == nil {
+			t.Fatal("GET must include the preference")
+		}
+		input.Transparent.MacTUNIPv6 = value
+		payload, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+			t.Fatal(err)
+		}
+		updated, err := config.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := current.Transparent.MacTUNIPv6
+		if value != nil {
+			want = *value
+		}
+		if updated.Transparent.MacTUNIPv6 != want {
+			t.Fatal("preference lost", updated.Transparent)
+		}
+		if updated.DNS.IPv6 != current.DNS.IPv6 || updated.Transparent.TUNIPv6 != current.Transparent.TUNIPv6 {
+			t.Fatal("changed other IPv6 controls")
+		}
+	}
 }

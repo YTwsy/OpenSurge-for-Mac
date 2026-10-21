@@ -32,12 +32,31 @@ OpenSurge 同时约束 **入口类型** 和 **源地址**：
 listener 进入，携带设备 `IN-USER`，源地址位于 `fdfe:dcba:9878::/64`。它们都不会命中
 上述本机规则，随后继续进入设备覆盖和 imported/managed 网关规则。
 
+### Mac 本机 IPv6 接管
+
+网络设置中的 **Mac 本机 IPv6 接管** 默认开启，旧配置升级后保持原行为。
+关闭后保存并完整重启网关，会撤销本机 TUN 的 IPv6 地址、公网/fake IPv6 与
+Tailnet IPv6 捕获路由；IPv4 和已有下游 IPv6 设置不变。仅重启代理引擎不应用
+尚未生效的网络配置。
+
+它不会关闭 macOS 自身的 IPv6、修改 DNS AAAA 或显式代理设置。关闭后本机
+不再经 TUN 访问 fake IPv6 或 Tailnet IPv6；若仍开启 AAAA，应确认所用应用的
+IPv4 回退行为。没有原生 IPv6 出口时，可用此开关排查应用反复尝试 IPv6 的兼容问题，
+但不保证任意应用自动改用 IPv4。
+
+配置字段为 `transparent.mac_tun_ipv6: true/false`。
+
 ### AAAA 与本机模式
 
 `dns.ipv6` 与 `transparent.tun_ipv6` 相互独立。即使“何时为下游启用 IPv6”设为
 `auto` 且因没有原生上游 IPv6 而未实际启用下游 IPv6，开启“允许 AAAA 查询”仍会让
 mihomo DNS 返回 `fdfe:dcba:9876::/64` 中的 fake IPv6。一些应用会优先使用这类 AAAA。
-fake IPv6 是 DNS 返回的目标地址；本机流量的系统 TUN 源身份固定使用
+
+关闭 AAAA 只控制普通上游解析与 Fake-IP 的 IPv6 答案；启用 hosts 后，显式 IPv6 映射
+仍可返回 AAAA。这个答案不保证本机或下游 IPv6 路径可达；若固定名称只应使用 IPv4，
+请仅保留对应的 IPv4 hosts 映射。
+
+fake IPv6 是 DNS 返回的目标地址；开启本机 IPv6 接管时，本机流量的系统 TUN 源身份固定使用
 `fdfe:dcba:9877::1/128`，不会随 AAAA 或下游 IPv6 开关切换。因此不需要为了让本机
 直连生效而关闭 AAAA。
 

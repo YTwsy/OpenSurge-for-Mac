@@ -96,6 +96,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if state.get("offline"):
             self.reply({"error": {"code": "desktop_service_unavailable"}}, 503)
             return
+        if path == "/api/v1/auth/session" and self.command == "GET":
+            self.reply({"mode": "local"})
+            return
         if path == "/api/v1/session/bootstrap":
             self.read_body()
             if self.headers.get("Authorization") != "Bearer smoke-only":

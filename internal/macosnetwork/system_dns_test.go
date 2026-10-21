@@ -156,11 +156,31 @@ func TestMacRouteVerificationDetectsMissingIPv6Capture(t *testing.T) {
 		}
 		return "interface: " + device + "\n", nil
 	}
-	if err := VerifyMacTUNRoutes(t.Context(), "utun123"); err == nil {
+	if err := VerifyMacTUNRoutes(t.Context(), "utun123", true); err == nil {
 		t.Fatal("missing fake IPv6 route was accepted")
 	}
 	missing = false
-	if err := VerifyMacTUNRoutes(t.Context(), "utun123"); err != nil {
+	if err := VerifyMacTUNRoutes(t.Context(), "utun123", true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMacTUNRoutesIPv4OnlyReadiness(t *testing.T) {
+	old := runCommand
+	t.Cleanup(func() { runCommand = old })
+	calls := 0
+	runCommand = func(_ context.Context, _ string, args ...string) (string, error) {
+		destination := args[len(args)-1]
+		if strings.Contains(destination, ":") {
+			t.Fatal("disabled IPv6 must not block startup", destination)
+		}
+		calls++
+		return "interface: utun123\n", nil
+	}
+	if err := VerifyMacTUNRoutes(t.Context(), "utun123", false); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("IPv4 readiness checks = %d", calls)
 	}
 }

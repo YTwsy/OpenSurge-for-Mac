@@ -95,7 +95,7 @@ func (s *Server) handleSourcePreview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "profile_overlay_failed", err.Error())
 		return
 	}
-	composition, err := mihomo.ComposeProfileOverlay(sourceData, document)
+	composition, err := s.composeDNSDraft(sourceData, document)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "profile_overlay_incompatible", err.Error())
 		return
@@ -106,6 +106,11 @@ func (s *Server) handleSourcePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	effectiveInventory := inventoryFromInspection(composition.Inspection)
+	dnsReferences, err := mihomo.DNSReferenceBindings(final)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "dns_reference_preview_failed", err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, ProfileOverlayPreview{
 		SchemaVersion:        SchemaVersion,
 		SourceID:             source.ID,
@@ -117,6 +122,7 @@ func (s *Server) handleSourcePreview(w http.ResponseWriter, r *http.Request) {
 		EffectiveInventory:   effectiveInventory,
 		Diff:                 diffInventory(source.Digest, source.Inventory, effectiveInventory),
 		Validation:           "结构组合通过；实际应用前仍会运行 mihomo 引擎校验。",
+		DNSReferences:        dnsReferences,
 	})
 }
 
@@ -136,6 +142,11 @@ func (s *Server) renderProfileOverlayPreview(effectiveProfile string) (string, e
 	}
 	cfg.Mihomo.ProfileMode = config.MihomoProfileModeImported
 	cfg.Mihomo.Profile = profilePath
+	customDNS, err := mihomo.CustomDNSFromProfile([]byte(effectiveProfile))
+	if err != nil {
+		return "", err
+	}
+	cfg.Mihomo.ProfileCustomDNSDigest = mihomo.CustomDNSDigest(customDNS)
 	rendered, err := mihomo.RenderConfig(cfg)
 	if err != nil {
 		return "", err

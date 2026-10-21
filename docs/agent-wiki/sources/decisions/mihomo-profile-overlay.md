@@ -18,6 +18,7 @@ relative paths are anchored to the profile directory, absolute and URL-shaped
 paths stay unchanged, and missing paths remain absent. The loader does not
 namespace or migrate downloaded caches. Imported sections are:
 
+- `hosts`
 - `proxies`
 - `proxy-providers`
 - `proxy-groups`
@@ -29,6 +30,118 @@ text. Both block and flow collections are supported, including compact
 `rules: ['MATCH,DIRECT']`, quoted top-level keys, and inline provider mappings.
 OpenSurge does not rewrite the imported source snapshot; only the generated
 runtime mihomo config may normalize collection style or indentation.
+
+## File-based custom DNS
+
+Sources exposes one optional **Custom DNS** draft as a sibling of the Global
+Extension, with an independent enable flag. Network Settings shows a read-only
+status summary and links to `/sources#custom-dns`, which expands and focuses the
+editor. The control service stores `custom-dns.json` (schema version,
+enabled flag and portable YAML); absence means disabled. Saving uses an atomic
+Store `If-Match` comparison and never mutates the desired gateway config or a
+running process. Import and preview are also non-applying operations.
+
+Two UTF-8 formats are accepted, each limited to 2 MiB; BOM and LF/CRLF work:
+
+- **hosts text**: literal IPv4/IPv6 followed by one or more names; `#` comments.
+  Names are lowercased ASCII/punycode with a trailing root dot removed. Repeated
+  names accumulate unique IPs in order. No wildcards, aliases, directives or URLs.
+  Import replaces the draft's entire `hosts` section and preserves `dns`.
+- **Mihomo YAML**: one mapping containing only `hosts` and/or `dns`, with native
+  field values (no overlay `merge`/`append` wrapper). Each provided section
+  replaces that entire draft section; omitted sections remain. Hosts supports IPs,
+  IP lists, domain aliases and whole-label domain wildcards. Duplicate normalized
+  keys, null deletion, custom tags, cyclic aliases and excessive expansion fail.
+  Acyclic YAML anchors are expanded before saving/export. Import is atomic.
+
+`dns` uses the same top-level allowlist as `profileOverlayDNSFields`:
+`cache-algorithm`, `default-nameserver`, `direct-nameserver`,
+`direct-nameserver-follow-policy`, `fake-ip-filter`, `fake-ip-filter-mode`,
+`fallback`, `fallback-filter`, `nameserver`, `nameserver-policy`, `prefer-h3`,
+`proxy-server-nameserver`, `proxy-server-nameserver-policy`, `respect-rules`,
+`use-hosts`, `use-system-hosts`. New domain selectors are literal/wildcard domains;
+rule-mode filters accept DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD and terminal MATCH,
+with `real-ip`/`fake-ip` actions. Wildcard matching follows the pinned core
+[domain trie](https://github.com/MetaCubeX/mihomo/blob/ac017cdd246ce8bd547653d927e7bf77d7ee73d5/component/trie/domain.go);
+ambiguous equal-rank alias targets are checked conservatively. New geosite/RuleSet/provider/file dependencies,
+full profiles, dnsmasq snippets and gateway-owned fields are rejected. Existing
+subscription/overlay dependencies are retained. Engine validation still owns
+resolver protocol/parameter semantics.
+
+Composition order is raw source (or managed base), enabled global overlay,
+enabled custom DNS, then gateway fields/system DNS coordination/reference binding.
+The original snapshot is unchanged. Hosts and both nameserver-policy mappings
+merge by normalized domain key; a custom value replaces the whole inherited IP
+or resolver list. Other mappings merge recursively and ordinary arrays/scalars
+replace when supplied. Missing fields and empty mappings do not delete inherited
+entries. Removing a custom entry restores inheritance on the next composition.
+
+Fake-IP filtering is mode dependent. The inherited default mode is `blacklist`.
+With the same or omitted mode, blacklist/whitelist append unique custom entries;
+rule mode prepends custom rules. A custom MATCH can shadow inherited rules and is
+shown in preview. An explicit mode change must also supply a complete list; the
+pair replaces the inherited mode/list. An empty list in the same mode adds nothing.
+Whitelist matches mean Fake-IP, not real-IP exceptions. A draft containing custom
+hosts forces `use-hosts: true`; explicit false in that draft is an application
+conflict. Hosts precedence, wildcard specificity, alias-target filtering and
+possible node/provider use remain Mihomo semantics. Preview shows known direct
+node/provider host matches, direct-nameserver follow-policy state, before/after
+values, lower-layer DNS and subsequent managed changes.
+
+With hosts enabled, explicit IPv6 hosts mappings can answer AAAA even when
+`dns.ipv6` is false. This is an intentional fixed-address override; that switch
+controls ordinary upstream and Fake-IP AAAA answers, not removal of explicit
+addresses. DNS answers do not establish Mac or downstream IPv6 reachability.
+An IPv4-only fixed name should retain only IPv4 hosts mappings.
+
+The authenticated preview endpoint sends its server-assembled draft snapshot to
+the privileged Helper using the fixed `custom-dns-preview` action. The Helper
+checks the desired-config revision and renders under the shared lifecycle lock,
+using a private temporary directory below the managed runtime root. It reads the
+existing root-only workspace base without changing its permissions, returns only
+DNS/hosts sections and composition diagnostics, then removes temporary profiles.
+It never starts/stops a prepared or gateway engine or commits configuration.
+The browser cannot choose base, runtime or output paths. Control Service and
+Helper must both include this action; an unavailable/older Helper fails explicitly.
+
+The immutable candidate carries `x-opensurge-custom-dns` and the desired config
+stores `mihomo.profile_custom_dns_digest`. This is control-plane metadata, stripped
+from runtime/export output, and is not accepted as ownership metadata from raw
+subscriptions. Workspace snapshots carry the normalized draft to the Helper.
+Prepared views/start and source apply use the same composition order; running
+policy views ignore drafts. Source-free and overlay-disabled composition work.
+Repeated materialization starts from raw/root base metadata; when that information
+is missing, changing an existing composition fails rather than stacking patches.
+
+Application requires managed dnsmasq upstream, TUN auto-route and Mac system DNS
+coordination. It disables dnsmasq's system hosts lookup with `no-hosts`, leaving
+Mihomo `use-system-hosts` in charge. While DHCP is enabled, custom hosts and policy
+keys may not intersect single-label names or the configured lease-domain namespace.
+Alias reachability is checked through inherited hosts too; uncertain wildcard
+intersections are conservatively rejected. Exact hosts take precedence over
+wildcards; bounded alias traversal rejects cycles/excessive complexity. This
+reserves possible future lease names without discarding DHCP hostnames or device
+identity. DHCP settings changes are revalidated whenever a candidate is rendered.
+These checks do not promise shared dynamic lease-name resolution.
+
+A formatted draft may be saved despite application blockers. Activation/disable
+uses existing full gateway start or source apply/reload; full reload restarts the
+owned dnsmasq and its cache. Engine-only recovery and page navigation never load a
+new DNS draft. Failed apply follows existing lifecycle rollback/state reporting.
+Sources accounts for both overlay and custom DNS desired state when enabling
+application of an otherwise current source. Disabling DNS still counts as pending
+until applied. Saving refreshes source compatibility; successful application
+refreshes source, overlay and DNS status. Applying uses only saved drafts and the
+existing source confirmation/transaction. With no exact desired/applied source
+row (including when only an older source version is current), the DNS editor links
+to Network Settings for stop/start rather than implicitly selecting a new source.
+Unsaved DNS edits survive status refreshes and guard navigation away from Sources.
+Exports contain only the canonical custom YAML; desktop uses a native save dialog,
+browser uses a file download. No original file paths or file watching are retained.
+
+Validation requirements are maintained in [test gates](../validation/test-gates.md),
+and current evidence scope in the [evidence map](../validation/evidence-map.md#文件式自定义-dns).
+Environment-specific results, blockers and follow-up work remain in the linked tasks.
 
 ## Global profile overlay and optional sources
 
@@ -98,10 +211,23 @@ states. While the gateway is running it talks to the running mihomo and ignores
 source and overlay drafts. While stopped, the privileged Helper composes the
 selected raw source when one exists, the saved global overlay when enabled,
 and OpenSurge-managed device/Tailscale sections, then starts a prepared mihomo
-with only a random authenticated loopback controller. Business proxy ports,
-DNS listeners, TUN, custom listeners/tunnels, DHCP, pf, forwarding and IPv6
-packet ingress remain disabled. Resolver policy stays loaded so provider and
-proxy hostnames behave like the future gateway.
+with a random authenticated loopback controller. When the final resolver graph
+contains a supported self DNS reference, that same process also opens a private
+loopback DNS port. Without that dependency DNS listening stays disabled.
+Business proxy ports, TUN, custom listeners/tunnels, DHCP, pf, forwarding and
+IPv6 packet ingress remain disabled. Resolver policy stays loaded so provider
+and proxy hostnames behave like the future gateway.
+
+The private DNS endpoint and probe identity are root-only prepared state, never
+desired configuration or browser API fields. Both TCP and UDP are reserved
+until immediately before process start; reservation alone does not prove a
+successful bind. Readiness verifies that this process owns both sockets, then
+queries both transports using a random exact `.invalid` TXT policy answered
+inside the core (`rcode://success`). The probe does not depend on public DNS,
+hosts enablement, Fake-IP or prior caches. At most three startup attempts are
+allowed, with the previous process cleaned up before another attempt. Reusing
+a prepared process checks DNS again without reallocating its port; a failed
+reuse probe reports the failure and does not silently restart a live owner.
 
 The prepared core uses the same cache directory as the next real gateway core,
 so `profile.store-selected` choices, Provider caches, and the Tailscale state
@@ -152,6 +278,92 @@ This includes `default-nameserver`, `nameserver`, `nameserver-policy`,
 settings. Proxy server hostnames can depend on these fields, so discarding them
 can leave mihomo healthy while every imported node resolves to an unreachable
 address.
+
+The top-level `hosts` mapping is retained alongside these DNS fields, including
+IP values, IP lists, domain aliases, wildcard keys and supported YAML anchors.
+It survives global overlay composition, final gateway rendering and prepared
+policy rendering without changing `use-hosts` or the imported filtering policy.
+Mihomo's candidate validation remains authoritative for engine-specific hosts
+semantics. The source snapshot is not rewritten.
+
+### DNS reference composition and binding
+
+Self DNS compatibility is always part of rendering, independent of the global
+overlay or a future custom-resolution editor. Before dropping owned DNS fields,
+the importer captures the original `enable`/`listen`, source digest and resolver
+field/value origins. Materialized profiles preserve them under the versioned
+`x-opensurge-dns-source` extension, including the immediately overridden origin
+when a final target changes. Raw source snapshots stay unchanged. This extension
+is composition evidence, not authority to restore a subscription listener.
+
+After overlay and managed DNS coordination, classify the final targets again.
+Only confirmed self references in `proxy-server-nameserver` and
+`proxy-server-nameserver-policy` are automatically rebound. Supported targets are
+literal UDP/TCP loopback endpoints covered by an enabled original wildcard or
+exact loopback listener of the same address family and port. IPv6 reference
+forms bind to the same IPv4 loopback runtime service; this does not demonstrate
+a downstream IPv6 packet/DNS path. Bare IPv4 endpoints and `udp://`/`tcp://`
+forms are supported. Parameters, hostname aliases, scoped IPv6 and other URL
+protocols are not rewritten as if they were equivalent.
+
+| Field / condition | Self reference behavior |
+| --- | --- |
+| Node resolver and node resolver policy | Bind to `127.0.0.1:1053` in the formal config, or the current prepared loopback endpoint |
+| `nameserver`, ordinary `nameserver-policy`, `default-nameserver`, `fallback` | Reject a recursive dependency before application |
+| `direct-nameserver` | Self binding is outside the supported scope; reject explicitly |
+| `respect-rules`, or an upstream proxy/interface fragment other than `#DIRECT`, alongside self DNS | Reject the unverified bootstrap dependency |
+| Independent loopback / external resolver | Preserve the exact target and parameters; independent UDP/TCP loopback port 1053 conflicts with the managed service |
+| Cross-family wildcard or `localhost` ambiguity | Report the field, source, target and original listener; require an explicit declaration or a supported literal form |
+
+An exported source can declare the purpose of an exact reference without
+enabling any optional editor:
+
+```yaml
+x-opensurge-dns-services:
+  - field: 'dns.proxy-server-nameserver[0]'
+    target: udp://127.0.0.1:7874
+    service: independent
+```
+
+`service` is `self` or `independent`. A declaration belongs to that selected raw
+source and exact field/target pair; it is retained with source metadata across
+composition and no longer matches when the final target changes. `self` still
+requires an enabled original DNS and a supported literal loopback transport;
+it cannot waive unsupported field, protocol or bootstrap checks. Edit/export
+and reimport the source rather than changing a managed snapshot in place.
+
+The final configuration carries `x-opensurge-dns-bindings` diagnostics with the
+original/final target, purpose, provenance and service classification. Preparation
+checks those bindings against the actual fields before rebinding, then removes
+the extension from its engine config. Preview exposes configuration inference,
+not a claim that a live DNS query has succeeded. Unknown external recursion
+cannot be ruled out by static address checks.
+
+For a final configuration with self references, formal startup also requires
+the started process to own both port 1053 listeners and answer UDP/TCP TXT
+queries. A managed exact `.invalid` policy and `x-opensurge-dns-probe` identify
+that check. The identity is deterministic for the final configuration, so
+rendering does not cause needless prepared restarts. Preparation replaces the
+formal policy with its private random identity. Neither policy enters the raw
+source or desired configuration. A live controller alone cannot make a failed
+DNS bind count as a successful startup; failure stops the process just started.
+
+For legacy overlaid profiles with local resolver targets and missing listener
+metadata, the stopped workspace retrieves the selected raw snapshot even when
+the overlay digest is unchanged. Root-owned base metadata can also provide that
+source. If neither exists, report the missing original metadata; do not infer
+service identity from a port occupant or silently reuse a filtered profile.
+Direct CLI rendering likewise diagnoses a legacy composed local resolver whose
+origin cannot be recovered. An unchanged independent profile without such a
+dependency remains readable.
+
+Real-core prepared DNS tests cover aliases, filters, controlled upstreams,
+node/Provider connectivity, both transports and bind-race cleanup. The DNS task
+is archived using its completed Mac/Android end-to-end and installed-preview
+checks, without an additional Virtual Lab requirement. The full formal-port
+self-reference and handoff matrices remain outside that evidence scope; see the
+[core results](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#本次开发与验证记录)
+and [completed acceptance scope](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-完成与归档).
 
 ## Gateway-owned fields
 

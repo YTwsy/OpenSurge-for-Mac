@@ -12,6 +12,7 @@ import (
 )
 
 var importableProfileSectionOrder = []string{
+	"hosts",
 	"proxies",
 	"proxy-providers",
 	"proxy-groups",
@@ -55,6 +56,8 @@ type importedProfile struct {
 	sectionOrder      []string
 	inventory         importedProfileInventory
 	dnsResolverFields string
+	dnsSource         *dnsSourceMetadata
+	dnsSourceStored   bool
 }
 
 type importedProfileInventory struct {
@@ -198,12 +201,25 @@ func parseImportedProfile(data []byte) (importedProfile, error) {
 	if err != nil {
 		return importedProfile{}, fmt.Errorf("dns: %w", err)
 	}
+	dnsSource, stored, err := captureDNSSource(root, data)
+	if err != nil {
+		return importedProfile{}, err
+	}
+	retainedDNS, err := decodeSingleYAMLMapping([]byte(dnsResolverFields))
+	if err != nil {
+		return importedProfile{}, err
+	}
+	if err := refreshDNSOrigins(dnsSource, retainedDNS, "managed", ""); err != nil {
+		return importedProfile{}, err
+	}
 	return importedProfile{
 		sections:          sections,
 		sectionKeys:       sectionKeys,
 		sectionOrder:      sectionOrder,
 		inventory:         inventory,
 		dnsResolverFields: dnsResolverFields,
+		dnsSource:         dnsSource,
+		dnsSourceStored:   stored,
 	}, nil
 }
 

@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestLoadImportedProfileSectionsKeepsOnlyProxyAndRuleSections(t *testing.T) {
+func TestLoadImportedProfileSectionsKeepsOnlyImportableSections(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "profile.yaml")
 	body := `mixed-port: 7890

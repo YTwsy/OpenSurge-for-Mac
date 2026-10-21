@@ -97,7 +97,6 @@ jobs:
           OPENSURGE_VERSION: ${{ steps.version.outputs.version }}
           OPENSURGE_BUILD_NUMBER: ${{ github.run_number }}
           OPENSURGE_RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
-          OPENSURGE_MIHOMO_BINARY: ${{ github.workspace }}/runtime/release-tools/bin/mihomo
           OPENSURGE_DNSMASQ_BINARY: ${{ github.workspace }}/runtime/release-tools/bin/dnsmasq
         run: |
           export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"

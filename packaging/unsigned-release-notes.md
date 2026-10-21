@@ -1,22 +1,27 @@
-[简体中文](#v031-主要变化相对-v030) · [English](#english)
+[简体中文](#v032-主要变化相对-v031) · [English](#english)
 
 > **v0.3 series codename: Verdilion**
 
-### v0.3.1 主要变化（相对 v0.3.0）
+### v0.3.2 主要变化（相对 v0.3.1）
 
-v0.3.1 是 Verdilion 系列的修复与体验改进版本，重点改善总览图表、拓扑切换、DHCP 运行控制与菜单栏操作。
+v0.3.2 新增带密码的局域网管理和 Mac 本机 IPv6 独立开关，改善手机操作与连接检查体验，并提供文件式自定义 DNS；同时修复订阅 DNS 兼容、安装版预览权限及网关重载恢复问题。
 
-- **总览绘制开销降低，切页保留流量历史**：移除图表逐帧插值和持续 LIVE 动画，数字与曲线随采样更新。窗口可见时，切换页面继续保留最近 60 秒、最多 30 个采样；隐藏窗口暂停采样，返回后淘汰过期数据。纵轴显示清晰刻度，上传与下载趋势共用量程，相同历史不会因切页重新初始化。受控 UI 对比的方法和范围见 [#84](https://github.com/YTwsy/OpenSurge-for-Mac/issues/84)，修复见 [#85](https://github.com/YTwsy/OpenSurge-for-Mac/pull/85)。
-- **直连主路由设备可保留并切换旁路由模式**：已有设备选择「直连主路由」时，从 DHCP 接管切换到手工旁路由模式，不再被已停用的 DHCP 绕行参数阻止保存或启动。设备资料、规则与出口选择继续保留；返回 DHCP 接管时重新执行完整校验。旁路由模式下，设备的实际网关和 DNS 仍需手工配置，本次不会自动改变设备的实际出口。见 [#87](https://github.com/YTwsy/OpenSurge-for-Mac/pull/87)。
-- **DHCP 接管后可以直接停止网关**：「网关运行控制」集中显示运行状态与停止按钮，无需先完成或跳过客户端检查。停止操作继续使用已有的断网确认与恢复流程；可选的设备检查移入默认折叠的「下一步：检查设备接入」，接管和恢复步骤在运行期间收起，必要的恢复动作保持可见。见 [#88](https://github.com/YTwsy/OpenSurge-for-Mac/pull/88)。
-- **菜单栏更多操作完整显示**：修复总览窗口较短时，菜单被裁剪、底部退出入口需要滚动查找的问题。更多操作改为独立的原生子窗口，按菜单内容与屏幕可用高度调整，打开菜单保持总览窗口尺寸；屏幕空间不足时滚动上方内容，两个退出入口仍保持可见。支持 Escape 返回触发按钮、点击外部关闭，并同步主题与语言。见 [#91](https://github.com/YTwsy/OpenSurge-for-Mac/pull/91)。
-- **文档入口更清晰**：用户操作指南统一整理到 `docs/user/`，工程规范、验证方法与历史证据各有对应入口，并补充网关 DNS 与 fake-IP 的职责说明。
+- **从同一局域网的手机或其他电脑管理 OpenSurge**：在“App 设置与更新 → 局域网管理”中开启访问、设置管理密码，再通过地址或二维码打开浏览器控制台。支持查看状态、管理来源、设备与策略，以及执行网络控制。功能默认关闭，二维码只包含访问地址；修改密码或关闭入口会使现有远程会话失效。当前使用 HTTP 和私有 IPv4 地址，适用于受信任的局域网。见 [#99](https://github.com/YTwsy/OpenSurge-for-Mac/pull/99)。
+- **独立控制 Mac 本机 IPv6 接管**：网络设置新增“Mac 本机 IPv6 接管”，默认开启，旧配置保持原行为。关闭后保存并完整重启网关，可撤销本机 TUN 的 IPv6 地址与捕获路由；DNS AAAA、下游 IPv6 接管和 macOS 原生 IPv6 仍各自独立。见 [#98](https://github.com/YTwsy/OpenSurge-for-Mac/pull/98)。
+- **改善手机界面与连接检查体验**：为各主要控制页面调整窄屏布局、导航抽屉和菜单交互。连接详情改为独立浮层：桌面可以拖动，手机在底部展示，查看详情时仍可筛选和操作列表；连接离开当前快照后保留最后一次观察到的详情。设备与本机设置补充加载、读取失败和重试反馈。见 [#99](https://github.com/YTwsy/OpenSurge-for-Mac/pull/99)。
+- **新增文件式自定义 DNS**：在“代理与规则源”中导入 hosts 文件，或仅包含 `hosts` / `dns` 的 Mihomo YAML，为 NAS 等服务设置固定地址、为公司域名指定内网 DNS，或配置返回真实地址的例外。自定义 DNS 独立于全局附加配置，支持草稿、预览、导出和显式应用，并统一用于 Mac TUN 与使用 OpenSurge DNS 的下游设备。保存草稿不会立即改变网络；应用前会检查接入条件、DHCP 名称冲突和已知解析循环。见 [#97](https://github.com/YTwsy/OpenSurge-for-Mac/pull/97)。
+- **修复订阅 DNS 兼容与自定义 DNS 预览**：修复 [#93](https://github.com/YTwsy/OpenSurge-for-Mac/issues/93)：保留订阅中的 `hosts` 映射及配套 DNS 策略，将能够明确识别的订阅自身 DNS 节点解析引用绑定到当前核心，避免监听端口调整后仍访问旧端口。网关停止时，准备态按需提供私有 DNS 监听，支持节点测试和 Provider 解析。此兼容修复默认生效，无需开启自定义 DNS。另修复安装版自定义 DNS 预览读取受保护配置时的权限错误。相关改动见 [#95](https://github.com/YTwsy/OpenSurge-for-Mac/pull/95)、[#97](https://github.com/YTwsy/OpenSurge-for-Mac/pull/97)。
+- **修复重载失败后的恢复状态，完善启动就绪等待**：改善核心启动较慢时的有界等待与错误诊断。应用新配置失败后，根据旧网关的实际恢复结果更新 DHCP 接管状态，修复旧网关已恢复运行、界面却退回待启动阶段的问题；恢复未完成时保留真实错误和后续恢复入口。应用请求取消后，也会继续尝试恢复已经停止的旧网关。见 [#100](https://github.com/YTwsy/OpenSurge-for-Mac/pull/100)。
+- **修复 IPv6 核心冷启动并加强安装包构建校验**：修复无原生 IPv6 上游、AAAA 关闭而本机 IPv6 接管开启时的补丁核心冷启动行为。安装包按固定源码和当前补丁构建核心，仅在构建输入与二进制摘要匹配时复用缓存，并检查实际入包的核心，避免旧缓存遗漏补丁变化。见 [#98](https://github.com/YTwsy/OpenSurge-for-Mac/pull/98)。
 
 ### 升级与验证说明
 
-- 本次为正式版，替代 v0.3.0 成为稳定版 Latest；App 的稳定版更新检查可以发现 v0.3.1。
-- 发布检查覆盖 Go/Web/桌面端测试、嵌入资源构建、安装器契约，以及 Apple Silicon / Intel 双架构安装包校验。拓扑切换修复的回归覆盖配置校验、生成结果和界面行为。
-- 完整变更：[v0.3.0...v0.3.1](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.0...v0.3.1)。
+- 自定义 DNS 默认关闭，保存、启用或禁用草稿后，都需要显式应用才会改变运行配置。
+- Mac 本机 IPv6 接管默认开启，修改后需要完整重启网关。
+- 局域网管理默认关闭；停止网关或仅退出桌面 App，不会关闭已经启用的管理入口。请在设置中关闭并保存。
+- 本次为正式版，替代 v0.3.1 成为稳定版 Latest；App 的稳定版更新检查可以发现 v0.3.2。
+- 发布检查覆盖 Go/Web/桌面端测试、嵌入资源构建、安装器契约，以及 Apple Silicon / Intel 双架构安装包校验。已有 DNS、Mac IPv6 与安装态验收沿用各项记录的版本和范围；本轮未新增 Virtual Lab 或真实 DHCP/TUN 数据面复验。DNS 自身引用的完整正式端口矩阵、局域网管理物理设备验收等未覆盖项见[验证范围与证据入口](https://github.com/YTwsy/OpenSurge-for-Mac/blob/v0.3.2/docs/agent-wiki/sources/validation/evidence-map.md)。
+- 完整变更：[v0.3.1...v0.3.2](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.1...v0.3.2)。
 
 ### 下载安装包
 
@@ -68,21 +73,26 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 ## English
 
-### v0.3.1 highlights since v0.3.0
+### v0.3.2 highlights since v0.3.1
 
-v0.3.1 is a maintenance and usability release in the Verdilion series, focused on overview charts, topology switching, DHCP gateway controls and menu-bar actions.
+v0.3.2 adds password-protected LAN management and independent Mac IPv6 control, improves mobile controls and connection inspection, and introduces file-based Custom DNS. It also fixes subscription DNS compatibility, installed-build preview permissions and gateway reload recovery.
 
-- **Less overview rendering overhead, with traffic history preserved across pages:** Removes per-frame chart interpolation and the continuous LIVE animation. Numbers and curves update with each sample. While the window is visible, navigation preserves up to 30 samples from the last 60 seconds; hiding pauses sampling, and returning discards expired data. Labeled axes and a shared upload/download trend scale keep the same history consistent across page changes. The controlled UI comparison and its limits are documented in [#84](https://github.com/YTwsy/OpenSurge-for-Mac/issues/84); the fix is in [#85](https://github.com/YTwsy/OpenSurge-for-Mac/pull/85).
-- **Keep main-router devices when switching to manual bypass-router mode:** Devices configured to use the main router no longer prevent saving or starting manual bypass-router mode because of inactive DHCP bypass settings. Device identities, rules and outlet selections are retained, and full validation resumes when DHCP takeover is enabled again. Clients still need manual gateway and DNS configuration in bypass-router mode; this change does not automatically switch their actual egress. See [#87](https://github.com/YTwsy/OpenSurge-for-Mac/pull/87).
-- **Stop a DHCP gateway directly:** Gateway running controls now show status and a Stop action without requiring client checks to be completed or skipped first. Existing network-disruption confirmation and recovery flows remain in use. Optional client checks move into a collapsed next-step section; takeover and recovery instructions collapse while running, while required recovery actions stay visible. See [#88](https://github.com/YTwsy/OpenSurge-for-Mac/pull/88).
-- **Menu-bar actions remain fully accessible:** Fixes the More actions menu being clipped by a short overview window. Actions open in a separate native child window sized to the menu and available screen height, keeping the overview size unchanged. On short screens, the upper content scrolls while both quit actions remain visible. Escape returns focus to the trigger, clicking outside closes the menu, and theme and language stay synchronized. See [#91](https://github.com/YTwsy/OpenSurge-for-Mac/pull/91).
-- **Clearer documentation entry points:** User guides are consolidated under `docs/user/`, with separate entry points for engineering contracts, validation methods and historical evidence, plus clearer gateway DNS and fake-IP responsibilities.
+- **Manage OpenSurge from another device on your LAN:** Enable LAN management in App Settings & Updates, set a management password, and open the browser control panel using its URL or QR code. Manage status, sources, devices, policies and network controls from a phone or another computer. The feature is off by default, and the QR contains only the URL. Changing the password or disabling access revokes existing remote sessions. This version uses HTTP and private IPv4 addresses and is intended for trusted LANs. See [#99](https://github.com/YTwsy/OpenSurge-for-Mac/pull/99).
+- **Control Mac IPv6 takeover independently:** Adds a Mac IPv6 takeover setting, enabled by default to preserve existing behavior. Save and fully restart the gateway after changing it. Disabling removes the Mac TUN IPv6 addresses and capture routes; DNS AAAA, downstream IPv6 takeover and native macOS IPv6 remain independently controlled. See [#98](https://github.com/YTwsy/OpenSurge-for-Mac/pull/98).
+- **Improve mobile controls and connection inspection:** Refines narrow-screen layouts, navigation drawers and menus across the main control pages. Connection details open in a draggable desktop panel or a bottom panel on mobile, allowing continued filtering and list interaction. The selected connection retains its last observed details after leaving the current snapshot. Device and Mac settings also gain clearer loading, failure and retry feedback. See [#99](https://github.com/YTwsy/OpenSurge-for-Mac/pull/99).
+- **Add file-based Custom DNS:** Import a hosts file or Mihomo YAML containing only `hosts` / `dns` from Sources to configure fixed service addresses, corporate DNS routing and real-IP exceptions. Custom DNS is independent of the Global Profile Overlay, with drafts, previews, export and explicit application for Mac TUN and downstream devices using OpenSurge DNS. Saving does not change the running gateway. Application checks prerequisites, DHCP namespace conflicts and known resolution loops. See [#97](https://github.com/YTwsy/OpenSurge-for-Mac/pull/97).
+- **Fix subscription DNS compatibility and Custom DNS previews:** Fixes [#93](https://github.com/YTwsy/OpenSurge-for-Mac/issues/93): preserves subscription `hosts` mappings and associated DNS policies, and binds confirmed references to the subscription’s own DNS for node resolution to the current core, avoiding stale resolver ports after listener changes. While the gateway is stopped, the prepared core provides a private DNS listener when needed for node tests and Providers. This compatibility fix works without enabling Custom DNS. Also fixes permission errors when previewing protected configuration in installed builds. Related changes: [#95](https://github.com/YTwsy/OpenSurge-for-Mac/pull/95), [#97](https://github.com/YTwsy/OpenSurge-for-Mac/pull/97).
+- **Fix recovery state after failed reloads and improve startup readiness:** Improves bounded waits and diagnostics for slower core startup. When applying a new configuration fails, DHCP takeover state now follows the actual recovery result, fixing cases where the old gateway had recovered but the interface returned to a pending-start stage. Incomplete recovery retains the error and recovery actions. Cancelling an apply request still attempts to restore an old gateway that has already been stopped. See [#100](https://github.com/YTwsy/OpenSurge-for-Mac/pull/100).
+- **Fix IPv6 core cold startup and strengthen installer build verification:** Fixes patched-core cold startup without native IPv6 when AAAA is disabled and Mac IPv6 takeover is enabled. Packaging builds the core from pinned source and current patches, reuses cached binaries only when build inputs and binary digests match, and checks the exact core included in the installer. See [#98](https://github.com/YTwsy/OpenSurge-for-Mac/pull/98).
 
 ### Upgrade and validation notes
 
-- This stable release replaces v0.3.0 as Latest. The app's stable-release update check can discover v0.3.1.
-- Release checks cover Go/Web/desktop tests, embedded-resource builds, installer contracts and Apple Silicon / Intel package verification. Topology-switching regressions cover configuration validation, generated output and UI behavior.
-- Full changelog: [v0.3.0...v0.3.1](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.0...v0.3.1).
+- Custom DNS is off by default. Saved changes, including enabling or disabling it, require explicit application.
+- Mac IPv6 takeover remains enabled by default. Changing it requires a full gateway restart.
+- LAN management is off by default. Stopping the gateway or quitting only the desktop app leaves an enabled management endpoint running; disable and save it in Settings to close access.
+- This stable release replaces v0.3.1 as Latest. The app's stable-release update check can discover v0.3.2.
+- Release checks cover Go/Web/desktop tests, embedded-resource builds, installer contracts and Apple Silicon / Intel package verification. Existing DNS, Mac IPv6 and installed-build acceptance retains each record’s tested version and scope. This release adds no Virtual Lab or live DHCP/TUN data-plane revalidation. The full formal-port self-DNS matrix, physical-device LAN management acceptance and other uncovered cases are documented in the [validation evidence map](https://github.com/YTwsy/OpenSurge-for-Mac/blob/v0.3.2/docs/agent-wiki/sources/validation/evidence-map.md).
+- Full changelog: [v0.3.1...v0.3.2](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.1...v0.3.2).
 
 ### Download the installer
 

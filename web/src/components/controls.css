@@ -38,7 +38,7 @@ button.select-control:hover:not(:disabled), button.select-control[aria-expanded=
 button.select-control:focus-visible { outline: 2px solid var(--control-accent); outline-offset: 2px; }
 button.select-control:disabled { opacity: .5; }
 .select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.select-chevron { flex-shrink: 0; color: var(--control-accent); line-height: 1; font-size: 16px; }
+.select-chevron { display: block; width: 16px; height: 16px; flex: none; color: var(--control-accent); }
 .select-popup {
   position: fixed; z-index: 10000; overflow-y: auto; overscroll-behavior: contain; padding: 4px;
   border: 1px solid var(--control-border); border-radius: 10px; background: var(--control-surface); color: var(--control-text);

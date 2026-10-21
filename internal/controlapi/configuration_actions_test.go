@@ -103,13 +103,14 @@ func TestApplyProfileRestoresPreviousConfigAndGatewayAfterReloadFailure(t *testi
 	restarted := false
 	deps := profileApplyDeps{
 		geteuid:  func() int { return 0 },
+		status:   healthyReloadStatus,
 		validate: func(config.Config) error { return nil },
 		stateExists: func(config.Config) (bool, error) {
 			stateChecks++
 			return stateChecks == 1, nil
 		},
 		reload: func(context.Context, config.Config) error {
-			return errors.New("reload start failed after gateway stop: candidate failed")
+			return &gateway.ReloadError{Phase: gateway.ReloadStart, Err: errors.New("candidate failed")}
 		},
 		start: func(_ context.Context, previous config.Config) error {
 			restarted = true
@@ -315,6 +316,7 @@ func TestApplyTailscaleReloadFailureRestoresConfigAndAuthKey(t *testing.T) {
 	payload, _ := json.Marshal(TailscaleUpdateRequest{TailscaleSettings: TailscaleSettings{Enabled: true, DisplayName: "Tailnet", Hostname: "opensurge", ControlURL: "https://controlplane.tailscale.com", AllowMac: true}, AuthKey: "new-key"})
 	deps := profileApplyDeps{
 		geteuid:     func() int { return 0 },
+		status:      healthyReloadStatus,
 		validate:    func(config.Config) error { return nil },
 		stateExists: func(config.Config) (bool, error) { return true, nil },
 		reload:      func(context.Context, config.Config) error { return errors.New("candidate failed") },

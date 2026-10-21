@@ -1,3 +1,4 @@
+import { LANAccessCard } from '../components/LANAccessCard'
 import { releaseDisplayVersion } from '../release'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
@@ -56,6 +57,7 @@ export function SettingsApp() {
    {sleep?.active && <p className="settings-hint">{t('合盖后仍会运行，请注意耗电与散热，不要放入不通风的包内。')}</p>}
    {sleep?.error && <p role="alert" className="settings-error">{sleep.error}</p>}
   </section>
+  <LANAccessCard />
   <section className="settings-section" aria-label={t('软件更新')}>
    <div className="settings-row"><span>{t('软件更新')}<small>{releaseDisplayVersion(update?.current || import.meta.env.VITE_OPENSURGE_RELEASE_TAG)}</small></span><button disabled={!update || update.checking} onClick={() => { setUtilityError(''); void check() }}>{t(update?.checking ? '正在检查…' : '检查更新')}</button></div>
    {!update?.checking && (update?.failed ? <p role="status" className="settings-hint">{t('无法检查更新，请稍后重试。')}</p> : update?.version && update.url ? <p className="settings-hint"><button onClick={() => openLink('open-external', { url: update.url })}>{t('打开稳定版 {{version}} 下载页', { version: update.version })}</button></p> : update?.checked && <p role="status" className="settings-hint">{t('没有更新的稳定版')}</p>)}

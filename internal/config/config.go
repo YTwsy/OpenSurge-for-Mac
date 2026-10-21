@@ -65,17 +65,18 @@ type DNSConfig struct {
 }
 
 type MihomoConfig struct {
-	Binary               string
-	Config               string
-	ProfileMode          string
-	Profile              string
-	ProfileSourceDigest  string
-	ProfileOverlayDigest string
-	StoreFakeIP          bool
-	MixedPort            int
-	RedirPort            int
-	APIAddr              string
-	Secret               string
+	Binary                 string
+	Config                 string
+	ProfileMode            string
+	Profile                string
+	ProfileSourceDigest    string
+	ProfileOverlayDigest   string
+	ProfileCustomDNSDigest string
+	StoreFakeIP            bool
+	MixedPort              int
+	RedirPort              int
+	APIAddr                string
+	Secret                 string
 }
 
 // TailscaleConfig describes the single OpenSurge-managed Tailscale outbound.
@@ -156,6 +157,7 @@ type TransparentConfig struct {
 	TUNAutoRoute           bool
 	TUNAutoDetectInterface bool
 	TUNStrictRoute         bool
+	MacTUNIPv6             bool // Host TUN only; independent of DNS and downstream IPv6.
 	TUNIPv6                string
 	IPv6SharedL2Ready      bool
 	IPv6PacketBrokerBinary string
@@ -186,6 +188,10 @@ func (c Config) ManageSystemDNS() bool {
 
 func (c TransparentConfig) TUNEnabled() bool {
 	return c.Mode == TransparentModeTUN
+}
+
+func (c TransparentConfig) MacTUNIPv6Enabled() bool {
+	return c.TUNEnabled() && c.MacTUNIPv6
 }
 
 func (c TransparentConfig) IPv6Requested() bool {
@@ -273,6 +279,7 @@ func Default() Config {
 			TUNAutoRoute:           true,
 			TUNAutoDetectInterface: false,
 			TUNStrictRoute:         false,
+			MacTUNIPv6:             true,
 			TUNIPv6:                TUNIPv6Off,
 			IPv6SharedL2Ready:      false,
 			IPv6PacketBrokerBinary: "opensurge-network",

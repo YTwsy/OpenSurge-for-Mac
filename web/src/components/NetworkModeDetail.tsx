@@ -64,6 +64,11 @@ export function NetworkModeDetail({ mode }: { mode: NetworkMode }) {
       <div
         className="mode-topology-image"
       ><TopologyDiagram mode={mode} /></div>
+      <ol className="mobile-topology" aria-label={t('设备上网路径')}>
+        <li><div><strong>{t(mode === 'isolated_lan' ? '下游设备' : '局域网设备')}</strong><small>{t(detail.client)}</small></div></li>
+        <li><div><strong>Mac · OpenSurge</strong><small>{t('规则与转发')}</small></div></li>
+        <li><div><strong>{t('主路由 / AP')} → Internet</strong><small>{t(detail.change)}</small></div></li>
+      </ol>
       <div className="mode-detail-copy">
         <dl className="mode-facts">
           <div><dt>{t('DHCP 来源')}</dt><dd>{t(detail.dhcp)}</dd></div>
