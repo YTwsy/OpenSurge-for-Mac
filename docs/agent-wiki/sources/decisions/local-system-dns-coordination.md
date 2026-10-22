@@ -63,6 +63,17 @@ TUN 与路由检查通过、DHCP/DNS 和 pf 就绪，再持久化 DNS 写入意�
 Mac 和下游的运行证据分别判断，当前验收范围见
 [证据入口](../validation/evidence-map.md#文件式自定义-dns)。
 
+## 可选外部 DNS 过滤
+
+外部 DNS 过滤位于 mihomo 公共 DNS 入口、hosts / Fake-IP / 解析缓存之前，来自 dnsmasq
+和 TUN 的受管查询共用同一检查。默认关闭；开启时保留系统协同捕获的私有搜索域、
+本地域和反向查询的原路径。它不改变本页的系统 DNS 接管、恢复与 IPv6 路由所有权。
+Mac 覆盖取决于已有系统 DNS/TUN 设置，下游依赖受管 dnsmasq 上游；应用独立 DoH、
+客户端缓存与既有连接不在保证范围。配置、失败与旁路语义见
+[外部 DNS 过滤契约](mihomo-profile-overlay.md#external-dns-filtering-before-fake-ip)。
+当前仅有隔离核心证据，主机网络验收待运行，见
+[证据入口](../validation/evidence-map.md#外部-dns-过滤)。
+
 ## 独立的 Mac IPv6 路径
 
 `transparent.mac_tun_ipv6` 默认 `true`，旧配置缺省时保留原行为。开启时 Mac

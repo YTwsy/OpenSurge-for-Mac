@@ -291,13 +291,22 @@ func startDNSGatewayCore(t *testing.T, ctx context.Context, cfg config.Config, f
 
 func controlledDNSFixture(t *testing.T) (string, *atomic.Int32) {
 	t.Helper()
-	tcp, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	// A free TCP port can still be occupied by an unrelated UDP socket.
+	var tcp net.Listener
+	var udp net.PacketConn
+	var err error
+	for attempt := 0; attempt < 8; attempt++ {
+		tcp, err = net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		udp, err = net.ListenPacket("udp4", tcp.Addr().String())
+		if err == nil {
+			break
+		}
+		_ = tcp.Close()
 	}
-	udp, err := net.ListenPacket("udp4", tcp.Addr().String())
 	if err != nil {
-		tcp.Close()
 		t.Fatal(err)
 	}
 	count := &atomic.Int32{}

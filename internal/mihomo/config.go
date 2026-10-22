@@ -52,6 +52,7 @@ dns:
   fake-ip-range6: {{ .FakeIPv6Range }}
 {{- end }}
 {{ .DNSResolverFields }}
+{{ .ExternalDNSFilterFields }}
 
 {{ if .TUNEnabled }}
 tun:
@@ -142,33 +143,38 @@ func RenderConfig(cfg config.Config) (string, error) {
 
 type templateData struct {
 	config.MihomoConfig
-	TUNEnabled             bool
-	TUNDevice              string
-	TUNStack               string
-	TUNAutoRoute           bool
-	TUNAutoDetectInterface bool
-	TUNStrictRoute         bool
-	TUNRouteAddresses      string
-	TUNCustomRoutes        bool
-	IPv6Enabled            bool
-	MacTUNIPv6Enabled      bool
-	TUNIPv6Enabled         bool
-	TUNIPv6Address         string
-	UpstreamInterface      string
-	LANPrefix              string
-	UpstreamProxy          config.UpstreamProxyConfig
-	DNSIPv6                bool
-	FakeIPv6Range          string
-	IPv6PacketListenerName string
-	IPv6PacketSocket       string
-	IPv6PacketMTU          int
-	IPv6DeviceUsers        string
-	DNSResolverFields      string
-	DNSReferences          []DNSReference
-	PolicySections         string
+	TUNEnabled              bool
+	TUNDevice               string
+	TUNStack                string
+	TUNAutoRoute            bool
+	TUNAutoDetectInterface  bool
+	TUNStrictRoute          bool
+	TUNRouteAddresses       string
+	TUNCustomRoutes         bool
+	IPv6Enabled             bool
+	MacTUNIPv6Enabled       bool
+	TUNIPv6Enabled          bool
+	TUNIPv6Address          string
+	UpstreamInterface       string
+	LANPrefix               string
+	UpstreamProxy           config.UpstreamProxyConfig
+	DNSIPv6                 bool
+	FakeIPv6Range           string
+	IPv6PacketListenerName  string
+	IPv6PacketSocket        string
+	IPv6PacketMTU           int
+	IPv6DeviceUsers         string
+	DNSResolverFields       string
+	ExternalDNSFilterFields string
+	DNSReferences           []DNSReference
+	PolicySections          string
 }
 
 func newTemplateData(cfg config.Config) (templateData, error) {
+	filterFields, err := renderExternalDNSFilter(cfg)
+	if err != nil {
+		return templateData{}, err
+	}
 	// Rendering consumes one immutable compiled policy snapshot so the rule
 	// sections and IPv6 MAC-to-user sideband cannot drift from each other.
 	if err := config.PrepareDevicePolicy(&cfg); err != nil {
@@ -236,31 +242,32 @@ func newTemplateData(cfg config.Config) (templateData, error) {
 	}
 	tunRouteAddresses := renderTUNRouteAddresses(cfg, lanPrefix)
 	return templateData{
-		MihomoConfig:           cfg.Mihomo,
-		TUNEnabled:             transparent.TUNEnabled(),
-		TUNDevice:              transparent.TUNDevice,
-		TUNStack:               transparent.TUNStack,
-		TUNAutoRoute:           transparent.TUNAutoRoute,
-		TUNAutoDetectInterface: transparent.TUNAutoDetectInterface,
-		TUNStrictRoute:         transparent.TUNStrictRoute,
-		TUNRouteAddresses:      tunRouteAddresses,
-		TUNCustomRoutes:        tunRouteAddresses != "",
-		IPv6Enabled:            cfg.DNS.IPv6 || transparent.TUNEnabled(),
-		MacTUNIPv6Enabled:      transparent.MacTUNIPv6Enabled(),
-		TUNIPv6Enabled:         transparent.TUNIPv6 != config.TUNIPv6Off,
-		TUNIPv6Address:         config.MihomoTUNIPv6,
-		UpstreamInterface:      cfg.Gateway.UpstreamInterface,
-		LANPrefix:              lanPrefix,
-		UpstreamProxy:          cfg.UpstreamProxy,
-		DNSIPv6:                cfg.DNS.IPv6,
-		FakeIPv6Range:          config.MihomoFakeIPv6Range,
-		IPv6PacketListenerName: config.IPv6PacketListenerName,
-		IPv6PacketSocket:       yamlQuote(packetSocket),
-		IPv6PacketMTU:          transparent.IPv6PacketMTU,
-		IPv6DeviceUsers:        renderIPv6DeviceUsers(cfg),
-		DNSResolverFields:      indentYAMLBlock(dnsResolverFields, "  "),
-		DNSReferences:          dnsReferences,
-		PolicySections:         policySections,
+		MihomoConfig:            cfg.Mihomo,
+		TUNEnabled:              transparent.TUNEnabled(),
+		TUNDevice:               transparent.TUNDevice,
+		TUNStack:                transparent.TUNStack,
+		TUNAutoRoute:            transparent.TUNAutoRoute,
+		TUNAutoDetectInterface:  transparent.TUNAutoDetectInterface,
+		TUNStrictRoute:          transparent.TUNStrictRoute,
+		TUNRouteAddresses:       tunRouteAddresses,
+		TUNCustomRoutes:         tunRouteAddresses != "",
+		IPv6Enabled:             cfg.DNS.IPv6 || transparent.TUNEnabled(),
+		MacTUNIPv6Enabled:       transparent.MacTUNIPv6Enabled(),
+		TUNIPv6Enabled:          transparent.TUNIPv6 != config.TUNIPv6Off,
+		TUNIPv6Address:          config.MihomoTUNIPv6,
+		UpstreamInterface:       cfg.Gateway.UpstreamInterface,
+		LANPrefix:               lanPrefix,
+		UpstreamProxy:           cfg.UpstreamProxy,
+		DNSIPv6:                 cfg.DNS.IPv6,
+		FakeIPv6Range:           config.MihomoFakeIPv6Range,
+		IPv6PacketListenerName:  config.IPv6PacketListenerName,
+		IPv6PacketSocket:        yamlQuote(packetSocket),
+		IPv6PacketMTU:           transparent.IPv6PacketMTU,
+		IPv6DeviceUsers:         renderIPv6DeviceUsers(cfg),
+		DNSResolverFields:       indentYAMLBlock(dnsResolverFields, "  "),
+		DNSReferences:           dnsReferences,
+		ExternalDNSFilterFields: filterFields,
+		PolicySections:          policySections,
 	}, nil
 }
 

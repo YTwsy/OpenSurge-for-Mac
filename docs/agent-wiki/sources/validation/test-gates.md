@@ -53,6 +53,33 @@ TCP 或 UDP 被竞争占用时的失败判定、清理和有界重试。测试�
 被接管的主机资源。运行前读取 [Lab 前提](lab-gates.md)，每轮检查当次 artifacts，收尾执行
 `make lab-down`、`make lab-status`。未完成清理不能记为完整通过。
 
+## 外部 DNS 过滤
+
+先用 `scripts/build-opensurge-mihomo.sh` 构建当前补丁核心，再设置该绝对路径运行：
+
+```sh
+OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
+  go test -race ./internal/mihomo ./internal/config ./internal/controlapi ./internal/gateway \
+  -run 'TestExternalDNSFilter|TestControlConfigExternalDNSFilter' -count=1
+```
+
+`TestExternalDNSFilterRealCore` 使用随机 loopback TCP/UDP DNS、独立临时缓存和受控过滤
+服务，检查 A/AAAA、Fake-IP、固定 hosts、real-IP 例外、拒答/空答/屏蔽地址、TCP fallback、
+超时/断服、同名重新检查、禁用及停止释放。补丁构建还运行核心内 `TestOpenSurge*`，覆盖
+CNAME sink、请求元数据隔离、旁路边界与递归保护。没有设置二进制变量时真实核心用例会
+跳过，不能把普通 `make test` 的成功写成真实核心已验收。此层不改变主机接口和路由。
+
+完整网络门槛为 `make lab-test-external-dns-filter`：它启用受控过滤 fixture，依次运行
+基础 Lab、TUN、isolated-LAN IPv6、same-WiFi IPv6 和 same-LAN IPv6，最后执行
+`lab-down` 与 `lab-status`。需管理员认证和既有 [Lab 前提](lab-gates.md)。也可在已准备的
+Lab 中设置 `OMG_LAB_EXTERNAL_DNS_FILTER=true`，单独运行上述相关目标。
+
+通过要求客户端 IPv4 TCP/UDP DNS、可用 IPv6 DNS、TUN 捕获和 isolated-LAN 的 Mac 系统
+解析满足相同过滤结果；同名允许变屏蔽、断服失败、服务恢复不得被 dnsmasq/Fake-IP 缓存
+绕过。每个目标的 artifacts 带本轮 `external-dns-filter-evidence.txt`；仍须核对网关停止、
+监听与网络资源恢复，不能只看该文件。共享 L2 fixture 不具备 macOS 网络服务的部分不
+补写为系统 DNS 通过。实际 Numa/SmartDNS 版本、屏蔽策略和物理拓扑兼容须另行记录。
+
 ## 局域网管理
 
 认证和监听契约先运行 `make test`、`make web-test`、`make web-build`、`make desktop-test`

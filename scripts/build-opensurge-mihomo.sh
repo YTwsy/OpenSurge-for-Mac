@@ -61,6 +61,8 @@ if python3 "$CACHE_HELPER" restore --manifest "$work_dir/inputs.json" \
 fi
 echo "No matching verified mihomo cache; rebuilding from current inputs"
 patch -d "$work_dir" -p1 <"$ROOT/patches/mihomo/0001-opensurge-packet-listener.patch"
+patch -d "$work_dir" -p1 <"$ROOT/patches/mihomo/0002-opensurge-external-dns-filter.patch"
+cp -R "$ROOT/patches/mihomo/overlay/dns" "$work_dir/"
 cp -R "$ROOT/patches/mihomo/overlay/listener" "$work_dir/"
 cp "$ROOT/patches/mihomo/overlay/config/opensurge_ipv6_test.go" "$work_dir/config/"
 mkdir -p "$(dirname "$OUTPUT")"
@@ -68,6 +70,7 @@ mkdir -p "$(dirname "$OUTPUT")"
 build_output="$work_dir/mihomo-opensurge"
 
 # Native tests simulate an absent IPv6 uplink; no interfaces or routes are changed.
+"$GO_BIN" test -tags with_gvisor ./dns -run '^TestOpenSurge' -count=1
 "$GO_BIN" test -tags with_gvisor ./config -run '^TestOpenSurgeIPv6WithoutNativeUplink$' -count=1
 GOOS=darwin GOARCH="$GO_ARCH" CGO_ENABLED=0 \
   "$GO_BIN" build -tags with_gvisor -trimpath \

@@ -70,6 +70,16 @@
 [重载与恢复记录](../../tasks/finished_archived/reload-readiness-and-recovery-state.md#2026-10-21-实现与验证)；
 该修复未替换安装态服务，也未复验真实 DHCP/TUN 数据面。
 
+## 外部 DNS 过滤
+
+[Fake-IP 前过滤](../decisions/mihomo-profile-overlay.md#external-dns-filtering-before-fake-ip)
+已实现配置、控制面、dnsmasq 缓存约束与补丁核心公共入口。当前证据限于 Go/Web 回归、
+受控 loopback 服务和隔离真实核心；主机 DHCP/TUN、Mac 系统解析及下游 IPv6 门槛按用户
+要求暂不运行，不能借用自定义 DNS 的历史通过结论。实际过滤服务兼容也未验证。
+版本、环境、已运行检查与后续范围见
+[实现记录](../../tasks/external-dns-filter-before-fake-ip.md#2026-10-21-实现与验证)，
+可复跑方法见 [过滤门槛](test-gates.md#外部-dns-过滤)。
+
 ## Mac 本机 IPv6 开关
 
 [本机 IPv6 契约](../decisions/local-system-dns-coordination.md#独立的-mac-ipv6-路径)

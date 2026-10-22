@@ -89,6 +89,9 @@ func validate(cfg Config, checkDevicePolicy bool) error {
 	if err := validateDNSUpstream(cfg.DNS.Upstream); err != nil {
 		return err
 	}
+	if err := ValidateExternalDNSFilter(cfg); err != nil {
+		return err
+	}
 	if strings.TrimSpace(cfg.Mihomo.Binary) == "" {
 		return fmt.Errorf("mihomo.binary is required")
 	}

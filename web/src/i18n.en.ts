@@ -1,4 +1,17 @@
 export const englishMessages: Record<string, string> = {
+  '外部 DNS 过滤': 'External DNS filtering',
+  '启用外部 DNS 过滤': 'Enable external DNS filtering',
+  '先过滤，再生成 Fake-IP': 'Filter before generating Fake-IP',
+  '接入自行部署的 DNS 过滤服务，保留 OpenSurge 设备策略与代理分流。保存后在下次启动网关时应用。': 'Connect your DNS filtering service while keeping OpenSurge device policies and routing. Saved settings apply on the next gateway start.',
+  '过滤服务地址与端口': 'Filter server address and port',
+  '填写 IPv4:端口或 [IPv6]:端口；服务须支持普通 UDP DNS，截断应答会改用 TCP。不要反向转发给 OpenSurge。': 'Enter IPv4:port or [IPv6]:port. The service must support UDP DNS; truncated replies retry over TCP. Do not forward queries back to OpenSurge.',
+  '过滤超时（毫秒）': 'Filter timeout (ms)',
+  '额外屏蔽 IP': 'Additional blocking IPs',
+  '默认识别 0.0.0.0 和 ::。仅填写过滤服务约定的屏蔽 IP，以逗号分隔。': '0.0.0.0 and :: are always recognized. Add only blocking IPs specified by your filter, separated by commas.',
+  '跳过过滤的域名后缀': 'Domain suffixes excluded from filtering',
+  '后缀包含其子域，以逗号分隔；单标签、本地域、反向查询及受管 DHCP、系统搜索域和 MagicDNS 名称自动跳过。': 'Suffixes include subdomains; separate with commas. Single-label and local names, reverse lookups, managed DHCP, system search domains and MagicDNS names are excluded automatically.',
+  '下游需使用 mihomo DNS 上游；Mac 覆盖范围取决于系统 DNS 与 TUN 接管。过滤服务不可用时查询失败，不自动放行；开启时停用 dnsmasq 缓存。自带 DoH、已有连接及客户端缓存不在本功能范围内。': 'Downstream DNS requires the mihomo DNS upstream. Mac coverage depends on system DNS and TUN takeover. Queries fail when the filter is unavailable. Enabling this disables the dnsmasq cache. App-managed DoH, existing connections and client caches are outside this feature.',
+
   '正在加载设备与规则…': 'Loading devices and rules…',
   '正在读取已保存的设备和分流设置。': 'Reading saved devices and routing settings.',
   '设备与规则加载失败': 'Could not load devices and rules',

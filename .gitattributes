@@ -1,0 +1,2 @@
+# Unified patch context has a required leading space before Go tabs/blank lines.
+patches/mihomo/*.patch -whitespace

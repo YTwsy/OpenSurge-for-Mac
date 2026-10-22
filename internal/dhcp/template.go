@@ -38,7 +38,8 @@ log-queries
 
 pid-file={{ .PIDFile }}
 
-{{ if .CustomDNS }}no-hosts
+{{ if .ExternalDNSFilter }}cache-size=0
+{{ end }}{{ if .CustomDNS }}no-hosts
 {{ end }}port={{ .DNSPort }}
 listen-address={{ .DNSListen }}
 {{ if .IPv6GatewayEnabled }}listen-address={{ .IPv6Gateway }}
@@ -67,6 +68,7 @@ type templateData struct {
 	DNSListen           string
 	DNSUpstream         string
 	CustomDNS           bool
+	ExternalDNSFilter   bool
 	Reservations        []device.Reservation
 	IPv6GatewayEnabled  bool
 	IPv6RAEnabled       bool
@@ -134,7 +136,8 @@ func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 		DNSPort:             cfg.DNS.Port,
 		DNSListen:           cfg.DNS.Listen,
 		DNSUpstream:         dnsUpstream,
-		CustomDNS:           cfg.Mihomo.ProfileCustomDNSDigest != "",
+		CustomDNS:           cfg.Mihomo.ProfileCustomDNSDigest != "" || cfg.ExternalDNSFilter.Enabled,
+		ExternalDNSFilter:   cfg.ExternalDNSFilter.Enabled,
 		Reservations:        reservations,
 		IPv6GatewayEnabled:  cfg.Transparent.TUNIPv6 != config.TUNIPv6Off,
 		// same_lan is selective, manual IPv6 onboarding. Advertising RA on a

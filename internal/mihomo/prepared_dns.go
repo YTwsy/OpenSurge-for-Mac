@@ -150,6 +150,9 @@ func addDNSReadinessProbe(dns *yaml.Node, probeName string) error {
 		return fmt.Errorf("managed DNS probe name collision")
 	}
 	setPreparedField(policy, probeName, "rcode://success")
+	if filter := dnsValue(dns, "opensurge-external-filter"); filter != nil {
+		setPreparedField(filter, "probe-name", probeName)
+	}
 	return nil
 }
 

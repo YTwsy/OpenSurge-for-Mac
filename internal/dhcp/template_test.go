@@ -355,3 +355,22 @@ func TestCustomDNSOwnsSystemHostsWithoutDisablingDHCPNames(t *testing.T) {
 		t.Fatalf("disabled: %v %s", err, rendered)
 	}
 }
+
+func TestExternalDNSFilterDisablesForwardCacheAndSystemHosts(t *testing.T) {
+	cfg := config.Default()
+	cfg.ExternalDNSFilter.Enabled = true
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"cache-size=0", "no-hosts", "domain=lan", "server=127.0.0.1#1053"} {
+		if !strings.Contains(rendered, value) {
+			t.Fatalf("missing %s: %s", value, rendered)
+		}
+	}
+	cfg.ExternalDNSFilter.Enabled = false
+	rendered, err = RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil || strings.Contains(rendered, "cache-size=0") || strings.Contains(rendered, "no-hosts") {
+		t.Fatal("disable did not restore dnsmasq defaults", rendered, err)
+	}
+}

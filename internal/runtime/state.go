@@ -6,32 +6,35 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"open-mihomo-gateway/internal/config"
 )
 
 type State struct {
-	PIDDNSMasq                int                  `json:"pid_dnsmasq,omitempty"`
-	DNSMasqProcessFingerprint string               `json:"dnsmasq_process_fingerprint,omitempty"`
-	PIDMihomo                 int                  `json:"pid_mihomo,omitempty"`
-	MihomoProcessFingerprint  string               `json:"mihomo_process_fingerprint,omitempty"`
-	PIDIPv6Packet             int                  `json:"pid_ipv6_packet,omitempty"`
-	IPv6PacketFingerprint     string               `json:"ipv6_packet_process_fingerprint,omitempty"`
-	BootSessionID             string               `json:"boot_session_id,omitempty"`
-	IPForwardingBefore        string               `json:"ip_forwarding_before,omitempty"`
-	PFEnabledBefore           bool                 `json:"pf_enabled_before"`
-	PFAnchorLoaded            bool                 `json:"pf_anchor_loaded"`
-	DevicePolicyDigest        string               `json:"device_policy_digest,omitempty"`
-	ProfileDigest             string               `json:"profile_digest,omitempty"`
-	LocalSystemProxy          *SystemProxySnapshot `json:"local_system_proxy,omitempty"`
-	LocalSystemDNS            *SystemDNSSnapshot   `json:"local_system_dns,omitempty"`
-	MacTUNIPv6                bool                 `json:"mac_tun_ipv6"`
-	DNSIPv6                   bool                 `json:"dns_ipv6"`
-	TUNIPv6Requested          string               `json:"tun_ipv6_requested,omitempty"`
-	IPv6PacketEffective       bool                 `json:"ipv6_packet_effective"`
-	NativeIPv6Available       bool                 `json:"native_ipv6_available"`
-	IPv6Reason                string               `json:"ipv6_reason,omitempty"`
-	IPv6GatewayAliasOwned     bool                 `json:"ipv6_gateway_alias_owned"`
-	IPv6RAEffective           bool                 `json:"ipv6_ra_effective"`
-	StartedAt                 time.Time            `json:"started_at"`
+	ExternalDNSFilter         *config.ExternalDNSFilterConfig `json:"external_dns_filter,omitempty"`
+	PIDDNSMasq                int                             `json:"pid_dnsmasq,omitempty"`
+	DNSMasqProcessFingerprint string                          `json:"dnsmasq_process_fingerprint,omitempty"`
+	PIDMihomo                 int                             `json:"pid_mihomo,omitempty"`
+	MihomoProcessFingerprint  string                          `json:"mihomo_process_fingerprint,omitempty"`
+	PIDIPv6Packet             int                             `json:"pid_ipv6_packet,omitempty"`
+	IPv6PacketFingerprint     string                          `json:"ipv6_packet_process_fingerprint,omitempty"`
+	BootSessionID             string                          `json:"boot_session_id,omitempty"`
+	IPForwardingBefore        string                          `json:"ip_forwarding_before,omitempty"`
+	PFEnabledBefore           bool                            `json:"pf_enabled_before"`
+	PFAnchorLoaded            bool                            `json:"pf_anchor_loaded"`
+	DevicePolicyDigest        string                          `json:"device_policy_digest,omitempty"`
+	ProfileDigest             string                          `json:"profile_digest,omitempty"`
+	LocalSystemProxy          *SystemProxySnapshot            `json:"local_system_proxy,omitempty"`
+	LocalSystemDNS            *SystemDNSSnapshot              `json:"local_system_dns,omitempty"`
+	MacTUNIPv6                bool                            `json:"mac_tun_ipv6"`
+	DNSIPv6                   bool                            `json:"dns_ipv6"`
+	TUNIPv6Requested          string                          `json:"tun_ipv6_requested,omitempty"`
+	IPv6PacketEffective       bool                            `json:"ipv6_packet_effective"`
+	NativeIPv6Available       bool                            `json:"native_ipv6_available"`
+	IPv6Reason                string                          `json:"ipv6_reason,omitempty"`
+	IPv6GatewayAliasOwned     bool                            `json:"ipv6_gateway_alias_owned"`
+	IPv6RAEffective           bool                            `json:"ipv6_ra_effective"`
+	StartedAt                 time.Time                       `json:"started_at"`
 }
 
 // Owned is write intent, persisted before networksetup. Empty Servers means

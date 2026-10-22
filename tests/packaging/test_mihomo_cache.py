@@ -29,6 +29,8 @@ else:
     assert pathlib.Path('source.txt').read_text() == 'after\n'
     if args[0] == 'test':
         assert pathlib.Path('config/opensurge_ipv6_test.go').exists()
+        assert pathlib.Path('dns/opensurge_filter.go').exists()
+        assert pathlib.Path('dns-patched.txt').read_text() == 'filtered\n'
         sys.exit(int(os.environ.get('FAIL_TEST', '0')))
     if os.environ.get('MUTATE_INPUT'):
         with open(os.environ['MUTATE_INPUT'], 'a') as out:
@@ -54,6 +56,11 @@ class MihomoCache(unittest.TestCase):
         patchdir = self.root / 'patches/mihomo'
         (patchdir / 'overlay/config').mkdir(parents=True)
         (patchdir / 'overlay/listener').mkdir()
+        (patchdir / 'overlay/dns').mkdir()
+        self.filter_overlay = patchdir / 'overlay/dns/opensurge_filter.go'
+        self.filter_overlay.write_text('// filter fixture\n')
+        self.filter_patch = patchdir / '0002-opensurge-external-dns-filter.patch'
+        self.filter_patch.write_text('--- /dev/null\n+++ b/dns-patched.txt\n@@ -0,0 +1 @@\n+filtered\n')
         self.patch = patchdir / '0001-opensurge-packet-listener.patch'
         self.patch.write_text('--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-before\n+after\n')
         self.overlay = patchdir / 'overlay/config/opensurge_ipv6_test.go'
@@ -98,7 +105,7 @@ class MihomoCache(unittest.TestCase):
         destination = self.root / 'another-staging/mihomo'
         result = self.run_build(OPENSURGE_MIHOMO_OUTPUT=str(destination))
         self.assertIn('Reused verified mihomo cache', result)
-        self.assertEqual(self.calls.read_text().splitlines(), ['test', 'build'])
+        self.assertEqual(self.calls.read_text().splitlines(), ['test', 'test', 'build'])
         self.assertEqual(destination.read_bytes(), original)
         self.assertTrue(os.access(destination, os.X_OK))
 
@@ -148,7 +155,7 @@ class MihomoCache(unittest.TestCase):
 
     def test_changed_patch_overlay_and_builder_invalidate(self):
         self.run_build()
-        for count, path in enumerate([self.patch, self.overlay, self.builder], 2):
+        for count, path in enumerate([self.patch, self.filter_patch, self.overlay, self.filter_overlay, self.builder], 2):
             with path.open('a') as file:
                 file.write('\n')
             self.run_build()

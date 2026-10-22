@@ -1,0 +1,142 @@
+--- a/config/config.go
++++ b/config/config.go
+@@ -145,6 +145,7 @@
+ 
+ // DNS config
+ type DNS struct {
++	OpenSurgeFilter       dns.OpenSurgeFilterConfig
+ 	Enable                bool
+ 	PreferH3              bool
+ 	IPv6                  bool
+@@ -219,6 +220,7 @@
+ }
+ 
+ type RawDNS struct {
++	OpenSurgeFilter              dns.OpenSurgeFilterConfig           `yaml:"opensurge-external-filter" json:"opensurge-external-filter"`
+ 	Enable                       bool                                `yaml:"enable" json:"enable"`
+ 	PreferH3                     bool                                `yaml:"prefer-h3" json:"prefer-h3"`
+ 	IPv6                         bool                                `yaml:"ipv6" json:"ipv6"`
+@@ -1400,6 +1402,9 @@
+ 
+ func parseDNS(rawCfg *RawConfig, ruleProviders map[string]P.RuleProvider) (*DNS, error) {
+ 	cfg := rawCfg.DNS
++	if err := cfg.OpenSurgeFilter.ValidateListener(cfg.Listen); err != nil {
++		return nil, err
++	}
+ 	if cfg.Enable && len(cfg.NameServer) == 0 {
+ 		return nil, fmt.Errorf("if DNS configuration is turned on, NameServer cannot be empty")
+ 	}
+@@ -1409,6 +1414,7 @@
+ 	}
+ 
+ 	dnsCfg := &DNS{
++		OpenSurgeFilter:   cfg.OpenSurgeFilter,
+ 		Enable:            cfg.Enable,
+ 		Listen:            cfg.Listen,
+ 		ListenRoutingMark: cfg.ListenRoutingMark,
+--- a/dns/enhancer.go
++++ b/dns/enhancer.go
+@@ -10,14 +10,15 @@
+ )
+ 
+ type ResolverEnhancer struct {
+-	ipv6          bool
+-	mode          C.DNSMode
+-	fakeIPPool    *fakeip.Pool
+-	fakeIPPool6   *fakeip.Pool
+-	fakeIPSkipper *fakeip.Skipper
+-	fakeIPTTL     int
+-	mapping       *lru.LruCache[netip.Addr, string]
+-	useHosts      bool
++	openSurgeFilter OpenSurgeFilterConfig
++	ipv6            bool
++	mode            C.DNSMode
++	fakeIPPool      *fakeip.Pool
++	fakeIPPool6     *fakeip.Pool
++	fakeIPSkipper   *fakeip.Skipper
++	fakeIPTTL       int
++	mapping         *lru.LruCache[netip.Addr, string]
++	useHosts        bool
+ }
+ 
+ func (h *ResolverEnhancer) FakeIPEnabled() bool {
+@@ -159,20 +160,22 @@
+ }
+ 
+ type EnhancerConfig struct {
+-	IPv6          bool
+-	EnhancedMode  C.DNSMode
+-	FakeIPPool    *fakeip.Pool
+-	FakeIPPool6   *fakeip.Pool
+-	FakeIPSkipper *fakeip.Skipper
+-	FakeIPTTL     int
+-	UseHosts      bool
++	OpenSurgeFilter OpenSurgeFilterConfig
++	IPv6            bool
++	EnhancedMode    C.DNSMode
++	FakeIPPool      *fakeip.Pool
++	FakeIPPool6     *fakeip.Pool
++	FakeIPSkipper   *fakeip.Skipper
++	FakeIPTTL       int
++	UseHosts        bool
+ }
+ 
+ func NewEnhancer(cfg EnhancerConfig) *ResolverEnhancer {
+ 	e := &ResolverEnhancer{
+-		ipv6:     cfg.IPv6,
+-		mode:     cfg.EnhancedMode,
+-		useHosts: cfg.UseHosts,
++		openSurgeFilter: cfg.OpenSurgeFilter,
++		ipv6:            cfg.IPv6,
++		mode:            cfg.EnhancedMode,
++		useHosts:        cfg.UseHosts,
+ 	}
+ 
+ 	if cfg.EnhancedMode != C.DNSNormal {
+--- a/dns/middleware.go
++++ b/dns/middleware.go
+@@ -232,6 +232,9 @@
+ 
+ func newHandler(resolver resolver.Resolver, mapper *ResolverEnhancer) handler {
+ 	var middlewares []middleware
++	if mapper.openSurgeFilter.Enabled {
++		middlewares = append(middlewares, withOpenSurgeFilter(mapper.openSurgeFilter))
++	}
+ 
+ 	if mapper.useHosts {
+ 		middlewares = append(middlewares, withHosts(mapper.mapping))
+--- a/hub/executor/executor.go
++++ b/hub/executor/executor.go
+@@ -265,13 +265,14 @@
+ 		CacheMaxSize:         c.CacheMaxSize,
+ 	})
+ 	m := dns.NewEnhancer(dns.EnhancerConfig{
+-		IPv6:          ipv6,
+-		EnhancedMode:  c.EnhancedMode,
+-		FakeIPPool:    c.FakeIPPool,
+-		FakeIPPool6:   c.FakeIPPool6,
+-		FakeIPSkipper: c.FakeIPSkipper,
+-		FakeIPTTL:     c.FakeIPTTL,
+-		UseHosts:      c.UseHosts,
++		OpenSurgeFilter: c.OpenSurgeFilter,
++		IPv6:            ipv6,
++		EnhancedMode:    c.EnhancedMode,
++		FakeIPPool:      c.FakeIPPool,
++		FakeIPPool6:     c.FakeIPPool6,
++		FakeIPSkipper:   c.FakeIPSkipper,
++		FakeIPTTL:       c.FakeIPTTL,
++		UseHosts:        c.UseHosts,
+ 	})
+ 
+ 	// reuse cache of old host mapper
+--- a/main.go
++++ b/main.go
+@@ -74,6 +74,8 @@
+ 	flag.BoolVar(&geodataMode, "m", false, "set geodata mode")
+ 	flag.BoolVar(&version, "v", false, "show current version of mihomo")
+ 	flag.BoolVar(&testConfig, "t", false, "test configuration and exit")
++	// Unknown flags make older cores fail explicitly instead of ignoring the filter.
++	flag.Bool("require-opensurge-dns-filter", false, "require OpenSurge external DNS filtering support")
+ 	flag.Parse()
+ }
+ 

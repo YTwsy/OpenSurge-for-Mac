@@ -52,6 +52,9 @@ func TestConfigDirUsesProfileDirForImportedMode(t *testing.T) {
 
 func TestValidateConfigWithTimeoutReportsSlowEngine(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mihomo.yaml"), []byte("dns: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	binary := filepath.Join(dir, "mihomo")
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf 'initializing geodata\\n'\nsleep 1\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -64,6 +67,9 @@ func TestValidateConfigWithTimeoutReportsSlowEngine(t *testing.T) {
 
 func TestValidateConfigHonorsActionContext(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "mihomo.yaml"), []byte("dns: {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	binary := filepath.Join(dir, "mihomo")
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec sleep 10\n"), 0o755); err != nil {
 		t.Fatal(err)

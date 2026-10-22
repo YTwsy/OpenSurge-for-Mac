@@ -3,6 +3,7 @@ package controlapi
 import (
 	"time"
 
+	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/device"
 	"open-mihomo-gateway/internal/doctor"
 	"open-mihomo-gateway/internal/gateway"
@@ -181,16 +182,17 @@ type KeepStaticFinishRequest struct {
 }
 
 type ControlConfig struct {
-	SchemaVersion    int                         `json:"schema_version"`
-	Revision         string                      `json:"revision"`
-	Gateway          GatewayConfigInput          `json:"gateway"`
-	DHCP             DHCPConfigInput             `json:"dhcp"`
-	DNS              DNSConfigInput              `json:"dns"`
-	Mihomo           MihomoConfigInput           `json:"mihomo"`
-	Transparent      TransparentConfigInput      `json:"transparent"`
-	LocalSystemProxy LocalSystemProxyConfigInput `json:"local_system_proxy"`
-	LocalSystemDNS   *LocalSystemDNSConfigInput  `json:"local_system_dns,omitempty"`
-	DevicePolicy     DevicePolicyConfigInput     `json:"device_policy"`
+	SchemaVersion     int                             `json:"schema_version"`
+	Revision          string                          `json:"revision"`
+	Gateway           GatewayConfigInput              `json:"gateway"`
+	DHCP              DHCPConfigInput                 `json:"dhcp"`
+	DNS               DNSConfigInput                  `json:"dns"`
+	ExternalDNSFilter *config.ExternalDNSFilterConfig `json:"external_dns_filter,omitempty"`
+	Mihomo            MihomoConfigInput               `json:"mihomo"`
+	Transparent       TransparentConfigInput          `json:"transparent"`
+	LocalSystemProxy  LocalSystemProxyConfigInput     `json:"local_system_proxy"`
+	LocalSystemDNS    *LocalSystemDNSConfigInput      `json:"local_system_dns,omitempty"`
+	DevicePolicy      DevicePolicyConfigInput         `json:"device_policy"`
 }
 
 type GatewayConfigInput struct {

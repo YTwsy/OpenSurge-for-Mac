@@ -122,9 +122,12 @@ JSDelivr-CF 入口，下载结果保存在 applied profile 所在数据目录供
 ## 配置与发现
 
 网络配置通过 revisioned `GET/PUT /api/v1/config` 修改，写入要求 `If-Match`；只允许 topology、DHCP/DNS、
-TUN、本机系统代理协同和 device-policy 初始化字段，运行中或 `prepared` 之后的 recovery 时拒绝。所有
+TUN、外部 DNS 过滤、本机系统代理协同和 device-policy 初始化字段，运行中或 `prepared` 之后的 recovery 时拒绝。所有
 production 写入经 helper 落到 root-owned config。`/events` 发送真实
 config/gateway/drift/recovery 变化，诊断接口返回连接与脱敏后的短日志尾部。
+`external_dns_filter` 包含 `enabled`、`server`、`timeout_ms`、`blocked_addresses` 与
+`bypass_domains`；后两者为 JSON 数组。旧客户端省略整个字段时保留原配置，默认关闭；
+配置校验与 applied 恢复边界见 [DNS 过滤契约](decisions/mihomo-profile-overlay.md#external-dns-filtering-before-fake-ip)。
 上下游接口字段通过只读 `GET /api/v1/network/interfaces` 提供 macOS 网络服务候选，
 但仍保留可输入形式以支持没有列入网络服务顺序的 bridge、VLAN 或临时接口。
 安装器初始网络字段尚未保存为用户配置时，选择 `same_lan` 或 `same_wifi_dhcp` 会通过只读

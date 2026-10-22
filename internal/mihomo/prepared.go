@@ -61,7 +61,11 @@ func defaultPreparedDeps() preparedDeps {
 		fingerprint: process.Fingerprint,
 		matches:     process.MatchesFingerprint,
 		start: func(logPath, binary, directory, path string) (int, error) {
-			return process.StartDetachedWithLog(logPath, binary, "-d", directory, "-f", path)
+			args, err := engineConfigArgs(directory, path, false)
+			if err != nil {
+				return 0, err
+			}
+			return process.StartDetachedWithLog(logPath, binary, args...)
 		},
 		stop:       process.StopPID,
 		validate:   validateConfig,
