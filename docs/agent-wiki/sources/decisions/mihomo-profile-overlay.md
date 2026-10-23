@@ -31,6 +31,23 @@ text. Both block and flow collections are supported, including compact
 OpenSurge does not rewrite the imported source snapshot; only the generated
 runtime mihomo config may normalize collection style or indentation.
 
+## Source library deletion
+
+Sources owns a persistent library record, managed snapshots and subscription
+credentials. Removing an original YAML or a managed snapshot in Finder does not
+remove the library record. The Sources page provides a confirmed **Delete source**
+action backed by authenticated `DELETE /api/v1/sources/{id}` with the current
+configuration `If-Match` revision. It removes that record, all snapshots under
+its managed source ID and its saved subscription credential. Missing snapshots
+are tolerated; original files, exported copies and global drafts are preserved.
+
+The selected raw source is protected, including a selected historical version.
+If the running profile differs from the saved profile, reconcile or stop the
+gateway before deleting sources. Import, refresh, apply and delete are serialized
+to prevent stale writes from restoring removed records. Cleanup failures retain
+the record for retry. Deletion neither updates gateway configuration nor reloads
+the gateway; switching the selected source remains the explicit apply flow.
+
 ## File-based custom DNS
 
 Sources exposes one optional **Custom DNS** draft as a sibling of the Global

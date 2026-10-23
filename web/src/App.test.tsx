@@ -112,6 +112,7 @@ vi.mock('./api', () => ({
 	sourcePreview: vi.fn(),
     importURL: vi.fn(),
     importFile: vi.fn(),
+    deleteSource: vi.fn(),
     refreshSource: vi.fn(),
     applySource: vi.fn(),
     sourceSnapshotLocation: vi.fn(),
@@ -249,6 +250,8 @@ function sourceForDNS(): Source {
 describe('OpenSurge app shell', () => {
   const scrollIntoView = vi.fn()
   const scrollTo = vi.fn()
+  const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal')
+  const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close')
 
   beforeEach(() => {
     setBrowserSession({ mode: 'local' })
@@ -258,6 +261,8 @@ describe('OpenSurge app shell', () => {
     delete document.documentElement.dataset.theme
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
     Object.defineProperty(window, 'scrollTo', { configurable: true, value: scrollTo })
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function(this: HTMLDialogElement) { this.open = true } })
+    Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function(this: HTMLDialogElement) { this.open = false } })
     Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 2400 })
     scrollIntoView.mockReset()
     scrollTo.mockReset()
@@ -269,6 +274,12 @@ describe('OpenSurge app shell', () => {
     vi.mocked(api.deviceTraffic).mockResolvedValue({ schema_version: 1, revision: 'r', sampled_at: '2026-07-13T00:00:00Z', scope: 'active_sessions', gateway_local: { ip: '192.168.1.20', mac: '', online: false, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0, identity_source: 'gateway_local', transport: 'tun' }, devices: [], totals: { devices: 0, active_connections: 0, upload: 0, download: 0, upload_rate: 0, download_rate: 0 }, gateway_rates: { upload: 0, download: 0 }, unidentified_device_connections: 0, unclassified_connections: 0, unmatched_connections: 0 })
   })
   afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); setBrowserSession({ mode: 'local' }); document.querySelector('meta[name="opensurge-desktop-session"]')?.remove() })
+  afterEach(() => {
+    if (originalShowModal) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', originalShowModal)
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal')
+    if (originalClose) Object.defineProperty(HTMLDialogElement.prototype, 'close', originalClose)
+    else Reflect.deleteProperty(HTMLDialogElement.prototype, 'close')
+  })
 
   it('keeps the sidebar running when saved configuration is pending', async () => {
     vi.mocked(api.overview).mockResolvedValue({ ...overview, drift: true, doctor_healthy: false,
@@ -1607,6 +1618,66 @@ describe('OpenSurge app shell', () => {
     expect(within(ipv6Card).getAllByText('正在接管').length).toBeGreaterThan(0)
     expect(within(ipv6Card).getByText('已检测到上游原生 IPv6')).toBeTruthy()
     expect(within(ipv6Card).getByText('已接管')).toBeTruthy()
+  })
+
+  it('confirms source deletion, supports cancellation, and removes the deleted card', async () => {
+    const source = { ...sourceForDNS(), desired: false, applied: false }
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'sources-r1', sources: [source] })
+    vi.mocked(api.deleteSource).mockImplementation(async () => {
+      vi.mocked(api.sources).mockResolvedValue({ revision: 'sources-r1', sources: [] })
+      return { deleted: source.id }
+    })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '代理与规则源' }))
+    await userEvent.click(await screen.findByRole('button', { name: '删除来源 Home' }))
+    let dialog = screen.getByRole('dialog', { name: '删除来源“Home”？' })
+    expect(within(dialog).getByText(/全部历史快照及保存的订阅地址/)).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(api.deleteSource).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: '删除来源 Home' }))
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.deleteSource).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: '删除来源 Home' }))
+    dialog = screen.getByRole('dialog', { name: '删除来源“Home”？' })
+    await userEvent.click(within(dialog).getByRole('button', { name: '确认删除来源' }))
+    expect(api.deleteSource).toHaveBeenCalledExactlyOnceWith('home', 'sources-r1')
+    expect(await screen.findByText('尚未导入任何来源')).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('已删除来源“Home”及其历史快照。')).toBeTruthy()
+    expect(api.applySource).not.toHaveBeenCalled()
+  })
+
+  it('keeps a failed deletion available for retry and prevents repeated submission', async () => {
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'sources-r1', sources: [{ ...sourceForDNS(), desired: false, applied: false, valid: false }] })
+    let rejectDelete!: (error: Error) => void
+    vi.mocked(api.deleteSource).mockImplementationOnce(() => new Promise((_, reject) => { rejectDelete = reject }))
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '代理与规则源' }))
+    await userEvent.click(await screen.findByRole('button', { name: '删除来源 Home' }))
+    const dialog = screen.getByRole('dialog', { name: '删除来源“Home”？' })
+    await userEvent.click(within(dialog).getByRole('button', { name: '确认删除来源' }))
+    const deleting = within(dialog).getByRole('button', { name: '正在删除…' }) as HTMLButtonElement
+    expect(deleting.disabled).toBe(true)
+    fireEvent(dialog, new Event('cancel', { cancelable: true }))
+    expect(screen.getByRole('dialog')).toBe(dialog)
+    await userEvent.click(deleting)
+    expect(api.deleteSource).toHaveBeenCalledTimes(1)
+    await act(async () => rejectDelete(new Error('source cleanup failed')))
+    expect(within(dialog).getByRole('alert').textContent).toContain('source cleanup failed')
+    expect((within(dialog).getByRole('button', { name: '确认删除来源' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole('heading', { name: 'Home' })).toBeTruthy()
+  })
+
+  it.each(['desired', 'applied', 'historical desired', 'historical applied'])('protects the %s source version from deletion', async state => {
+    const source = { ...sourceForDNS(), desired: state === 'desired', applied: state === 'applied' }
+    if (state.startsWith('historical')) source.versions = [{ digest: 'old', size: 50, valid: true, imported_at: source.imported_at, desired: state === 'historical desired', applied: state === 'historical applied' }]
+    vi.mocked(api.sources).mockResolvedValue({ revision: 'sources-r1', sources: [source] })
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '代理与规则源' }))
+    const button = await screen.findByRole('button', { name: '删除来源 Home' }) as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(screen.getByText('此来源或历史版本正在使用，请先应用其他来源再删除。')).toBeTruthy()
   })
 
   it('imports an HTTPS source as a draft', async () => {

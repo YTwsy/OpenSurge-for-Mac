@@ -31,6 +31,15 @@ describe('Control API requests', () => {
     expect(controlEventsURL()).toBe('/api/v1/events?desktop_session=local-capability')
   })
 
+  it('deletes only the requested source with the current configuration revision', async () => {
+    const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ deleted: 'source/id' }) }))
+    vi.stubGlobal('fetch', fetcher)
+    await expect(api.deleteSource('source/id', 'revision-1')).resolves.toEqual({ deleted: 'source/id' })
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('/api/v1/sources/source%2Fid', expect.objectContaining({
+      method: 'DELETE', headers: { 'Content-Type': 'application/json', 'If-Match': '"revision-1"' },
+    }))
+  })
+
   it('does not expire the mounted UI or replay actions while the desktop is reconnecting', async () => {
     const listener = vi.fn()
     window.addEventListener(authenticationRequiredEvent, listener)

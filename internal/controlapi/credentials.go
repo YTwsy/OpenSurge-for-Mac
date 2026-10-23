@@ -21,6 +21,7 @@ const (
 type SourceCredentialStore interface {
 	Put(context.Context, string, string) error
 	Get(context.Context, string) (string, error)
+	Delete(context.Context, string) error
 }
 
 type sourceCredentialReader interface {
@@ -85,6 +86,30 @@ func (f *FileCredentialStore) Get(ctx context.Context, id string) (string, error
 	return value, nil
 }
 
+func (f *FileCredentialStore) Delete(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if id == "" {
+		return fmt.Errorf("source credential id is required")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	document, err := f.load()
+	if err != nil {
+		return err
+	}
+	if _, exists := document.Sources[id]; !exists {
+		return nil
+	}
+	delete(document.Sources, id)
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(f.path, append(data, '\n'), 0o600)
+}
+
 func (f *FileCredentialStore) load() (fileCredentialDocument, error) {
 	document := fileCredentialDocument{SchemaVersion: sourceCredentialSchemaVersion, Sources: map[string]string{}}
 	data, err := os.ReadFile(f.path)
@@ -142,6 +167,11 @@ func (m *memoryCredentialStore) Get(_ context.Context, id string) (string, error
 		return "", fmt.Errorf("credential not found")
 	}
 	return value, nil
+}
+
+func (m *memoryCredentialStore) Delete(_ context.Context, id string) error {
+	delete(m.values, id)
+	return nil
 }
 
 func migrateSourceCredentials(ctx context.Context, store *Store, credentials SourceCredentialStore) error {

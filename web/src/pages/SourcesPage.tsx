@@ -12,7 +12,7 @@ import { t } from '../i18n'
 
 type SourceAction =
   | { kind: 'import-url' | 'import-file' | 'apply'; sourceID?: string }
-  | { kind: 'refresh' | 'copy-path' | 'reveal' | 'export'; sourceID: string }
+  | { kind: 'refresh' | 'copy-path' | 'reveal' | 'export' | 'delete'; sourceID: string }
   | null
 
 export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDirtyChange, navigationRequest = 0 }: { overview: Overview | null; onChanged: () => void | Promise<void>; onNotify: (notification: OperationNotification) => void; onOpenNetwork: (target: 'none' | 'control') => void; onDirtyChange?: (dirty: boolean) => void; navigationRequest?: number }) {
@@ -28,6 +28,8 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
   const [message, setMessage] = useState('')
   const [activeAction, setActiveAction] = useState<SourceAction>(null)
   const [pending, setPending] = useState<Source | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<Source | null>(null)
+  const deleteDialog = useRef<HTMLDialogElement>(null)
   const [fileDragActive, setFileDragActive] = useState(false)
   const fileDragDepth = useRef(0)
   const running = overview?.status.gateway === 'running'
@@ -58,6 +60,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
 
   useEffect(() => { void refresh() }, [refresh, overview?.status.gateway, overview?.revision])
   useEffect(() => { onDirtyChange?.(dnsDirty) }, [dnsDirty, onDirtyChange])
+  useEffect(() => { if (pendingDelete) deleteDialog.current?.showModal() }, [pendingDelete])
 
   const dnsSaved = async (value: CustomDNSDraft) => {
     setCustomDNS(value)
@@ -133,6 +136,22 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
     }
   }
 
+  const closeDelete = () => {
+    deleteDialog.current?.close()
+    setPendingDelete(null)
+    setError('')
+  }
+
+  const deleteSource = async () => {
+    if (!pendingDelete || busy) return
+    const selected = pendingDelete
+    await run({ kind: 'delete', sourceID: selected.id }, async () => {
+      await api.deleteSource(selected.id, revision)
+      setSources(current => current.filter(source => source.id !== selected.id))
+      setPendingDelete(null)
+    }, t('已删除来源“{{name}}”及其历史快照。', { name: selected.name }))
+  }
+
   const importLocalFile = (file: File) => {
     if (!/\.ya?ml$/i.test(file.name)) {
       setError(t('只能导入 .yaml 或 .yml 文件。'))
@@ -144,7 +163,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
   return <>
     <PageHeader eyebrow="SOURCES" title="代理与规则源" description="导入、校验、应用各自有明确状态；运行配置只会在完整校验成功后切换。" />
     <div className="source-feedback" aria-live="polite">
-      {error && <div className="notice warn" role="alert"><span aria-hidden="true">!</span><div><strong>{t('操作未完成')}</strong><p>{error}</p></div></div>}
+      {error && !pendingDelete && <div className="notice warn" role="alert"><span aria-hidden="true">!</span><div><strong>{t('操作未完成')}</strong><p>{error}</p></div></div>}
       {message && <div className="ok-notice" role="status"><span aria-hidden="true">✓</span><div><strong>{t('操作已确认')}</strong><p>{message}</p></div></div>}
     </div>
     <TailscaleCard onChanged={onChanged} onNotify={onNotify} />
@@ -216,6 +235,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
         const diff = source.diff
         const origin = source.origin ?? ''
         const previousApplied = versions.some(version => version.applied)
+        const inUse = source.desired || source.applied || versions.some(version => version.desired || version.applied)
         const changed = diff?.previous_digest && diff.previous_digest !== source.digest
 		const overlayCompatible = source.overlay_compatible !== false
 		const sourceNeedsDrafts = (source.applied || source.desired) && draftsNeedApply
@@ -252,10 +272,12 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
 		  <div className={`source-validation ${overlayCompatible ? 'valid overlay' : 'invalid overlay'}`}><span aria-hidden="true">{overlayCompatible ? '✓' : '!'}</span><div><strong>{t(overlayCompatible ? '附加配置兼容' : '附加配置冲突')}</strong><small>{source.overlay_validation || t(overlayCompatible ? '当前来源可与附加配置组合' : '等待附加配置检查')}</small></div></div>
 		  {versions.length > 0 && <small className="source-history">{t('历史：')}{versions.slice(-3).map(version => `${version.digest.slice(0, 8)}${version.applied ? ` (${t('运行')})` : version.desired ? ` (${t('待应用')})` : ''}`).join(' · ')}</small>}
 		  <div className="source-actions">
+			<button className="danger" type="button" disabled={busy || inUse || !revision} aria-label={t('删除来源 {{name}}', { name: source.name })} onClick={() => { setPending(null); setPendingDelete(source); setMessage(''); setError('') }}>{t('删除来源')}</button>
 			{origin.startsWith('https://') && <button type="button" disabled={busy} onClick={() => void run({ kind: 'refresh', sourceID: source.id }, () => api.refreshSource(source.id), t('{{name}} 已刷新；新内容已保存为草稿。', { name: source.name }))}><ActionLabel active={refreshing} idle="刷新草稿" pending="正在刷新…" /></button>}
 			<button className="primary" type="button" disabled={busy || dnsDirty || Boolean(dnsLoadError) || !customDNS || !revision || !source.valid || !overlayCompatible || (source.applied && !sourceNeedsDrafts) || (source.desired && !running && !sourceNeedsDrafts)} onClick={() => openApply(source)}>{action}</button>
             {dnsDirty && <small>{t('请先保存自定义 DNS 草稿，再应用配置。')}</small>}
           </div>
+          {inUse && <small className="source-delete-hint">{t('此来源或历史版本正在使用，请先应用其他来源再删除。')}</small>}
         </article>
       })}</div> : <Empty text={t('尚未导入任何来源')} />}
     </section>
@@ -271,6 +293,16 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
 	  <p>{t(running ? overlay?.document.enabled ? 'OpenSurge 会组合订阅、全局附加配置和网关规则，验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : 'OpenSurge 会验证完整候选配置后再短暂重启 DHCP/DNS、mihomo、PF 与 IPv4 forwarding。只有重载成功后才会标记为运行版本。' : overlay?.document.enabled ? '当前网关未运行。来源与全局附加配置的组合结果会保存为 desired 配置，并在下次启动成功后成为运行版本。' : '当前网关未运行。来源会保存为 desired 配置，并在下次启动成功后成为运行版本。')}</p>
 	  {running && <ul><li>{t('当前连接会中断并重新建立。')}</li><li>{t('验证失败不会停止现有网关。')}</li><li>{t('重载失败会恢复旧配置，并尽力恢复原网关。')}</li></ul>}
 	  <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setPending(null)}>{t('取消')}</button><button className="primary" type="button" autoFocus disabled={busy || dnsDirty || Boolean(dnsLoadError)} onClick={() => void apply()}><ActionLabel active={activeAction?.kind === 'apply'} idle={running ? '确认应用并重载' : '确认设为下次启动版本'} pending="正在验证并应用…" /></button></div>
+    </dialog>}
+    {pendingDelete && <dialog ref={deleteDialog} className="reload-dialog source-delete-dialog" aria-labelledby="source-delete-title" onCancel={event => { event.preventDefault(); if (!busy) closeDelete() }}>
+      <h2 id="source-delete-title">{t('删除来源“{{name}}”？', { name: pendingDelete.name })}</h2>
+      <p>{t('将删除此来源的列表记录、全部历史快照及保存的订阅地址。需要时可重新导入。')}</p>
+      <p>{t('原始 YAML 文件、已导出的副本和全局附加配置会保留，当前网关不会重载。')}</p>
+      {error && <div className="notice warn" role="alert">{error}</div>}
+      <div className="dialog-actions">
+        <button type="button" autoFocus disabled={busy} onClick={closeDelete}>{t('取消')}</button>
+        <button className="danger" type="button" disabled={busy} onClick={() => void deleteSource()}><ActionLabel active={activeAction?.kind === 'delete'} idle="确认删除来源" pending="正在删除…" /></button>
+      </div>
     </dialog>}
   </>
 }
