@@ -1,4 +1,13 @@
 export const englishMessages: Record<string, string> = {
+  '删除来源': 'Delete source',
+  '删除来源 {{name}}': 'Delete source {{name}}',
+  '删除来源“{{name}}”？': 'Delete source “{{name}}”?',
+  '确认删除来源': 'Confirm deletion',
+  '正在删除…': 'Deleting…',
+  '已删除来源“{{name}}”及其历史快照。': 'Deleted source “{{name}}” and its snapshot history.',
+  '此来源或历史版本正在使用，请先应用其他来源再删除。': 'This source or a historical version is in use. Apply another source before deleting it.',
+  '将删除此来源的列表记录、全部历史快照及保存的订阅地址。需要时可重新导入。': 'This removes the source from the list, all its snapshot history, and its saved subscription URL. You can import it again later.',
+  '原始 YAML 文件、已导出的副本和全局附加配置会保留，当前网关不会重载。': 'Original YAML files, exported copies, and global extensions are kept. The running gateway will not reload.',
   '正在加载设备与规则…': 'Loading devices and rules…',
   '正在读取已保存的设备和分流设置。': 'Reading saved devices and routing settings.',
   '设备与规则加载失败': 'Could not load devices and rules',

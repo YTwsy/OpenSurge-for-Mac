@@ -118,6 +118,7 @@ export const api = {
     return request<Source>('/api/v1/sources', { method: 'POST', body: data })
   },
   refreshSource: (id: string) => request<Source>(`/api/v1/sources/${id}/refresh`, { method: 'POST' }),
+  deleteSource: (id: string, revision: string) => request<{ deleted: string }>(`/api/v1/sources/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { 'If-Match': `"${revision}"` } }),
   applySource: (id: string, revision: string) => trackedRequest<Source>('apply-profile', `/api/v1/sources/${id}/apply`, { method: 'POST', headers: { 'If-Match': `"${revision}"` } }),
   sourceSnapshotLocation: (id: string) => request<SourceSnapshotFile>(`/api/v1/sources/${encodeURIComponent(id)}/snapshot-location`),
   revealSourceSnapshot: (id: string) => request<SourceSnapshotFile>(`/api/v1/sources/${encodeURIComponent(id)}/reveal`, { method: 'POST' }),

@@ -155,6 +155,14 @@ OpenSurge writes a separate `0600` YAML file under
 new file selected. Refreshing the source does not overwrite exported copies,
 and an edited copy must be imported as a local file before it becomes a draft.
 
+To remove an unused configuration, click **Delete source** on its card and
+confirm. This removes the library record, all its snapshot history, and its saved
+subscription URL. Original YAML files, exported copies, and global extensions
+are kept. The action also works if you already removed the snapshot in Finder.
+Apply another source before deleting one that is running or selected for the
+next startup, including a selected historical version. Deletion does not reload
+the gateway, and you can import the source again later.
+
 ### 2. Choose a network mode
 
 Open **网络设置** (Network Settings) and choose the topology that matches your

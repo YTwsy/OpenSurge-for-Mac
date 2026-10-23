@@ -984,3 +984,12 @@ html[data-theme="light"] .custom-dns-toggle i{background:#c6d4cb}html[data-theme
 }
 @media(max-width:720px){.custom-dns-summary{align-items:flex-start;flex-direction:column;gap:8px}.custom-dns-comparison{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.custom-dns-card *{transition:none!important}}
+
+.source-actions{flex-wrap:wrap}
+.source-actions button.danger{margin-right:auto}
+.source-actions button.danger,.source-delete-dialog .dialog-actions .danger{border-color:#65443d;background:#251815;color:#ffb3a6}
+.source-card .source-delete-hint{display:block;margin-top:8px;color:#789087;font-size:10px;line-height:1.5;letter-spacing:0}
+html[data-theme="light"] .source-actions button.danger,html[data-theme="light"] .source-delete-dialog .dialog-actions .danger{background:#fff2ef;border-color:#dfa39a;color:#a34137}
+html[data-theme="light"] .source-delete-hint{color:#60766d}
+.source-delete-dialog{box-shadow:0 25px 80px #000}
+.source-delete-dialog::backdrop{background:#020807c9}
