@@ -5,7 +5,7 @@
 
 本次范围：修复 #107 的 DNS 备份恢复与生命周期阻断并补回归；审查启动、停止、重载、引擎重启、系统重启、
 prepared engine、DHCP 恢复、热拔插、配置修复、状态读取、订阅与 Tailscale 的校验。
-其余发现保留为后续改动入口，不混入 #107 的 DNS 修复。
+DNS 修复已单独提交为 `0d9a148`；第 1–6 项随后获准独立推进，实施范围见文末。
 下文“确认”指代码调用链或隔离测试成立，不代表已复现真实主机事故或发生频率。
 
 ## #107 的引入与实际失败链
@@ -63,6 +63,8 @@ UUID 变化。需要对照操作前后的 service UUID、BSD interface、硬件 
 公开源码用于机制分析，不视为报告者 macOS build 的逐行实现证明。
 
 ## 已确认的恢复阻断与建议优先级
+
+本节是 DNS 修复时的审查基线；后续改动结果见文末，不作为未修复问题清单。
 
 ### P1：恢复/修复入口先要求旧 desired 配置完全有效
 
@@ -136,8 +138,8 @@ Helper 将 restart-mihomo 与完整启动共用 requireTrustedStartInputs
 即使同时有 IPv4 也会在拨号前拒绝。导入和刷新都使用这条路径。
 隔离测试确认函数行为；尚未在真实系统 resolver/订阅场景复现。
 
-不能删除 SSRF 保护或豁免所有 ULA。应设计可信受管获取路径，并在最终连接边界检查
-真实目标，区分合成地址与任意用户指定的私网目标。
+不能删除 SSRF 保护或豁免所有 ULA。用户确认本轮保留现有订阅逻辑；尚无真实订阅失败
+证据，不能仅根据函数级合成输入测试就认定需要更换下载路径。
 
 ## 需要单独设计的候选与反向风险
 
@@ -192,5 +194,38 @@ Helper 将 restart-mihomo 与完整启动共用 requireTrustedStartInputs
 - 未复现真实 service UUID 重建、真实重启、USB 热插拔、真实订阅下载或 DHCP/IPv6 数据面。
   这些需要独立的环境和操作前后证据；普通 Go 回归不替代它们。
 
-后续优先级：先拆恢复配置读取与 Helper 启动故障隔离，再处理 DHCP 恢复/状态观察/
-引擎专用依赖；系统代理和完整 applied manifest 另做有范围的设计。
+## 第 1–6 项后续实施
+
+基于已提交的 `0d9a148` 独立推进；用户确认第 3 项也纳入，订阅下载保持现状。
+
+| 项目 | 已实施的行为 | 保留的边界 |
+| --- | --- | --- |
+| 旧配置修复/Stop | `LoadEditable` 读取旧表单值，合并新字段后完整校验；`LoadRecovery` 供 Stop、锁定位和恢复诊断使用 | 语法/类型错误和不可读取路径仍失败；新候选、revision、生命周期锁、Helper 文件与路径信任检查不变 |
+| Helper 准备态失败隔离 | prepared reconcile 失败记录日志并继续监听；Stop 尝试其余独立网关资源清理 | 未知进程不发送信号，不丢 prepared journal；有资源冲突的启动继续受资源交接门槛约束 |
+| DHCP 探测/恢复 | 跳过无关策略文件和未来部署的语义校验 | 非空接口、配置目标、实际 service/interface、OFFER 与人工恢复阶段仍检查 |
+| 租约/状态隔离 | 保留有效租约与确定的生命周期状态，返回 `devices_error`；CLI、菜单栏显示设备观测不完整 | runtime 文件/boot 读取失败仍是未知状态，不伪装成正常空列表或 stopped |
+| Mihomo 独立重启 | 信任检查不再要求 dnsmasq 二进制或未应用策略文件 | 当前 `LoadRuntime` 其他语义校验、profile digest、实际核心文件、PID/boot 和 `mihomo -t` 保留；完整 applied manifest 未纳入 |
+| 下游接口消失 | 明确接口/alias 消失时本地清理幂等；缺接口、link-local 或链路不可达时 RA 撤销独立 warning | 未知/权限/实际删除失败仍报错；不承诺客户端立即撤销旧路由、前缀和 DNS |
+
+配置仅保存拓扑字段时不要求先停止 prepared core；该入口不修改 runtime/profile/cache
+路径，也不启动进程。后续 start 的资源交接检查仍保留。CLI `status`、`logs`、`snapshot`
+同样使用恢复读取；doctor 保留部署检查。Control API 无法确定恢复路径时返回明确错误，
+不再用空配置查询相对路径后报告 stopped。
+
+本轮验证：
+
+- 宿主环境 `GOCACHE=/private/tmp/opensurge-issue107-gocache make test` 通过。
+  覆盖旧配置修正/无效候选拒绝、CLI 诊断、Helper socket 存活、准备态未知身份、
+  DHCP 目标限制、核心依赖、坏租约的 none/active/interrupted 状态，以及 IPv6
+  缺资源、热拔插竞态、Stop/rollback、未知读取/权限错误和 broker PID 保护。
+- `make web-test` 通过：38 个文件、357 项测试。新增设备数据不完整、坏租约下仍可
+  interrupted 清理，以及本地停止成功时保留 RA 未撤销提示。
+- `make web-build` 通过：i18n、TypeScript 与生产构建完成，嵌入资源已刷新。
+- `make desktop-test` 通过，包含 race 检查；菜单栏 DTO 转传 `devices_error`。
+- `git diff --check` 通过。订阅实现 `internal/controlapi/sources.go` 未改动。
+- `sudo -n true` 仍提示需要密码；`make lab-test` 在实验室未启动的前置条件退出。
+  未执行真实 host-network、TUN、对应拓扑的 IPv6 门槛，也未启动 VM/修改宿主网络。
+  本轮不证明真实重启、USB 拔插或下游客户端撤销，相关能力仍须复验。
+
+临时检查日志在 `/private/tmp/opensurge-recovery-{go-test,web-test,web-build,desktop-test}.log`。
+系统代理、完整 applied manifest、Tailscale 及订阅行为未扩展到本轮实现。

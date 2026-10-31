@@ -947,31 +947,31 @@ func (m Manager) stop(ctx context.Context) error {
 	if deps.geteuid() != 0 {
 		return fmt.Errorf("stop requires sudo/root privileges")
 	}
-	if err := m.stopPreparedEngine(deps); err != nil {
-		return err
-	}
+	// A prepared journal can lack enough identity to signal its process.
+	// Retain that error and journal, but still clean independently tracked
+	// gateway resources instead of making the whole recovery path unavailable.
+	cleanupErr := m.stopPreparedEngine(deps)
 	state, exists, err := deps.loadState(m.paths.StateFile)
 	if err != nil {
-		return err
+		return errors.Join(cleanupErr, err)
 	}
 	if exists {
 		bootSession, bootErr := currentBoot(deps)
 		if bootErr != nil {
-			return fmt.Errorf("determine current boot session: %w", bootErr)
+			return errors.Join(cleanupErr, fmt.Errorf("determine current boot session: %w", bootErr))
 		}
 		if !state.BelongsToBoot(bootSession) {
-			return m.cleanupInterruptedRuntime(ctx, deps, state)
+			return errors.Join(cleanupErr, m.cleanupInterruptedRuntime(ctx, deps, state))
 		}
 	}
-	var cleanupErr error
-	pfManager := deps.newPF(m.cfg, m.paths)
-	sysctlManager := deps.newSysctl()
 	m.restoreSystemDNSBackups(ctx, deps, state)
 	if exists {
+		pfManager := deps.newPF(m.cfg, m.paths)
+		sysctlManager := deps.newSysctl()
 		if state.LocalSystemProxy != nil {
 			ReportProgress(ctx, "restoring_system_proxy")
 			if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
-				return fmt.Errorf("restore local system proxy before stopping gateway services: %w", err)
+				return errors.Join(cleanupErr, fmt.Errorf("restore local system proxy before stopping gateway services: %w", err))
 			}
 		}
 		ReportProgress(ctx, "stopping_dns")
@@ -984,7 +984,11 @@ func (m Manager) stop(ctx context.Context) error {
 		cleanupErr = errors.Join(cleanupErr, stopTrackedProcess(deps, "mihomo", state.PIDMihomo, state.MihomoProcessFingerprint, mihomoManager.Stop))
 		ReportProgress(ctx, "restoring_network")
 		if state.PFAnchorLoaded {
-			cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
+			if strings.TrimSpace(m.cfg.PF.AnchorName) == "" {
+				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("pf.anchor_name is required to unload the gateway anchor"))
+			} else {
+				cleanupErr = errors.Join(cleanupErr, pfManager.Unload(!state.PFEnabledBefore))
+			}
 		}
 		cleanupErr = errors.Join(cleanupErr, sysctlManager.Restore(state.IPForwardingBefore))
 	}
@@ -1026,7 +1030,12 @@ func (m Manager) cleanupIPv6(ctx context.Context, deps gatewayDeps, state runtim
 		// Fall back to the applied DHCP-owning topology so an older runtime state
 		// still receives a withdrawal during an upgrade stop.
 		if state.IPv6RAEffective || (state.IPv6PacketEffective && applied.cfg.DHCP.Enabled) {
-			cleanupErr = errors.Join(cleanupErr, host.Withdraw(ctx))
+			if err := host.Withdraw(ctx); errors.Is(err, macosipv6.ErrWithdrawalUnavailable) {
+				reportNotice(ctx, "ipv6_withdrawal_unavailable")
+				fmt.Fprintf(os.Stderr, "Warning: %v; continuing local IPv6 cleanup. Clients may retain advertised settings until they expire.\n", err)
+			} else {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
 		}
 		cleanupErr = errors.Join(cleanupErr, host.RemoveGateway(ctx))
 	}

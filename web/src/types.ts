@@ -33,6 +33,7 @@ export type GatewayStatus = {
   native_ipv6_available: boolean
   ipv6_reason?: string
   client_count: number
+  devices_error?: string
 }
 
 export type TakeoverState = 'ready' | 'waiting' | 'stopped' | 'disabled' | 'failed' | 'interrupted'

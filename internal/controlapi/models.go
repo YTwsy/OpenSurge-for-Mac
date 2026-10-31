@@ -79,6 +79,7 @@ type MenuBarStatus struct {
 	IPv4Takeover    string                `json:"ipv4_takeover"`
 	IPv6Takeover    string                `json:"ipv6_takeover"`
 	ClientCount     int                   `json:"client_count"`
+	DevicesError    string                `json:"devices_error,omitempty"`
 	Drift           bool                  `json:"drift"`
 	DoctorHealthy   bool                  `json:"doctor_healthy"`
 	Recovery        bool                  `json:"recovery_required"`

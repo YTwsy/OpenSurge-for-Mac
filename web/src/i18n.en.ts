@@ -314,6 +314,8 @@ export const englishMessages: Record<string, string> = {
   '应用 Tailscale 配置': 'Apply Tailscale configuration',
   'Tailscale 预热已发起，连接可能尚未就绪；可直接选择出口，首次访问可能需重试。': 'Tailscale warm-up has started but may not be ready yet. You can select the exit now; the first request may need a retry.',
   '未能发起 Tailscale 预热，但不影响网关操作完成；选择出口后仍由内核按需连接。': 'Tailscale warm-up could not be initiated. The gateway operation can still complete; the engine connects on demand when the exit is used.',
+  '下游接口不可用，未能发送 IPv6 撤销通告。本地清理继续，客户端旧路由和 DNS 可能要等待有效期结束。': 'The downstream interface is unavailable, so the IPv6 withdrawal could not be sent. Local cleanup continues; old client routes and DNS settings may remain until their lifetimes expire.',
+  '数据不完整': 'Incomplete data',
   '系统 DNS 未能恢复，其他操作将继续。请检查系统 DNS 设置。': 'System DNS could not be restored. Other operations will continue. Please check the system DNS settings.',
   '正在执行操作': 'Executing operation',
   '当前操作进度': 'Current operation progress',

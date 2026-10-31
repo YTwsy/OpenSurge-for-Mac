@@ -113,6 +113,21 @@ Rollback 是 start 契约的一部分。先按备份尝试恢复系统 DNS，再
 Stop 应该能容忍部分 runtime pieces 已经缺失。即使 `state.json` 不存在，仍尝试恢复
 独立文件中保留的 DNS 备份。这个项目会修改 host network，所以清理质量是正确性的一部分。
 
+停止使用 `LoadRecovery` 读取配置，只要求定位恢复状态所需的 runtime 与 Mihomo 配置路径；
+不验证下一次启动的 DHCP 地址池、DNS 或设备策略草稿。实际卸载已加载的 PF anchor 前仍
+要求 anchor 名称存在。Helper 继续要求 root-owned 配置、可信安装根内的路径及生命周期锁。
+语法、字段类型或恢复路径无法读取仍是错误，不能靠默认值猜测清理位置。
+
+准备态引擎的 journal 损坏或缺少进程身份时，不终止 Helper 的监听；错误写入日志，
+配置修复与 DHCP 恢复等独立动作继续可用。启动/准备态动作仍须先完成资源交接，未知进程
+不能被终止。Stop 会累计准备态错误并继续清理有独立身份记录的网关资源，保留未解决的
+journal；同 boot 清理仍返回该错误并保留网关 state，跨 boot 则独立清除过期网关 state。
+
+接口或 IPv6 alias 确认消失时，本地清理幂等完成；下游接口没有 link-local 或链路不可达时，
+未发送的 IPv6 撤销通告单独报告 warning，不阻止其余本地清理。未知读取/发送错误、权限
+错误及实际 alias 删除失败仍保留恢复 state。客户端未必收到撤销，不能报告旧路由、前缀
+或 DNS 已立即失效。
+
 若停止任一服务、PF 或 forwarding 恢复失败，manager 会保留 runtime state 与 applied
 device-policy snapshot，避免把仍运行或 degraded 的网关误记为已完全停止，并允许后续
 重试清理。所有清理步骤仍会尽量执行；这些错误清除后才移除 state。DNS warning
@@ -213,6 +228,11 @@ router；系统 DNS 按上述顺序恢复与重新接管。若已启用系统代
 client validated 或明确跳过客户端验收的接管阶段执行，且成功或失败都不改变 DHCP 恢复
 状态机。替代进程必须通过 TUN readiness。
 
+Helper 的重启信任检查不再要求 dnsmasq 二进制或未应用的设备策略文件存在；仍检查
+Mihomo 可执行文件、已渲染配置、实际使用的 profile/工作目录及 Tailscale 路径。现有
+profile digest、boot、PID 指纹和真实 `mihomo -t` 不变。该调整不代表已建立完整的 applied
+配置清单：当前 `LoadRuntime` 的其他语义校验仍保留。
+
 Control Service 会在当前 boot、有效 active runtime 和允许的 DHCP 接管阶段内监测这条
 恢复路径。Mihomo 进程缺失立即触发一次自动恢复；controller 的 `connection refused`
 需要连续两次观测才触发。每个未恢复 incident 最多自动尝试一次；命令完成后仍要等新的
@@ -220,6 +240,22 @@ Control Service 会在当前 boot、有效 active runtime 和允许的 DHCP 接�
 status 读取失败、runtime 非 active、以及不允许恢复的 DHCP 接管阶段都属于 unknown：
 既不触发恢复，也不能累计健康确认或清除本次 incident 的单次尝试保护。上次开机留下的
 interrupted runtime 同样不会触发。
+
+租约读取或坏行不决定网关生命周期状态。Status 保留可确认的 boot、进程和 runtime
+结论，通过 `devices_error` 单独报告设备观测不完整；可解析的租约继续返回，数量不再
+冒充完整结果。CLI、菜单栏与 Web 展示该区别，interrupted 清理入口保持可用。
+runtime JSON 损坏或 boot 无法读取仍属于未知状态，不能降级成已停止。
+
+## 配置修复与 DHCP 恢复
+
+配置表单通过 `LoadEditable` 读取已有值，不以旧配置完整有效为前提；提交时按 revision
+和生命周期锁防止覆盖并发修改，先合并替代字段，再完整验证新候选后原子保存。仅保存
+拓扑字段不改 runtime/profile/cache 路径，也不启动核心，因此不要求先成功停止准备态；
+后续启动仍须完成准备态资源交接。新候选无效时不替换原文件。
+
+DHCP OFFER 探测和 Mac 自动 DHCP 恢复读取恢复配置，不依赖设备策略草稿或待部署的
+DHCP 地址池。操作目标仍须为配置指定的非空接口；设置 DHCP 还核对当前网络服务实际
+使用该接口，原有恢复阶段、OFFER/人工确认要求保持不变。
 
 start、stop、reload、手动/自动 `restart-mihomo`、prepared policy workspace，以及所有
 配置 apply/rollback 共享 Control Service 生命周期互斥锁。runtime 目录中的跨进程

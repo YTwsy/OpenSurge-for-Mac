@@ -124,6 +124,14 @@ describe('global operation progress', () => {
     expect(getOperation('op-1')?.error).toBe('previous startup failed')
   })
 
+  it('reports an unavailable IPv6 withdrawal even when local stop completes', () => {
+    begin('stop')
+    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    act(() => recordOperation({ id: 'op-1', kind: 'stop', state: 'succeeded', notices: ['ipv6_withdrawal_unavailable'] }))
+    expect(screen.getByText('已完成')).toBeTruthy()
+    expect(screen.getByText(/客户端旧路由和 DNS 可能要等待有效期结束/)).toBeTruthy()
+  })
+
   it('keeps the latest result when creation timestamps tie and older status reads arrive later', () => {
     begin()
     recordOperation({ id: 'op-1', kind: 'start', state: 'succeeded' })

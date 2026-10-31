@@ -7,11 +7,17 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/process"
 )
+
+// ErrWithdrawalUnavailable means the downstream link cannot carry the final
+// router advertisement. Local resources can still be removed, but clients may
+// retain the previously advertised route, prefix and DNS until they expire.
+var ErrWithdrawalUnavailable = errors.New("downstream IPv6 withdrawal unavailable")
 
 type Manager struct {
 	cfg        config.Config
@@ -195,13 +201,26 @@ func gatewayAddressState(output, target string) (ready, duplicated bool) {
 
 func (m Manager) RemoveGateway(ctx context.Context) error {
 	present, err := m.gatewayAddressPresent()
+	if interfaceMissing(err) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	if !present {
 		return nil
 	}
-	return m.command(ctx, "/sbin/ifconfig", m.cfg.Gateway.Interface, "inet6", config.DownstreamIPv6Gateway, "-alias")
+	if err := m.command(ctx, "/sbin/ifconfig", m.cfg.Gateway.Interface, "inet6", config.DownstreamIPv6Gateway, "-alias"); err != nil {
+		// The adapter or alias may disappear between inspection and ifconfig.
+		// Only a confirmed absence completes cleanup; an unreadable or still
+		// present address keeps the original command failure actionable.
+		present, inspectErr := m.gatewayAddressPresent()
+		if interfaceMissing(inspectErr) || (inspectErr == nil && !present) {
+			return nil
+		}
+		return errors.Join(err, inspectErr)
+	}
+	return nil
 }
 
 func (m Manager) Withdraw(ctx context.Context) error {
@@ -211,14 +230,23 @@ func (m Manager) Withdraw(ctx context.Context) error {
 	}
 	iface, err := byName(m.cfg.Gateway.Interface)
 	if err != nil {
+		if interfaceMissing(err) {
+			return fmt.Errorf("%w on %s: %w", ErrWithdrawalUnavailable, m.cfg.Gateway.Interface, err)
+		}
 		return err
 	}
 	dns, err := m.linkLocalAddress(iface)
 	if err != nil {
+		if interfaceMissing(err) {
+			return fmt.Errorf("%w on %s: %w", ErrWithdrawalUnavailable, iface.Name, err)
+		}
 		return err
 	}
 	prefixIP, _, _ := net.ParseCIDR(config.DownstreamIPv6Prefix)
 	if err := m.withdraw(iface.Name, iface.HardwareAddr, prefixIP, dns); err != nil {
+		if interfaceMissing(err) || errors.Is(err, syscall.ENETDOWN) || errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EHOSTUNREACH) || errors.Is(err, syscall.EADDRNOTAVAIL) {
+			return fmt.Errorf("%w on %s: %w", ErrWithdrawalUnavailable, iface.Name, err)
+		}
 		return fmt.Errorf("send IPv6 router withdrawal: %w", err)
 	}
 	select {
@@ -250,7 +278,17 @@ func (m Manager) linkLocalAddress(iface *net.Interface) (net.IP, error) {
 			return ip, nil
 		}
 	}
-	return nil, fmt.Errorf("downstream interface %s has no IPv6 link-local address for RDNSS withdrawal", iface.Name)
+	return nil, fmt.Errorf("%w: interface %s has no IPv6 link-local address for RDNSS withdrawal", ErrWithdrawalUnavailable, iface.Name)
+}
+
+func interfaceMissing(err error) bool {
+	if errors.Is(err, syscall.ENODEV) || errors.Is(err, syscall.ENXIO) {
+		return true
+	}
+	// net.InterfaceByName reports absence with an unexported sentinel rather
+	// than an errno. Match that exact net error, not arbitrary command output.
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "route" && opErr.Net == "ip+net" && opErr.Err != nil && opErr.Err.Error() == "no such network interface"
 }
 
 func (m Manager) command(ctx context.Context, name string, args ...string) error {

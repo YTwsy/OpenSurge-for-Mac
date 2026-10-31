@@ -567,7 +567,11 @@ func (DirectRunner) ApplyControlConfig(_ context.Context, configPath, revision s
 		return "", fmt.Errorf("privileged helper is required")
 	}
 	var result string
-	err := withConfigurationLifecycleLock(configPath, func() error {
+	// This only saves topology settings. It neither starts a core nor moves
+	// its runtime/profile/cache paths, so a damaged prepared journal must not
+	// prevent repairing the desired configuration. The next start still has
+	// to release the prepared engine before using its resources.
+	err := withConfigurationLock(configPath, false, func() error {
 		var err error
 		result, err = applyControlConfig(configPath, revision, payload)
 		return err
@@ -576,20 +580,26 @@ func (DirectRunner) ApplyControlConfig(_ context.Context, configPath, revision s
 }
 
 func withConfigurationLifecycleLock(configPath string, run func() error) error {
-	lockConfig, err := config.LoadRuntime(configPath)
+	return withConfigurationLock(configPath, true, run)
+}
+
+func withConfigurationLock(configPath string, releasePrepared bool, run func() error) error {
+	lockConfig, err := config.LoadRecovery(configPath)
 	if err != nil {
 		return err
 	}
 	return runtime.WithLifecycleLock(lockConfig, func() error {
-		current, err := config.LoadRuntime(configPath)
+		current, err := config.LoadRecovery(configPath)
 		if err != nil {
 			return err
 		}
 		if filepath.Clean(current.Runtime.Dir) != filepath.Clean(lockConfig.Runtime.Dir) {
 			return fmt.Errorf("runtime.dir changed while configuration update was waiting; retry the update")
 		}
-		if err := mihomo.StopPreparedLocked(current); err != nil {
-			return fmt.Errorf("release prepared engine before configuration update: %w", err)
+		if releasePrepared {
+			if err := mihomo.StopPreparedLocked(current); err != nil {
+				return fmt.Errorf("release prepared engine before configuration update: %w", err)
+			}
 		}
 		return run()
 	})
@@ -605,7 +615,7 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	if err := decoder.Decode(&input); err != nil {
 		return "", err
 	}
-	cfg, err := config.Load(configPath)
+	cfg, err := config.LoadRecovery(configPath)
 	if err != nil {
 		return "", err
 	}

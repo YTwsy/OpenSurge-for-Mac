@@ -18,6 +18,15 @@ beforeEach(async () => {
 })
 afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans'); localStorage.clear(); delete window.__opensurgeWindowVisible })
 
+it('marks incomplete device observations without hiding the gateway status', async () => {
+ const status = { ...fixture.status!, devices_error: 'read DHCP leases: invalid line', client_count: 1 }
+ vi.mocked(desktopAction).mockResolvedValue({ ...fixture, status })
+ render(<TrayApp />)
+ expect(await screen.findByText('Incomplete data')).toBeTruthy()
+ expect(screen.getAllByText('Stopped').length).toBeGreaterThan(0)
+ expect(diagnosticSummary(status)).toContain('Clients: 1 (incomplete: read DHCP leases: invalid line)')
+})
+
 it('opens a separate native menu without mounting its content in the overview', async () => {
  vi.mocked(isDesktop).mockReturnValue(true)
  render(<TrayApp />)
