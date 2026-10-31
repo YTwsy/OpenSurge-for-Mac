@@ -19,6 +19,7 @@ const successMessages: Record<string, string> = {
 const noticeLabels: Record<string, string> = {
   tailscale_warmup_started: 'Tailscale 预热已发起，连接可能尚未就绪；可直接选择出口，首次访问可能需重试。',
   tailscale_warmup_unavailable: '未能发起 Tailscale 预热，但不影响网关操作完成；选择出口后仍由内核按需连接。',
+  system_dns_restore_failed: '系统 DNS 未能恢复，其他操作将继续。请检查系统 DNS 设置。',
 }
 
 export function OperationProgress({ onOpenDiagnostics }: { onOpenDiagnostics: () => void }) {

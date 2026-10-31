@@ -76,6 +76,28 @@ describe('global operation progress', () => {
     expect(screen.queryByLabelText('当前操作进度')).toBeNull()
   })
 
+  it.each([
+    { kind: 'stop', language: 'zh-Hans' },
+    { kind: 'restart-mihomo', language: 'zh-Hans' },
+    { kind: 'stop', language: 'en' },
+    { kind: 'restart-mihomo', language: 'en' },
+  ] as const)('keeps the DNS recovery warning visible when $kind completes in $language', async ({ kind, language }) => {
+    await prepareLanguage(language)
+    activateLanguage(language)
+    begin(kind)
+    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    act(() => recordOperation({ id: 'op-1', kind, state: 'running', notices: ['system_dns_restore_failed'] }))
+    const message = language === 'en'
+      ? 'System DNS could not be restored. Other operations will continue. Please check the system DNS settings.'
+      : '系统 DNS 未能恢复，其他操作将继续。请检查系统 DNS 设置。'
+    expect(screen.getByText(message)).toBeTruthy()
+    expect(screen.getByRole('progressbar')).toBeTruthy()
+    act(() => recordOperation({ id: 'op-1', kind, state: 'succeeded' }))
+    expect(screen.getByText(language === 'en' ? 'Completed' : '已完成')).toBeTruthy()
+    expect(screen.getByText(message)).toBeTruthy()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+  })
+
   it.each(['manual', 'automatic'])('does not reveal an earlier failure after %s dismissal of the latest result', dismissal => {
     begin()
     recordOperation({ id: 'op-1', kind: 'start', state: 'failed', error: 'previous startup failed' })

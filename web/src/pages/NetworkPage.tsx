@@ -505,7 +505,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
               onChange={mac_tun_ipv6 => setConfig({ ...config, transparent: { ...config.transparent, mac_tun_ipv6 } })}
             />
           </ConfigField>
-          <ConfigField label="Mac 系统 DNS" setting="local_system_dns.enabled" hint="在 TUN 自动路由就绪后接管上游网络服务的系统 DNS，停止、回滚或重启代理引擎时恢复原设置。仅当设置仍由 OpenSurge 持有时恢复。mihomo 继续使用配置中的解析器，导入配置不能使用 system 解析器。">
+          <ConfigField label="Mac 系统 DNS" setting="local_system_dns.enabled" hint="启动时备份上游网络服务的系统 DNS，在 TUN 自动路由就绪后接管；停止、回滚或重启代理引擎时按备份恢复。恢复失败不阻断停止，备份会保留供稍后重试。mihomo 继续使用配置中的解析器，导入配置不能使用 system 解析器。">
             <ConfigSwitch
               label="随 TUN 管理 Mac 系统 DNS"
               checked={config.local_system_dns?.enabled ?? true}

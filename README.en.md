@@ -313,9 +313,13 @@ Mac IPv6 TUN routing works independently of downstream takeover. TUN captures
 public IPv6 and the full fake IPv6 pool; `dns.ipv6` only controls AAAA answers.
 `local_system_dns.enabled` defaults to true and manages the upstream network
 service's DNS after automatic TUN routes are ready. Stop and engine restart
-restore the original DNS while preserving external changes. Disable it with
-the Web GUI's “Mac system DNS” setting. Imported profiles must use explicit
-DNS resolvers: `system` would create a resolver loop and is rejected.
+restore the saved original DNS, replacing changes made by other software or the
+user during takeover. If the original network service has been deleted, recovery
+skips it without changing a new service with the same name. Recovery failures
+produce warnings and keep an independent backup for retry while other gateway
+cleanup continues. Disable it with the Web GUI's “Mac system DNS” setting.
+Imported profiles must use explicit DNS resolvers: `system` would create a
+resolver loop and is rejected.
 
 ### Downstream IPv6 takeover (experimental)
 

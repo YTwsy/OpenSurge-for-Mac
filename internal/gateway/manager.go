@@ -258,18 +258,6 @@ func (m Manager) localSystemDNS(deps gatewayDeps) localSystemDNSService {
 	return macosnetwork.SystemDNS{}
 }
 
-func (m Manager) restoreSystemDNS(ctx context.Context, deps gatewayDeps, state runtime.State) (bool, error) {
-	if state.LocalSystemDNS == nil || !state.LocalSystemDNS.Owned {
-		return false, nil
-	}
-	ReportProgress(ctx, "restoring_system_dns")
-	owned, err := m.localSystemDNS(deps).Restore(ctx, *state.LocalSystemDNS)
-	if err != nil {
-		return owned, fmt.Errorf("restore Mac system DNS: %w", err)
-	}
-	return owned, nil
-}
-
 func currentBoot(deps gatewayDeps) (runtime.BootSession, error) {
 	if deps.currentBoot != nil {
 		return deps.currentBoot()
@@ -413,7 +401,7 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 	}
 	var systemDNSSnapshot *runtime.SystemDNSSnapshot
 	if m.cfg.ManageSystemDNS() {
-		snapshot, err := m.localSystemDNS(deps).Prepare(ctx, m.cfg.Gateway.UpstreamInterface)
+		snapshot, err := m.prepareSystemDNS(ctx, deps)
 		if err != nil {
 			return fmt.Errorf("prepare Mac system DNS: %w", err)
 		}
@@ -624,6 +612,9 @@ func (m Manager) startWithCommit(ctx context.Context, commit func() error) error
 			state.LocalSystemDNS.Owned = false
 			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 		}
+		if err := m.backupSystemDNS(*state.LocalSystemDNS); err != nil {
+			return m.rollback(ctx, err, state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
+		}
 		if err := m.localSystemDNS(deps).Enable(ctx, *state.LocalSystemDNS); err != nil {
 			return m.rollback(ctx, fmt.Errorf("enable Mac system DNS: %w", err), state, dhcpManager, mihomoManager, pfManager, sysctlManager, systemProxyManager, false)
 		}
@@ -778,12 +769,9 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 	if err := mihomoManager.ValidateWrittenConfig(); err != nil {
 		return fmt.Errorf("prepared mihomo config validation failed: %w", err)
 	}
-	// Restore DNS while the old TUN still exists. A failed restart must never
-	// leave the public capture address installed as the Mac's DNS resolver.
-	reapplyDNS, err := m.restoreSystemDNS(ctx, deps, state)
-	if err != nil {
-		return err
-	}
+	// Try restoring before the old TUN exits, but do not let a DNS failure
+	// prevent replacement of the engine. Keep the original backup throughout.
+	reapplyDNS := m.restoreSystemDNSForRestart(ctx, deps, state)
 	if state.LocalSystemDNS != nil {
 		state.LocalSystemDNS.VerifiedAt = time.Time{}
 		if !reapplyDNS {
@@ -840,14 +828,17 @@ func (m Manager) restartMihomo(ctx context.Context) error {
 	}
 	if reapplyDNS && state.LocalSystemDNS != nil {
 		ReportProgress(ctx, "enabling_system_dns")
+		if err := m.backupSystemDNS(*state.LocalSystemDNS); err != nil {
+			return err
+		}
 		if err := m.localSystemDNS(deps).Enable(ctx, *state.LocalSystemDNS); err != nil {
-			_, restoreErr := m.restoreSystemDNS(context.WithoutCancel(ctx), deps, state)
-			return errors.Join(fmt.Errorf("reapply Mac DNS after mihomo restart: %w", err), restoreErr)
+			m.restoreSystemDNSForRestart(context.WithoutCancel(ctx), deps, state)
+			return fmt.Errorf("reapply Mac DNS after mihomo restart: %w", err)
 		}
 		state.LocalSystemDNS.VerifiedAt = deps.now()
 		if err := deps.saveState(m.paths.StateFile, state); err != nil {
-			_, restoreErr := m.restoreSystemDNS(context.WithoutCancel(ctx), deps, state)
-			return errors.Join(err, restoreErr)
+			m.restoreSystemDNSForRestart(context.WithoutCancel(ctx), deps, state)
+			return err
 		}
 	}
 	m.warmManagedTailscale(ctx, deps)
@@ -975,10 +966,8 @@ func (m Manager) stop(ctx context.Context) error {
 	var cleanupErr error
 	pfManager := deps.newPF(m.cfg, m.paths)
 	sysctlManager := deps.newSysctl()
+	m.restoreSystemDNSBackups(ctx, deps, state)
 	if exists {
-		if _, err := m.restoreSystemDNS(ctx, deps, state); err != nil {
-			return err
-		}
 		if state.LocalSystemProxy != nil {
 			ReportProgress(ctx, "restoring_system_proxy")
 			if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
@@ -1049,9 +1038,7 @@ func (m Manager) cleanupIPv6(ctx context.Context, deps gatewayDeps, state runtim
 }
 
 func (m Manager) cleanupInterruptedRuntime(ctx context.Context, deps gatewayDeps, state runtime.State) error {
-	if _, err := m.restoreSystemDNS(ctx, deps, state); err != nil {
-		return err
-	}
+	m.restoreSystemDNSBackups(ctx, deps, state)
 	if state.LocalSystemProxy != nil {
 		ReportProgress(ctx, "restoring_system_proxy")
 		if err := m.localSystemProxy(deps).Restore(ctx, *state.LocalSystemProxy); err != nil {
@@ -1179,9 +1166,7 @@ func (m Manager) rollback(ctx context.Context, cause error, state runtime.State,
 	ReportProgress(ctx, "rolling_back")
 	deps := m.gatewayDeps()
 	var cleanupErr error
-	if _, err := m.restoreSystemDNS(ctx, deps, state); err != nil {
-		return fmt.Errorf("%w; rollback could not restore Mac system DNS; gateway services and state retained for recovery: %v", cause, err)
-	}
+	m.restoreSystemDNSBackups(ctx, deps, state)
 	if restoreSystemProxy && state.LocalSystemProxy != nil {
 		if err := systemProxyManager.Restore(ctx, *state.LocalSystemProxy); err != nil {
 			return fmt.Errorf("%w; rollback could not restore the local system proxy, so gateway services were left running for recovery: %v", cause, err)
