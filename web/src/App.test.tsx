@@ -713,7 +713,7 @@ describe('OpenSurge app shell', () => {
     expect((screen.getByRole('button', { name: '保存网络配置' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.queryByRole('button', { name: '正在保存…' })).toBeNull()
     await act(async () => completeStart())
-    expect(await screen.findByText('旁路由模式已启动。')).toBeTruthy()
+    expect(await screen.findByText('OpenSurge 已完成旁路由模式启动。')).toBeTruthy()
     expect(screen.getByText('启动网关成功')).toBeTruthy()
   })
 
@@ -729,7 +729,8 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(await screen.findByRole('button', { name: '启动旁路由模式' }))
 
     expect(await screen.findByText('启动网关失败')).toBeTruthy()
-    expect(screen.getAllByText('TUN readiness check failed')).toHaveLength(2)
+    expect(screen.getAllByText('TUN readiness check failed')).toHaveLength(1)
+    expect(within(screen.getByRole('complementary', { name: '操作结果通知' })).getByText('TUN readiness check failed')).toBeTruthy()
   })
 
   it('shows a result notification after stopping a directly controlled gateway', async () => {
@@ -745,6 +746,102 @@ describe('OpenSurge app shell', () => {
     expect(api.gateway).toHaveBeenCalledWith('stop')
     expect(waitForOperation).toHaveBeenCalledWith('stop-same-lan')
     expect(await screen.findByText('停止网关成功')).toBeTruthy()
+  })
+
+  it('reports network save success in the shared notification area', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('isolated_lan'))
+    vi.mocked(api.saveConfig).mockImplementationOnce(async config => ({ ...config, revision: 'saved-network' }))
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+
+    const address = await screen.findByLabelText('Mac 网关 IPv4')
+    fireEvent.change(address, { target: { value: '192.168.1.21' } })
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    const notifications = await screen.findByRole('complementary', { name: '操作结果通知' })
+    expect(await within(notifications).findByText('网络配置已保存，将在下次启动网关时使用。')).toBeTruthy()
+    expect(screen.getAllByText('网络配置已保存，将在下次启动网关时使用。')).toHaveLength(1)
+    expect(screen.getByText('当前配置已保存')).toBeTruthy()
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
+  it('keeps rejected network edits while showing one dismissible validation error', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('isolated_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('isolated_lan'))
+    vi.mocked(api.saveConfig).mockRejectedValueOnce(new Error('DHCP pool must exclude the gateway address'))
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+
+    const address = await screen.findByLabelText('Mac 网关 IPv4')
+    fireEvent.change(address, { target: { value: '192.168.1.101' } })
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    const notifications = await screen.findByRole('complementary', { name: '操作结果通知' })
+    expect(await within(notifications).findByText('DHCP pool must exclude the gateway address')).toBeTruthy()
+    expect(screen.getAllByText('DHCP pool must exclude the gateway address')).toHaveLength(1)
+    expect((address as HTMLInputElement).value).toBe('192.168.1.101')
+    expect(screen.getByText('有未保存的修改')).toBeTruthy()
+    await userEvent.click(within(notifications).getByRole('button', { name: '关闭通知：保存网络配置失败' }))
+    expect(screen.queryByText('DHCP pool must exclude the gateway address')).toBeNull()
+  })
+
+  it('distinguishes a saved config from a failed follow-up network check', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_wifi_dhcp', 'stopped'))
+    vi.mocked(api.saveConfig).mockImplementationOnce(async config => ({ ...config, revision: 'saved-network' }))
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+    await screen.findByText('当前网络快照')
+    vi.mocked(api.gatewayPlan).mockRejectedValueOnce(new Error('Network snapshot unavailable'))
+    fireEvent.change(screen.getByLabelText('Mac 网关 IPv4'), { target: { value: '192.168.1.21' } })
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+
+    const notifications = await screen.findByRole('complementary', { name: '操作结果通知' })
+    expect(await within(notifications).findByText('网络配置已保存，检查未完成')).toBeTruthy()
+    expect(screen.queryByText('保存网络配置失败')).toBeNull()
+    expect(screen.getByText('当前配置已保存')).toBeTruthy()
+  })
+
+  it('keeps network refill progress on its button and reports failure outside the form', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_lan', 'stopped'))
+    vi.mocked(api.config).mockResolvedValue(configFor('same_lan'))
+    let rejectDefaults!: (reason: Error) => void
+    vi.mocked(api.networkDefaults).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectDefaults = reject }))
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '根据当前网络重新填入' }))
+
+    const loading = screen.getByRole('button', { name: '正在读取当前主网络…' })
+    expect(loading.getAttribute('aria-busy')).toBe('true')
+    expect(screen.getAllByText('正在读取当前主网络…')).toHaveLength(1)
+    await act(async () => rejectDefaults(new Error('No active interface')))
+
+    const notifications = await screen.findByRole('complementary', { name: '操作结果通知' })
+    expect(within(notifications).getByText(/无法自动填写当前网络：No active interface/)).toBeTruthy()
+    expect((screen.getByLabelText('Mac 网关 IPv4') as HTMLInputElement).value).toBe('192.168.1.20')
+    expect(screen.getByRole('button', { name: '根据当前网络重新填入' }).getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('groups network plan checks while retaining the takeover blocker', async () => {
+    vi.mocked(api.overview).mockResolvedValue(overviewFor('same_wifi_dhcp', 'stopped'))
+    vi.mocked(api.gatewayPlan).mockResolvedValueOnce({
+      schema_version: 1, revision: 'config-revision', topology: 'same_wifi_dhcp',
+      snapshot: { network_service: 'Wi-Fi', interface: 'en0', ipv4: '192.168.1.20', subnet_mask: '255.255.255.0', router: '192.168.1.1', dns: [], ipv6_default: false },
+      protected_ipv4: [], dhcp_servers: [], warnings: ['Verify the router settings'], blockers: ['Resolve the conflicting DHCP server'],
+    })
+    window.history.replaceState({}, '', '/network')
+    render(<App />)
+
+    const title = await screen.findByText('当前网络检查')
+    const checks = title.closest('details')!
+    expect(checks.open).toBe(false)
+    expect(within(checks).getByText('1 项需处理')).toBeTruthy()
+    expect(within(checks).getByText('1 项提醒')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '保存网络快照与离线恢复卡' }).hasAttribute('disabled')).toBe(true)
+    await userEvent.click(title.closest('summary')!)
+    expect(checks.open).toBe(true)
+    expect(within(checks).getByText('Resolve the conflicting DHCP server')).toBeTruthy()
+    expect(within(checks).getByText('Verify the router settings')).toBeTruthy()
   })
 
   it('offers DHCP takeover abandonment after the Mac becomes static', async () => {
@@ -1693,7 +1790,10 @@ describe('OpenSurge app shell', () => {
     await screen.findByRole('heading', { name: '全屋网关，一眼可见' })
     await userEvent.click(screen.getByRole('button', { name: '代理与规则源' }))
     await userEvent.click(await screen.findByRole('button', { name: '刷新草稿' }))
-    expect(await screen.findByText('Home 已刷新；新内容已保存为草稿。')).toBeTruthy()
+    const notifications = await screen.findByRole('complementary', { name: '操作结果通知' })
+    expect(within(notifications).getByText('Home 已刷新；新内容已保存为草稿。')).toBeTruthy()
+    expect(document.querySelector('.source-feedback')).toBeNull()
+    expect(api.applySource).not.toHaveBeenCalled()
   })
 
   it('shows managed snapshot actions and reveals an exported editable copy in Finder', async () => {
@@ -1828,7 +1928,7 @@ describe('OpenSurge app shell', () => {
     expect(api.applySource).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: '校验并应用自定义 DNS' }))
     await userEvent.click(screen.getByRole('button', { name: '确认应用并重载' }))
-    await within(document.querySelector('.source-feedback') as HTMLElement).findByText('candidate validation failed')
+    await within(screen.getByRole('complementary', { name: '操作结果通知' })).findByText('candidate validation failed')
     expect((editor as HTMLTextAreaElement).value).toBe('hosts: {nas.home.arpa: 192.0.2.10}')
     expect(screen.getByText('自定义 DNS 待应用')).toBeTruthy()
   })
