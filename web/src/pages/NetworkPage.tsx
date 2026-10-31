@@ -6,6 +6,7 @@ import { RecoveryCardLinks } from '../components/RecoveryCardLinks'
 import { Mode, PageHeader, SectionTitle } from '../components/Common'
 import { NetworkModeDetail } from '../components/NetworkModeDetail'
 import type { OperationNotification } from '../components/OperationNotifications'
+import { ValidationSummary } from '../components/ValidationSummary'
 import { recoveryLabel } from '../status'
 import type { ControlConfig, DevicePolicyDocument, GatewayPlan, NetworkDefaults, NetworkInterfaceOption, Overview, PolicyDevice, PolicySet } from '../types'
 import { t } from '../i18n'
@@ -45,8 +46,7 @@ type PolicyMigration = {
 export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenCustomDNS }: { overview: Overview | null; onChanged: () => Promise<void>; onNavigate: (page: 'devices') => void; onNotify: (notification: OperationNotification) => void; onOpenCustomDNS: () => void }) {
   const [busy, setBusy] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [plan, setPlan] = useState<GatewayPlan | null>(null)
   const [planSettled, setPlanSettled] = useState(false)
   const [config, setConfig] = useState<ControlConfig | null>(null)
@@ -60,8 +60,6 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
   const [interfaceDiscoveryError, setInterfaceDiscoveryError] = useState(false)
   const [initialNetworkSetup, setInitialNetworkSetup] = useState(false)
   const [networkDefaultsBusy, setNetworkDefaultsBusy] = useState(false)
-  const [networkDefaultsMessage, setNetworkDefaultsMessage] = useState('')
-  const [networkDefaultsError, setNetworkDefaultsError] = useState('')
   const [clientIPv4, setClientIPv4] = useState('')
   const [clientConfirmed, setClientConfirmed] = useState(false)
   const [ipv6Acknowledged, setIPv6Acknowledged] = useState(false)
@@ -85,6 +83,10 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
   const router = plan?.snapshot.router || recoverySnapshot?.router || ''
   const networkService = plan?.snapshot.network_service || recoverySnapshot?.network_service || 'Wi-Fi'
 
+  const notifyError = (title: string, cause: unknown) => onNotify({
+    tone: 'error', title, message: cause instanceof Error ? cause.message : String(cause),
+  })
+
   useEffect(() => {
     if (current === 'gateway_active') return
     setClientIPv4(''); setClientConfirmed(false); setIPv6Acknowledged(false); setClientCheckError('')
@@ -93,8 +95,9 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
   const loadPlan = useCallback(async (next: ControlConfig) => {
     setPlanSettled(false)
     try {
-      if (next.gateway.mode !== 'same_wifi_dhcp') { setPlan(null); return }
+      if (next.gateway.mode !== 'same_wifi_dhcp') { setPlan(null); setLoadError(''); return }
       setPlan(await api.gatewayPlan(false))
+      setLoadError('')
     } finally {
       setPlanSettled(true)
     }
@@ -102,7 +105,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
 
   useEffect(() => {
     let active = true
-    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setProtectedIPv4Draft(value.device_policy.protected_ipv4.join(', ')); setInitialNetworkSetup(isInstallerNetworkSeed(value)); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)) })
+    void api.config().then(value => { if (active) { setConfig(value); setSavedConfig(value); setProtectedIPv4Draft(value.device_policy.protected_ipv4.join(', ')); setInitialNetworkSetup(isInstallerNetworkSeed(value)); setExpandedMode(value.gateway.mode); setDetailMode(value.gateway.mode) }; return active ? loadPlan(value) : undefined }).catch(cause => { if (active) setLoadError(cause instanceof Error ? cause.message : String(cause)) })
     void api.networkInterfaces().then(value => { if (active) setInterfaceOptions(value.interfaces) }).catch(() => { if (active) setInterfaceDiscoveryError(true) })
     return () => { active = false }
   }, [loadPlan])
@@ -142,7 +145,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
   })
 
   const applyNetworkDefaults = async (mode: NetworkDefaults['mode']) => {
-    setNetworkDefaultsBusy(true); setNetworkDefaultsError(''); setNetworkDefaultsMessage('')
+    setNetworkDefaultsBusy(true)
     try {
       const defaults = await api.networkDefaults(mode)
       if (defaults.blockers.length) throw new Error(defaults.blockers.join('；'))
@@ -172,10 +175,10 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
       })
       const warning = defaults.warnings.length ? ` ${defaults.warnings.join('；')}。` : ''
       const fields = t(mode === 'same_wifi_dhcp' ? 'IPv4、子网前缀、地址池和主路由建议值' : 'IPv4 与子网前缀建议值')
-      setNetworkDefaultsMessage(t('已根据当前 {{service}}（{{interface}}）填入 {{fields}}，尚未保存。{{warning}}', { service: defaults.snapshot.network_service, interface: defaults.snapshot.interface, fields, warning }))
+      onNotify({ tone: 'success', title: t('网络建议值已填入'), message: t('已根据当前 {{service}}（{{interface}}）填入 {{fields}}，尚未保存。{{warning}}', { service: defaults.snapshot.network_service, interface: defaults.snapshot.interface, fields, warning }) })
     } catch (cause) {
       const fields = t(mode === 'same_lan' ? '接口和 IPv4' : '接口、IPv4、地址池、主路由网关和 DNS')
-      setNetworkDefaultsError(t('无法自动填写当前网络：{{error}}。请手工确认{{fields}}。', { error: cause instanceof Error ? cause.message : String(cause), fields }))
+      notifyError(t('自动填写网络失败'), t('无法自动填写当前网络：{{error}}。请手工确认{{fields}}。', { error: cause instanceof Error ? cause.message : String(cause), fields }))
     } finally {
       setNetworkDefaultsBusy(false)
     }
@@ -184,7 +187,6 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
   const toggleMode = (mode: NetworkMode) => {
     setDetailMode(mode)
     setExpandedMode(currentMode => currentMode === mode ? null : mode)
-    if (mode === 'isolated_lan') { setNetworkDefaultsMessage(''); setNetworkDefaultsError('') }
     if (config?.gateway.mode !== mode) {
       selectMode(mode)
       if (initialNetworkSetup && mode !== 'isolated_lan') void applyNetworkDefaults(mode)
@@ -192,27 +194,33 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
   }
 
   const persistConfig = async (target: ControlConfig, migration?: PolicyMigration) => {
-    setBusy(true); setConfigSaving(true); setError(''); setMessage('')
+    setBusy(true); setConfigSaving(true)
     let policySaved = false
+    let configSaved = false
     try {
       if (migration?.resolved.length) {
         await api.saveDevicePolicy(migration.policy, migration.document.revision)
         policySaved = true
       }
       const updated = await api.saveConfig({ ...target, device_policy: { ...target.device_policy, enabled: true } })
+      configSaved = true
       setConfig(updated); setSavedConfig(updated); setPolicyMigration(null)
       setProtectedIPv4Draft(updated.device_policy.protected_ipv4.join(', '))
-      setInitialNetworkSetup(false); setNetworkDefaultsMessage(''); setNetworkDefaultsError('')
+      setInitialNetworkSetup(false)
       await onChanged(); await loadPlan(updated)
+      const messages = [t('网络配置已保存，将在下次启动网关时使用。')]
       if (migration) {
-        const messages = []
         if (migration.resolved.length) messages.push(t('已为 {{count}} 台设备补充 MAC', { count: migration.resolved.length }))
         if (migration.unresolved.length) messages.push(t('{{count}} 台设备策略已暂停', { count: migration.unresolved.length }))
-        setMessage(`${messages.join('；')}。`)
       }
+      onNotify({ tone: 'success', title: t('网络配置已保存'), message: messages.join(' ') })
     } catch (cause) {
       const failure = cause instanceof Error ? cause.message : String(cause)
-      setError(policySaved ? t('设备 MAC 已保存，但网络配置切换失败：{{error}}', { error: failure }) : failure)
+      if (configSaved) {
+        notifyError(t('网络配置已保存，检查未完成'), t('配置已经保存，但无法刷新当前网络检查：{{error}}', { error: failure }))
+      } else {
+        notifyError(t('保存网络配置失败'), policySaved ? t('设备 MAC 已保存，但网络配置切换失败：{{error}}', { error: failure }) : failure)
+      }
     }
     finally { setBusy(false); setConfigSaving(false) }
   }
@@ -224,7 +232,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
       await persistConfig(config)
       return
     }
-    setBusy(true); setError(''); setMessage('')
+    setBusy(true)
     try {
       const document = await api.devicePolicy()
       const missing = document.policy.devices.filter(device => !device.mac.trim())
@@ -250,28 +258,25 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
       }
       setPolicyMigration({ target: structuredClone(config), document, policy: nextPolicy, resolved, unresolved })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      notifyError(t('保存网络配置失败'), cause)
     } finally { setBusy(false) }
   }
 
   const controlGateway = async (action: 'start' | 'stop') => {
     if (!config || config.gateway.mode === 'same_wifi_dhcp') return
     if (action === 'start' && configDirty) {
-      setError(t('网络配置尚未保存。请先保存配置，再启动网关。'))
+      notifyError(t('启动网关失败'), t('网络配置尚未保存。请先保存配置，再启动网关。'))
       return
     }
     if (!window.confirm(gatewayConfirmation(config.gateway.mode, action))) return
-    setBusy(true); setError(''); setMessage('')
+    setBusy(true)
     try {
       const operation = await api.gateway(action)
       await waitForOperation(operation.id)
       await onChanged()
-      const result = action === 'start' ? t('{{mode}}已启动。', { mode: gatewayModeLabel(config.gateway.mode) }) : t('{{mode}}已停止。', { mode: gatewayModeLabel(config.gateway.mode) })
-      setMessage(result)
       onNotify({ tone: 'success', title: t(action === 'start' ? '启动网关成功' : '停止网关成功'), message: action === 'start' ? t('OpenSurge 已完成{{mode}}启动。', { mode: gatewayModeLabel(config.gateway.mode) }) : t('OpenSurge 已完成{{mode}}停止。', { mode: gatewayModeLabel(config.gateway.mode) }) })
     } catch (cause) {
       const failure = cause instanceof Error ? cause.message : String(cause)
-      setError(failure)
       onNotify({ tone: 'error', title: t(action === 'start' ? '启动网关失败' : '停止网关失败'), message: failure })
     }
     finally { setBusy(false) }
@@ -280,7 +285,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
   const cleanupInterruptedRuntime = async () => {
     if (!config || !gatewayInterrupted) return
     if (!window.confirm(t('确认安全清理上次运行留下的状态吗？OpenSurge 不会向旧 PID 发送信号，也不会更改本次开机的 PF 或 IPv4 forwarding。如果上次运行启用了系统代理协同，将恢复为 OpenSurge 启动前保存的状态。'))) return
-    setBusy(true); setError(''); setMessage('')
+    setBusy(true)
     try {
       const operation = await api.gateway('stop')
       await waitForOperation(operation.id)
@@ -288,11 +293,9 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
       const result = config.gateway.mode === 'same_wifi_dhcp'
         ? t('旧状态已安全清理。请继续完成路由器 DHCP 与 Mac 网络恢复。')
         : t('旧状态已安全清理。现在可以重新启动{{mode}}。', { mode: gatewayModeLabel(config.gateway.mode) })
-      setMessage(result)
-      onNotify({ tone: 'success', title: t('旧网关状态清理成功'), message: t('上次运行遗留的 runtime 已完成安全清理。') })
+      onNotify({ tone: 'success', title: t('旧网关状态清理成功'), message: result })
     } catch (cause) {
       const failure = cause instanceof Error ? cause.message : String(cause)
-      setError(failure)
       onNotify({ tone: 'error', title: t('旧网关状态清理失败'), message: failure })
     }
     finally { setBusy(false) }
@@ -300,7 +303,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
 
   const advance = async () => {
     if (configDirty && !takeoverRunning) {
-      setError(t('网络配置尚未保存。请先保存配置；若恢复资料已准备，保存会清除该预备卡并从第 1 步重新开始。'))
+      notifyError(t('操作未完成'), t('网络配置尚未保存。请先保存配置；若恢复资料已准备，保存会清除该预备卡并从第 1 步重新开始。'))
       return
     }
     const lifecycleAction = current === 'router_dhcp_disabled_confirmed'
@@ -309,7 +312,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
         ? 'stop'
         : null
     if (lifecycleAction === 'stop' && !window.confirm(gatewayConfirmation('same_wifi_dhcp', 'stop'))) return
-    setBusy(true); setError('')
+    setBusy(true)
     try {
       switch (current) {
       case 'idle': case 'complete': case 'complete_static': await api.prepareRecovery(); break
@@ -330,41 +333,40 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
       if (lifecycleAction === 'stop') onNotify({ tone: 'success', title: t('停止网关成功'), message: t('网关已停止，请继续恢复路由器 DHCP 与 Mac 网络。') })
     } catch (cause) {
       const failure = cause instanceof Error ? cause.message : String(cause)
-      setError(failure)
-      if (lifecycleAction) onNotify({ tone: 'error', title: t(lifecycleAction === 'start' ? '启动网关失败' : '停止网关失败'), message: failure })
+      notifyError(t(lifecycleAction ? lifecycleAction === 'start' ? '启动网关失败' : '停止网关失败' : '操作未完成'), failure)
     }
     finally { setBusy(false) }
   }
 
   const discardRecovery = async () => {
     if (!window.confirm(t('确定要放弃这次恢复准备吗？这会永久销毁已保存的网络快照与离线恢复卡，并回到未开始状态。'))) return
-    setBusy(true); setError('')
+    setBusy(true)
     try {
       await api.discardRecovery()
       await onChanged()
       if (config) await loadPlan(config)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    } catch (cause) { notifyError(t('操作未完成'), cause) }
     finally { setBusy(false) }
   }
 
   const abandonTakeover = async () => {
     if (!window.confirm(t('放弃本次局域网 DHCP 接管？OpenSurge 会先探测可用 DHCP：若有 OFFER，就把 Mac 恢复为自动 DHCP；若没有，就保留当前固定 IPv4 并结束流程。后一种情况不会确认路由器 DHCP 或其他设备的自动获取能力。'))) return
-    setBusy(true); setError(''); setMessage('')
+    setBusy(true)
     try {
       await api.abandonTakeover()
       await onChanged()
-      setMessage(t('已放弃 DHCP 接管；网关停止后，菜单栏中的“退出 OpenSurge”可用。'))
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+      onNotify({ tone: 'success', title: t('DHCP 接管已放弃'), message: t('已放弃 DHCP 接管；网关停止后，菜单栏中的“退出 OpenSurge”可用。') })
+    } catch (cause) { notifyError(t('操作未完成'), cause) }
     finally { setBusy(false) }
   }
 
   const finishRecoveryManually = async () => {
     if (!window.confirm(t('仅在你已经确认路由器 DHCP 重新开启时使用。OpenSurge 将跳过 OFFER 证据并立即把 Mac 恢复为自动 DHCP；如果路由器 DHCP 实际未恢复，Mac 可能断网。仍要继续吗？'))) return
-    setBusy(true); setError('')
+    setBusy(true)
     try {
       await api.finishRecoveryManually()
       await onChanged()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    } catch (cause) { notifyError(t('操作未完成'), cause) }
     finally { setBusy(false) }
   }
 
@@ -379,18 +381,17 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
 
   const finishKeepingStatic = async () => {
     if (!window.confirm(t('OpenSurge 将结束恢复流程，但不会探测路由器 DHCP，也不会把 Mac 切回自动 DHCP。请确认当前静态 IPv4、路由器和 DNS 可长期使用；其他客户端需要有效静态配置或另一个 DHCP 服务器。仍要保留静态 IP 并结束吗？'))) return
-    setBusy(true); setError('')
+    setBusy(true)
     try {
       await api.finishRecoveryKeepingStatic()
       await onChanged()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    } catch (cause) { notifyError(t('操作未完成'), cause) }
     finally { setBusy(false) }
   }
 
   return <>
     <PageHeader eyebrow="NETWORK" title="网络与 DHCP 接管" description="选择设备如何接入 OpenSurge，并保存下次启动时使用的网络配置。使用 DHCP 接管时，OpenSurge 会引导你完成设置、确认和恢复。" />
-    {error && <div className="notice warn" role="alert">{error}</div>}
-    {message && <div className="notice ok-notice" role="status">{message}</div>}
+    {loadError && <div className="notice warn" role="alert">{loadError}</div>}
     {config && <>
       <div className="mode-grid">
         <Mode title="局域网 DHCP 接管" badge="自动接管" active={config.gateway.mode === 'same_wifi_dhcp'} expanded={expandedMode === 'same_wifi_dhcp'} controls="network-mode-detail" disabled={!configurationEditable} onSelect={() => toggleMode('same_wifi_dhcp')} description="现有局域网 · 设备自动接入" />
@@ -405,11 +406,8 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
         <fieldset disabled={!configurationEditable} style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
           <div className="network-config-guide"><strong>{t('填写顺序')}</strong><p>{t('先选择上方网络模式，再填写接口与 IPv4。Mac 网关 IPv4 同时也是下游 DNS 的监听地址。保存不会立即改动网络；保存后的配置会在启动网关时应用。恢复资料已准备但网络尚未改动时仍可修正配置，保存后会从第 1 步重新开始。')}</p></div>
           {initialNetworkSetup && <div className="notice">{t('首次设置：选择旁路由模式或局域网 DHCP 接管后，OpenSurge 会读取当前主网络并填入未保存的建议值；独立下游 LAN 保持手工配置。')}</div>}
-          {networkDefaultsBusy && <div className="notice" role="status">{t('正在读取当前主网络…')}</div>}
-          {networkDefaultsMessage && <div className="notice ok-notice" role="status">{networkDefaultsMessage}</div>}
-          {networkDefaultsError && <div className="notice warn" role="alert">{networkDefaultsError}</div>}
           {config.gateway.mode !== 'isolated_lan' && <div className="network-defaults-refill">
-            <button type="button" className="text-link" onClick={() => void applyNetworkDefaults(config.gateway.mode as NetworkDefaults['mode'])}>{t('根据当前网络重新填入')}</button>
+            <button type="button" className="text-link" aria-busy={networkDefaultsBusy} onClick={() => void applyNetworkDefaults(config.gateway.mode as NetworkDefaults['mode'])}>{networkDefaultsBusy ? <><span className="button-spinner" aria-hidden="true" />{t('正在读取当前主网络…')}</> : t('根据当前网络重新填入')}</button>
             <small>{config.gateway.mode === 'same_wifi_dhcp'
               ? t('重新读取 Mac 当前主网络，覆盖下面尚未保存的接口、Mac 网关 IPv4、子网前缀、DHCP 地址池和主路由建议值。换网络或换网段后用它对齐。')
               : t('重新读取 Mac 当前主网络，覆盖下面尚未保存的接口、Mac 网关 IPv4 和子网前缀。换网络或换网段后用它对齐。')}</small>
@@ -580,7 +578,7 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
       {plan && <section className="section">
         <SectionTitle title="当前网络快照" subtitle={`${plan.snapshot.network_service} · ${plan.snapshot.interface}`} />
         <div className="inventory"><span>Mac {plan.snapshot.ipv4}</span>{plan.snapshot.router && <span>Router <RouterAddress router={plan.snapshot.router} showHint /></span>}<span>{plan.snapshot.ipv6_default ? 'IPv6 default active' : 'No IPv6 default'}</span><span>{plan.protected_ipv4.length} protected IPv4</span></div>
-        {plan.blockers.map(item => <div className="notice warn" key={item}>{item}</div>)}{plan.warnings.map(item => <div className="notice" key={item}>{item}</div>)}
+        <ValidationSummary title="当前网络检查" blockers={plan.blockers} warnings={plan.warnings} />
       </section>}
       {recoverySnapshot && <section className="section recovery-card">
         <SectionTitle title="已保存的恢复资料" subtitle="这是切换网络前保存的原始配置；即使当前网络状态随后改变，也以这里的内容作为恢复依据。" />

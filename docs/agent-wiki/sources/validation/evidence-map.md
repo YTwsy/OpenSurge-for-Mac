@@ -62,7 +62,7 @@ host-network 通过证据。单元回归也不证明
 后续恢复修复已拆分旧配置读取与新候选验证，prepared 清理错误不再阻止 Helper 监听，
 DHCP 恢复跳过无关策略草稿，租约错误独立于生命周期状态；Mihomo 重启不再要求
 dnsmasq 二进制或未应用策略文件，明确消失的下游接口不再阻止 IPv6 本地清理。范围见
-[Issue #107 修复与校验审查](../../tasks/issue-107-dns-recovery-and-validation-audit.md)。
+[Issue #107 修复与校验审查](../../tasks/finished_archived/issue-107-dns-recovery-and-validation-audit.md)。
 这些改动已有隔离回归，仍需 host-network/TUN 及对应拓扑的 IPv6 门槛复验；不能把
 单元测试或旧 Lab 通过记录扩展为真实接口拔插、客户端撤销和系统重启均已验收。
 配置语法/类型损坏、未知进程身份及未建立完整 applied 配置清单的限制仍保留。

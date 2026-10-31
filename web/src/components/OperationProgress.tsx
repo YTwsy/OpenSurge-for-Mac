@@ -2,7 +2,8 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { waitForOperation, watchOperations } from '../api'
 import { t } from '../i18n'
 import { operationPhaseLabel } from '../status'
-import { dismissOperation, getOperations, markOperationConnection, subscribeOperations } from '../operations'
+import { claimOperationNotice, dismissOperation, getOperations, markOperationConnection, subscribeOperations } from '../operations'
+import type { OperationNotification } from './OperationNotifications'
 
 
 const kindLabels: Record<string, string> = {
@@ -19,14 +20,31 @@ const successMessages: Record<string, string> = {
 const noticeLabels: Record<string, string> = {
   tailscale_warmup_started: 'Tailscale 预热已发起，连接可能尚未就绪；可直接选择出口，首次访问可能需重试。',
   tailscale_warmup_unavailable: '未能发起 Tailscale 预热，但不影响网关操作完成；选择出口后仍由内核按需连接。',
-  ipv6_withdrawal_unavailable: '下游接口不可用，未能发送 IPv6 撤销通告。本地清理继续，客户端旧路由和 DNS 可能要等待有效期结束。',
-  system_dns_restore_failed: '系统 DNS 未能恢复，其他操作将继续。请检查系统 DNS 设置。',
 }
 
-export function OperationProgress({ onOpenDiagnostics }: { onOpenDiagnostics: () => void }) {
+const recoveryNotices: Record<string, OperationNotification> = {
+  ipv6_withdrawal_unavailable: {
+    tone: 'error', title: 'IPv6 撤销通告未发送',
+    message: '下游接口不可用，未能发送 IPv6 撤销通告。本地清理继续，客户端旧路由和 DNS 可能要等待有效期结束。',
+  },
+  system_dns_restore_failed: {
+    tone: 'error', title: '系统 DNS 恢复未完成',
+    message: '系统 DNS 未能恢复，其他操作将继续。请检查系统 DNS 设置。',
+  },
+}
+
+export function OperationProgress({ onOpenDiagnostics, onNotify }: { onOpenDiagnostics: () => void; onNotify: (notification: OperationNotification) => void }) {
   const operations = useSyncExternalStore(subscribeOperations, getOperations)
   const [now, setNow] = useState(Date.now)
   useEffect(() => watchOperations(), [])
+  useEffect(() => {
+    for (const operation of operations) {
+      for (const notice of operation.notices ?? []) {
+        const notification = recoveryNotices[notice]
+        if (notification && claimOperationNotice(operation.id, notice)) onNotify(notification)
+      }
+    }
+  }, [operations, onNotify])
 
   const newestFirst = [...operations].reverse().sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))
   const active = newestFirst.filter(operation => !operation.dismissed && operation.state === 'running')

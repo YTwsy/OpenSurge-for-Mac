@@ -229,3 +229,14 @@ Helper 将 restart-mihomo 与完整启动共用 requireTrustedStartInputs
 
 临时检查日志在 `/private/tmp/opensurge-recovery-{go-test,web-test,web-build,desktop-test}.log`。
 系统代理、完整 applied manifest、Tailscale 及订阅行为未扩展到本轮实现。
+
+## v0.3.3 通知整合
+
+按发布分支 `46a9bd6`（PR #108）引入的反馈契约，将 DNS 恢复失败与 IPv6 撤销未送达
+接入既有全局悬浮失败通知。通知独立于整体操作成功结果，保留到手动关闭；进度卡不再
+重复显示这两条告警，operation ID/notice 去重避免轮询、关闭和组件重挂载后重发。
+设备数据错误继续作为持续状态显示，不反复弹出操作通知。
+
+整合后 Go 全包通过；Web 39 文件/368 项回归、i18n 1918 条、生产构建通过，生成资源
+已重建。打包预检在宿主环境通过；原沙箱运行的临时目录 chmod 受限已通过原样重跑排除。
+桌面回归此前通过，PR CI 继续验证两个架构。以上不改变本记录的 Lab/物理网络未验证边界。

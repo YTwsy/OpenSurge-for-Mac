@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { useCallback, useRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { activateLanguage, prepareLanguage } from '../i18n'
 import { clearOperations, getOperation, markOperationConnection, recordOperation } from '../operations'
@@ -7,6 +8,20 @@ import { clearOperations, getOperation, markOperationConnection, recordOperation
 vi.mock('../api', () => ({ watchOperations: vi.fn(() => () => {}), waitForOperation: vi.fn(async () => ({})) }))
 import { waitForOperation, watchOperations } from '../api'
 import { OperationProgress } from './OperationProgress'
+import { OperationNotifications, type OperationNotification, type OperationNotificationItem } from './OperationNotifications'
+
+function ProgressWithNotifications({ showProgress = true }: { showProgress?: boolean }) {
+  const [notifications, setNotifications] = useState<OperationNotificationItem[]>([])
+  const nextID = useRef(0)
+  const notify = useCallback((notification: OperationNotification) => {
+    const item = { ...notification, id: ++nextID.current }
+    setNotifications(current => [...current, item].slice(-3))
+  }, [])
+  return <>
+    {showProgress && <OperationProgress onNotify={notify} onOpenDiagnostics={() => {}} />}
+    <OperationNotifications notifications={notifications} onDismiss={id => setNotifications(current => current.filter(item => item.id !== id))} />
+  </>
+}
 
 function begin(kind = 'start') {
   const now = new Date().toISOString()
@@ -23,7 +38,7 @@ describe('global operation progress', () => {
   afterEach(() => { cleanup(); clearOperations(); vi.useRealTimers(); vi.clearAllMocks(); activateLanguage('zh-Hans') })
 
   it('shows initial startup immediately, real phases and elapsed time without a fake percentage', () => {
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.queryByLabelText('当前操作进度')).toBeNull()
     act(() => begin())
     expect(screen.getByText('启动网关')).toBeTruthy()
@@ -40,11 +55,11 @@ describe('global operation progress', () => {
 
   it('keeps reload progress across unmounts and clearly reports rollback failure', () => {
     begin('reload')
-    const first = render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    const first = render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     act(() => recordOperation({ id: 'op-1', kind: 'reload', state: 'running', phase: 'rolling_back' }))
     first.unmount()
     const diagnose = vi.fn()
-    render(<OperationProgress onOpenDiagnostics={diagnose} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={diagnose} />)
     expect(screen.getByText('操作未完成，正在回滚网络改动')).toBeTruthy()
     act(() => recordOperation({ id: 'op-1', kind: 'reload', state: 'failed', error: 'mihomo start failed' }))
     expect(screen.getByText('未完成')).toBeTruthy()
@@ -56,7 +71,7 @@ describe('global operation progress', () => {
 
   it('distinguishes lost contact from failure and only rechecks the original operation', () => {
     begin('reload')
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     act(() => markOperationConnection('op-1', 'unknown'))
     expect(screen.getByText('结果尚未确认')).toBeTruthy()
     expect(screen.queryByText('未完成')).toBeNull()
@@ -68,7 +83,7 @@ describe('global operation progress', () => {
 
   it('does not declare Tailscale reachable on success and dismisses success after a short delay', () => {
     begin()
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     act(() => recordOperation({ id: 'op-1', kind: 'start', state: 'succeeded', notices: ['tailscale_warmup_started'] }))
     expect(screen.getByText('已完成')).toBeTruthy()
     expect(screen.getByText(/Tailscale 预热已发起，连接可能尚未就绪/)).toBeTruthy()
@@ -81,27 +96,34 @@ describe('global operation progress', () => {
     { kind: 'restart-mihomo', language: 'zh-Hans' },
     { kind: 'stop', language: 'en' },
     { kind: 'restart-mihomo', language: 'en' },
-  ] as const)('keeps the DNS recovery warning visible when $kind completes in $language', async ({ kind, language }) => {
+  ] as const)('keeps the DNS recovery notification after $kind completes in $language until dismissed', async ({ kind, language }) => {
     await prepareLanguage(language)
     activateLanguage(language)
     begin(kind)
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<ProgressWithNotifications />)
     act(() => recordOperation({ id: 'op-1', kind, state: 'running', notices: ['system_dns_restore_failed'] }))
     const message = language === 'en'
       ? 'System DNS could not be restored. Other operations will continue. Please check the system DNS settings.'
       : '系统 DNS 未能恢复，其他操作将继续。请检查系统 DNS 设置。'
     expect(screen.getByText(message)).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain(message)
+    expect(within(screen.getByLabelText(language === 'en' ? 'Current operation progress' : '当前操作进度')).queryByText(message)).toBeNull()
     expect(screen.getByRole('progressbar')).toBeTruthy()
     act(() => recordOperation({ id: 'op-1', kind, state: 'succeeded' }))
     expect(screen.getByText(language === 'en' ? 'Completed' : '已完成')).toBeTruthy()
     expect(screen.getByText(message)).toBeTruthy()
     expect(screen.queryByRole('progressbar')).toBeNull()
+    act(() => vi.advanceTimersByTime(60000))
+    expect(screen.queryByLabelText(language === 'en' ? 'Current operation progress' : '当前操作进度')).toBeNull()
+    expect(screen.getByText(message)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: language === 'en' ? 'Dismiss notification: System DNS restoration incomplete' : '关闭通知：系统 DNS 恢复未完成' }))
+    expect(screen.queryByText(message)).toBeNull()
   })
 
   it.each(['manual', 'automatic'])('does not reveal an earlier failure after %s dismissal of the latest result', dismissal => {
     begin()
     recordOperation({ id: 'op-1', kind: 'start', state: 'failed', error: 'previous startup failed' })
-    const view = render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    const view = render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.getByText('previous startup failed')).toBeTruthy()
 
     act(() => {
@@ -119,17 +141,38 @@ describe('global operation progress', () => {
     // Polling and remounting must not turn completed history into a new notice.
     act(() => recordOperation({ id: 'op-1', kind: 'start', state: 'failed', error: 'previous startup failed' }))
     view.unmount()
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.queryByLabelText('当前操作进度')).toBeNull()
     expect(getOperation('op-1')?.error).toBe('previous startup failed')
   })
 
   it('reports an unavailable IPv6 withdrawal even when local stop completes', () => {
     begin('stop')
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<ProgressWithNotifications />)
     act(() => recordOperation({ id: 'op-1', kind: 'stop', state: 'succeeded', notices: ['ipv6_withdrawal_unavailable'] }))
     expect(screen.getByText('已完成')).toBeTruthy()
     expect(screen.getByText(/客户端旧路由和 DNS 可能要等待有效期结束/)).toBeTruthy()
+    act(() => vi.advanceTimersByTime(60000))
+    expect(screen.queryByLabelText('当前操作进度')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toContain('IPv6 撤销通告未发送')
+  })
+
+  it('delivers each recovery notice once per operation across polling, dismissal and progress remounts', () => {
+    begin('stop')
+    const view = render(<ProgressWithNotifications />)
+    const notices = ['system_dns_restore_failed', 'ipv6_withdrawal_unavailable', 'system_dns_restore_failed']
+    act(() => recordOperation({ id: 'op-1', kind: 'stop', state: 'running', notices }))
+    expect(screen.getAllByRole('alert')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: '关闭通知：系统 DNS 恢复未完成' }))
+    act(() => recordOperation({ id: 'op-1', kind: 'stop', state: 'succeeded', notices }))
+    view.rerender(<ProgressWithNotifications showProgress={false} />)
+    view.rerender(<ProgressWithNotifications />)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.queryByText('系统 DNS 恢复未完成')).toBeNull()
+
+    act(() => recordOperation({ id: 'op-2', kind: 'restart-mihomo', state: 'running', notices: ['system_dns_restore_failed'] }))
+    expect(screen.getAllByRole('alert')).toHaveLength(2)
+    expect(screen.getByText('系统 DNS 恢复未完成')).toBeTruthy()
   })
 
   it('keeps the latest result when creation timestamps tie and older status reads arrive later', () => {
@@ -138,7 +181,7 @@ describe('global operation progress', () => {
     const now = new Date().toISOString()
     recordOperation({ id: 'op-2', kind: 'stop', state: 'failed', error: 'latest stop failed', created_at: now, updated_at: now })
     recordOperation({ id: 'op-1', kind: 'start', state: 'succeeded' })
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.getByText('latest stop failed')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '关闭操作进度' }))
     expect(screen.queryByLabelText('当前操作进度')).toBeNull()
@@ -150,7 +193,7 @@ describe('global operation progress', () => {
     vi.advanceTimersByTime(1000)
     const now = new Date().toISOString()
     recordOperation({ id: 'op-2', kind: 'restart-mihomo', state: 'running', created_at: now, updated_at: now })
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.getByText('重启 Mihomo')).toBeTruthy()
     expect(screen.getByText('另有 1 个操作进行中')).toBeTruthy()
     act(() => recordOperation({ id: 'op-2', kind: 'restart-mihomo', state: 'succeeded' }))
@@ -166,11 +209,11 @@ describe('global operation progress', () => {
     { kind: 'router-dhcp-restored', title: '检查路由器 DHCP 是否已恢复', result: '已收到 DHCP OFFER，可以继续恢复 Mac 自动 DHCP。' },
   ])('shows $kind progress across page changes and explains the completed probe', ({ kind, title, result }) => {
     begin(kind)
-    const first = render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    const first = render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     act(() => recordOperation({ id: 'op-1', kind, state: 'running', phase: 'probing_dhcp' }))
     act(() => vi.advanceTimersByTime(3000))
     first.unmount()
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.getByText(title)).toBeTruthy()
     expect(screen.getByText('正在探测 DHCP OFFER')).toBeTruthy()
     expect(screen.getByText('已用时 3 秒')).toBeTruthy()
@@ -185,7 +228,7 @@ describe('global operation progress', () => {
     activateLanguage('en')
     begin(kind)
     recordOperation({ id: 'op-1', kind, state: 'running', phase: 'probing_dhcp' })
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.getByText('Probing for DHCP OFFER responses')).toBeTruthy()
     expect(screen.getByLabelText('Current operation progress').textContent).not.toMatch(/[\u3400-\u9fff]/)
     act(() => recordOperation({ id: 'op-1', kind, state: 'succeeded' }))
@@ -199,7 +242,7 @@ describe('global operation progress', () => {
     begin('save-device-policy')
     recordOperation({ id: 'op-1', kind: 'save-device-policy', state: 'running', phase: 'validating_device_policy', notices: ['tailscale_warmup_started'] })
     markOperationConnection('op-1', 'unknown')
-    render(<OperationProgress onOpenDiagnostics={() => {}} />)
+    render(<OperationProgress onNotify={() => {}} onOpenDiagnostics={() => {}} />)
     expect(screen.getByText('Outcome unconfirmed')).toBeTruthy()
     expect(screen.getByText('Validating device identities and routing rules')).toBeTruthy()
     expect(screen.getByLabelText('Current operation progress').textContent).not.toMatch(/[\u3400-\u9fff]/)
