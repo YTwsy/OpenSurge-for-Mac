@@ -24,8 +24,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
   const [revision, setRevision] = useState('')
   const [name, setName] = useState('')
   const [url, setURL] = useState('')
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const [loadError, setLoadError] = useState('')
   const [activeAction, setActiveAction] = useState<SourceAction>(null)
   const [pending, setPending] = useState<Source | null>(null)
   const [fileDragActive, setFileDragActive] = useState(false)
@@ -50,9 +49,9 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
       if (dns.value) setCustomDNS(dns.value)
       setDNSLoadError(dns.error)
       setRevision(response.revision)
-      setError('')
+      setLoadError('')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setLoadError(cause instanceof Error ? cause.message : String(cause))
     }
   }, [])
 
@@ -62,21 +61,29 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
   const dnsSaved = async (value: CustomDNSDraft) => {
     setCustomDNS(value)
     setDNSLoadError('')
-    const response = await api.sources()
-    setSources(response.sources ?? [])
-    setRevision(response.revision)
+    await refreshSourceList()
+  }
+
+  // A failed read after a successful save must not be reported as a failed save.
+  const refreshSourceList = async () => {
+    try {
+      const response = await api.sources()
+      setSources(response.sources ?? [])
+      setRevision(response.revision)
+      setLoadError('')
+    } catch (cause) {
+      setLoadError(cause instanceof Error ? cause.message : String(cause))
+    }
   }
 
   const run = async (action: Exclude<SourceAction, null>, operation: () => Promise<unknown>, successMessage: string) => {
     setActiveAction(action)
-    setMessage('')
-    setError('')
     try {
       await operation()
       await refresh()
-      setMessage(successMessage)
+      onNotify({ tone: 'success', title: t(action.kind === 'refresh' ? '草稿已刷新' : '草稿已导入'), message: successMessage })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      onNotify({ tone: 'error', title: t('操作未完成'), message: cause instanceof Error ? cause.message : String(cause) })
     } finally {
       setActiveAction(null)
     }
@@ -84,27 +91,21 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
 
   const openApply = (source: Source) => {
     setPending(source)
-    setMessage(t('已选择 {{name}}；确认后会先校验完整候选配置。', { name: source.name }))
-    setError('')
   }
 
   const apply = async () => {
     if (!pending) return
     const selected = pending
     setActiveAction({ kind: 'apply', sourceID: selected.id })
-    setError('')
-    setMessage('')
     try {
       const applied = await api.applySource(selected.id, revision)
       setPending(null)
       const result = t(applied.applied ? '订阅已应用，网关已使用新的运行配置。' : '订阅已保存，将在下次启动网关时应用。')
-      setMessage(result)
-      if (running && applied.applied) onNotify({ tone: 'success', title: t('应用并重载网关成功'), message: t('{{name}} 已应用，网关正在使用新的运行配置。', { name: selected.name }) })
-      await Promise.all([refresh(), Promise.resolve(onChanged())])
+      onNotify({ tone: 'success', title: t(applied.applied ? '应用并重载网关成功' : '已设为下次启动版本'), message: result })
+      await Promise.all([refresh(), Promise.resolve(onChanged()).catch(cause => setLoadError(cause instanceof Error ? cause.message : String(cause)))])
     } catch (cause) {
       const failure = cause instanceof Error ? cause.message : String(cause)
-      setError(failure)
-      if (running) onNotify({ tone: 'error', title: t('应用并重载网关失败'), message: failure })
+      onNotify({ tone: 'error', title: t(running ? '应用并重载网关失败' : '配置应用失败'), message: failure })
     } finally {
       setActiveAction(null)
     }
@@ -112,22 +113,20 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
 
   const runFileAction = async (source: Source, kind: 'copy-path' | 'reveal' | 'export') => {
     setActiveAction({ kind, sourceID: source.id })
-    setMessage('')
-    setError('')
     try {
       if (kind === 'copy-path') {
         const location = await api.sourceSnapshotLocation(source.id)
         await copyText(location.path)
-        setMessage(t('{{name}} 的本地快照路径已复制。', { name: source.name }))
+        onNotify({ tone: 'success', title: t('操作已确认'), message: t('{{name}} 的本地快照路径已复制。', { name: source.name }) })
       } else if (kind === 'reveal') {
         await api.revealSourceSnapshot(source.id)
-        setMessage(t('{{name}} 的本地快照已在 Finder 中选中。', { name: source.name }))
+        onNotify({ tone: 'success', title: t('操作已确认'), message: t('{{name}} 的本地快照已在 Finder 中选中。', { name: source.name }) })
       } else {
         const exported = await api.exportSourceSnapshot(source.id)
-        setMessage(t('{{name}} 已导出为可编辑副本，并在 Finder 中选中：{{path}}', { name: source.name, path: exported.display_path }))
+        onNotify({ tone: 'success', title: t('操作已确认'), message: t('{{name}} 已导出为可编辑副本，并在 Finder 中选中：{{path}}', { name: source.name, path: exported.display_path }) })
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      onNotify({ tone: 'error', title: t('操作未完成'), message: cause instanceof Error ? cause.message : String(cause) })
     } finally {
       setActiveAction(null)
     }
@@ -135,7 +134,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
 
   const importLocalFile = (file: File) => {
     if (!/\.ya?ml$/i.test(file.name)) {
-      setError(t('只能导入 .yaml 或 .yml 文件。'))
+      onNotify({ tone: 'error', title: t('导入未完成'), message: t('只能导入 .yaml 或 .yml 文件。') })
       return
     }
     void run({ kind: 'import-file' }, () => api.importFile(file), t('{{name}} 已导入为草稿并完成结构校验。', { name: file.name }))
@@ -143,10 +142,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
 
   return <>
     <PageHeader eyebrow="SOURCES" title="代理与规则源" description="导入、校验、应用各自有明确状态；运行配置只会在完整校验成功后切换。" />
-    <div className="source-feedback" aria-live="polite">
-      {error && <div className="notice warn" role="alert"><span aria-hidden="true">!</span><div><strong>{t('操作未完成')}</strong><p>{error}</p></div></div>}
-      {message && <div className="ok-notice" role="status"><span aria-hidden="true">✓</span><div><strong>{t('操作已确认')}</strong><p>{message}</p></div></div>}
-    </div>
+    {loadError && <div className="notice warn source-load-error" role="alert"><div><strong>{t('来源列表未能更新')}</strong><p>{loadError}</p></div><button type="button" disabled={busy} onClick={() => void refresh()}>{t('重试')}</button></div>}
     <TailscaleCard onChanged={onChanged} onNotify={onNotify} />
     <section className="section source-import-panel" aria-busy={activeAction?.kind === 'import-url' || activeAction?.kind === 'import-file'}>
       <SectionTitle title="添加配置来源" subtitle="导入只产生草稿，不会立即改变正在运行的 DHCP、DNS、TUN 或策略。" />
@@ -187,7 +183,7 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
               if (busy) return
               const files = Array.from(event.dataTransfer.files)
               if (files.length !== 1) {
-                setError(t('一次只能拖入一个 YAML 文件。'))
+                onNotify({ tone: 'error', title: t('导入未完成'), message: t('一次只能拖入一个 YAML 文件。') })
                 return
               }
               importLocalFile(files[0])
@@ -259,8 +255,8 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
         </article>
       })}</div> : <Empty text={t('尚未导入任何来源')} />}
     </section>
-    <ProfileOverlayPanel overlay={overlay} sources={sources} onSaved={async saved => { setOverlay(saved); const response = await api.sources(); setSources(response.sources ?? []); setRevision(response.revision) }} />
-    <CustomDNSCard saved={customDNS} onSaved={dnsSaved} running={running} navigationRequest={navigationRequest} loadError={dnsLoadError}
+    <ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={sources} onSaved={async saved => { setOverlay(saved); await refreshSourceList() }} />
+    <CustomDNSCard onNotify={onNotify} saved={customDNS} onSaved={dnsSaved} running={running} navigationRequest={navigationRequest} loadError={dnsLoadError}
       onDirtyChange={setDNSDirty} applying={busy || Boolean(pending)}
       onOpenNetwork={() => onOpenNetwork('control')} onCheckNetwork={() => onOpenNetwork('none')}
       applyDisabled={Boolean(dnsLoadError) || !revision || !currentSource?.valid || currentSource.overlay_compatible === false}

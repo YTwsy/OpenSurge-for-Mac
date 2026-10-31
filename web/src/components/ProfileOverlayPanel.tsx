@@ -2,19 +2,18 @@ import { Select } from './Select'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { t } from '../i18n'
+import type { OperationNotification } from './OperationNotifications'
 import { parseProxyShareLinks, type ProxyShareLinkError } from '../proxyShareLinks'
 import type { ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, Source } from '../types'
 
 type EditorMode = 'guided' | 'yaml'
 type PreviewTab = 'changes' | 'source' | 'overlay' | 'effective' | 'final'
 
-export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: ProfileOverlay | null; sources: Source[]; onSaved: (saved: ProfileOverlay) => void | Promise<void> }) {
+export function ProfileOverlayPanel({ overlay, sources, onSaved, onNotify }: { overlay: ProfileOverlay | null; sources: Source[]; onSaved: (saved: ProfileOverlay) => void | Promise<void>; onNotify: (notification: OperationNotification) => void }) {
   const [document, setDocument] = useState<ProfileOverlayDocument | null>(null)
   const [yaml, setYAML] = useState('')
   const [mode, setMode] = useState<EditorMode>('guided')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [previewSource, setPreviewSource] = useState('')
   const [preview, setPreview] = useState<ProfileOverlayPreview | null>(null)
   const [previewTab, setPreviewTab] = useState<PreviewTab>('changes')
@@ -23,8 +22,6 @@ export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: Pr
     if (!overlay) return
     setDocument(structuredClone(overlay.document))
     setYAML(overlay.yaml)
-    setError('')
-    setMessage('')
   }, [overlay])
 
   const documentDirty = Boolean(document && overlay && JSON.stringify(document) !== JSON.stringify(overlay.document))
@@ -47,27 +44,24 @@ export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: Pr
       change(next)
       return next
     })
-    setMessage('')
   }
 
   const save = async () => {
     setBusy(true)
-    setError('')
-    setMessage('')
     try {
       const saved = mode === 'guided'
         ? await api.saveProfileOverlayDocument(document, overlay.revision)
         : await api.saveProfileOverlayYAML(yaml, overlay.revision)
       setDocument(structuredClone(saved.document))
       setYAML(saved.yaml)
-      setMessage(t(saved.document.enabled
+      await onSaved(saved)
+      onNotify({ tone: 'success', title: t('草稿已保存'), message: t(saved.document.enabled
         ? standalone
           ? '附加配置草稿已保存。无需导入来源；可以进入策略页预览、选择或测速，也可以直接启动，启动前会生成并校验同一配置。'
           : '附加配置草稿已保存。停止态可在策略页预览或直接启动；若网关正在运行，请从来源卡片应用。'
-        : '附加配置已停用并保存；下次通过 App 启动或从来源卡片应用配置时，会移除附加内容。'))
-      await onSaved(saved)
+        : '附加配置已停用并保存；下次通过 App 启动或从来源卡片应用配置时，会移除附加内容。') })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      onNotify({ tone: 'error', title: t('附加配置未完成'), message: cause instanceof Error ? cause.message : String(cause) })
     } finally {
       setBusy(false)
     }
@@ -76,13 +70,12 @@ export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: Pr
   const openPreview = async () => {
     if (!previewSource) return
     setBusy(true)
-    setError('')
     try {
       const result = await api.sourcePreview(previewSource)
       setPreview(result)
       setPreviewTab('changes')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      onNotify({ tone: 'error', title: t('附加配置未完成'), message: cause instanceof Error ? cause.message : String(cause) })
     } finally {
       setBusy(false)
     }
@@ -91,18 +84,15 @@ export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: Pr
   const changeMode = (next: EditorMode) => {
     if (next === mode) return
     if (dirty) {
-      setError(t('请先保存或撤销当前编辑，再切换编辑模式。'))
+      onNotify({ tone: 'error', title: t('附加配置未完成'), message: t('请先保存或撤销当前编辑，再切换编辑模式。') })
       return
     }
     setMode(next)
-    setError('')
   }
 
   const reset = () => {
     setDocument(structuredClone(overlay.document))
     setYAML(overlay.yaml)
-    setError('')
-    setMessage('')
   }
 
   const status = t(!document.enabled ? '未启用' : !overlay.desired ? '草稿待应用' : overlay.applied ? '运行中' : '下次启动生效')
@@ -138,7 +128,7 @@ export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: Pr
           <button className="overlay-expert-toggle" type="button" aria-expanded={mode === 'yaml'} onClick={() => changeMode(mode === 'yaml' ? 'guided' : 'yaml')}>
             <span><strong>{t('专家 Overlay YAML')}</strong><small>{t(expertOperations ? '当前包含 {{count}} 项专家操作。Provider、策略组、DNS 高级选项和低优先级规则在此维护。' : 'Provider、策略组、DNS 高级选项和低优先级规则在此维护。', { count: expertOperations })} {t('固定地址和域名解析策略也可使用下方独立的“自定义 DNS”。')}</small></span><i aria-hidden="true">⌄</i>
           </button>
-          {mode === 'yaml' ? <div className="overlay-yaml-editor"><label htmlFor="profile-overlay-yaml">{t('附加配置 YAML')}</label><textarea id="profile-overlay-yaml" spellCheck={false} rows={24} value={yaml} onChange={event => { setYAML(event.target.value); setMessage('') }} /><p><strong>{t('边界：')}</strong>{t('不能设置 mixed-port、TUN、Controller、LAN binding，也不能覆盖 DNS 的监听、IPv6、模式或 Fake-IP 地址段。')}</p></div> : null}
+          {mode === 'yaml' ? <div className="overlay-yaml-editor"><label htmlFor="profile-overlay-yaml">{t('附加配置 YAML')}</label><textarea id="profile-overlay-yaml" spellCheck={false} rows={24} value={yaml} onChange={event => setYAML(event.target.value)} /><p><strong>{t('边界：')}</strong>{t('不能设置 mixed-port、TUN、Controller、LAN binding，也不能覆盖 DNS 的监听、IPv6、模式或 Fake-IP 地址段。')}</p></div> : null}
         </section>
 
         <div className="overlay-source-compatibility">
@@ -153,9 +143,6 @@ export function ProfileOverlayPanel({ overlay, sources, onSaved }: { overlay: Pr
               <button type="button" disabled={busy || !previewSource || dirty} onClick={() => void openPreview()}>{t('查看组合结果')}</button>
               {dirty ? <small>{t('保存草稿后才能生成权威预览。')}</small> : <small>{t('预览包含原始来源、附加层、有效来源和 OpenSurge 最终配置。')}</small>}
             </div>}
-
-        {error ? <div className="overlay-feedback error" role="alert"><span aria-hidden="true">!</span><div><strong>{t('附加配置未完成')}</strong><p>{error}</p></div></div> : null}
-        {message ? <div className="overlay-feedback success" role="status"><span aria-hidden="true">✓</span><div><strong>{t('草稿已保存')}</strong><p>{message}</p></div></div> : null}
 
         <footer className="overlay-save-bar"><span className={dirty ? 'dirty' : ''}><i aria-hidden="true">{dirty ? '•' : '✓'}</i>{dirty ? t('有未保存的附加配置修改') : t(overlay.validation)}</span><div><button type="button" disabled={busy || !dirty} onClick={reset}>{t('撤销修改')}</button><button className="primary" type="button" disabled={busy || !dirty} onClick={() => void save()}>{busy ? <><span className="button-spinner" aria-hidden="true" />{t('正在保存…')}</> : t('保存附加配置草稿')}</button></div></footer>
       </div>
