@@ -5,6 +5,7 @@ export const operationStatusUnknownMessage = '操作结果尚未确认，请勿�
 
 let snapshot: TrackedOperation[] = []
 const listeners = new Set<() => void>()
+const notifiedNotices = new Map<string, Set<string>>()
 
 export const getOperations = () => snapshot
 export const getOperation = (id: string) => snapshot.find(operation => operation.id === id)
@@ -15,7 +16,21 @@ export function subscribeOperations(listener: () => void) {
 
 function publish(next: TrackedOperation[]) {
   snapshot = next
+  for (const id of notifiedNotices.keys()) {
+    if (!next.some(operation => operation.id === id)) notifiedNotices.delete(id)
+  }
   listeners.forEach(listener => listener())
+}
+
+// Keep delivery state beside the tracked operation so polling and remounting
+// the progress view cannot recreate a notification the user already closed.
+export function claimOperationNotice(id: string, notice: string) {
+  if (!getOperation(id)) return false
+  const delivered = notifiedNotices.get(id) ?? new Set<string>()
+  if (delivered.has(notice)) return false
+  delivered.add(notice)
+  notifiedNotices.set(id, delivered)
+  return true
 }
 
 export function recordOperation(operation: Operation) {

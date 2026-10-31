@@ -603,7 +603,7 @@ describe('OpenSurge app shell', () => {
     expect(api.gateway).not.toHaveBeenCalled()
   })
 
-  it('offers one safe cleanup action for a runtime interrupted by reboot', async () => {
+  it.each(['', 'read DHCP leases: invalid line'])('offers reboot cleanup even with device observation error %s', async devicesError => {
     const interrupted = {
       ...overviewFor('same_lan', 'degraded'),
       warnings: ['gateway runtime was interrupted by a system reboot; stop to clean stale state before starting again'],
@@ -611,6 +611,7 @@ describe('OpenSurge app shell', () => {
         ...overview.status,
         gateway: 'degraded',
         runtime_state: 'interrupted' as const,
+        devices_error: devicesError,
         dhcp_enabled: false,
         mihomo: 'stopped',
       },

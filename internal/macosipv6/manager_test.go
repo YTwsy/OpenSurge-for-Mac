@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"syscall"
 	"testing"
 
 	"open-mihomo-gateway/internal/config"
@@ -136,8 +137,8 @@ func TestWithdrawRequiresLinkLocalRDNSSAddress(t *testing.T) {
 		t.Fatal("withdrawal was sent without the advertised link-local RDNSS address")
 		return nil
 	}
-	if err := manager.Withdraw(context.Background()); err == nil {
-		t.Fatal("Withdraw() accepted an interface without link-local IPv6")
+	if err := manager.Withdraw(context.Background()); !errors.Is(err, ErrWithdrawalUnavailable) {
+		t.Fatalf("missing link-local address should leave a withdrawal warning: %v", err)
 	}
 }
 
@@ -176,5 +177,122 @@ func TestRemoveGatewayIsIdempotentWhenAliasAlreadyMissing(t *testing.T) {
 	}
 	if err := manager.RemoveGateway(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCleanupDistinguishesMissingInterfaceFromInspectionFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		err     error
+		missing bool
+	}{
+		{"Go interface absent", &net.OpError{Op: "route", Net: "ip+net", Err: errors.New("no such network interface")}, true},
+		{"device absent", syscall.ENODEV, true},
+		{"interface vanished", syscall.ENXIO, true},
+		{"permission denied", syscall.EPERM, false},
+		{"inspection failed", errors.New("interface inspection failed"), false},
+		{"untyped text is not evidence", errors.New("no such network interface"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manager := New(config.Default())
+			manager.byName = func(string) (*net.Interface, error) { return nil, tc.err }
+			manager.runCommand = func(context.Context, string, ...string) error {
+				t.Fatal("cleanup tried to change an unreadable or absent interface")
+				return nil
+			}
+			manager.withdraw = func(string, net.HardwareAddr, net.IP, net.IP) error {
+				t.Fatal("withdrawal tried to use an unreadable or absent interface")
+				return nil
+			}
+			removeErr := manager.RemoveGateway(t.Context())
+			if tc.missing && removeErr != nil || !tc.missing && !errors.Is(removeErr, tc.err) {
+				t.Fatalf("RemoveGateway() = %v", removeErr)
+			}
+			withdrawErr := manager.Withdraw(t.Context())
+			if errors.Is(withdrawErr, ErrWithdrawalUnavailable) != tc.missing || !errors.Is(withdrawErr, tc.err) {
+				t.Fatalf("Withdraw() = %v", withdrawErr)
+			}
+			if err := manager.CheckGatewayAvailable(); !errors.Is(err, tc.err) {
+				t.Fatalf("startup availability check silently accepted a missing interface: %v", err)
+			}
+		})
+	}
+}
+
+func TestCleanupHandlesInterfaceDisappearingDuringAddressRead(t *testing.T) {
+	manager := New(config.Default())
+	manager.byName = func(name string) (*net.Interface, error) { return &net.Interface{Name: name}, nil }
+	for _, readErr := range []error{syscall.ENXIO, syscall.EACCES, errors.New("address read failed")} {
+		manager.addrs = func(*net.Interface) ([]net.Addr, error) { return nil, readErr }
+		missing := errors.Is(readErr, syscall.ENXIO)
+		if err := manager.RemoveGateway(t.Context()); missing && err != nil || !missing && !errors.Is(err, readErr) {
+			t.Fatalf("RemoveGateway() for %v = %v", readErr, err)
+		}
+		if err := manager.Withdraw(t.Context()); errors.Is(err, ErrWithdrawalUnavailable) != missing || !errors.Is(err, readErr) {
+			t.Fatalf("Withdraw() for %v = %v", readErr, err)
+		}
+	}
+}
+
+func TestRemoveGatewayRechecksAbsenceAfterCommandFailure(t *testing.T) {
+	commandErr := errors.New("ifconfig removal failed")
+	for _, outcome := range []string{"alias gone", "interface gone", "alias still present", "inspection denied"} {
+		t.Run(outcome, func(t *testing.T) {
+			manager := New(config.Default())
+			attempted := false
+			manager.byName = func(name string) (*net.Interface, error) {
+				if attempted && outcome == "interface gone" {
+					return nil, syscall.ENXIO
+				}
+				return &net.Interface{Name: name}, nil
+			}
+			manager.addrs = func(*net.Interface) ([]net.Addr, error) {
+				if attempted {
+					if outcome == "alias gone" {
+						return nil, nil
+					}
+					if outcome == "inspection denied" {
+						return nil, syscall.EACCES
+					}
+				}
+				return []net.Addr{&net.IPNet{IP: net.ParseIP(config.DownstreamIPv6Gateway), Mask: net.CIDRMask(64, 128)}}, nil
+			}
+			manager.runCommand = func(context.Context, string, ...string) error {
+				attempted = true
+				return commandErr
+			}
+			err := manager.RemoveGateway(t.Context())
+			gone := outcome == "alias gone" || outcome == "interface gone"
+			if gone && err != nil || !gone && !errors.Is(err, commandErr) {
+				t.Fatalf("RemoveGateway() = %v", err)
+			}
+			if outcome == "inspection denied" && !errors.Is(err, syscall.EACCES) {
+				t.Fatalf("lost inspection failure: %v", err)
+			}
+		})
+	}
+}
+
+func TestWithdrawOnlyDowngradesKnownUnavailableLinkErrors(t *testing.T) {
+	for _, tc := range []struct {
+		err         error
+		unavailable bool
+	}{
+		{syscall.ENXIO, true}, {syscall.ENODEV, true}, {syscall.ENETDOWN, true},
+		{syscall.ENETUNREACH, true}, {syscall.EHOSTUNREACH, true}, {syscall.EADDRNOTAVAIL, true},
+		{syscall.EPERM, false}, {syscall.EACCES, false}, {errors.New("raw socket failed"), false},
+	} {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			manager := New(config.Default())
+			manager.byName = func(name string) (*net.Interface, error) { return &net.Interface{Name: name}, nil }
+			manager.addrs = func(*net.Interface) ([]net.Addr, error) {
+				return []net.Addr{&net.IPNet{IP: net.ParseIP("fe80::1"), Mask: net.CIDRMask(64, 128)}}, nil
+			}
+			manager.withdraw = func(string, net.HardwareAddr, net.IP, net.IP) error { return tc.err }
+			err := manager.Withdraw(t.Context())
+			if errors.Is(err, ErrWithdrawalUnavailable) != tc.unavailable || !errors.Is(err, tc.err) {
+				t.Fatalf("Withdraw() = %v", err)
+			}
+		})
 	}
 }

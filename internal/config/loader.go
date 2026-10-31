@@ -14,14 +14,51 @@ func Load(path string) (Config, error) {
 }
 
 // LoadRuntime parses and validates the gateway configuration while deliberately
-// deferring the mutable desired device-policy document. It lets stop/status and
-// applied-policy controls continue to work when an operator is editing an
-// invalid next policy on disk.
+// deferring the mutable desired device-policy document. Applied-policy controls
+// can use it while an operator edits an invalid next policy. Recovery-only
+// operations use LoadRecovery to avoid unrelated deployment validation as well.
 func LoadRuntime(path string) (Config, error) {
 	return load(path, false)
 }
 
 func load(path string, loadDevicePolicy bool) (Config, error) {
+	cfg, err := LoadEditable(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if loadDevicePolicy {
+		if err := PrepareDevicePolicy(&cfg); err != nil {
+			return Config{}, err
+		}
+	}
+	if err := validate(cfg, loadDevicePolicy); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+// LoadRecovery reads persisted configuration without validating a future
+// deployment. Callers must validate the targets they actually operate on;
+// privileged callers must additionally enforce their trusted path boundary.
+// Syntax and typed-field errors are still errors, never silently defaulted.
+func LoadRecovery(path string) (Config, error) {
+	cfg, err := LoadEditable(path)
+	if err != nil {
+		return Config{}, err
+	}
+	if strings.TrimSpace(cfg.Runtime.Dir) == "" {
+		return Config{}, fmt.Errorf("runtime.dir is required")
+	}
+	if strings.TrimSpace(cfg.Mihomo.Config) == "" {
+		return Config{}, fmt.Errorf("mihomo.config is required")
+	}
+	return cfg, nil
+}
+
+// LoadEditable preserves old values for repair without requiring them to be a
+// valid deployment or reading mutable device-policy drafts. New candidates
+// still require Validate before they are saved or used to start services.
+func LoadEditable(path string) (Config, error) {
 	cfg := Default()
 
 	file, err := os.Open(path)
@@ -56,15 +93,6 @@ func load(path string, loadDevicePolicy bool) (Config, error) {
 		return Config{}, err
 	}
 	resolveRelativePaths(path, &cfg)
-	if loadDevicePolicy {
-		if err := PrepareDevicePolicy(&cfg); err != nil {
-			return Config{}, err
-		}
-	}
-	if err := validate(cfg, loadDevicePolicy); err != nil {
-		return Config{}, err
-	}
-
 	return cfg, nil
 }
 

@@ -78,7 +78,15 @@ Mihomo 系统 TUN 地址使用独立的
 
 启动顺序是 Mihomo listener、BPF broker、下游 IPv6 gateway alias、dnsmasq RA；
 停止顺序是 dnsmasq、router/prefix lifetime-zero withdrawal、alias removal、broker、
-Mihomo。broker PID/fingerprint 必须在修改接口前写入 runtime state。`ipv6_ra_effective` 区分自动 RA 与不发送 RA 的手工路径；中间失败统一 rollback，清理失败保留 state 供重试。IPv6 source
+Mihomo。broker PID/fingerprint 必须在修改接口前写入 runtime state。`ipv6_ra_effective` 区分自动 RA 与不发送 RA 的手工路径；中间失败统一 rollback。
+停止/回滚时，明确已经消失的下游接口或 gateway alias 视为已完成本地撤销；若 alias
+删除命令失败，必须重新确认资源确实不存在，不能把任意命令失败当成成功。接口消失、
+没有 link-local 地址或明确的链路不可达导致无法发送 lifetime-zero RA 时，单独记录
+warning 并继续移除 alias、停止 broker 和 Mihomo，不因此保留整份 runtime。
+这不代表客户端已收到撤销，旧默认路由、前缀和 RDNSS 可能仍需等待通告有效期届满。
+未知读取错误、权限错误、未确认的 alias 删除失败以及 broker/PID 身份清理错误仍返回错误，
+保留 state 供重试；手工 `same_lan` 路径继续不发送 RA。
+IPv6 source
 地址被第二个 MAC 使用时保持第一次映射并拒绝冲突，不静默改绑。
 
 `always` 不等于凭空获得公网 IPv6。上游没有原生 IPv6 时，fake IPv6 目标仍可由

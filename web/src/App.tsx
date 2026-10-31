@@ -321,7 +321,7 @@ export function App() {
       </div>} overlays={<>
         {!authenticationRequired && <div className="bottom-right-stack">
           <ConnectionRefreshPrompts suggestions={connectionRefreshSuggestions} onDismiss={dismissConnectionRefreshSuggestion} onRefreshed={refresh} />
-          <OperationProgress onOpenDiagnostics={() => go('diagnostics')} />
+          <OperationProgress onOpenDiagnostics={() => go('diagnostics')} onNotify={notify} />
         </div>}
         <OperationNotifications notifications={notifications} onDismiss={dismissNotification} />
       </>}>

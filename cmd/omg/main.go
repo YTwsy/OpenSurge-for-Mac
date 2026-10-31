@@ -100,7 +100,12 @@ func run(args []string) int {
 	}
 
 	loadConfig := config.LoadRuntime
-	if commandRequiresDesiredPolicy(command) {
+	if command == "status" || command == "logs" || command == "snapshot" {
+		// Recovery observations must remain available when the next deployment
+		// is invalid. Parsing and the paths needed to find runtime data still
+		// have to succeed; doctor keeps its full desired-config validation.
+		loadConfig = config.LoadRecovery
+	} else if commandRequiresDesiredPolicy(command) {
 		loadConfig = config.Load
 	}
 	cfg, err := loadConfig(*configPath)

@@ -380,7 +380,7 @@ func (s *Server) routes(auth func(http.Handler) http.Handler, local bool) http.H
 }
 
 func (s *Server) handleControlConfig(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.Load(s.configPath)
+	cfg, err := config.LoadEditable(s.configPath)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
@@ -623,11 +623,17 @@ func (s *Server) overview(ctx context.Context) (Overview, error) {
 func (s *Server) readOverview(ctx context.Context, inventory bool) (Overview, error) {
 	cfg, desiredErr := config.Load(s.configPath)
 	if desiredErr != nil {
-		cfg, _ = config.LoadRuntime(s.configPath)
+		var recoveryErr error
+		cfg, recoveryErr = config.LoadRecovery(s.configPath)
+		if recoveryErr != nil {
+			// Never probe relative/default runtime paths after an unreadable
+			// config: absence there is not evidence that the gateway stopped.
+			return Overview{}, fmt.Errorf("read configuration for runtime status: %w", recoveryErr)
+		}
 	}
 	revision := fileDigest(s.configPath)
 	paths := runtime.NewPaths(cfg)
-	leases, _ := device.LoadLeases(paths.LeaseFile)
+	leases, leasesErr := device.LoadLeases(paths.LeaseFile)
 	if leases == nil {
 		leases = []device.Client{}
 	}
@@ -673,6 +679,12 @@ func (s *Server) readOverview(ctx context.Context, inventory bool) (Overview, er
 		providers.RuleProviders = []mihomo.RuleProvider{}
 	}
 	status, statusErr, recovery, presentation := s.observeGateway(ctx, cfg)
+	if status.DevicesError == "" && leasesErr != nil {
+		status.DevicesError = "read DHCP leases: " + leasesErr.Error()
+	}
+	if status.DevicesError != "" {
+		warnings = append(warnings, "device observations incomplete: "+status.DevicesError)
+	}
 	presentation.ConfigPending = desiredDigest != appliedDigest || desiredProfileDigest != appliedProfileDigest
 	presentation.DiagnosisWarning = !controlDoctorHealthy
 	if groupErr != nil && status.Gateway == "running" {
@@ -720,15 +732,14 @@ func (s *Server) handleMenuBar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "menubar_unavailable", err.Error())
 		return
 	}
-	cfg, _ := config.LoadRuntime(s.configPath)
 	writeJSON(w, http.StatusOK, MenuBarStatus{
 		Presentation:  overview.Presentation,
 		SchemaVersion: SchemaVersion, Revision: overview.Revision, Gateway: overview.Status.Gateway,
-		Topology: cfg.Gateway.Mode, LANIP: overview.Status.LANIP, DHCP: overview.Status.DHCP,
+		Topology: overview.Topology, LANIP: overview.Status.LANIP, DHCP: overview.Status.DHCP,
 		Mihomo: overview.Status.Mihomo, MihomoError: overview.Status.MihomoError, PFAnchor: overview.Status.PFAnchor, Forwarding: overview.Status.Forwarding,
 		IPv4Takeover: overview.Status.IPv4Takeover, IPv6Takeover: overview.Status.IPv6Takeover,
 		TUN: overview.Status.TUN, TUNInterface: overview.Status.TUNInterface, TUNError: overview.Status.TUNError,
-		ClientCount: overview.Status.ClientCount, Drift: overview.Drift, DoctorHealthy: overview.DoctorHealthy,
+		ClientCount: overview.Status.ClientCount, DevicesError: overview.Status.DevicesError, Drift: overview.Drift, DoctorHealthy: overview.DoctorHealthy,
 		Recovery: overview.Recovery.Required, RecoveryStage: overview.Recovery.Stage, Warnings: overview.Warnings,
 		MihomoRecovery:  overview.MihomoRecovery,
 		SleepPrevention: overview.SleepPrevention,
@@ -879,7 +890,11 @@ func (s *Server) handleGatewayAction(w http.ResponseWriter, r *http.Request) {
 			s.lifecycleMu.Unlock()
 		}
 	}()
-	cfg, err := config.LoadRuntime(s.configPath)
+	loadConfig := config.LoadRuntime
+	if action == "stop" {
+		loadConfig = config.LoadRecovery
+	}
+	cfg, err := loadConfig(s.configPath)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return
@@ -1427,7 +1442,7 @@ func manualConfigForSnapshot(cfg config.Config, snapshot macosnetwork.Snapshot) 
 }
 
 func (s *Server) handleDHCPProbe(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.LoadRuntime(s.configPath)
+	cfg, err := config.LoadRecovery(s.configPath)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "config_invalid", err.Error())
 		return

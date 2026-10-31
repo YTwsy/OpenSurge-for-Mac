@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// LoadLeases returns the readable leases even when another row is malformed.
+// A non-nil error means the returned inventory may be incomplete; callers must
+// not treat it as a complete, empty inventory.
 func LoadLeases(path string) ([]Client, error) {
 	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -21,6 +24,7 @@ func LoadLeases(path string) ([]Client, error) {
 	defer file.Close()
 
 	var clients []Client
+	var readErr error
 	scanner := bufio.NewScanner(file)
 	for lineNo := 1; scanner.Scan(); lineNo++ {
 		line := strings.TrimSpace(scanner.Text())
@@ -36,14 +40,15 @@ func LoadLeases(path string) ([]Client, error) {
 		}
 		client, err := parseLeaseLine(line)
 		if err != nil {
-			return nil, fmt.Errorf("%s:%d: %w", path, lineNo, err)
+			readErr = errors.Join(readErr, fmt.Errorf("%s:%d: %w", path, lineNo, err))
+			continue
 		}
 		clients = append(clients, client)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		readErr = errors.Join(readErr, fmt.Errorf("read %s: %w", path, err))
 	}
-	return clients, nil
+	return clients, readErr
 }
 
 func parseLeaseLine(line string) (Client, error) {

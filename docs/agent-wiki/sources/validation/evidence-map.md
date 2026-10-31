@@ -47,6 +47,26 @@
 | 总览图表渲染开销与切页连续性 | 受控对比中 Graphics and Media 平均 CPU 从 58.95% 降至 1.51%；明暗主题与 5 次快速切页检查通过 | 2026-10-09；macOS 14.8.5 arm64 / 系统 WebView；原实现 405daac，对比相同基线上的图表修复候选，渲染与采样实现现见 4046861 | [问题、方法与汇总结果 #84](https://github.com/YTwsy/OpenSurge-for-Mac/issues/84) | 每组 45 秒、合成 UI fixture、单核 CPU 口径；不证明网关吞吐量、全部 Mac 或完整睡眠唤醒场景；后续渲染改动需复验 |
 | 旧 Swift 面板展开/聚焦修复 | 四种实现未修复实际展开异常，整体回退到 0932641 | codex/release-v0.1.24；日期与完整环境未记载 | [失败与回退记录](../../tasks/finished_archived/swift-menubar-focus-regression.md) | 仅供旧 Swift 维护与回归追溯，不推导 Wails 当前行为 |
 
+## 跨重启恢复与配置校验
+
+系统 DNS 统一按独立持久备份恢复：原 UUID 消失则跳过，不迁移到同名新服务；运行期间
+外部 DNS 修改也由原备份覆盖。DNS 恢复失败只记录 warning，继续其他网关清理，未恢复的
+备份独立于 `state.json` 保留以供后续重试。
+行为边界见 [系统 DNS 契约](../decisions/local-system-dns-coordination.md#生命周期与所有权)。
+当前方案的全包 Go、独立备份持久化与生命周期回归、前端提醒测试及生产构建已通过。
+Lab 门槛在前置检查退出（实验室尚未启动，且 sudo 凭据不可用），尚无该方案的
+host-network 通过证据。单元回归也不证明
+真实服务重建或系统重启已验收，仍需按
+[本机模式门槛](test-gates.md#mac-本机模式隔离门槛) 和实际 UUID 变化场景复验。
+
+后续恢复修复已拆分旧配置读取与新候选验证，prepared 清理错误不再阻止 Helper 监听，
+DHCP 恢复跳过无关策略草稿，租约错误独立于生命周期状态；Mihomo 重启不再要求
+dnsmasq 二进制或未应用策略文件，明确消失的下游接口不再阻止 IPv6 本地清理。范围见
+[Issue #107 修复与校验审查](../../tasks/finished_archived/issue-107-dns-recovery-and-validation-audit.md)。
+这些改动已有隔离回归，仍需 host-network/TUN 及对应拓扑的 IPv6 门槛复验；不能把
+单元测试或旧 Lab 通过记录扩展为真实接口拔插、客户端撤销和系统重启均已验收。
+配置语法/类型损坏、未知进程身份及未建立完整 applied 配置清单的限制仍保留。
+
 ## 订阅自身 DNS 与准备态
 
 默认自身 DNS 绑定与准备态私有监听的实现、支持矩阵见

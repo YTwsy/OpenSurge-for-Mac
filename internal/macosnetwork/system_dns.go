@@ -14,9 +14,9 @@ import (
 	"open-mihomo-gateway/internal/runtime"
 )
 
-// SystemDNS owns only DNS servers on the configured upstream service. Search
+// SystemDNS changes only DNS servers on the configured upstream service. Search
 // domains, supplemental resolvers, mDNS, other services and proxy settings are
-// not written. Every write is compare-and-set/restore against a durable snapshot.
+// not written. The DNS settings saved before takeover are restored on stop.
 type SystemDNS struct{}
 
 var runSCQuery = func(ctx context.Context, query string) (string, error) {
@@ -96,35 +96,22 @@ func (SystemDNS) Enable(ctx context.Context, snapshot runtime.SystemDNSSnapshot)
 	if err != nil {
 		return err
 	}
-	current, err := readSystemDNS(ctx, service)
-	if err != nil {
-		return err
-	}
-	managed := []string{config.LocalSystemDNSServer}
-	if !slices.Equal(current, snapshot.Servers) && !slices.Equal(current, managed) {
-		return fmt.Errorf("DNS for %s changed since preparation; refusing to overwrite it", service)
-	}
-	return writeAndVerifyDNS(ctx, service, managed)
+	return writeAndVerifyDNS(ctx, service, []string{config.LocalSystemDNSServer})
 }
 
-// Restore returns true when ownership was retained (including a completed
-// previous restore). A foreign value releases ownership without changing DNS.
+// Restore writes the saved settings back to the original service. Changes made
+// while the gateway was running are replaced by that backup. A removed service
+// is skipped; its backup is never applied to another UUID. The returned bool says
+// whether restart should try to reapply DNS, including after a failed restore.
 func (SystemDNS) Restore(ctx context.Context, snapshot runtime.SystemDNSSnapshot) (bool, error) {
 	if !snapshot.Owned {
 		return false, nil
 	}
-	service, err := verifyDNSService(ctx, snapshot)
+	service, _, err := readDNSService(ctx, snapshot.ServiceID)
 	if err != nil {
-		return false, err
+		return true, err
 	}
-	current, err := readSystemDNS(ctx, service)
-	if err != nil {
-		return false, err
-	}
-	if slices.Equal(current, snapshot.Servers) {
-		return true, nil
-	}
-	if !slices.Equal(current, []string{config.LocalSystemDNSServer}) {
+	if service == "" {
 		return false, nil
 	}
 	return true, writeAndVerifyDNS(ctx, service, snapshot.Servers)
@@ -156,14 +143,14 @@ func readDNSService(ctx context.Context, id string) (string, string, error) {
 }
 
 func verifyDNSService(ctx context.Context, snapshot runtime.SystemDNSSnapshot) (string, error) {
-	name, iface, err := readDNSService(ctx, snapshot.ServiceID)
+	name, _, err := readDNSService(ctx, snapshot.ServiceID)
 	if err != nil {
 		return "", err
 	}
-	if name == "" || iface != snapshot.Interface {
-		return "", fmt.Errorf("DNS service %s was removed or changed interface; snapshot retained for recovery", snapshot.ServiceID)
+	if name == "" {
+		return "", fmt.Errorf("DNS service %s does not exist", snapshot.ServiceID)
 	}
-	return name, nil // A renamed service retains the same UUID and ownership.
+	return name, nil
 }
 
 func readSystemDNS(ctx context.Context, service string) ([]string, error) {
