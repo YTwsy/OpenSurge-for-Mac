@@ -38,3 +38,38 @@ it('retains the last sample on error, recovers, and stops when unmounted', async
   await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
   expect(api.connections).toHaveBeenCalledTimes(3)
 })
+
+it('discards old samples and late requests across stop and restart, including a rapid restart', async () => {
+  let finishStopped!: (value: ConnectionObservation) => void
+  let finishRestarted!: (value: ConnectionObservation) => void
+  vi.mocked(api.connections).mockResolvedValueOnce({ sampled_at: 'old run' } as ConnectionObservation)
+  const result = renderHook(({ gateway }) => useConnections(false, gateway), { initialProps: { gateway: 'running' } })
+  await act(async () => {})
+  expect(result.result.current.snapshot?.sampled_at).toBe('old run')
+  vi.mocked(api.connections).mockImplementationOnce(() => new Promise(resolve => { finishStopped = resolve }))
+  result.rerender({ gateway: 'stopped' })
+  expect(result.result.current.snapshot).toBeNull()
+  vi.mocked(api.connections).mockImplementationOnce(() => new Promise(resolve => { finishRestarted = resolve }))
+  result.rerender({ gateway: 'running' })
+  expect(result.result.current.snapshot).toBeNull()
+  await act(async () => finishStopped({ sampled_at: 'stopped inventory' } as ConnectionObservation))
+  expect(result.result.current.snapshot).toBeNull()
+  await act(async () => finishRestarted({ sampled_at: 'new run' } as ConnectionObservation))
+  expect(result.result.current.snapshot?.sampled_at).toBe('new run')
+})
+
+it('retains a running sample when degraded, but clears a stopped core error on restart', async () => {
+  vi.mocked(api.connections).mockResolvedValue({ sampled_at: 'running' } as ConnectionObservation)
+  const result = renderHook(({ gateway }) => useConnections(false, gateway), { initialProps: { gateway: 'running' } })
+  await act(async () => {})
+  result.rerender({ gateway: 'degraded' })
+  expect(result.result.current.snapshot?.sampled_at).toBe('running')
+  expect(api.connections).toHaveBeenCalledTimes(1)
+  vi.mocked(api.connections).mockResolvedValueOnce({ sampled_at: 'stopped', connection_error: 'core stopped' } as ConnectionObservation)
+  await act(async () => result.rerender({ gateway: 'stopped' }))
+  expect(result.result.current.snapshot?.connection_error).toBe('core stopped')
+  vi.mocked(api.connections).mockImplementationOnce(() => new Promise(() => {}))
+  result.rerender({ gateway: 'running' })
+  expect(result.result.current.snapshot).toBeNull()
+  expect(result.result.current.error).toBe('')
+})

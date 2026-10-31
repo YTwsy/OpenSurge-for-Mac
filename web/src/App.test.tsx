@@ -1176,7 +1176,19 @@ describe('OpenSurge app shell', () => {
     expect(window.location.pathname).toBe('/connectivity')
   })
 
+  it('opens network settings from the stopped Connections page without starting the gateway', async () => {
+    const traffic = await api.deviceTraffic()
+    vi.mocked(api.connections).mockResolvedValue({ ...traffic, gateway_totals: traffic.totals, unclassified: { ...traffic.gateway_local, key: 'unclassified', identity_source: 'unclassified' }, connections: [], connection_error: 'connection refused' })
+    window.history.replaceState({}, '', '/connections')
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '前往网络设置' }))
+    expect(window.location.pathname).toBe('/network')
+    expect(await screen.findByRole('heading', { name: '网络与 DHCP 接管' })).toBeTruthy()
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
   it('targets active devices from the tray, including repeated navigation, while retaining per-device connection links', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
     const traffic = await api.deviceTraffic()
     vi.mocked(api.connections).mockResolvedValue({ ...traffic, gateway_totals: traffic.totals, unclassified: { ...traffic.gateway_local, key: 'unclassified', identity_source: 'unclassified' }, connections: [] })
     window.history.replaceState({}, '', '/diagnostics')
@@ -1201,6 +1213,7 @@ describe('OpenSurge app shell', () => {
   })
 
   it('opens Connections from the dashboard and preserves its device, filters and scroll when returning', async () => {
+    vi.mocked(api.overview).mockResolvedValue({ ...overview, status: { ...overview.status, gateway: 'running' } })
     const traffic = await api.deviceTraffic()
     vi.mocked(api.connections).mockResolvedValue({ ...traffic, gateway_totals: traffic.totals, unclassified: { ...traffic.gateway_local, key: 'unclassified', identity_source: 'unclassified' }, connections: [] })
     render(<App />)

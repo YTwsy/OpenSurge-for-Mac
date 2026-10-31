@@ -4,6 +4,12 @@ export type ResolvedLanguage = 'zh-Hans' | 'en'
 export const languageCacheKey = 'opensurge-ui-language'
 
 const english: Record<string, string> = {
+  '尚未启动网络模式': 'No network mode is running',
+  '启动后，这里会显示本机与接入设备的实时连接。': 'After startup, live connections from this Mac and connected devices will appear here.',
+  '已知下游设备': 'Known downstream devices',
+  '这里保留设备身份信息，实时连接将在启动后更新。': 'Device identities remain available here. Live connections will update after startup.',
+  '设备清单更新失败，以下保留上次结果：{{error}}': 'Could not update the device inventory. The last result is retained below: {{error}}',
+  '读取设备清单失败：{{error}}': 'Could not read the device inventory: {{error}}',
   '网络配置已保存，检查未完成': 'Network configuration saved; checks incomplete',
   '配置已经保存，但无法刷新当前网络检查：{{error}}': 'The configuration was saved, but current network checks could not be refreshed: {{error}}',
   '提醒': 'Reminders',

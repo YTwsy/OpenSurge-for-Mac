@@ -6,3 +6,34 @@ html[data-theme="light"] .connection-owner-list,html[data-theme="light"] .connec
 
 .connections-page .page-header button{background:var(--control-surface);color:var(--control-text);border:1px solid var(--control-border)}
 .connection-owner>strong{flex-shrink:0;white-space:nowrap}
+
+.connection-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 52px 24px;
+  border: 1px solid var(--control-border);
+  border-radius: 16px;
+  background: var(--control-surface);
+}
+.connection-idle-icon { display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 18px; border-radius: 14px; background: #9af0c71a; color: #9af0c7; }
+.connection-idle-icon svg { width: 28px; height: 28px; }
+.connection-idle h2 { margin: 0; font-size: 22px; }
+.connection-idle p { max-width: 460px; margin: 12px 0 24px; color: #91a99d; font-size: 14px; line-height: 1.8; }
+.connection-idle-inventory { margin-top: 24px; padding: 20px; border: 1px solid var(--control-border); border-radius: 14px; background: var(--control-surface); }
+.connection-idle-inventory h2 { margin: 0; font-size: 16px; }
+.connection-idle-inventory p { margin: 8px 0 16px; color: #91a99d; font-size: 12px; line-height: 1.6; }
+.connection-idle-inventory ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.connection-idle-inventory li { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; font-size: 13px; overflow-wrap: anywhere; }
+.connection-idle-inventory li strong { flex: 1 1 180px; }
+.connection-idle-inventory li small { color: #91a99d; }
+.connection-idle + .notice { margin-top: 16px; }
+html[data-theme="light"] .connection-idle-icon { background: #e0f2e8; color: #207548; }
+html[data-theme="light"] :is(.connection-idle p, .connection-idle-inventory p, .connection-idle-inventory li small) { color: #587665; }
+@media(max-width:560px) {
+  .connection-idle { padding: 36px 20px; }
+  .connection-idle h2 { font-size: 20px; }
+  .connection-idle-inventory li { flex-direction: column; gap: 4px; }
+  .connection-idle-inventory li strong { flex: none; }
+}

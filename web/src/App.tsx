@@ -340,7 +340,7 @@ export function App() {
             {page === 'sources' && <SourcesPage overview={overview} onChanged={refresh} onNotify={notify} onOpenNetwork={target => go('network', target)} navigationRequest={sourcesNavigationRequest} onDirtyChange={setSourcesDirty} />}
             {page === 'devices' && <DevicesPage overview={overview} onOpenConnections={openConnections} onChanged={refresh} onNavigate={go} onDirtyChange={setDevicesDirty} onNotify={notify} onSuggestConnectionRefresh={suggestConnectionRefresh} />}
             {page === 'policies' && <PoliciesPage overview={overview} onChanged={refresh} onSuggestConnectionRefresh={suggestConnectionRefresh} viewState={policiesViewState} onViewStateChange={updatePoliciesViewState} restoreScrollY={policiesScrollPosition.current} onScrollPositionChange={updatePoliciesScrollPosition} />}
-            {page === 'connections' && <ConnectionsPage overview={overview} view={connectionsView} onViewChange={changeConnectionsView} restoreScrollY={connectionsScroll.current} />}
+            {page === 'connections' && <ConnectionsPage overview={overview} view={connectionsView} onViewChange={changeConnectionsView} onOpenNetwork={() => go('network')} restoreScrollY={connectionsScroll.current} />}
             {page === 'connectivity' && <ConnectivityPage overview={overview} onChanged={refresh} />}
             {page === 'diagnostics' && <DiagnosticsPage overview={overview} onOpenConnections={openConnections} />}
           </PageErrorBoundary>

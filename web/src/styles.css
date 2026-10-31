@@ -775,6 +775,7 @@ body{min-width:0}
 .policy-local-mac{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(320px,1.2fr);gap:22px;align-items:center;margin-bottom:14px;padding:18px 20px;border:1px solid #315246;border-radius:15px;background:linear-gradient(145deg,#17372c,#0d1b17)}
 .policy-local-mac-copy h2{margin:5px 0 0;font-size:17px}.policy-local-mac-copy>p{margin:9px 0 0;color:#789087;font-size:10px;line-height:1.5}
 .policy-local-mac-outlet{display:grid;gap:8px;min-width:0}.policy-local-mac-outlet .notice{margin:0}
+.policy-local-mac-outlet-row{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:14px;min-width:0}.policy-local-mac-outlet-row>.outlet-inline{grid-column:1/-1}
 .policy-health-overview>div{min-height:92px;padding:17px 19px;background:#0d1c17}
 .policy-health-overview>div:not(.health-legend){display:grid;grid-template-columns:auto 1fr;align-content:center;gap:1px 7px}
 .policy-health-overview small{grid-column:1/-1;color:#6f857c;font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}

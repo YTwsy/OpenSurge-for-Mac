@@ -242,21 +242,24 @@ function LocalMacGlobalPolicy({
 
   return <section className="policy-local-mac" aria-labelledby="policy-local-mac-title">
     <div className="policy-local-mac-copy">
-      <div className="source-head"><div><small>THIS MAC</small><h2 id="policy-local-mac-title">{t('本机全局策略组')}</h2></div><span className="effect-badge live">{t('仅影响本机')}</span></div>
+      <div className="source-head"><div><small>THIS MAC</small><h2 id="policy-local-mac-title">{t('本机全局策略组')}</h2></div></div>
       <p>{t('设备页选择“固定出口”时使用；更换策略不会改变下游设备。')}</p>
     </div>
     <div className="policy-local-mac-outlet">
-      {running && routing?.global_group
-        ? <OutletSummary
-            title={t('本机全局出口')}
-            ariaLabel={t('本机全局策略组 当前策略 {{selected}}', { selected: routing.global_group.selected })}
-            group={routing.global_group}
-            healthByName={healthByName}
-            testing={testing}
-            onTest={onTest}
-            onSelect={select}
-          />
-        : <button className="outlet-summary unavailable" type="button" disabled><span className="outlet-summary-copy"><small>{t('本机全局出口')}</small><strong>{t(running ? '正在读取…' : '启动网关后可用')}</strong></span></button>}
+      <div className="policy-local-mac-outlet-row">
+        <span className="effect-badge live">{t('仅影响本机')}</span>
+        {running && routing?.global_group
+          ? <OutletSummary
+              title={t('本机全局出口')}
+              ariaLabel={t('本机全局策略组 当前策略 {{selected}}', { selected: routing.global_group.selected })}
+              group={routing.global_group}
+              healthByName={healthByName}
+              testing={testing}
+              onTest={onTest}
+              onSelect={select}
+            />
+          : <button className="outlet-summary unavailable" type="button" disabled><span className="outlet-summary-copy"><small>{t('本机全局出口')}</small><strong>{t(running ? '正在读取…' : '启动网关后可用')}</strong></span></button>}
+      </div>
       {error && <div className="notice warn" role="alert">{error}</div>}
     </div>
   </section>

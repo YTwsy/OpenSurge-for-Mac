@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectionsPage } from './ConnectionsPage'
 import { initialConnectionsView } from '../connections'
 import { useConnections } from '../hooks/useConnections'
-import type { ConnectionObservation, DeviceTrafficRow, ObservedConnection } from '../types'
+import type { ConnectionObservation, DeviceTrafficRow, GatewayPresentation, ObservedConnection, Overview } from '../types'
 
 vi.mock('../hooks/useConnections', () => ({ useConnections: vi.fn() }))
 
@@ -28,9 +28,11 @@ function observation(): ConnectionObservation {
     connections: [connection('phone-v4', 'device:phone', 'ipv4'), connection('phone-v6', 'device:phone', 'ipv6', 'HK'), connection('mac', 'gateway-local', 'ipv4')],
   }
 }
-function Harness() {
+const stoppedOverview = { status: { gateway: 'stopped', runtime_state: 'none' }, recovery: { required: false, stage: 'idle' } } as Overview
+const openNetwork = vi.fn()
+function Harness({ overview = null }: { overview?: Overview | null }) {
   const [view, setView] = useState(initialConnectionsView)
-  return <ConnectionsPage overview={null} view={view} onViewChange={patch => setView(current => ({ ...current, ...patch }))} />
+  return <ConnectionsPage overview={overview} view={view} onViewChange={patch => setView(current => ({ ...current, ...patch }))} onOpenNetwork={openNetwork} />
 }
 beforeEach(() => {
   window.history.replaceState({}, '', '/connections')
@@ -39,6 +41,87 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('ConnectionsPage', () => {
+  it('guides a stopped gateway to network settings without presenting an expected core error as a failure', () => {
+    const next = observation()
+    next.devices = []
+    next.connections = []
+    next.connection_error = 'connect: connection refused'
+    vi.mocked(useConnections).mockReturnValue({ snapshot: next, error: '' })
+    render(<Harness overview={stoppedOverview} />)
+    expect(screen.getByRole('heading', { name: '尚未启动网络模式' })).toBeTruthy()
+    expect(screen.getByText('启动后，这里会显示本机与接入设备的实时连接。')).toBeTruthy()
+    expect(screen.queryByText(/connection refused/)).toBeNull()
+    expect(screen.queryByText(/请等待恢复/)).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('searchbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: '下一页' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '暂停画面更新' })).toBeNull()
+    expect(screen.queryByText(/每 2 秒更新/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '前往网络设置' }))
+    expect(openNetwork).toHaveBeenCalledOnce()
+  })
+
+  it('retains known identities when stopped without showing old traffic or hiding inventory failures', () => {
+    const next = observation()
+    next.connection_error = 'core stopped'
+    next.inventory_error = 'lease file unreadable'
+    vi.mocked(useConnections).mockReturnValue({ snapshot: next, error: 'service disconnected' })
+    render(<Harness overview={stoppedOverview} />)
+    const inventory = screen.getByRole('region', { name: '已知下游设备' })
+    expect(within(inventory).getByText('Phone')).toBeTruthy()
+    expect(within(inventory).getByText('192.168.1.151')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('service disconnected')
+    expect(screen.getByText('设备清单不完整：lease file unreadable')).toBeTruthy()
+    expect(screen.queryByText(/core stopped/)).toBeNull()
+    expect(screen.queryByText(/流量已观察/)).toBeNull()
+    expect(screen.queryByText(/活跃连接 ·/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'phone-v4.example.invalid' })).toBeNull()
+  })
+
+  it('can show normal guidance after preparing recovery information or saving pending configuration', () => {
+    vi.mocked(useConnections).mockReturnValue({ snapshot: null, error: '' })
+    render(<Harness overview={{ ...stoppedOverview, drift: true, recovery: { required: true, stage: 'prepared' } }} />)
+    expect(screen.getByRole('heading', { name: '尚未启动网络模式' })).toBeTruthy()
+  })
+
+  it.each<[string, Overview | null]>([
+    ['running', { ...stoppedOverview, status: { ...stoppedOverview.status, gateway: 'running' } }],
+    ['degraded', { ...stoppedOverview, status: { ...stoppedOverview.status, gateway: 'degraded' } }],
+    ['interrupted', { ...stoppedOverview, status: { ...stoppedOverview.status, runtime_state: 'interrupted' } }],
+    ['unconfirmed', { ...stoppedOverview, status_error: 'status unavailable' }],
+    ['recovery', { ...stoppedOverview, recovery: { required: true, stage: 'gateway_stopped_waiting_router_dhcp' } }],
+    ...(['starting', 'stopping', 'recovering', 'recovery', 'unknown'] as GatewayPresentation['state'][]).map((state): [string, Overview] => [state, { ...stoppedOverview, presentation: { state, busy: true, config_pending: false, diagnosis_warning: false } }]),
+    ['loading', null],
+  ])('does not present %s as a confirmed stopped gateway', (_name, overview) => {
+    const next = observation()
+    next.connection_error = 'core unavailable'
+    next.connections = []
+    vi.mocked(useConnections).mockReturnValue({ snapshot: next, error: '' })
+    render(<Harness overview={overview} />)
+    expect(screen.queryByRole('heading', { name: '尚未启动网络模式' })).toBeNull()
+    expect(screen.getByText('连接数据暂不可用，请等待恢复。')).toBeTruthy()
+  })
+
+  it.each<[string, Overview]>([
+    ['normal stop', stoppedOverview],
+    ['pending network recovery', { ...stoppedOverview, recovery: { required: true, stage: 'gateway_stopped_waiting_router_dhcp' } }],
+    ['unknown status', { ...stoppedOverview, status: { ...stoppedOverview.status, gateway: '' }, status_error: 'unknown' }],
+  ])('clears paused details at %s and resumes automatically while keeping the search', (_name, stopped) => {
+    const running = { ...stoppedOverview, status: { ...stoppedOverview.status, gateway: 'running' } }
+    const view = render(<Harness overview={running} />)
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'phone' } })
+    fireEvent.click(screen.getByRole('button', { name: 'phone-v4.example.invalid' }))
+    fireEvent.click(screen.getByRole('button', { name: '暂停画面更新' }))
+    view.rerender(<Harness overview={stopped} />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(vi.mocked(useConnections).mock.lastCall?.[0]).toBe(false)
+    view.rerender(<Harness overview={running} />)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByRole('button', { name: '暂停画面更新' }).getAttribute('aria-pressed')).toBe('false')
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('phone')
+    expect(vi.mocked(useConnections).mock.lastCall?.[0]).toBe(false)
+  })
+
   it('combines both families under the deep-linked device and composes filters', async () => {
     window.history.replaceState({}, '', '/connections?owner=device%3Aphone')
     render(<Harness />)

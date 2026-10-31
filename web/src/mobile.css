@@ -320,6 +320,7 @@
   .workspace :is(.ipv6-runtime dl, .ipv6-dns-step, .ipv6-card-step, .bypass-client-guide-grid) { grid-template-columns: minmax(0, 1fr); }
   .ipv6-runtime dl > div, .bypass-client-guide-grid dl > div { grid-template-columns: minmax(0, 1fr); }
   .outlet-summary-state { gap: 8px; }
+  .policy-local-mac-outlet-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .source-head { align-items: flex-start; }
   .source-head > div { min-width: 0; }
   .config-field-title { flex-direction: column; align-items: flex-start; gap: 5px; }
