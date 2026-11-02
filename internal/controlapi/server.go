@@ -94,6 +94,7 @@ type Server struct {
 
 	mu          sync.Mutex
 	lifecycleMu sync.Mutex
+	sourcesMu   sync.Mutex
 	sessions    map[string]time.Time
 	bootstraps  map[string]bootstrapGrant
 }
@@ -323,9 +324,10 @@ func (s *Server) routes(auth func(http.Handler) http.Handler, local bool) http.H
 	mux.Handle("POST /api/v1/network/dhcp-probe", auth(http.HandlerFunc(s.handleDHCPProbe)))
 	mux.Handle("POST /api/v1/network/restore-dhcp", auth(http.HandlerFunc(s.handleRestoreDHCP)))
 	mux.Handle("GET /api/v1/sources", auth(http.HandlerFunc(s.handleSources)))
-	mux.Handle("POST /api/v1/sources", auth(http.HandlerFunc(s.handleSources)))
-	mux.Handle("POST /api/v1/sources/{id}/refresh", auth(http.HandlerFunc(s.handleSourceRefresh)))
-	mux.Handle("POST /api/v1/sources/{id}/apply", auth(http.HandlerFunc(s.handleSourceApply)))
+	mux.Handle("POST /api/v1/sources", auth(s.sourceMutation(s.handleSources)))
+	mux.Handle("POST /api/v1/sources/{id}/refresh", auth(s.sourceMutation(s.handleSourceRefresh)))
+	mux.Handle("POST /api/v1/sources/{id}/apply", auth(s.sourceMutation(s.handleSourceApply)))
+	mux.Handle("DELETE /api/v1/sources/{id}", auth(s.sourceMutation(s.handleSourceDelete)))
 	mux.Handle("GET /api/v1/sources/{id}/preview", auth(http.HandlerFunc(s.handleSourcePreview)))
 	if local {
 		mux.Handle("GET /api/v1/sources/{id}/snapshot-location", auth(http.HandlerFunc(s.handleSourceSnapshotLocation)))

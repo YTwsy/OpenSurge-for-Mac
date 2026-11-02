@@ -1018,3 +1018,12 @@ html[data-theme="light"] .validation-summary-body{border-color:#0000000b}
 @media(prefers-reduced-motion:reduce){.validation-summary-chevron{transition:none}}
 
 .custom-dns-preview .validation-summary>summary::before{content:none}
+
+.source-actions{flex-wrap:wrap}
+.source-actions button.danger{margin-right:auto}
+.source-actions button.danger,.source-delete-dialog .dialog-actions .danger{border-color:#65443d;background:#251815;color:#ffb3a6}
+.source-card .source-delete-hint{display:block;margin-top:8px;color:#789087;font-size:10px;line-height:1.5;letter-spacing:0}
+html[data-theme="light"] .source-actions button.danger,html[data-theme="light"] .source-delete-dialog .dialog-actions .danger{background:#fff2ef;border-color:#dfa39a;color:#a34137}
+html[data-theme="light"] .source-delete-hint{color:#60766d}
+.source-delete-dialog{box-shadow:0 25px 80px #000}
+.source-delete-dialog::backdrop{background:#020807c9}
