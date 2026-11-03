@@ -355,7 +355,10 @@ export function DevicesPage({ overview, onChanged, onNavigate, onDirtyChange, on
       <span className="button-spinner" aria-hidden="true" /><div><strong>{t('正在加载设备与规则…')}</strong><p>{t('正在读取已保存的设备和分流设置。')}</p></div>
     </section> : error ? <section className="section device-page-state" role="alert">
       <div><strong>{t('设备与规则加载失败')}</strong><p>{error}</p><button type="button" onClick={() => void refresh()}>{t('重试')}</button></div>
-    </section> : <section className="section"><Empty text={t('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')} /><button type="button" onClick={() => onNavigate('network')}>{t('前往网络设置')}</button></section>}
+    </section> : <section className="section">
+      <Empty text={t('请先在网络设置中保存一次配置，设备管理会自动完成初始化。')} />
+      <div className="actions"><button className="primary" type="button" onClick={() => onNavigate('network')}>{t('前往网络设置')}</button></div>
+    </section>}
     {reloadOpen && <ReloadDialog busy={reloading} routerBypassRenewalNames={routerBypassRenewalNames} openSurgeRenewalNames={openSurgeRenewalNames} onCancel={() => setReloadOpen(false)} onConfirm={() => void reload()} />}
     {rebindRequest && <RebindDialog request={rebindRequest} busy={rebinding} running={overview?.status.gateway === 'running'} includesDraft={dirty} onCancel={() => setRebindRequest(null)} onConfirm={() => void applyObservedIPv4()} />}
   </div>

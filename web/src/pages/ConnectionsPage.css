@@ -2,6 +2,22 @@
 html[data-theme="light"] .connection-owner-list,html[data-theme="light"] .connection-main{background:#fff;border-color:#d6e4dc}html[data-theme="light"] .connection-owner{color:#234333}html[data-theme="light"] .connection-owner:hover{background:#f0f7f3}html[data-theme="light"] .connection-owner.selected{background:#e0f2e8}html[data-theme="light"] .connection-owner small,html[data-theme="light"] .connection-owner-heading,html[data-theme="light"] .connection-sample-status,html[data-theme="light"] .connection-main-heading p,html[data-theme="light"] .connection-pagination,html[data-theme="light"] .connection-table td small{color:#587665}html[data-theme="light"] .connection-owner-heading,html[data-theme="light"] .connection-pagination{border-color:#d6e4dc}html[data-theme="light"] .connection-filters input,html[data-theme="light"] .connection-filters :is(select,.select-control){color:#244b35;background:#f6faf7;border-color:#c3d8ca}html[data-theme="light"] .connection-table th{background:#f0f6f2;color:#567563}html[data-theme="light"] .connection-table td{border-color:#deebe3;color:#244b35}html[data-theme="light"] .connection-table tr.selected{background:#e6f6ec}html[data-theme="light"] .connection-target,html[data-theme="light"] .traffic-view-connections button{color:#207548}html[data-theme="light"] .connection-pagination button{background:#f1f8f3;border-color:#c4d8cb;color:#315b41}html[data-theme="light"] .connection-context{color:#7b642b}
 @media(max-width:1250px){.connection-layout{grid-template-columns:190px minmax(0,1fr);gap:12px}.connection-owner-count small{display:none}.connection-owner{padding:10px 7px}.connection-main-heading{padding:16px}.connection-filters{padding:0 16px 12px}}@media(max-width:850px){.connection-layout{grid-template-columns:minmax(0,1fr)}.connection-owner-list{display:flex;flex-wrap:wrap;gap:5px}.connection-owner{width:auto;flex:1 1 180px}.connection-owner-heading{width:100%}}
 
+/* Keep device filters reachable while the connection table scrolls. */
+.connection-owner-list {
+  position: sticky;
+  top: var(--connection-owner-top, 16px);
+  z-index: 5;
+  max-height: calc(100vh - var(--connection-owner-top, 16px) - 16px);
+  max-height: calc(100dvh - var(--connection-owner-top, 16px) - 16px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+/* Leave the native window's draggable title bar clear. */
+.desktop-shell .connection-owner-list { --connection-owner-top: 54px; }
+@media (min-width: 901px) {
+  .connection-owner-list { overscroll-behavior-y: contain; }
+}
+
 .connection-device-addresses{display:flex;flex-direction:column;gap:5px;padding:0 20px;margin:0 0 14px;color:#91a99d;font-size:11px;line-height:1.6;overflow-wrap:anywhere}html[data-theme="light"] .connection-device-addresses{color:#587665}
 
 .connections-page .page-header button{background:var(--control-surface);color:var(--control-text);border:1px solid var(--control-border)}
