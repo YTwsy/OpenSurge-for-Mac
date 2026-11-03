@@ -98,6 +98,17 @@ dnsmasq 二进制或未应用策略文件，明确消失的下游接口不再阻
 [实机任务记录](../../tasks/finished_archived/issue-93-dns-references-and-issue-82-overrides.md#2026-10-21-安装版实机验收部分范围)，
 验收方法见 [本机模式门槛](test-gates.md#mac-本机模式隔离门槛)。
 
+## Sniffer 域名识别
+
+总开关默认关闭，配置所有权与规则边界见
+[profile 契约](../decisions/mihomo-profile-overlay.md#gateway-owned-fields)。
+当前证据覆盖真实核心中 HTTP Host / TLS SNI 对纯 IP 连接的域名规则补充，以及
+`override-destination: false` 保留原始目标 IP；可复验的断言见
+[隔离核心测试](../../../../internal/mihomo/sniffer_integration_test.go)，
+运行方法见 [Sniffer 门槛](test-gates.md#sniffer-real-core)。
+这不是 TUN/LAN、QUIC、ECH 或 Google 登录风控的端到端证据；新开关尚需按相应
+拓扑补充 Lab 或真实设备验证，不能借用此前仅观察到缺失域名的连接作为开启后的验收。
+
 ## 使用与更新
 
 先确定具体路径再读对应报告。“最近已知通过”不等于当前 checkout 复验；未收录或未检索到

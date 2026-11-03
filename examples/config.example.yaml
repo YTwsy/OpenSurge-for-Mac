@@ -43,6 +43,7 @@ mihomo:
   # Preserve fake-IP mappings across apply/restart. Recommended for long-lived
   # local services such as cloudflared that may cache a 198.18.x.x answer.
   store_fake_ip: true
+  sniffer_enabled: false
   mixed_port: 7890
   # macOS transparent proxying uses transparent.mode: "tun"; redir must stay 0.
   redir_port: 0

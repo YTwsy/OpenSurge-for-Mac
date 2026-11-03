@@ -645,6 +645,9 @@ func applyControlConfig(configPath, revision string, payload []byte) (string, er
 	if input.Mihomo.StoreFakeIP != nil {
 		cfg.Mihomo.StoreFakeIP = *input.Mihomo.StoreFakeIP
 	}
+	if input.Mihomo.SnifferEnabled != nil {
+		cfg.Mihomo.SnifferEnabled = *input.Mihomo.SnifferEnabled
+	}
 	cfg.Transparent.Mode = input.Transparent.Mode
 	cfg.Transparent.TUNStrictRoute = input.Transparent.StrictRoute
 	if input.Transparent.MacTUNIPv6 != nil {

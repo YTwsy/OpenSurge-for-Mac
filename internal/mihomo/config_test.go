@@ -316,7 +316,8 @@ tun:
 	for _, notWant := range []string{
 		"allow-lan: false",
 		"external-controller: 127.0.0.1:9999",
-		"enable: false",
+		"dns:\n  enable: false",
+		"tun:\n  enable: false",
 		"listen: 127.0.0.1:5335",
 		"  ipv6: true",
 		"enhanced-mode: redir-host",

@@ -43,7 +43,7 @@ export function connectionRoute(connection: ObservedConnection): string {
 }
 
 export function connectionTarget(connection: ObservedConnection): string {
-  return connectionMetadata(connection, 'host') || connectionMetadata(connection, 'destinationIP') || '—'
+  return connectionMetadata(connection, 'sniffHost') || connectionMetadata(connection, 'host') || connectionMetadata(connection, 'destinationIP') || '—'
 }
 
 export function connectionChain(connection: ObservedConnection): string {
@@ -61,7 +61,7 @@ export function filterConnections(connections: ObservedConnection[], devices: De
     if (view.protocol !== 'all' && connectionMetadata(connection, 'network').toLowerCase() !== view.protocol) return false
     if (view.family !== 'all' && connection.source_family !== view.family) return false
     if (view.route !== 'all' && connectionRoute(connection) !== view.route) return false
-    return !query || [names.get(connection.owner_key), connectionTarget(connection), connectionMetadata(connection, 'sourceIP'), connectionMetadata(connection, 'destinationIP'), connectionMetadata(connection, 'process'), connectionMetadata(connection, 'processPath'), connectionChain(connection), connection.rule, connection.rule_payload].join(' ').toLowerCase().includes(query)
+    return !query || [names.get(connection.owner_key), connectionTarget(connection), connectionMetadata(connection, 'host'), connectionMetadata(connection, 'sourceIP'), connectionMetadata(connection, 'destinationIP'), connectionMetadata(connection, 'process'), connectionMetadata(connection, 'processPath'), connectionChain(connection), connection.rule, connection.rule_payload].join(' ').toLowerCase().includes(query)
   }).sort((a, b) => {
     const difference = view.sort === 'download' ? b.download_rate - a.download_rate : view.sort === 'upload' ? b.upload_rate - a.upload_rate : (Date.parse(b.start || '') || 0) - (Date.parse(a.start || '') || 0)
     return difference || a.id.localeCompare(b.id)

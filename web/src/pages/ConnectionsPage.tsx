@@ -180,6 +180,7 @@ function ConnectionDetail({ id, connection, device, sampledAt, current, unavaila
     [t('源地址 / 端口'), `${connectionMetadata(connection, 'sourceIP') || '—'} / ${connectionMetadata(connection, 'sourcePort') || '—'}`],
     [t('目标地址 / 端口'), `${connectionMetadata(connection, 'destinationIP') || '—'} / ${connectionMetadata(connection, 'destinationPort') || '—'}`],
     [t('目标域名'), connectionMetadata(connection, 'host') || '—'],
+    [t('嗅探域名'), connectionMetadata(connection, 'sniffHost') || '—'],
     [t('入站'), [connectionMetadata(connection, 'type'), connectionMetadata(connection, 'inboundName'), connectionMetadata(connection, 'inboundUser')].filter(Boolean).join(' · ') || '—'],
     [t('实际出口链'), connectionChain(connection)],
     [t('命中规则'), [connection.rule, connection.rule_payload].filter(Boolean).join(' · ') || '—'],

@@ -18,7 +18,7 @@ vi.mock('./api', () => ({
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', lan_prefix_len: 24, upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true, sniffer_enabled: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: false, protected_ipv4: [] },
     })),
     networkInterfaces: vi.fn(async () => ({
@@ -195,7 +195,7 @@ function configFor(mode: ControlConfig['gateway']['mode']): ControlConfig {
     schema_version: 1, revision: 'config-revision',
     gateway: { mode, interface: 'en0', lan_ip: '192.168.1.20', lan_prefix_len: 24, upstream_interface: 'en0' },
     dhcp: { enabled: mode !== 'same_lan', range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: mode === 'same_wifi_dhcp' ? '192.168.1.1' : '', bypass_dns: mode === 'same_wifi_dhcp' ? ['192.168.1.1'] : [] },
-    dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
+    dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true, sniffer_enabled: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
 }
@@ -205,7 +205,7 @@ function installerSeedConfig(): ControlConfig {
     schema_version: 1, revision: 'installer-seed-revision',
     gateway: { mode: 'isolated_lan', interface: 'en0', lan_ip: '192.168.50.1', lan_prefix_len: 24, upstream_interface: 'en0' },
     dhcp: { enabled: true, range_start: '192.168.50.100', range_end: '192.168.50.200', lease_time: '12h', domain: 'lan', bypass_gateway: '', bypass_dns: [] },
-    dns: { listen: '192.168.50.1', upstream: '127.0.0.1#1053', ipv6: false }, mihomo: { store_fake_ip: true }, transparent: { mode: 'off', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
+    dns: { listen: '192.168.50.1', upstream: '127.0.0.1#1053', ipv6: false }, mihomo: { store_fake_ip: true, sniffer_enabled: false }, transparent: { mode: 'off', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
     device_policy: { enabled: false, protected_ipv4: [] },
   }
 }
@@ -1415,7 +1415,22 @@ describe('OpenSurge app shell', () => {
     await userEvent.click(persistence)
     await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
 
-    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ mihomo: { store_fake_ip: false } })))
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ mihomo: { store_fake_ip: false, sniffer_enabled: false } })))
+  })
+
+  it.each([false, true])('saves the Sniffer master switch from enabled=%s and retains fake-IP persistence', async enabled => {
+    const saved = await api.config()
+    vi.mocked(api.config).mockResolvedValue({ ...saved, mihomo: { ...saved.mihomo, sniffer_enabled: enabled } })
+    vi.mocked(api.saveConfig).mockImplementation(async config => ({ ...config, revision: 'updated-revision' }))
+    render(<App />)
+    await userEvent.click(await screen.findByRole('button', { name: '网络设置' }))
+    await userEvent.click(screen.getByText('高级 Mihomo / DNS 设置').closest('summary')!)
+    const sniffer = screen.getByRole('checkbox', { name: '启用 Sniffer' })
+    expect((sniffer as HTMLInputElement).checked).toBe(enabled)
+    await userEvent.click(sniffer)
+    await userEvent.click(screen.getByRole('button', { name: '保存网络配置' }))
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledWith(expect.objectContaining({ mihomo: { store_fake_ip: true, sniffer_enabled: !enabled } })))
+    expect((sniffer as HTMLInputElement).checked).toBe(!enabled)
   })
 
   it('shows the fixed IPv4 readback warning during recovery step 2', async () => {
@@ -2149,7 +2164,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', lan_prefix_len: 24, upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true, sniffer_enabled: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })
@@ -2176,7 +2191,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', lan_prefix_len: 24, upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true, sniffer_enabled: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [{ id: 'home', default_policies: ['DIRECT'], rules: [] }], templates: [], rule_sets: [] } })
@@ -2202,7 +2217,7 @@ describe('OpenSurge app shell', () => {
       schema_version: 1, revision: 'config-revision',
       gateway: { mode: 'same_wifi_dhcp', interface: 'en0', lan_ip: '192.168.1.20', lan_prefix_len: 24, upstream_interface: 'en0' },
       dhcp: { enabled: true, range_start: '192.168.1.120', range_end: '192.168.1.199', lease_time: '12h', domain: 'lan', bypass_gateway: '192.168.1.1', bypass_dns: ['192.168.1.1'] },
-      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
+      dns: { listen: '192.168.1.20', upstream: '1.1.1.1', ipv6: false }, mihomo: { store_fake_ip: true, sniffer_enabled: false }, transparent: { mode: 'tun', strict_route: false, tun_ipv6: 'off' }, local_system_proxy: { enabled: false },
       device_policy: { enabled: true, protected_ipv4: [] },
     })
     vi.mocked(api.devicePolicy).mockResolvedValue({ schema_version: 1, revision: 'policy-r', policy: { devices: [], profiles: [], templates: [], rule_sets: [] } })

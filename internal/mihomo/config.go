@@ -33,6 +33,22 @@ profile:
   store-selected: true
   store-fake-ip: {{ .StoreFakeIP }}
 
+sniffer:
+  enable: {{ .SnifferEnabled }}
+{{- if .SnifferEnabled }}
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: false
+  sniff:
+    HTTP:
+      ports: [80, 8080-8880]
+      override-destination: false
+    TLS:
+      ports: [443, 8443]
+    QUIC:
+      ports: [443]
+{{- end }}
+
 # Use MetaCubeX's documented CDN endpoints instead of the GitHub release URLs
 # baked into mihomo. Imported profiles can contain GEOIP/GEOSITE/GEOASN rules,
 # and engine validation must not depend on a slow GitHub asset download.

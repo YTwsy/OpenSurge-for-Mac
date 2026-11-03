@@ -221,7 +221,8 @@ type DNSConfigInput struct {
 type MihomoConfigInput struct {
 	// Pointer preserves the current value when an older schema-v1 client omits
 	// the field. GET responses always include an explicit boolean.
-	StoreFakeIP *bool `json:"store_fake_ip,omitempty"`
+	StoreFakeIP    *bool `json:"store_fake_ip,omitempty"`
+	SnifferEnabled *bool `json:"sniffer_enabled,omitempty"`
 }
 
 type TransparentConfigInput struct {

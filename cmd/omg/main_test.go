@@ -75,7 +75,7 @@ mihomo:
 			t.Fatalf("render-mihomo output missing %q:\n%s", want, output)
 		}
 	}
-	if strings.Contains(output, "allow-lan: false") || strings.Contains(output, "enable: false") {
+	if strings.Contains(output, "allow-lan: false") || strings.Contains(output, "dns:\n  enable: false") {
 		t.Fatalf("render-mihomo output kept gateway-owned profile fields:\n%s", output)
 	}
 }

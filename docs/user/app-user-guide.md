@@ -179,6 +179,18 @@ upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Per-device
 policies are enabled by default; register devices and choose their egress on the
 Devices page. Select **保存网络配置** (Save network configuration) to save network settings.
 
+**Sniffer (domain detection)** is in **Advanced Mihomo / DNS settings** and is
+off by default. If an app uses external encrypted DNS or cached real IPs and
+its connections lack the domain mapping needed by domain rules, stop the
+gateway, turn on **Enable Sniffer**, save, and start the gateway again. It
+extracts domains from HTTP Host and TLS/QUIC handshakes for rule matching while
+keeping the original destination IP and device-policy precedence. Connections
+using gateway fake-IP DNS normally already have a domain mapping. Sniffing
+cannot reliably recover the real domain hidden by ECH or identify traffic with
+no recognizable domain. The Connections page displays detected domains; inspect
+**Sniffed domain** and **Destination address / port** to check the result.
+OpenSurge owns this switch; imported `sniffer` settings do not override it.
+
 All three topologies expose the two experimental IPv6 settings. **IPv6 DNS
 queries** controls upstream and Fake-IP AAAA answers; explicit IPv6 mappings in
 enabled hosts can still answer AAAA. **Downstream IPv6 takeover** establishes

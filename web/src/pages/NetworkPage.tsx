@@ -488,9 +488,16 @@ export function NetworkPage({ overview, onChanged, onNavigate, onNotify, onOpenC
                   onChange={store_fake_ip => setConfig({ ...config, mihomo: { ...config.mihomo, store_fake_ip } })}
                 />
               </ConfigField>
+              <ConfigField label="Sniffer（域名嗅探）" setting="mihomo.sniffer_enabled" hint="默认关闭。开启后，从 HTTP Host 和 TLS/QUIC 握手中识别域名，补充未经过网关 DNS 的连接匹配；保留原始目标 IP。需停止网关后保存，再启动生效。">
+                <ConfigSwitch
+                  label="启用 Sniffer"
+                  checked={config.mihomo.sniffer_enabled ?? false}
+                  onChange={sniffer_enabled => setConfig({ ...config, mihomo: { ...config.mihomo, sniffer_enabled } })}
+                />
+              </ConfigField>
               <div className="notice mihomo-dns-import-boundary" role="note" aria-label={t('导入 mihomo profile 设置边界')}>
                 <p><strong>{t('OpenSurge 会保留并合并：')}</strong>{t('导入 profile 中的 DNS 解析器与过滤设置，例如')} <code>nameserver</code>、<code>nameserver-policy</code>、<code>proxy-server-nameserver</code>、<code>direct-nameserver</code>、<code>respect-rules</code>、<code>fake-ip-filter</code> {t('和')} <code>fallback</code>。</p>
-                <p><strong>{t('OpenSurge 自主管理，不保留导入值：')}</strong>{t('DNS 监听、IPv6、fake-IP 模式与网段，以及')} <code>profile.store-fake-ip</code>。</p>
+                <p><strong>{t('OpenSurge 自主管理，不保留导入值：')}</strong>{t('DNS 监听、IPv6、fake-IP 模式与网段，以及')} <code>profile.store-fake-ip</code>、<code>sniffer</code>。</p>
               </div>
             </div>
           </details>
