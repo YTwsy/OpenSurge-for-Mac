@@ -404,6 +404,7 @@ renders and owns:
   members across restarts;
 - configurable `profile.store-fake-ip`, defaulting to `true` through
   `mihomo.store_fake_ip`, so existing fake-IP mappings survive apply/restart;
+- the `sniffer` block, controlled by `mihomo.sniffer_enabled` (default `false`);
 - DNS enablement, listener, AAAA policy, fake-ip mode/range, and TUN DNS
   hijack; imported resolver/filter policy is merged around these owned fields;
 - TUN device, stack, routing flags, and LAN/private route exclusions.
@@ -411,6 +412,21 @@ renders and owns:
 This prevents a desktop mihomo profile from disabling LAN access, turning off
 DNS/TUN, changing controller ports, or reintroducing unsupported transparent
 proxy paths.
+
+The Sniffer master switch is independent of subscription imports and overlays.
+Old configs default to off; old Control API clients omitting the preference
+preserve its saved value. Off explicitly renders `sniffer.enable: false`.
+On enables HTTP ports `80, 8080-8880`, TLS ports `443, 8443` and QUIC port `443`,
+with `force-dns-mapping: true`, `parse-pure-ip: true` and
+`override-destination: false` (also explicit for HTTP). This supplements domain
+rules for real-IP connections without replacing their destination IP or
+reordering device/global rules. It does not force re-sniffing of all existing
+domain mappings or copy subscription/OpenClash-specific force/skip domain lists.
+ECH and traffic without a recognizable hostname remain outside the guarantee.
+The connection list prefers `sniffHost`, as mihomo does for rule matching; the
+detail view keeps the original `host` and destination IP separately visible.
+Changes follow the existing stopped-gateway network configuration save/start
+flow. See the [Sniffer real-core gate](../validation/test-gates.md#sniffer-real-core).
 
 ## Device and local-Mac composition
 

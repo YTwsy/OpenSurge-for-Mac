@@ -41,6 +41,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('ConnectionsPage', () => {
+  it.each(['', 'original.example.invalid'])('shows and searches sniffed domains without losing the original host %s or destination IP', originalHost => {
+    const next = observation()
+    next.connections[0].metadata = { ...next.connections[0].metadata, host: originalHost, sniffHost: 'sniffed.example.invalid', destinationIP: '203.0.113.8', destinationPort: '443' }
+    vi.mocked(useConnections).mockReturnValue({ snapshot: next, error: '' })
+    render(<Harness />)
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'sniffed.example.invalid' } })
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: 'sniffed.example.invalid' }))
+    const detail = screen.getByRole('dialog')
+    expect(within(detail).getByText('嗅探域名').nextElementSibling?.textContent).toBe('sniffed.example.invalid')
+    expect(within(detail).getByText('目标域名').nextElementSibling?.textContent).toBe(originalHost || '—')
+    expect(within(detail).getByText('203.0.113.8 / 443')).toBeTruthy()
+    for (const query of [originalHost, '203.0.113.8'].filter(Boolean)) {
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: query } })
+      expect(screen.getAllByRole('row')).toHaveLength(2)
+      expect(screen.getByRole('button', { name: 'sniffed.example.invalid' })).toBeTruthy()
+    }
+  })
+
   it('guides a stopped gateway to network settings without presenting an expected core error as a failure', () => {
     const next = observation()
     next.devices = []

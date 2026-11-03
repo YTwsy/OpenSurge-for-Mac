@@ -219,6 +219,12 @@ func applyValue(cfg *Config, section, key, value string) error {
 			return fmt.Errorf("mihomo.store_fake_ip must be a boolean")
 		}
 		cfg.Mihomo.StoreFakeIP = enabled
+	case "mihomo.sniffer_enabled":
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("mihomo.sniffer_enabled must be a boolean")
+		}
+		cfg.Mihomo.SnifferEnabled = enabled
 	case "mihomo.mixed_port":
 		port, err := strconv.Atoi(value)
 		if err != nil {

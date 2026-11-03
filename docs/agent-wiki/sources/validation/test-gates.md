@@ -53,6 +53,20 @@ TCP 或 UDP 被竞争占用时的失败判定、清理和有界重试。测试�
 被接管的主机资源。运行前读取 [Lab 前提](lab-gates.md)，每轮检查当次 artifacts，收尾执行
 `make lab-down`、`make lab-status`。未完成清理不能记为完整通过。
 
+## Sniffer real-core
+
+```sh
+OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
+  go test ./internal/mihomo -run '^TestSnifferRealCore$' -count=1
+```
+
+该门槛使用正式渲染器生成的 Sniffer 和规则配置，仅把监听隔离到随机 loopback
+端口并关闭 DNS。客户端通过 SOCKS5 提交真实 IP，再发送 HTTP Host 或 TLS SNI；
+断言关闭时走兜底、开启后命中域名规则，并通过受控 CONNECT 出口与连接元数据核对
+原始目标 IP 未被改写。覆盖 HTTP 80/8080、TLS 443/8443 及范围外端口的负对照。
+不依赖公网或接管当前网关，不证明真实 TUN/LAN、QUIC 或 ECH 路径；对应端到端
+声明仍需透明代理门槛或明确限定范围的真实设备验证。
+
 ## 局域网管理
 
 认证和监听契约先运行 `make test`、`make web-test`、`make web-build`、`make desktop-test`

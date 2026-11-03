@@ -73,6 +73,7 @@ type MihomoConfig struct {
 	ProfileOverlayDigest   string
 	ProfileCustomDNSDigest string
 	StoreFakeIP            bool
+	SnifferEnabled         bool
 	MixedPort              int
 	RedirPort              int
 	APIAddr                string
@@ -243,15 +244,16 @@ func Default() Config {
 			IPv6:     false,
 		},
 		Mihomo: MihomoConfig{
-			Binary:      "./bin/mihomo",
-			Config:      "./runtime/mihomo.yaml",
-			ProfileMode: MihomoProfileModeManaged,
-			Profile:     "",
-			StoreFakeIP: true,
-			MixedPort:   7890,
-			RedirPort:   0,
-			APIAddr:     "127.0.0.1:9090",
-			Secret:      "",
+			Binary:         "./bin/mihomo",
+			Config:         "./runtime/mihomo.yaml",
+			ProfileMode:    MihomoProfileModeManaged,
+			Profile:        "",
+			StoreFakeIP:    true,
+			SnifferEnabled: false,
+			MixedPort:      7890,
+			RedirPort:      0,
+			APIAddr:        "127.0.0.1:9090",
+			Secret:         "",
 		},
 		Tailscale: TailscaleConfig{
 			Enabled:          false,
