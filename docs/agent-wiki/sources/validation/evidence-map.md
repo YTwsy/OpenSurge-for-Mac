@@ -114,10 +114,12 @@ dnsmasq 二进制或未应用策略文件，明确消失的下游接口不再阻
 当前构建固定为上游 `3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8` 的
 `1.19.33-opensurge.1`，保留 OpenSurge packet listener 与无原生 IPv6 时的配置隔离补丁。
 已有双架构编译、arm64 隔离真实核心、策略控制及 Unix packet listener 的受控 UDP/身份
-检查；这些结果不证明 BPF、DHCP/RA、真实 TUN 或三个下游 IPv6 拓扑。
-当前本地测试包按用户选择暂缓网络回归，历史 `1.19.30` 的网络证据不能直接沿用。
-运行步骤与覆盖要求见 [test-gates](test-gates.md)，具体执行版本、结果和未覆盖项保留在
-本次迁移提交及安装包的 `.build-info.json` 中。
+检查；本地测试包中的同一 arm64 核心现已通过基础 DHCP/DNS/NAT、真实 TUN、本机与
+设备策略，以及三个下游 IPv6 拓扑的 BPF、RA/手工接入和受控 HTTP/3 回归。
+具体版本、制品摘要、失败归因、清理与原网关恢复证据见
+[网络回归记录](../../tasks/finished_archived/mihomo-1.19.33-network-regression.md)。
+这些结果限于受控虚拟客户端，不代表物理 Wi-Fi 竞争 RA、真实订阅/Tailnet、睡眠重启
+或 Intel 硬件验收。运行步骤与覆盖要求见 [test-gates](test-gates.md)。
 
 ## 使用与更新
 

@@ -17,7 +17,7 @@ v0.3.3 重点改善网关恢复、配置管理和操作反馈，新增默认关�
 
 ### 升级说明
 
-- 当前 `1.19.33` 内核迁移用于本地测试包。隔离真实核心与构建检查已通过；host-network、TUN 和三个下游 IPv6 拓扑的 Virtual Lab 回归暂缓，正式发布前仍需完成。
+- `1.19.33` 本地测试包中的 arm64 核心已通过隔离真实核心、构建检查、host-network、真实 TUN 和三个下游 IPv6 拓扑的 Virtual Lab 回归；这些结果不覆盖物理客户端、真实 Tailnet 或 Intel 硬件，详见[网络回归记录](../docs/agent-wiki/tasks/finished_archived/mihomo-1.19.33-network-regression.md)。
 - Sniffer 在新安装和旧配置升级后均默认关闭，导入订阅不会覆盖该开关。修改时需停止网关，保存网络配置后重新启动；它不能保证识别 ECH 隐藏的真实域名或其他没有可识别域名的流量。
 - Mac 系统 DNS 按接管前备份恢复；接管期间由用户或其他软件修改的 DNS 也会被原备份替换。恢复失败的提醒和已保存的备份会保留供后续重试。
 - 完整变更：[v0.3.2...v0.3.3](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.2...v0.3.3)。
@@ -87,7 +87,7 @@ v0.3.3 improves gateway recovery, configuration management and operation feedbac
 
 ### Upgrade notes
 
-- The current `1.19.33` migration is for local test packages. Isolated real-core and build checks have passed; host-network, TUN and all three downstream IPv6 Virtual Lab topologies remain deferred and must be verified before a formal release.
+- The arm64 core from the `1.19.33` local test package has passed isolated real-core and build checks, host-network, real TUN and all three downstream IPv6 Virtual Lab topologies. These results do not cover physical clients, real Tailnet traffic or Intel hardware; see the [network regression record](../docs/agent-wiki/tasks/finished_archived/mihomo-1.19.33-network-regression.md).
 - Sniffer is off by default for both new installations and upgrades from older configurations. Imported subscriptions cannot override the switch. Stop the gateway, save the changed network configuration, and start it again to apply. Sniffing cannot reliably identify the real domain hidden by ECH or traffic without a recognizable hostname.
 - Mac system DNS is restored from the original pre-takeover backup, replacing DNS changes made by the user or other software during takeover. Failed restoration retains a warning and the persisted backup for retry.
 - Full changelog: [v0.3.2...v0.3.3](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.2...v0.3.3).

@@ -21,6 +21,9 @@ jobs:
       - name: Run unit tests
         run: make test
 
+      - name: Check Lab runner without host network access
+        run: make lab-unit-test
+
   web:
     name: Web tests and build
     runs-on: ubuntu-latest
