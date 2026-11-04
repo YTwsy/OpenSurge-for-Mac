@@ -109,6 +109,16 @@ dnsmasq 二进制或未应用策略文件，明确消失的下游接口不再阻
 这不是 TUN/LAN、QUIC、ECH 或 Google 登录风控的端到端证据；新开关尚需按相应
 拓扑补充 Lab 或真实设备验证，不能借用此前仅观察到缺失域名的连接作为开启后的验收。
 
+## Mihomo 内核迁移
+
+当前构建固定为上游 `3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8` 的
+`1.19.33-opensurge.1`，保留 OpenSurge packet listener 与无原生 IPv6 时的配置隔离补丁。
+已有双架构编译、arm64 隔离真实核心、策略控制及 Unix packet listener 的受控 UDP/身份
+检查；这些结果不证明 BPF、DHCP/RA、真实 TUN 或三个下游 IPv6 拓扑。
+当前本地测试包按用户选择暂缓网络回归，历史 `1.19.30` 的网络证据不能直接沿用。
+运行步骤与覆盖要求见 [test-gates](test-gates.md)，具体执行版本、结果和未覆盖项保留在
+本次迁移提交及安装包的 `.build-info.json` 中。
+
 ## 使用与更新
 
 先确定具体路径再读对应报告。“最近已知通过”不等于当前 checkout 复验；未收录或未检索到

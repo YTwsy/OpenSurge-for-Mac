@@ -13,10 +13,10 @@ DNSMASQ_SHA256=cc967771abdafeb43d10db18932d6b59fd4bed2c69c22acf8cb96aff6920d55f
 DNSMASQ_ARCHIVE="dnsmasq-${DNSMASQ_VERSION}.tar.gz"
 DNSMASQ_URL="https://thekelleys.org.uk/dnsmasq/${DNSMASQ_ARCHIVE}"
 
-MIHOMO_VERSION=1.19.30
-MIHOMO_SOURCE_SHA256=971dd4533e4e2c3dad7473e8115200da8c0d7471b4b61da54da896345c5b3850
+MIHOMO_VERSION=1.19.33
+MIHOMO_SOURCE_SHA256=ecda5f8c8a8a1d60bc088c2640c85d92c8f002c0686234a26bdf671735afe216
 MIHOMO_SOURCE_ARCHIVE="mihomo-${MIHOMO_VERSION}-source.tar.gz"
-MIHOMO_SOURCE_URL="https://github.com/MetaCubeX/mihomo/archive/ac017cdd246ce8bd547653d927e7bf77d7ee73d5.tar.gz"
+MIHOMO_SOURCE_URL="https://github.com/MetaCubeX/mihomo/archive/3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8.tar.gz"
 case "$RELEASE_ARCH" in
   arm64|x86_64)
     ;;

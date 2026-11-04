@@ -1,11 +1,12 @@
-[简体中文](#v033-rc1-主要变化相对-v032) · [English](#english)
+[简体中文](#v033-主要变化相对-v032) · [English](#english)
 
 > **v0.3 series codename: Verdilion**
 
-### v0.3.3-rc.1 主要变化（相对 v0.3.2）
+### v0.3.3 主要变化（相对 v0.3.2）
 
-v0.3.3-rc.1 是 v0.3.3 的首个候选版本，重点改善网关恢复、配置管理和操作反馈，并新增默认关闭的 Sniffer 域名嗅探开关。本次以 **Pre-release** 发布，供提前体验和反馈。
+v0.3.3 重点改善网关恢复、配置管理和操作反馈，新增默认关闭的 Sniffer 域名嗅探开关，并将代理内核升级为 OpenSurge-patched Mihomo `1.19.33-opensurge.1`。
 
+- **升级 Mihomo 内核至 1.19.33**：保留 OpenSurge 的下游 IPv6 packet listener 与本机 IPv6 配置隔离补丁，纳入上游 TLS、DoH 查询和配置重载时 fake-IP 分配状态的修复。
 - **修复 DNS 恢复失败阻断网关清理与后续启动的问题**：系统 DNS 的原设置改为独立保存；停止、回滚或重启代理引擎时按备份恢复。原网络服务已消失时跳过恢复，不把旧设置写入同名新服务；恢复失败时保留提醒和已保存的备份供重试，并继续其他网关清理，避免单个 DNS 恢复错误卡住整个流程。见 [#107](https://github.com/YTwsy/OpenSurge-for-Mac/issues/107)、[#109](https://github.com/YTwsy/OpenSurge-for-Mac/pull/109)。
 - **减少无关配置错误对恢复操作的阻断**：停止网关、DHCP 恢复和状态诊断不再一并要求下一次部署的参数及未应用策略完整有效；租约读取失败单独提示，不遮蔽已知网关状态与恢复入口。独立重启代理引擎不再依赖无关的 dnsmasq 或未应用策略文件；下游接口明确消失时，仍可清理本地资源。新配置应用时继续执行完整校验。见 [#109](https://github.com/YTwsy/OpenSurge-for-Mac/pull/109)。
 - **新增 Sniffer 域名嗅探总开关，默认关闭**：在“网络设置 → 高级 Mihomo / DNS 设置”中按需启用。当应用使用外部加密 DNS 或缓存的真实 IP，导致连接缺少域名映射时，可从 HTTP Host、TLS/QUIC 握手中补充域名供规则匹配。嗅探保留原始目标 IP，不改变设备规则优先级；连接页会展示嗅探域名，方便核对命中规则与出口。见 [#110](https://github.com/YTwsy/OpenSurge-for-Mac/issues/110)、[#111](https://github.com/YTwsy/OpenSurge-for-Mac/pull/111)。
@@ -16,10 +17,10 @@ v0.3.3-rc.1 是 v0.3.3 的首个候选版本，重点改善网关恢复、配置
 
 ### 升级说明
 
-- 本次为 **Pre-release**，不替代 v0.3.2 的稳定版 Latest。App 的更新检查仍面向正式版，请从本页手动下载此 RC。
+- 当前 `1.19.33` 内核迁移用于本地测试包。隔离真实核心与构建检查已通过；host-network、TUN 和三个下游 IPv6 拓扑的 Virtual Lab 回归暂缓，正式发布前仍需完成。
 - Sniffer 在新安装和旧配置升级后均默认关闭，导入订阅不会覆盖该开关。修改时需停止网关，保存网络配置后重新启动；它不能保证识别 ECH 隐藏的真实域名或其他没有可识别域名的流量。
 - Mac 系统 DNS 按接管前备份恢复；接管期间由用户或其他软件修改的 DNS 也会被原备份替换。恢复失败的提醒和已保存的备份会保留供后续重试。
-- 完整变更：[v0.3.2...v0.3.3-rc.1](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.2...v0.3.3-rc.1)。
+- 完整变更：[v0.3.2...v0.3.3](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.2...v0.3.3)。
 
 ### 下载安装包
 
@@ -64,17 +65,18 @@ OpenSurge 自有代码采用 `GPL-3.0-only`。第三方许可证、声明与准�
 
 `/Library/Application Support/OpenSurge/share/licenses/`
 
-- OpenSurge-patched Mihomo `1.19.30-opensurge.1` 的上游基线源码：<https://github.com/MetaCubeX/mihomo/tree/ac017cdd246ce8bd547653d927e7bf77d7ee73d5>
+- OpenSurge-patched Mihomo `1.19.33-opensurge.1` 的上游基线源码：<https://github.com/MetaCubeX/mihomo/tree/3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8>
 - dnsmasq 2.93 源码：<https://thekelleys.org.uk/dnsmasq/dnsmasq-2.93.tar.gz>
 
 ---
 
 ## English
 
-### v0.3.3-rc.1 highlights since v0.3.2
+### v0.3.3 highlights since v0.3.2
 
-v0.3.3-rc.1 is the first release candidate for v0.3.3. It focuses on gateway recovery, configuration management and operation feedback, and adds an opt-in domain sniffer. It is published as a **Pre-release** for early testing and feedback.
+v0.3.3 improves gateway recovery, configuration management and operation feedback, adds an opt-in domain sniffer, and upgrades the proxy engine to OpenSurge-patched Mihomo `1.19.33-opensurge.1`.
 
+- **Upgrade Mihomo to 1.19.33:** Retain the OpenSurge downstream IPv6 packet listener and independent host IPv6 configuration patches, while incorporating upstream TLS, DoH query and fake-IP allocation-state fixes during configuration reload.
 - **Fix DNS restoration blocking gateway cleanup and subsequent startup:** Original system DNS settings are now saved independently and restored during stop, rollback or proxy-engine restart. If the original network service no longer exists, restoration skips it without changing a new service with the same name. Restoration failures retain a warning and the persisted backup for retry while other gateway cleanup continues. See [#107](https://github.com/YTwsy/OpenSurge-for-Mac/issues/107), [#109](https://github.com/YTwsy/OpenSurge-for-Mac/pull/109).
 - **Keep recovery actions available despite unrelated configuration errors:** Gateway stop, DHCP recovery and status diagnostics no longer require every future deployment setting and unapplied policy to be valid. Lease-reading errors are reported separately without hiding known gateway state or recovery actions. Restarting only the proxy engine no longer depends on unrelated dnsmasq or unapplied policy files; local cleanup can proceed when a downstream interface is confirmed absent. New deployments still require full validation. See [#109](https://github.com/YTwsy/OpenSurge-for-Mac/pull/109).
 - **Add a Sniffer master switch, off by default:** Enable it in Network Settings → Advanced Mihomo / DNS settings when needed. If an app uses external encrypted DNS or cached real IPs and its connection lacks a domain mapping, sniffing can supplement domain rules using HTTP Host and TLS/QUIC handshakes. It retains the original destination IP and device-rule precedence. The Connections page displays sniffed domains to help inspect the matched rule and egress. See [#110](https://github.com/YTwsy/OpenSurge-for-Mac/issues/110), [#111](https://github.com/YTwsy/OpenSurge-for-Mac/pull/111).
@@ -85,10 +87,10 @@ v0.3.3-rc.1 is the first release candidate for v0.3.3. It focuses on gateway rec
 
 ### Upgrade notes
 
-- This is a **Pre-release** and does not replace v0.3.2 as stable Latest. The app's update check targets stable releases; download this RC manually from this page.
+- The current `1.19.33` migration is for local test packages. Isolated real-core and build checks have passed; host-network, TUN and all three downstream IPv6 Virtual Lab topologies remain deferred and must be verified before a formal release.
 - Sniffer is off by default for both new installations and upgrades from older configurations. Imported subscriptions cannot override the switch. Stop the gateway, save the changed network configuration, and start it again to apply. Sniffing cannot reliably identify the real domain hidden by ECH or traffic without a recognizable hostname.
 - Mac system DNS is restored from the original pre-takeover backup, replacing DNS changes made by the user or other software during takeover. Failed restoration retains a warning and the persisted backup for retry.
-- Full changelog: [v0.3.2...v0.3.3-rc.1](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.2...v0.3.3-rc.1).
+- Full changelog: [v0.3.2...v0.3.3](https://github.com/YTwsy/OpenSurge-for-Mac/compare/v0.3.2...v0.3.3).
 
 ### Download the installer
 
@@ -133,5 +135,5 @@ OpenSurge original code is licensed under `GPL-3.0-only`. Third-party license te
 
 `/Library/Application Support/OpenSurge/share/licenses/`
 
-- Upstream baseline source for OpenSurge-patched Mihomo `1.19.30-opensurge.1`: <https://github.com/MetaCubeX/mihomo/tree/ac017cdd246ce8bd547653d927e7bf77d7ee73d5>
+- Upstream baseline source for OpenSurge-patched Mihomo `1.19.33-opensurge.1`: <https://github.com/MetaCubeX/mihomo/tree/3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8>
 - dnsmasq 2.93 source: <https://thekelleys.org.uk/dnsmasq/dnsmasq-2.93.tar.gz>

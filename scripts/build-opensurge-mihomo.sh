@@ -3,12 +3,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_ARCHIVE_OVERRIDE="${OPENSURGE_MIHOMO_SOURCE_ARCHIVE:-}"
-SOURCE_ARCHIVE="${SOURCE_ARCHIVE_OVERRIDE:-$ROOT/runtime/release-tools/cache/mihomo-1.19.30-source.tar.gz}"
-SOURCE_SHA256=971dd4533e4e2c3dad7473e8115200da8c0d7471b4b61da54da896345c5b3850
-SOURCE_URL=https://github.com/MetaCubeX/mihomo/archive/ac017cdd246ce8bd547653d927e7bf77d7ee73d5.tar.gz
+SOURCE_ARCHIVE="${SOURCE_ARCHIVE_OVERRIDE:-$ROOT/runtime/release-tools/cache/mihomo-1.19.33-source.tar.gz}"
+SOURCE_SHA256=ecda5f8c8a8a1d60bc088c2640c85d92c8f002c0686234a26bdf671735afe216
+SOURCE_URL=https://github.com/MetaCubeX/mihomo/archive/3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8.tar.gz
 OUTPUT="${OPENSURGE_MIHOMO_OUTPUT:-$ROOT/bin/mihomo}"
 TARGET_ARCH="${OPENSURGE_MIHOMO_ARCH:-$(uname -m)}"
-VERSION="${OPENSURGE_MIHOMO_VERSION:-1.19.30-opensurge.1}"
+VERSION="${OPENSURGE_MIHOMO_VERSION:-1.19.33-opensurge.1}"
 GO_BIN="${GO_BIN:-$(command -v go || true)}"
 CACHE_DIR="${OPENSURGE_MIHOMO_CACHE_DIR:-$ROOT/runtime/release-tools/cache/mihomo-builds}"
 CACHE_HELPER="$ROOT/scripts/mihomo-build-cache.py"

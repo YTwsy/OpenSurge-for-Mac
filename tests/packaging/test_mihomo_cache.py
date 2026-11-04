@@ -15,7 +15,7 @@ import tempfile
 import unittest
 
 REPO = Path(__file__).resolve().parents[2]
-PIN = '971dd4533e4e2c3dad7473e8115200da8c0d7471b4b61da54da896345c5b3850'
+PIN = 'ecda5f8c8a8a1d60bc088c2640c85d92c8f002c0686234a26bdf671735afe216'
 FAKE_GO = r'''
 import json, os, pathlib, sys
 args = sys.argv[1:]

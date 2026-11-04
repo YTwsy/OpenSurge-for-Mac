@@ -7,18 +7,18 @@ places this notice and the referenced license texts under
 
 ## mihomo
 
-- Upstream base version: `1.19.30`
-- Distributed OpenSurge build version: `1.19.30-opensurge.1`
+- Upstream base version: `1.19.33`
+- Distributed OpenSurge build version: `1.19.33-opensurge.1`
 - License: `GPL-3.0-only`
 - Distributed form: architecture-specific binaries compiled from the pinned
   upstream source with the OpenSurge packet-listener patch stored under
   `patches/mihomo`. The listener reuses mihomo's existing gVisor/sing-tun data
   plane for the OpenSurge downstream IPv6 packet broker.
 - Source archive SHA-256:
-  `971dd4533e4e2c3dad7473e8115200da8c0d7471b4b61da54da896345c5b3850`
+  `ecda5f8c8a8a1d60bc088c2640c85d92c8f002c0686234a26bdf671735afe216`
 - Upstream: <https://github.com/MetaCubeX/mihomo>
 - Corresponding source:
-  <https://github.com/MetaCubeX/mihomo/tree/ac017cdd246ce8bd547653d927e7bf77d7ee73d5>
+  <https://github.com/MetaCubeX/mihomo/tree/3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8>
 - License text: [`LICENSE`](LICENSE)
 
 ## dnsmasq

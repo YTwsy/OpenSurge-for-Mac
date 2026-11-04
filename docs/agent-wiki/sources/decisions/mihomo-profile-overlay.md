@@ -89,7 +89,7 @@ Two UTF-8 formats are accepted, each limited to 2 MiB; BOM and LF/CRLF work:
 `use-hosts`, `use-system-hosts`. New domain selectors are literal/wildcard domains;
 rule-mode filters accept DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD and terminal MATCH,
 with `real-ip`/`fake-ip` actions. Wildcard matching follows the pinned core
-[domain trie](https://github.com/MetaCubeX/mihomo/blob/ac017cdd246ce8bd547653d927e7bf77d7ee73d5/component/trie/domain.go);
+[domain trie](https://github.com/MetaCubeX/mihomo/blob/3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8/component/trie/domain.go);
 ambiguous equal-rank alias targets are checked conservatively. New geosite/RuleSet/provider/file dependencies,
 full profiles, dnsmasq snippets and gateway-owned fields are rejected. Existing
 subscription/overlay dependencies are retained. Engine validation still owns
