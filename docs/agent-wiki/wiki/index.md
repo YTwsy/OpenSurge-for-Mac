@@ -22,13 +22,14 @@
 
 ## 开发、验证与证据
 
-- 项目定位与实现入口：[项目简报](../sources/project-brief.md)。
+- 当前架构与实现入口：[架构简报](../sources/project-brief.md)。
 - 本地调试、构建和资源更新：[开发说明](../sources/development.md)。
 - PKG 构建、版本、签名和产物：[构建与发布](../sources/releasing.md)。
 - 理解证明范围：[验证概念](concepts/validation-gates.md)；选择具体检查：[test-gates](../sources/validation/test-gates.md)。
 - Lab 环境或清理故障：[lab-gates](../sources/validation/lab-gates.md)。
 - 原生交互与安装检查：[desktop smoke](../sources/validation/desktop-smoke.md)；物理客户端与恢复：[物理网络](../sources/validation/physical-network.md)。
 - 判断支持、通过或阻塞：[证据入口](../sources/validation/evidence-map.md)，再读对应日期记录。
+- Wiki 阅读、维护与归档：[阅读与维护](../README.md#阅读与维护)。
 
 历史仅在验收判断、回归或版本追溯时沿证据入口定向读取；默认检索遵守 `.ignore`，不展开归档清单。
 

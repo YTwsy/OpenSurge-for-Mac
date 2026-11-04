@@ -5,6 +5,9 @@
 不在这里复制完整断言清单。环境准备与清理见 [Lab 运行](lab-gates.md)，
 历史执行结果经 [证据入口](evidence-map.md) 定向读取。
 
+高风险网络改动需要对应路径的实验室验证，单元测试不能替代。结论必须明确本次实际
+运行的检查、被测版本与覆盖范围；GUI、构建与发布结果不扩大网络证明范围。
+
 打包缓存改动运行 `python3 tests/packaging/test_mihomo_cache.py`，也包含在
 `scripts/check-gui-packaging.sh` 中。它以临时源码归档和假 Go 工具验证命中、输入失效、
 摘要损坏、缺失来源记录及失败不发布。真实核心另验证一次冷构建、相同输入命中及
@@ -12,8 +15,8 @@
 
 ## 快速门槛
 
-普通 Go 代码、解析与生成逻辑运行 `make test`（`go test ./...`）；Web 交互与文案按范围
-运行 `make web-test`，前端源码变化同时 `make web-build` 更新嵌入资源。原生桌面运行
+普通 Go 代码、解析与生成逻辑默认运行 `make test`（`go test ./...`），与后端 CI 一致。
+Web 交互与文案按范围运行 `make web-test`，前端源码变化同时 `make web-build` 更新嵌入资源。原生桌面运行
 `make desktop-test`。这些通过不证明真实网络、原生界面或安装。Go cache 权限受限时可把
 `GOCACHE` 指向 `/private/tmp` 的专用路径。
 
@@ -48,7 +51,8 @@ TCP 或 UDP 被竞争占用时的失败判定、清理和有界重试。测试�
 语法，但语法检查不证明端口绑定成功。正式分支复用 Manager 的 DNS 就绪检查，不启动完整 Gateway Manager，
 不接管 DHCP、pf、TUN 或系统 DNS，因此不能替代下列 host-network/TUN/workspace 门槛。
 
-涉及 DHCP/DNS、进程、PF/NAT、IPv4 forwarding、rollback 或清理时使用 `make lab-test`。
+涉及 DHCP/DNS、mihomo 进程或配置生成、PF/NAT、IPv4 forwarding、rollback、网关生命周期
+清理、Lab 拓扑或 runtime traffic defaults 的改动时，使用 `make lab-test` 验证 host-network 路径。
 通过要求 Lima 客户端取得 DHCP/DNS、完成 ICMP/NAT、直连和 mixed-port HTTPS，并恢复
 被接管的主机资源。运行前读取 [Lab 前提](lab-gates.md)，每轮检查当次 artifacts，收尾执行
 `make lab-down`、`make lab-status`。未完成清理不能记为完整通过。
@@ -91,6 +95,9 @@ HTTP-only Global 的 UDP fail closed。它不能替代下游身份、DHCP/DNS �
 
 ## 下游 IPv6 门槛
 
+修改下游 IPv6 RA/SLAAC/RDNSS、BPF broker、patched mihomo packet listener、设备身份
+或停止撤销时，按拓扑运行对应门槛，才能宣称对应 host-network IPv6 路径已验证。
+
 | 拓扑 | 入口 | 必须证明的范围 |
 | --- | --- | --- |
 | 独立下游 LAN | `make lab-test-ipv6-userspace` | 自动 RA/SLAAC/RDNSS、两设备 MAC/InUser 策略与停止撤销 |
@@ -128,6 +135,9 @@ selector 输出或 cache，并扫描凭据/节点标识。确认 stop 成功后�
 确定性 Lab、人工客户端和 ADB 结果分别记录；不互相替代。
 
 ## 透明代理门槛
+
+涉及透明代理的改动，需要运行 `make lab-test-tun` 才能宣称 TUN 透明代理路径已验证；
+导入配置、出口切换与准备态另按下表选择对应门槛。
 
 | 改动范围 | 入口 | 通过标准与限制 |
 | --- | --- | --- |
@@ -239,7 +249,4 @@ fixture、实际安装和 host-network 分别限定结论。
 
 ## 结果与维护
 
-本页不累计执行日期或“已通过”报告。一次执行的版本、环境、实际检查、结果、证据位置
-与未覆盖项写入提交/PR 或已有任务记录；已有记录结束后归档到 `tasks/finished_archived/`。
-仅当新证据影响能力判断、暴露阻塞或实现变化要求复验时，更新证据入口和当前限制。
-普通小改动不为记录几个命令新建任务或 validation 页面。
+执行记录、证据回写与归档统一遵循 [Wiki 维护规则](../../README.md#阅读与维护)。
