@@ -31,6 +31,33 @@ text. Both block and flow collections are supported, including compact
 OpenSurge does not rewrite the imported source snapshot; only the generated
 runtime mihomo config may normalize collection style or indentation.
 
+## Source library deletion
+
+Sources owns a persistent library record, managed snapshots and subscription
+credentials. Removing an original YAML or a managed snapshot in Finder does not
+remove the library record. The Sources page provides a confirmed **Delete source**
+action backed by authenticated `DELETE /api/v1/sources/{id}` with the current
+configuration `If-Match` revision. It removes that record, all snapshots under
+its managed source ID and its saved subscription credential. Missing snapshots
+are tolerated; original files, exported copies and global drafts are preserved.
+
+The selected raw source is protected, including a selected historical version.
+If the running profile differs from the saved profile, reconcile or stop the
+gateway before deleting sources. Import, refresh, apply and delete are serialized
+to prevent stale writes from restoring removed records. Cleanup failures retain
+the record for retry. Deletion neither updates gateway configuration nor reloads
+the gateway; switching the selected source remains the explicit apply flow.
+
+Deletion uses recovery configuration loading rather than deployment validation:
+unrelated DNS/DHCP settings and unapplied device-policy drafts do not block
+removing an unused source. Configuration syntax, recovery paths, profile mode,
+selected profile path and raw-source digest must still identify the references
+unambiguously. Selected current/historical sources and uncertain running-profile
+references remain protected, as do revision, serialization and managed-directory
+boundaries. Successful deletion uses the shared operation notification; a failed
+deletion remains in its confirmation dialog for retry. A subsequent list-read
+failure is reported separately and does not turn deletion into a failed action.
+
 ## File-based custom DNS
 
 Sources exposes one optional **Custom DNS** draft as a sibling of the Global
@@ -62,7 +89,7 @@ Two UTF-8 formats are accepted, each limited to 2 MiB; BOM and LF/CRLF work:
 `use-hosts`, `use-system-hosts`. New domain selectors are literal/wildcard domains;
 rule-mode filters accept DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD and terminal MATCH,
 with `real-ip`/`fake-ip` actions. Wildcard matching follows the pinned core
-[domain trie](https://github.com/MetaCubeX/mihomo/blob/ac017cdd246ce8bd547653d927e7bf77d7ee73d5/component/trie/domain.go);
+[domain trie](https://github.com/MetaCubeX/mihomo/blob/3f27ef39f8c96bbfbc8b0b9bb10f5c9ef60149d8/component/trie/domain.go);
 ambiguous equal-rank alias targets are checked conservatively. New geosite/RuleSet/provider/file dependencies,
 full profiles, dnsmasq snippets and gateway-owned fields are rejected. Existing
 subscription/overlay dependencies are retained. Engine validation still owns
@@ -377,6 +404,7 @@ renders and owns:
   members across restarts;
 - configurable `profile.store-fake-ip`, defaulting to `true` through
   `mihomo.store_fake_ip`, so existing fake-IP mappings survive apply/restart;
+- the `sniffer` block, controlled by `mihomo.sniffer_enabled` (default `false`);
 - DNS enablement, listener, AAAA policy, fake-ip mode/range, and TUN DNS
   hijack; imported resolver/filter policy is merged around these owned fields;
 - TUN device, stack, routing flags, and LAN/private route exclusions.
@@ -384,6 +412,21 @@ renders and owns:
 This prevents a desktop mihomo profile from disabling LAN access, turning off
 DNS/TUN, changing controller ports, or reintroducing unsupported transparent
 proxy paths.
+
+The Sniffer master switch is independent of subscription imports and overlays.
+Old configs default to off; old Control API clients omitting the preference
+preserve its saved value. Off explicitly renders `sniffer.enable: false`.
+On enables HTTP ports `80, 8080-8880`, TLS ports `443, 8443` and QUIC port `443`,
+with `force-dns-mapping: true`, `parse-pure-ip: true` and
+`override-destination: false` (also explicit for HTTP). This supplements domain
+rules for real-IP connections without replacing their destination IP or
+reordering device/global rules. It does not force re-sniffing of all existing
+domain mappings or copy subscription/OpenClash-specific force/skip domain lists.
+ECH and traffic without a recognizable hostname remain outside the guarantee.
+The connection list prefers `sniffHost`, as mihomo does for rule matching; the
+detail view keeps the original `host` and destination IP separately visible.
+Changes follow the existing stopped-gateway network configuration save/start
+flow. See the [Sniffer real-core gate](../validation/test-gates.md#sniffer-real-core).
 
 ## Device and local-Mac composition
 

@@ -2,17 +2,28 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"open-mihomo-gateway/internal/config"
 	"open-mihomo-gateway/internal/runtime"
 )
+
+func statusTestManager(cfg config.Config) Manager {
+	manager := New(cfg)
+	manager.deps = defaultGatewayDeps()
+	manager.deps.currentBoot = func() (runtime.BootSession, error) {
+		return runtime.BootSession{ID: "current-boot", StartedAt: time.Now().Add(-time.Hour)}, nil
+	}
+	return manager
+}
 
 func TestStatusFormatLabelsDNSOnlyMode(t *testing.T) {
 	status := Status{
@@ -132,7 +143,7 @@ func TestStatusDegradesWhenRunningMihomoReportsTUNDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, err := New(cfg).Status(t.Context())
+	status, err := statusTestManager(cfg).Status(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +179,7 @@ func TestStatusKeepsGatewayRunningWhenTUNRuntimeStateIsTemporarilyUnavailable(t 
 		t.Fatal(err)
 	}
 
-	status, err := New(cfg).Status(t.Context())
+	status, err := statusTestManager(cfg).Status(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +207,7 @@ func TestStatusExposesControllerRefusalForRunningMihomo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	status, err := New(cfg).Status(t.Context())
+	status, err := statusTestManager(cfg).Status(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +243,7 @@ func TestStatusMarksPreviousBootRuntimeInterruptedWithoutProbingReusedPID(t *tes
 		t.Fatal(err)
 	}
 
-	status, err := New(cfg).Status(t.Context())
+	status, err := statusTestManager(cfg).Status(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,5 +252,105 @@ func TestStatusMarksPreviousBootRuntimeInterruptedWithoutProbingReusedPID(t *tes
 	}
 	if requests != 0 {
 		t.Fatalf("stale runtime made %d mihomo API requests", requests)
+	}
+}
+
+func TestStatusLeaseErrorsDoNotHideRuntimeState(t *testing.T) {
+	for _, runtimeState := range []string{"none", "active", "interrupted"} {
+		for _, leaseFailure := range []string{"malformed row", "read failure"} {
+			t.Run(runtimeState+"/"+leaseFailure, func(t *testing.T) {
+				var requests atomic.Int32
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests.Add(1)
+					_ = json.NewEncoder(w).Encode(map[string]any{"version": "test-core"})
+				}))
+				defer server.Close()
+				cfg := config.Default()
+				cfg.Runtime.Dir = t.TempDir()
+				cfg.Mihomo.APIAddr = server.URL
+				cfg.Transparent.Mode = config.TransparentModeOff
+				paths := runtime.NewPaths(cfg)
+				if err := runtime.Ensure(paths); err != nil {
+					t.Fatal(err)
+				}
+				wantClients := 0
+				if leaseFailure == "malformed row" {
+					body := "not-a-valid-lease\n2000000000 aa:bb:cc:dd:ee:01 192.168.50.101 client 01:aa\n"
+					if err := os.WriteFile(paths.LeaseFile, []byte(body), 0o600); err != nil {
+						t.Fatal(err)
+					}
+					wantClients = 1
+				} else if err := os.Mkdir(paths.LeaseFile, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if runtimeState != "none" {
+					bootID := "current-boot"
+					if runtimeState == "interrupted" {
+						bootID = "previous-boot"
+					}
+					if err := runtime.SaveState(paths.StateFile, runtime.State{
+						BootSessionID: bootID, PIDMihomo: os.Getpid(), PIDDNSMasq: os.Getpid(), StartedAt: time.Now(),
+					}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				manager := statusTestManager(cfg)
+				status, err := manager.Status(t.Context())
+				if err != nil || status.DevicesError == "" || status.ClientCount != wantClients || status.RuntimeState != runtimeState {
+					t.Fatalf("status=%#v err=%v", status, err)
+				}
+				switch runtimeState {
+				case "none":
+					if status.Gateway != "stopped" || requests.Load() != 0 {
+						t.Fatalf("stopped status=%#v requests=%d", status, requests.Load())
+					}
+				case "active":
+					if status.Gateway != "running" || status.DHCP != "running" || status.Mihomo != "running (test-core)" || requests.Load() != 1 {
+						t.Fatalf("active status=%#v requests=%d", status, requests.Load())
+					}
+				case "interrupted":
+					if status.Gateway != "degraded" || status.DHCP != "stopped" || status.Mihomo != "stopped" || status.IPv4Takeover != "interrupted" || requests.Load() != 0 {
+						t.Fatalf("interrupted status=%#v requests=%d", status, requests.Load())
+					}
+				}
+				output := status.Format()
+				wantCount := "Clients: unavailable"
+				if wantClients > 0 {
+					wantCount = "Clients: 1 (incomplete)"
+				}
+				if !strings.Contains(output, wantCount) || !strings.Contains(output, "Devices warning: ") {
+					t.Fatalf("device failure hidden in text output: %s", output)
+				}
+			})
+		}
+	}
+}
+
+func TestStatusDoesNotDowngradeRuntimeOrBootErrorsToDeviceWarnings(t *testing.T) {
+	cfg := config.Default()
+	cfg.Runtime.Dir = t.TempDir()
+	manager := New(cfg)
+	if err := runtime.Ensure(manager.paths); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manager.paths.LeaseFile, []byte("not-a-valid-lease\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manager.paths.StateFile, []byte("invalid state"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	status, err := manager.Status(t.Context())
+	if err == nil || status.RuntimeState != "" || status.Gateway != "" {
+		t.Fatalf("invalid runtime was presented as known: status=%#v err=%v", status, err)
+	}
+	if err := runtime.SaveState(manager.paths.StateFile, runtime.State{BootSessionID: "current-boot"}); err != nil {
+		t.Fatal(err)
+	}
+	bootErr := errors.New("boot session unavailable")
+	manager.deps = defaultGatewayDeps()
+	manager.deps.currentBoot = func() (runtime.BootSession, error) { return runtime.BootSession{}, bootErr }
+	status, err = manager.Status(t.Context())
+	if !errors.Is(err, bootErr) || status.RuntimeState != "" || status.Gateway != "" {
+		t.Fatalf("unknown boot was presented as known: status=%#v err=%v", status, err)
 	}
 }

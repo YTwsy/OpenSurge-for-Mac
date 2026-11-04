@@ -11,6 +11,8 @@ OpenSurge for Mac 会把宿主 Mac 变成下游 LAN gateway。当前 runtime pat
 - macOS IPv4 forwarding 由 sysctl 管理，并在停止时恢复。
 - 显式启用时，macOS 上游网络服务的 HTTP/HTTPS 系统代理作为 TUN 兼容层，并由
   runtime state 保存启动前快照。
+- 系统 DNS 协同在接管前将原 DNS 独立保存到 `runtime/system-dns-backups.json`，
+  恢复失败不会把整份网关 runtime 锁在未清理状态。
 - 启用下游 IPv6 接管时，BPF broker 和 IPv6 gateway alias 纳入同一个
   runtime/rollback 所有权；自动拓扑还拥有 dnsmasq RA/SLAAC，手工旁路由不发布 RA。
 
@@ -50,7 +52,8 @@ IPv4：
 4. preflight dnsmasq、mihomo、pf、sysctl、interfaces 和 LAN IP 归属；
 5. 写入 mihomo、dnsmasq 和 pf config artifacts；
 6. 记录启动前 IPv4 forwarding、PF enabled 状态；按配置读取系统 DNS 与 HTTP/HTTPS
-   代理快照，检查现有代理冲突；DNS 读取失败不能当成自动配置；
+   代理快照，检查现有代理冲突；DNS 读取失败终止启动，不能当成自动配置；
+   同 UUID 有待恢复备份时保留其原值；
 7. 在修改 host network 前保存 runtime state；
 8. 启用 IPv4 forwarding；
 9. 启动 mihomo，保留 300ms 初始存活检查，再最多等待 10 秒确认 controller API 就绪；
@@ -61,12 +64,14 @@ IPv4：
 12. 启动 dnsmasq；自动拓扑此时才开始发布 RA/SLAAC/RDNSS，手工旁路由只启动 IPv6
     DNS listener；
 13. 加载 PF anchor；
-14. 所有网关服务 ready 后，持久化 DNS 接管意图、应用并读回系统 DNS；随后按配置
-    把上游 network service 的 HTTP/HTTPS 代理指向本机 mihomo mixed-port。
+14. 所有网关服务 ready 后，先独立原子持久化 DNS 备份与接管意图，再应用并读回
+    系统 DNS；保存备份失败时不写 DNS，保存、设置或读回失败均使启动失败并 rollback。
+    随后按配置把上游 network service 的 HTTP/HTTPS 代理指向本机 mihomo mixed-port。
 
-Rollback 是 start 契约的一部分。先按所有权恢复系统 DNS，再恢复可能已写入的系统代理，
-再尝试停止已经启动的服务、卸载 PF 状态并恢复 forwarding。DNS 或系统代理恢复失败时保留
-runtime state 和服务，避免 macOS 继续指向已经停止的本机代理端口。
+Rollback 是 start 契约的一部分。先按备份尝试恢复系统 DNS，再恢复可能已写入的系统代理，
+再尝试停止已经启动的服务、卸载 PF 状态并恢复 forwarding。DNS 恢复失败只记录 warning，
+保留独立备份供重试，继续其他清理；不因此保留网关服务或阻止删除 runtime state。
+系统代理恢复失败仍保留 runtime state 和服务，避免 macOS 继续指向已经停止的本机代理端口。
 
 初始进程、API、按需 DNS、TUN 与 IPv6 packet listener 的就绪等待均接受生命周期 context，
 单次探测与轮询受同一阶段 deadline 约束。错误区分超时、取消、提前退出和明确 listener
@@ -95,7 +100,8 @@ runtime state 和服务，避免 macOS 继续指向已经停止的本机代理�
 
 1. 要求 root 权限；
 2. 如果存在 runtime state，则加载它；
-3. 按所有权恢复系统 DNS，再恢复 HTTP/HTTPS 系统代理快照；恢复失败则保留服务和 state；
+3. 按独立备份及旧 state 中的快照尝试恢复系统 DNS；DNS 错误记录 warning 并保留
+   独立备份，继续恢复 HTTP/HTTPS 系统代理；系统代理恢复失败仍保留服务和 state；
 4. 停止 dnsmasq；
 5. 若拥有下游 IPv6，且 runtime state 记录 RA 实际生效，则发送 router/prefix
    lifetime-zero withdrawal；随后删除 gateway alias，并停止 BPF broker；
@@ -104,12 +110,28 @@ runtime state 和服务，避免 macOS 继续指向已经停止的本机代理�
 8. 恢复 IPv4 forwarding 到启动前的值；
 9. 移除 runtime state。
 
-Stop 应该能容忍部分 runtime pieces 已经缺失。这个项目会修改 host network，
-所以清理质量是正确性的一部分。
+Stop 应该能容忍部分 runtime pieces 已经缺失。即使 `state.json` 不存在，仍尝试恢复
+独立文件中保留的 DNS 备份。这个项目会修改 host network，所以清理质量是正确性的一部分。
+
+停止使用 `LoadRecovery` 读取配置，只要求定位恢复状态所需的 runtime 与 Mihomo 配置路径；
+不验证下一次启动的 DHCP 地址池、DNS 或设备策略草稿。实际卸载已加载的 PF anchor 前仍
+要求 anchor 名称存在。Helper 继续要求 root-owned 配置、可信安装根内的路径及生命周期锁。
+语法、字段类型或恢复路径无法读取仍是错误，不能靠默认值猜测清理位置。
+
+准备态引擎的 journal 损坏或缺少进程身份时，不终止 Helper 的监听；错误写入日志，
+配置修复与 DHCP 恢复等独立动作继续可用。启动/准备态动作仍须先完成资源交接，未知进程
+不能被终止。Stop 会累计准备态错误并继续清理有独立身份记录的网关资源，保留未解决的
+journal；同 boot 清理仍返回该错误并保留网关 state，跨 boot 则独立清除过期网关 state。
+
+接口或 IPv6 alias 确认消失时，本地清理幂等完成；下游接口没有 link-local 或链路不可达时，
+未发送的 IPv6 撤销通告单独报告 warning，不阻止其余本地清理。未知读取/发送错误、权限
+错误及实际 alias 删除失败仍保留恢复 state。客户端未必收到撤销，不能报告旧路由、前缀
+或 DNS 已立即失效。
 
 若停止任一服务、PF 或 forwarding 恢复失败，manager 会保留 runtime state 与 applied
 device-policy snapshot，避免把仍运行或 degraded 的网关误记为已完全停止，并允许后续
-重试清理。所有清理步骤仍会尽量执行；只有这一轮清理没有错误时才移除 state。
+重试清理。所有清理步骤仍会尽量执行；这些错误清除后才移除 state。DNS warning
+单独记录，不计入阻止 state 清理的错误；不能据此把 DNS 恢复报告为成功。
 
 ### 系统重启后的中断状态
 
@@ -120,10 +142,11 @@ boot session 和子进程启动指纹写进 state。Status 发现 state 来自�
 `restart-mihomo` 也必须拒绝这份不完整数据面。
 
 对 interrupted runtime 执行 stop 是专门的 reconciliation，不是普通 stop：它不向旧 PID
-发送信号，不卸载本次开机的 PF，不改写本次开机的 IPv4 forwarding；先按所有权恢复系统 DNS；若 state 记录了
-系统代理临时接管，则与普通 Stop 一样无条件恢复启动前的 HTTP/HTTPS 快照；
-接管期间手动修改的 HTTP/HTTPS 设置也会被该快照替换。若恢复失败，则 fail closed 并
-保留 state。
+发送信号，不卸载本次开机的 PF，不改写本次开机的 IPv4 forwarding；先按备份尝试恢复
+系统 DNS。旧服务 UUID 消失正常跳过、不迁移到新服务；DNS 恢复错误只记录 warning，
+保留独立备份后继续清理。若 state 记录了系统代理临时接管，则与普通 Stop 一样
+无条件恢复启动前的 HTTP/HTTPS 快照；接管期间手动修改的 HTTP/HTTPS 设置也会被
+该快照替换。系统代理恢复失败仍 fail closed 并保留 state。
 最后移除旧 runtime state 与 applied device-policy snapshot，用户随后可显式
 重新启动完整网关。旧版本没有 boot session 字段的 state 通过 `started_at` 与本次系统
 启动时间比较迁移；没有任何 boot 归属证据的 state 不能被当作当前运行态。
@@ -190,10 +213,13 @@ Tailscale 只发起原有的一次 best-effort 预热。生命周期最多等待
 没有恢复，或 Mihomo 进程已经退出而网关 runtime 仍存在的场景。它不是配置 reload：
 
 1. 要求 root 权限和已有 gateway runtime state；
-2. 对当前已经生成的 applied Mihomo config 运行真实 `mihomo -t`，关闭旧 TUN 前按所有权恢复系统 DNS；
+2. 对当前已经生成的 applied Mihomo config 运行真实 `mihomo -t`，关闭旧 TUN 前按备份
+   尝试恢复系统 DNS；DNS 失败记录 warning，保留独立备份并继续重启；
 3. 先把 runtime state 中的 Mihomo PID 清零，再停止旧进程；
 4. 把旧 `mihomo.log` 归档为带 UTC 时间戳的 `mihomo-before-restart-*.log`；
-5. 使用同一份 applied config 启动 Mihomo，通过 readiness 后重新接管仍由本项目拥有的 DNS，并原子写回新 PID。
+5. 使用同一份 applied config 启动 Mihomo，通过 readiness 后原子写回新 PID，再确认
+   DNS 备份已持久化并接管原 UUID 服务；原服务已消失则跳过，不替换为新 UUID。
+   重接管的备份持久化、设置或读回失败仍返回功能错误，不能报告 DNS 已就绪。
 
 这个动作不停止 dnsmasq、不卸载 PF、不恢复 IPv4 forwarding，也不修改 Mac 静态地址或
 router；系统 DNS 按上述顺序恢复与重新接管。若已启用系统代理协同，替代进程失败时先恢复启动前系统代理，避免端点
@@ -202,6 +228,11 @@ router；系统 DNS 按上述顺序恢复与重新接管。若已启用系统代
 client validated 或明确跳过客户端验收的接管阶段执行，且成功或失败都不改变 DHCP 恢复
 状态机。替代进程必须通过 TUN readiness。
 
+Helper 的重启信任检查不再要求 dnsmasq 二进制或未应用的设备策略文件存在；仍检查
+Mihomo 可执行文件、已渲染配置、实际使用的 profile/工作目录及 Tailscale 路径。现有
+profile digest、boot、PID 指纹和真实 `mihomo -t` 不变。该调整不代表已建立完整的 applied
+配置清单：当前 `LoadRuntime` 的其他语义校验仍保留。
+
 Control Service 会在当前 boot、有效 active runtime 和允许的 DHCP 接管阶段内监测这条
 恢复路径。Mihomo 进程缺失立即触发一次自动恢复；controller 的 `connection refused`
 需要连续两次观测才触发。每个未恢复 incident 最多自动尝试一次；命令完成后仍要等新的
@@ -209,6 +240,22 @@ Control Service 会在当前 boot、有效 active runtime 和允许的 DHCP 接�
 status 读取失败、runtime 非 active、以及不允许恢复的 DHCP 接管阶段都属于 unknown：
 既不触发恢复，也不能累计健康确认或清除本次 incident 的单次尝试保护。上次开机留下的
 interrupted runtime 同样不会触发。
+
+租约读取或坏行不决定网关生命周期状态。Status 保留可确认的 boot、进程和 runtime
+结论，通过 `devices_error` 单独报告设备观测不完整；可解析的租约继续返回，数量不再
+冒充完整结果。CLI、菜单栏与 Web 展示该区别，interrupted 清理入口保持可用。
+runtime JSON 损坏或 boot 无法读取仍属于未知状态，不能降级成已停止。
+
+## 配置修复与 DHCP 恢复
+
+配置表单通过 `LoadEditable` 读取已有值，不以旧配置完整有效为前提；提交时按 revision
+和生命周期锁防止覆盖并发修改，先合并替代字段，再完整验证新候选后原子保存。仅保存
+拓扑字段不改 runtime/profile/cache 路径，也不启动核心，因此不要求先成功停止准备态；
+后续启动仍须完成准备态资源交接。新候选无效时不替换原文件。
+
+DHCP OFFER 探测和 Mac 自动 DHCP 恢复读取恢复配置，不依赖设备策略草稿或待部署的
+DHCP 地址池。操作目标仍须为配置指定的非空接口；设置 DHCP 还核对当前网络服务实际
+使用该接口，原有恢复阶段、OFFER/人工确认要求保持不变。
 
 start、stop、reload、手动/自动 `restart-mihomo`、prepared policy workspace，以及所有
 配置 apply/rollback 共享 Control Service 生命周期互斥锁。runtime 目录中的跨进程

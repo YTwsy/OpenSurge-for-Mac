@@ -4,16 +4,24 @@ import { Empty, PageHeader } from '../components/Common'
 import { useConnections } from '../hooks/useConnections'
 import { connectionChain, connectionDeviceName, connectionDuration, connectionMetadata, connectionOwnerKey, connectionTarget, filterConnections, type ConnectionsViewState } from '../connections'
 import { formatBytes, formatRate } from '../trafficFormat'
+import { gatewayDisplayState, needsNetworkRecoveryWarning } from '../status'
 import type { DeviceTrafficRow, ObservedConnection, Overview } from '../types'
 import { t } from '../i18n'
 import './ConnectionsPage.css'
 import './ConnectionDetail.css'
 
 const pageSize = 50
-type Props = { overview: Overview | null; view: ConnectionsViewState; onViewChange: (patch: Partial<ConnectionsViewState>) => void; restoreScrollY?: number | null }
+type Props = { overview: Overview | null; view: ConnectionsViewState; onViewChange: (patch: Partial<ConnectionsViewState>) => void; onOpenNetwork: () => void; restoreScrollY?: number | null }
 
-export function ConnectionsPage({ overview, view, onViewChange, restoreScrollY }: Props) {
-  const [paused, setPaused] = useState(false)
+export function ConnectionsPage({ overview, view, onViewChange, onOpenNetwork, restoreScrollY }: Props) {
+  const stopped = Boolean(overview && overview.status.gateway === 'stopped'
+    && gatewayDisplayState(overview.presentation, overview.status.gateway, overview.status.runtime_state) === 'stopped'
+    && !overview.status_error && overview.status.runtime_state !== 'interrupted' && !overview.presentation?.busy
+    && !(overview.recovery.required && needsNetworkRecoveryWarning(overview.recovery.stage)))
+  const lifecycle = overview?.status.gateway === 'degraded' ? 'running' : overview?.status.gateway
+  const previousLifecycle = useRef(lifecycle)
+  const [pauseRequested, setPaused] = useState(false)
+  const paused = pauseRequested && !stopped && previousLifecycle.current === lifecycle
   const { snapshot, error } = useConnections(paused, overview?.status.gateway, overview?.revision)
   const restored = useRef(false)
   const lastSelection = useRef<{ connection: ObservedConnection; device?: DeviceTrafficRow; sampledAt: string } | null>(null)
@@ -42,6 +50,14 @@ export function ConnectionsPage({ overview, view, onViewChange, restoreScrollY }
   }
 
   useEffect(() => {
+    if (!stopped && previousLifecycle.current === lifecycle) return
+    previousLifecycle.current = lifecycle
+    setPaused(false)
+    lastSelection.current = null
+    if (view.connection) onViewChange({ connection: '' })
+  }, [lifecycle, stopped, view.connection, onViewChange])
+
+  useEffect(() => {
     if (!snapshot || restored.current) return
     restored.current = true
     if (restoreScrollY != null) window.scrollTo?.({ top: restoreScrollY, behavior: 'instant' })
@@ -56,8 +72,27 @@ export function ConnectionsPage({ overview, view, onViewChange, restoreScrollY }
     </button>
   }
 
+  const header = <PageHeader eyebrow="CONNECTIONS" title="连接" description="按设备查看访问目标、命中规则与实际出口；统计仅覆盖当前活跃会话。" action={stopped ? undefined : <button type="button" className="connection-pause" disabled={!snapshot} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{t(paused ? '恢复实时更新' : '暂停画面更新')}</button>} />
+
+  if (stopped) return <div className="connections-page">
+    {header}
+    <section className="connection-idle" aria-labelledby={`${detailId}-idle-title`}>
+      <span className="connection-idle-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 4v16m0-16L4 8m4-4 4 4m4 12V4m0 16-4-4m4 4 4-4" /></svg></span>
+      <h2 id={`${detailId}-idle-title`}>{t('尚未启动网络模式')}</h2>
+      <p>{t('启动后，这里会显示本机与接入设备的实时连接。')}</p>
+      <button type="button" className="primary" onClick={onOpenNetwork}>{t('前往网络设置')}</button>
+    </section>
+    {error && <div className="notice warn" role="alert">{t(snapshot ? '设备清单更新失败，以下保留上次结果：{{error}}' : '读取设备清单失败：{{error}}', { error })}</div>}
+    {snapshot?.inventory_error && <div className="notice warn" role="status">{t('设备清单不完整：{{error}}', { error: snapshot.inventory_error })}</div>}
+    {Boolean(snapshot?.devices.length) && <section className="connection-idle-inventory" aria-labelledby={`${detailId}-inventory-title`}>
+      <h2 id={`${detailId}-inventory-title`}>{t('已知下游设备')}</h2>
+      <p>{t('这里保留设备身份信息，实时连接将在启动后更新。')}</p>
+      <ul>{snapshot!.devices.map(device => <li key={connectionOwnerKey(device)}><strong>{connectionDeviceName(device)}</strong><span>{device.ip || '—'}</span><small>{deviceObservationLabel(device, false)}</small></li>)}</ul>
+    </section>}
+  </div>
+
   return <div className={`connections-page${selection ? ' has-connection-detail' : ''}`}>
-    <PageHeader eyebrow="CONNECTIONS" title="连接" description="按设备查看访问目标、命中规则与实际出口；统计仅覆盖当前活跃会话。" action={<button type="button" className="connection-pause" disabled={!snapshot} aria-pressed={paused} onClick={() => setPaused(value => !value)}>{t(paused ? '恢复实时更新' : '暂停画面更新')}</button>} />
+    {header}
     <div className="connection-sample-status" role="status"><span>{t(paused ? '画面已暂停' : '每 2 秒更新')}{snapshot && ` · ${t('采样时间 {{time}}', { time: new Date(snapshot.sampled_at).toLocaleTimeString() })}`}</span><span>{t('已登记、有租约和当前有流量是不同状态。')}</span></div>
     {error && <div className="notice warn" role="alert">{t(snapshot ? '更新失败，当前显示的是上次采样：{{error}}' : '读取连接失败：{{error}}', { error })}</div>}
     {snapshot?.connection_error && <div className="notice warn" role="status">{t('连接或身份数据暂不可用，设备清单仍保留：{{error}}', { error: snapshot.connection_error })}</div>}
@@ -145,6 +180,7 @@ function ConnectionDetail({ id, connection, device, sampledAt, current, unavaila
     [t('源地址 / 端口'), `${connectionMetadata(connection, 'sourceIP') || '—'} / ${connectionMetadata(connection, 'sourcePort') || '—'}`],
     [t('目标地址 / 端口'), `${connectionMetadata(connection, 'destinationIP') || '—'} / ${connectionMetadata(connection, 'destinationPort') || '—'}`],
     [t('目标域名'), connectionMetadata(connection, 'host') || '—'],
+    [t('嗅探域名'), connectionMetadata(connection, 'sniffHost') || '—'],
     [t('入站'), [connectionMetadata(connection, 'type'), connectionMetadata(connection, 'inboundName'), connectionMetadata(connection, 'inboundUser')].filter(Boolean).join(' · ') || '—'],
     [t('实际出口链'), connectionChain(connection)],
     [t('命中规则'), [connection.rule, connection.rule_payload].filter(Boolean).join(' · ') || '—'],

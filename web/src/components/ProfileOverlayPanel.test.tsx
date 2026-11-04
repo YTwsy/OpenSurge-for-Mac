@@ -17,6 +17,8 @@ vi.mock('../api', () => ({
 import { api } from '../api'
 import { ProfileOverlayPanel } from './ProfileOverlayPanel'
 
+const onNotify = vi.fn()
+
 const document: ProfileOverlayDocument = {
   schema_version: 1,
   enabled: false,
@@ -80,7 +82,7 @@ describe('ProfileOverlayPanel', () => {
     await prepareLanguage('en')
     activateLanguage('en')
     vi.mocked(api.sourcePreview).mockResolvedValue(preview)
-    render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
 
     expect(screen.getByRole('heading', { name: 'Advanced: Global Profile Overlay' })).toBeTruthy()
     const panel = documentQuery('details.profile-overlay-panel')
@@ -105,7 +107,7 @@ describe('ProfileOverlayPanel', () => {
       desired: false,
     }))
 
-    render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={onSaved} />)
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={[source]} onSaved={onSaved} />)
 
     expect(screen.getByRole('heading', { name: '高级：全局附加配置' })).toBeTruthy()
     expect(screen.getByText('1/1')).toBeTruthy()
@@ -119,7 +121,25 @@ describe('ProfileOverlayPanel', () => {
     expect(saved.enabled).toBe(true)
     expect(saved.rules.prepend).toEqual(['DOMAIN,first.example,DIRECT'])
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ revision: 'saved-revision' }))
-    expect(await screen.findByText(/停止态可在策略页预览或直接启动/)).toBeTruthy()
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith({ tone: 'success', title: '草稿已保存', message: expect.stringContaining('停止态可在策略页预览或直接启动') }))
+    expect(onNotify).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText(/草稿已保存。停止态可在策略页预览或直接启动/)).toBeNull()
+  })
+
+  it('reports a failed save once and preserves the edited rules', async () => {
+    vi.mocked(api.saveProfileOverlayDocument).mockRejectedValueOnce(new Error('revision conflict'))
+    const onSaved = vi.fn()
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={[source]} onSaved={onSaved} />)
+    await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
+    const editor = screen.getByLabelText('高优先级自定义规则') as HTMLTextAreaElement
+    await userEvent.type(editor, 'DOMAIN,draft.example,DIRECT')
+    await userEvent.click(screen.getByRole('button', { name: '保存附加配置草稿' }))
+
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith({ tone: 'error', title: '附加配置未完成', message: 'revision conflict' }))
+    expect(onNotify).toHaveBeenCalledTimes(1)
+    expect(onSaved).not.toHaveBeenCalled()
+    expect(editor.value).toBe('DOMAIN,draft.example,DIRECT')
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('treats the built-in configuration as a complete base when no source exists', async () => {
@@ -130,7 +150,7 @@ describe('ProfileOverlayPanel', () => {
       yaml: 'schema-version: 1\nenabled: true\n',
       desired: false,
     }))
-    render(<ProfileOverlayPanel overlay={overlay} sources={[]} onSaved={vi.fn()} />)
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={[]} onSaved={vi.fn()} />)
 
     await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
     expect(screen.getByText('内置配置')).toBeTruthy()
@@ -144,12 +164,12 @@ describe('ProfileOverlayPanel', () => {
     expect(policiesLink.getAttribute('href')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: '保存附加配置草稿' }))
 
-    expect(await screen.findByText(/无需导入来源；可以进入策略页预览、选择或测速，也可以直接启动/)).toBeTruthy()
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith({ tone: 'success', title: '草稿已保存', message: expect.stringContaining('无需导入来源；可以进入策略页预览、选择或测速，也可以直接启动') }))
   })
 
   it('does not make an unused source draft a prerequisite for the standalone overlay', async () => {
     const unusedSource = { ...source, desired: false, applied: false }
-    render(<ProfileOverlayPanel overlay={overlay} sources={[unusedSource]} onSaved={vi.fn()} />)
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={[unusedSource]} onSaved={vi.fn()} />)
 
     await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
     expect(screen.getByText('内置配置')).toBeTruthy()
@@ -160,7 +180,7 @@ describe('ProfileOverlayPanel', () => {
 
   it('previews every composition layer and the final mihomo config', async () => {
     vi.mocked(api.sourcePreview).mockResolvedValue(preview)
-    render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={[source]} onSaved={vi.fn()} />)
 
     await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
     await selectOption(screen.getByLabelText('选择要预览的来源'), 'home')
@@ -183,7 +203,7 @@ describe('ProfileOverlayPanel', () => {
   it('adds proxies from share links without exposing another YAML import', async () => {
     vi.mocked(api.saveProfileOverlayDocument).mockImplementation(async candidate => ({ ...overlay, document: candidate }))
     const onSaved = vi.fn()
-    render(<ProfileOverlayPanel overlay={overlay} sources={[source]} onSaved={onSaved} />)
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={overlay} sources={[source]} onSaved={onSaved} />)
 
     await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
     expect(screen.queryByText('代理 Provider')).toBeNull()
@@ -207,7 +227,7 @@ describe('ProfileOverlayPanel', () => {
       rules: { prepend: [], append_before_match: ['DOMAIN,late.example,DIRECT'] },
       proxy_providers: { add: { Airport: { type: 'http', url: 'https://example.com/proxies.yaml' } }, replace: {} },
     }
-    render(<ProfileOverlayPanel overlay={{ ...overlay, document: expertDocument }} sources={[source]} onSaved={vi.fn()} />)
+    render(<ProfileOverlayPanel onNotify={onNotify} overlay={{ ...overlay, document: expertDocument }} sources={[source]} onSaved={vi.fn()} />)
 
     await userEvent.click(screen.getByRole('heading', { name: '高级：全局附加配置' }))
     expect(screen.getByText('2', { selector: '.overlay-summary strong' })).toBeTruthy()

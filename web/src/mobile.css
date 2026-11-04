@@ -220,6 +220,7 @@
 
   /* Connections: preserve all fields as labeled cards, without a wide table. */
   .connection-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .app-shell:not(.desktop-shell) .connection-owner-list { --connection-owner-top: calc(72px + env(safe-area-inset-top)); }
   /* Keep snapping aligned with the inset instead of pulling the first card to the edge. */
   .connection-owner-list { display: flex; flex-wrap: nowrap; gap: 8px; padding: 10px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 10px; }
   .connection-owner { flex: 0 0 165px; margin: 0; min-height: 76px; padding: 12px; border: 1px solid var(--mobile-line); scroll-snap-align: start; }
@@ -320,6 +321,7 @@
   .workspace :is(.ipv6-runtime dl, .ipv6-dns-step, .ipv6-card-step, .bypass-client-guide-grid) { grid-template-columns: minmax(0, 1fr); }
   .ipv6-runtime dl > div, .bypass-client-guide-grid dl > div { grid-template-columns: minmax(0, 1fr); }
   .outlet-summary-state { gap: 8px; }
+  .policy-local-mac-outlet-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .source-head { align-items: flex-start; }
   .source-head > div { min-width: 0; }
   .config-field-title { flex-direction: column; align-items: flex-start; gap: 5px; }

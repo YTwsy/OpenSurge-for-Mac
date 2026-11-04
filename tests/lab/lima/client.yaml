@@ -13,6 +13,10 @@ disk: 4GiB
 
 mounts: []
 
+# Guest proxy use is opt-in through OMG_LAB_VM_PROXY provisioning exports.
+# Lima otherwise inherits the host's stale proxy.env into guest apt settings.
+propagateProxyEnv: false
+
 containerd:
   system: false
   user: false
@@ -84,8 +88,10 @@ __PROXY_EXPORTS__
       networkctl reconfigure omg0 >/dev/null 2>&1 || true
 
       missing_packages=""
-      for package in bash curl dnsutils iproute2 iputils-ping isc-dhcp-client python3; do
-        if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q '^install ok installed$'; then
+      for tool_package in bash:bash curl:curl dig:bind9-dnsutils ip:iproute2 ping:iputils-ping python3:python3 networkctl:systemd resolvectl:systemd-resolved; do
+        tool="${tool_package%%:*}"
+        package="${tool_package#*:}"
+        if ! command -v "$tool" >/dev/null 2>&1; then
           missing_packages="$missing_packages $package"
         fi
       done

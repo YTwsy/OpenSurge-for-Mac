@@ -15,7 +15,7 @@ const initial: TraySnapshot = { status: null, indicator: 'connecting', sequence:
 
 export function diagnosticSummary(status: MenuBarStatus | null): string {
  if (!status) return 'OpenSurge Control API: unreachable'
- return ['OpenSurge for Mac', `Gateway: ${status.gateway}`, `Topology: ${status.topology}`, `LAN IP: ${status.lan_ip}`, `DHCP/DNS: ${status.dhcp}`, `mihomo: ${status.mihomo}`, `TUN: ${status.tun}${status.tun_interface ? ` [${status.tun_interface}]` : ''}`, `PF: ${status.pf_anchor}`, `Forwarding: ${status.forwarding}`, `IPv4 takeover: ${status.ipv4_takeover}`, `IPv6 takeover: ${status.ipv6_takeover}`, `Clients: ${status.client_count}`, `Drift: ${status.drift}`, `Recovery: ${status.recovery_required ? status.recovery_stage ?? 'required' : 'none'}`, `Error code: ${status.error_code ?? 'none'}`, `Lid-closed sleep prevention: ${status.sleep_prevention.active ? 'active' : 'off'}`].join('\n')
+ return ['OpenSurge for Mac', `Gateway: ${status.gateway}`, `Topology: ${status.topology}`, `LAN IP: ${status.lan_ip}`, `DHCP/DNS: ${status.dhcp}`, `mihomo: ${status.mihomo}`, `TUN: ${status.tun}${status.tun_interface ? ` [${status.tun_interface}]` : ''}`, `PF: ${status.pf_anchor}`, `Forwarding: ${status.forwarding}`, `IPv4 takeover: ${status.ipv4_takeover}`, `IPv6 takeover: ${status.ipv6_takeover}`, `Clients: ${status.devices_error ? `${status.client_count} (incomplete: ${status.devices_error})` : status.client_count}`, `Drift: ${status.drift}`, `Recovery: ${status.recovery_required ? status.recovery_stage ?? 'required' : 'none'}`, `Error code: ${status.error_code ?? 'none'}`, `Lid-closed sleep prevention: ${status.sleep_prevention.active ? 'active' : 'off'}`].join('\n')
 }
 
 export function TrayMenuApp() { return <TrayApp menuOnly /> }
@@ -135,7 +135,7 @@ export function TrayApp({ menuOnly = false }: { menuOnly?: boolean } = {}) {
  const transitioning = gatewayIsTransitioning(snapshot.indicator)
  const topology = status ? ({ same_lan: '旁路由模式', same_wifi_dhcp: '局域网 DHCP 接管', isolated_lan: '独立下游 LAN' } as Record<string, string>)[status.topology] ?? status.topology : ''
  const rows = status ? [
-  [t('网关'), displayLabel], [t('拓扑'), t(topology)], ['LAN IP', status.lan_ip], [t('客户端'), String(status.client_count)],
+  [t('网关'), displayLabel], [t('拓扑'), t(topology)], ['LAN IP', status.lan_ip], [t('客户端'), status.devices_error ? t('数据不完整') : String(status.client_count)],
   ['DHCP / DNS', statusLabel(status.dhcp)], ['mihomo', status.mihomo.startsWith('running') ? `${statusLabel('running')}${status.mihomo.slice(7)}` : statusLabel(status.mihomo)], ['TUN', `${takeoverLabel(status.tun)}${status.tun_interface ? ` · ${status.tun_interface}` : ''}`],
   ['PF', t(status.pf_anchor === 'loaded' ? '已加载' : '未加载')], [t('IPv4 接管'), takeoverLabel(status.ipv4_takeover)], [t('IPv6 接管'), takeoverLabel(status.ipv6_takeover)],
  ] : []

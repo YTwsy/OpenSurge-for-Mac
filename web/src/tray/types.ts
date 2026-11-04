@@ -16,6 +16,7 @@ export type MenuBarStatus = {
  ipv4_takeover: string
  ipv6_takeover: string
  client_count: number
+  devices_error?: string
  drift: boolean
  doctor_healthy: boolean
  recovery_required: boolean

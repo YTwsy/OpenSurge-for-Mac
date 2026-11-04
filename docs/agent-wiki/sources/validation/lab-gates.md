@@ -22,6 +22,18 @@ make lab-down`。`require_cached_sudo` 会在 `sudo -n true` 失败时内部执�
 
 ## VM、依赖与恢复
 
+`make lab-unit-test` 用临时 Unix socket 和模拟系统命令验证 network helper 的恢复分支与
+核心选择（显式路径、无效路径拒绝回退、默认固定来源构建），
+不需要 sudo，也不修改主机网络。已有 socket_vmnet 进程和 socket 不代表 bridge 仍可用；
+启动时若找不到拥有 Lab 地址的 bridge，helper 会重建自己的网络。健康 bridge 则继续复用，
+同时补回 interface 记录。这个隔离检查不能替代实际 `lab-up` / `lab-down`。
+
+验证特定制品时用 `OMG_LAB_MIHOMO_BINARY` 指定其核心，基础、TUN 与三个 IPv6 门槛
+均复用该可执行文件。每份 Lab artifact 保存核心版本、架构与 SHA-256；不能仅凭版本串
+把 Rosetta 下自动选择的 x86_64 构建当作 arm64 制品验证。未指定时沿用固定来源构建流程。
+本机路由门槛重启核心后，仅把新建的私有 Lab 日志所有者交回 runner，保持文件权限，
+避免 root 日志轮转导致证据读取失败。
+
 Apple Silicon 上的 Codex/agent 终端可能经 Rosetta 运行，使 `uname -m` 显示
 `x86_64` 并触发安装器架构拒绝。确认 `sysctl.proc_translated=1` 和
 `hw.optional.arm64=1` 后，用
@@ -33,6 +45,10 @@ Apple Silicon 上的 Codex/agent 终端可能经 Rosetta 运行，使 `uname -m`
 guest 的数据面 DNS 在一次测试后会指向 `192.168.50.1`；而下一次 `lab-up` 时被测网关
 尚未运行，所以 provisioning 必须先恢复 Lima 控制面 DNS，并在依赖已齐全时跳过 apt，
 否则会表现为 UDP/53 connection refused 与很慢的 boot scripts。
+客户端模板显式关闭 Lima 默认的 `propagateProxyEnv`，避免宿主的旧代理进入 guest apt；
+只有 `OMG_LAB_VM_PROXY=1` 才在 provisioning/helper 中导出代理。依赖按实际可执行命令
+检查，DHCP 使用已配置的 systemd-networkd，不强制安装可选的 isc-dhcp-client。
+`lab-up` 在 SSH 就绪后还检查工具和 networkd/helper 文件；只有这些检查通过才报告 Lab ready。
 冷重建保持串行 provisioning，稳定复用的 VM 则并行启动；这样既不让两个 apt 任务争抢
 上游带宽，又避免日常启动累加两次独立 guest boot 时间。
 修改 `tests/lab/lima/client.yaml` 会使 Lima 按精确配置比较删除并重建对应
@@ -41,6 +57,15 @@ vsock SSH 回退到 usernet forwarder 并进入 `READY`；不要只因为这段�
 先看 `runtime/tools/lima/bin/limactl list` 和 `~/.lima/<client>/ha.stderr.log`。
 
 Lab 环境问题必须与数据面失败分开记录：
+
+- Darwin 的零标志 `getaddrinfo` 会隐含 `AI_ADDRCONFIG`，在无原生 IPv6 时可能只返回 A，
+  即使 Mihomo DNS 已提供 fake AAAA。系统 DNS 门槛保留默认查询结果，并用显式非零
+  `AI_CANONNAME` 经同一系统解析器请求双栈；同时断言默认 fake A、显式 fake A/AAAA、
+  UDP/TCP DNS 捕获及真实 TUN IPv6 packet probe。不能把默认地址族筛选当成核心 DNS 回归，
+  也不能用解析成功代替实际 IPv6 路由证据。
+  本机路由的 IPv4 HTTPS 探针从当前核心取 fake A 并通过 curl `--resolve` 固定该映射，
+  避免接管前缓存的真实 A 使流量失去域名规则身份；IPv6 探针同样使用当前 fake AAAA。
+  系统解析器由独立的随机域名检查覆盖，packet probe 不承担默认解析器缓存的验收。
 
 - 公网 HTTPS 应先选择当前网络能无代理直连的 `OMG_LAB_TEST_URL`，再在门槛中
   保持该目标一致。受控 CONNECT 夹具可用 `OMG_LAB_EGRESS_HTTP_PROXY=host:port`

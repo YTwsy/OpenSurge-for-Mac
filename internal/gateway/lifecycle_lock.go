@@ -95,8 +95,8 @@ func RestartMihomoConfig(ctx context.Context, configPath string) error {
 // taking the lifecycle lock, matching the other path-based transitions.
 func StopConfig(ctx context.Context, configPath string) error {
 	return runConfigLifecycle(ctx, configPath, configLifecycleDeps{
-		loadRuntime: config.LoadRuntime,
-		loadLocked:  config.LoadRuntime,
+		loadRuntime: config.LoadRecovery,
+		loadLocked:  config.LoadRecovery,
 		runLocked: func(ctx context.Context, cfg config.Config) error {
 			manager := New(cfg)
 			return manager.stop(ctx)

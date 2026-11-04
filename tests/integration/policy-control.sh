@@ -287,16 +287,16 @@ if grep -Fq -- "device/integration-inherited/default" "$MIHOMO_CONFIG"; then
   exit 1
 fi
 
-section "validate local fake-AAAA identity rules"
+section "validate local TUN IPv6 identity rules"
 "$OMG_BIN" validate-mihomo --config "$IPV6_CONFIG" --format json
-assert_file_contains "$IPV6_MIHOMO_CONFIG" "AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp"
-assert_file_contains "$IPV6_MIHOMO_CONFIG" "AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9876::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp"
+assert_file_contains "$IPV6_MIHOMO_CONFIG" "AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,TCP)),open-surge/mac-mode-tcp"
+assert_file_contains "$IPV6_MIHOMO_CONFIG" "AND,((IN-TYPE,TUN),(IN-NAME,DEFAULT-TUN),(SRC-IP-CIDR,fdfe:dcba:9877::1/128),(NETWORK,UDP)),open-surge/mac-mode-udp"
 for forbidden in \
   "SRC-IP-CIDR,fdfe:dcba:9876::/64" \
   "SRC-IP-CIDR,fdfe:dcba:9878::/64" \
   "IN-NAME,opensurge-ipv6"; do
   if grep -Fq -- "$forbidden" "$IPV6_MIHOMO_CONFIG"; then
-    echo "local fake-AAAA identity rules crossed an IPv6 isolation boundary: $forbidden" >&2
+    echo "local TUN IPv6 identity rules crossed an IPv6 isolation boundary: $forbidden" >&2
     exit 1
   fi
 done

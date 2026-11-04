@@ -12,12 +12,14 @@ import { api } from '../api'
 import { desktopAction, isDesktop } from '../desktop'
 import { CustomDNSCard } from './CustomDNSCard'
 
+const onNotify = vi.fn()
+
 const initial: CustomDNSDraft = { schema_version: 1, revision: 'dns-1', document: { schema_version: 1, enabled: false, yaml: 'hosts: {}\ndns: {}\n' }, desired: true, applied: false, hosts: 0, policies: 0 }
 const preview: CustomDNSPreview = { changes: [{ field: 'hosts.nas.home.arpa', before: '', after: '192.0.2.8', source: 'custom-dns' }], managed_changes: [], warnings: [], blockers: ['DHCP namespace conflict'], final_yaml: 'hosts: {nas.home.arpa: 192.0.2.8}', base_yaml: 'dns: {}', overlay_yaml: 'dns: {}', custom_yaml: '', mac_ready: true, downstream_ready: true, dns_references: [] }
 
 function Card() {
   const [saved, setSaved] = useState(initial)
-  return <CustomDNSCard saved={saved} onSaved={setSaved} running onOpenNetwork={vi.fn()} />
+  return <CustomDNSCard onNotify={onNotify} saved={saved} onSaved={setSaved} running onOpenNetwork={vi.fn()} />
 }
 
 async function open() {
@@ -37,12 +39,16 @@ describe('CustomDNSCard', () => {
     fireEvent.change(editor, { target: { value: 'hosts: {nas.home.arpa: 192.0.2.8}' } })
     vi.mocked(api.saveCustomDNS).mockRejectedValueOnce(new Error('revision conflict'))
     await userEvent.click(screen.getByRole('button', { name: '保存草稿' }))
-    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'revision conflict')
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith({ tone: 'error', title: '操作未完成', message: 'revision conflict' }))
+    expect(onNotify).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alert')).toBeNull()
     expect((editor as HTMLTextAreaElement).value).toContain('nas.home.arpa')
     const doc = { schema_version: 1, enabled: true, yaml: 'hosts: {nas.home.arpa: 192.0.2.8}' }
     vi.mocked(api.saveCustomDNS).mockResolvedValue({ ...initial, revision: 'dns-2', document: doc, desired: false })
     await userEvent.click(screen.getByRole('button', { name: '保存草稿' }))
-    await screen.findByText('草稿已保存，运行中的 DNS 配置未改变。')
+    await waitFor(() => expect(onNotify).toHaveBeenLastCalledWith({ tone: 'success', title: '草稿已保存', message: '草稿已保存，运行中的 DNS 配置未改变。' }))
+    expect(onNotify).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('草稿已保存，运行中的 DNS 配置未改变。')).toBeNull()
     expect(api.saveCustomDNS).toHaveBeenLastCalledWith(doc, 'dns-1')
     expect(api.previewCustomDNS).not.toHaveBeenCalled()
   })
@@ -66,7 +72,7 @@ describe('CustomDNSCard', () => {
     const file = new File([new Uint8Array([0xff])], 'invalid-hosts')
     Object.defineProperty(file, 'arrayBuffer', { value: async () => new Uint8Array([0xff]).buffer })
     fireEvent.change(document.querySelector('input[type=file]')!, { target: { files: [file] } })
-    await screen.findByText('文件必须使用 UTF-8 编码。')
+    await waitFor(() => expect(onNotify).toHaveBeenCalledWith({ tone: 'error', title: '操作未完成', message: '文件必须使用 UTF-8 编码。' }))
     expect(api.importCustomDNS).not.toHaveBeenCalled()
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe(initial.document.yaml)
   })
@@ -74,6 +80,7 @@ describe('CustomDNSCard', () => {
   it('displays prerequisites and blockers without claiming a live query passed', async () => {
     await open(); vi.mocked(api.previewCustomDNS).mockResolvedValue(preview)
     await userEvent.click(screen.getByRole('button', { name: '预览' }))
+    await userEvent.click(await screen.findByText('配置检查'))
     await screen.findByText('DHCP namespace conflict')
     expect(screen.getByText('预览以已保存的网络设置为准；配置检查不代表真实查询验收。')).toBeTruthy()
     expect(screen.queryByText('配置检查通过；应用时仍需通过引擎校验。')).toBeNull()
@@ -99,9 +106,17 @@ describe('CustomDNSCard', () => {
     expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
   })
 
+  it('keeps a failed initial load visible in the editor', async () => {
+    render(<CustomDNSCard onNotify={onNotify} saved={null} onSaved={vi.fn()} running={false} onOpenNetwork={vi.fn()} loadError="DNS draft unavailable" />)
+    await userEvent.click(screen.getByText('自定义 DNS'))
+    expect(screen.getByRole('alert').textContent).toBe('DNS draft unavailable')
+    expect(screen.getByRole('button', { name: '重新载入草稿' })).toBeTruthy()
+    expect(onNotify).not.toHaveBeenCalled()
+  })
+
   it('keeps unsaved YAML when the parent refreshes application status', async () => {
     const onDirty = vi.fn()
-    const props = { saved: initial, onSaved: vi.fn(), running: false, onOpenNetwork: vi.fn(), onDirtyChange: onDirty }
+    const props = { onNotify, saved: initial, onSaved: vi.fn(), running: false, onOpenNetwork: vi.fn(), onDirtyChange: onDirty }
     const view = render(<CustomDNSCard {...props} />)
     await userEvent.click(screen.getByText('自定义 DNS'))
     const editor = screen.getByRole('textbox', { name: '自定义 DNS YAML' })

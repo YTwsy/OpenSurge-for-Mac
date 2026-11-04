@@ -10,19 +10,31 @@ UDP 与 TCP 53 都必须被劫持。LAN 路由器和链路本地 DNS 不保证�
 
 ## 生命周期与所有权
 
-启动在改变主机前读取网络服务 UUID、接口、自动/手动 DNS 与原服务器列表，
-读取失败必须终止，不能当成“自动”。快照写入 runtime state 后，等 mihomo
-TUN 与路由检查通过、DHCP/DNS 和 pf 就绪，再持久化 DNS 写入意图并应用设置。
-应用后读回网络服务 DNS。`verified_at` 是启动证据，不代表持续监控。
+启动在改变主机前读取网络服务 UUID、接口、自动/手动 DNS 与原服务器列表。
+读取失败必须终止启动，不能当成“自动”。准备时若同 UUID 已有尚未恢复的备份，
+复用其中的原值，避免把上次接管值或运行期间的外部修改覆盖到原备份。
 
-停止和回滚在关闭 DNS/TUN 前恢复原设置。`restart-mihomo` 在关闭旧引擎前
-恢复 DNS，新引擎就绪后再接管；失败保留恢复快照。跨 boot 的 interrupted
-清理也恢复 DNS，但不向旧 PID 发信号、不改新 boot 的 pf/forwarding。
-恢复失败保留状态和仍运行的服务，允许再次 Stop 重试。
+原 DNS 按 service UUID 独立保存在 `runtime/system-dns-backups.json`，不依赖
+运行状态 `state.json` 的寿命。等 mihomo TUN 与路由检查通过、DHCP/DNS 和 pf
+就绪后，在每次 Enable 前确保备份及写入意图已原子持久化；备份保存失败则不写 DNS，
+启动失败并执行完整 rollback。应用后读回网络服务 DNS，设置或读回失败也会使启动
+失败并 rollback。`verified_at` 只表示本次成功读回的证据，不代表持续监控。
 
-恢复按 UUID 和接口确认服务，允许服务改名；服务被删除或移到其他接口则报错。
-当前 DNS 不等于 OpenSurge 设置或原值时，放弃所有权并保留外部修改。
-这不能识别其他软件恰好写入相同值的情况，也不是引擎崩溃后的网络 kill switch。
+停止和回滚在关闭 DNS/TUN 前尝试按备份恢复原设置；`restart-mihomo` 在关闭旧引擎
+前尝试恢复，新引擎就绪后确认备份已持久化再重新接管。引擎重启期间保留备份，
+避免恢复成功后、重新接管前的中断遗失原设置。恢复直接写回备份，不要求
+当前 DNS 仍等于接管值；运行期间由用户或其他软件改写的 DNS 也会被原备份替换。
+按原 UUID 查找当前服务名，同 UUID 改名或接口编号变化不阻断；原 UUID 消失则跳过，
+不会把旧备份迁移或写入同名的新 UUID 服务。Stop 和 rollback 将恢复成功或原服务
+已消失的条目视为完成，从独立备份中移除。
+
+所有 Stop、rollback、interrupted 清理中的 DNS 读取、写入或恢复失败都记录 warning，
+继续其他资源清理，并允许在其他清理完成后删除 `state.json`。失败的独立 DNS 备份
+保留供下次 Stop 重试，即使运行状态已不存在也会尝试恢复。引擎重启不因前置 DNS
+恢复失败而中断，原目标未确认消失时仍在新引擎就绪后尝试重新接管；重接管的备份
+持久化、设置或读回失败仍返回实际功能错误，不能报告 DNS 已就绪。
+跨 boot 清理仍不向旧 PID 发信号、不改新 boot 的 pf/forwarding。DNS 恢复警告
+不等于主机解析已恢复，也不提供引擎崩溃后的网络 kill switch。
 
 只修改该服务的 DNS 服务器，不改搜索域、其他服务、系统 supplemental resolver、
 `/etc/resolver` 或 mDNS。原解析器只用于 `.lan`、`home.arpa`、私有反向域和该服务
@@ -91,10 +103,11 @@ IPv6 仅在本机 IPv6 开启时加入。
 
 启动与 Doctor 有限检查 DNS 捕获 IPv4、fake IPv4、fake IPv6 池两端和公网 IPv6
 目标的实际路由接口。status/overview 只读轻量状态，不运行 route/scutil 扫描。
-Doctor 另检查当前 DNS 所有权；Web 的 DNS 状态明确写为“启动时已校验”。
+Doctor 另检查当前 DNS 是否仍为接管值；Web 的 DNS 状态明确写为“启动时已校验”。
 
-`make test` 覆盖路由矩阵、身份、DNS 读写失败、自动/手动设置恢复、引擎重启与跨 boot
-恢复。标准 TUN gate 使用补丁核心。共享 L2 Lab 的 upstream 是没有 macOS 网络服务的
+`make test` 用于路由矩阵、DNS 备份持久化、读写失败、自动/手动设置恢复、服务 UUID
+变化、引擎重启与跨 boot 清理的回归；是否实际通过须查对应执行记录。
+标准 TUN gate 使用补丁核心。共享 L2 Lab 的 upstream 是没有 macOS 网络服务的
 虚拟 bridge，因此该夹具关闭 Mac DNS 协同；真实系统解析由 isolated-LAN 的本机模式门槛
 验证。完整网络回归还需基础 Lab、TUN 和受影响的下游 IPv6 拓扑门槛。
 

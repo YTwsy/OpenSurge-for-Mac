@@ -58,6 +58,81 @@ func TestStopReleasesPreparedEngineWithoutGatewayState(t *testing.T) {
 	}
 }
 
+func TestStopCleansGatewayDespiteUnresolvedPreparedIdentity(t *testing.T) {
+	manager, _, engine, events := dnsLifecycleFixture(t)
+	if err := manager.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	preparedErr := errors.New("prepared engine state lacks a process identity")
+	manager.deps.stopPrepared = func(config.Config) error { return preparedErr }
+	firewall, forwarding := &fakePF{}, &fakeSysctl{}
+	manager.deps.newPF = func(config.Config, runtime.Paths) pfService { return firewall }
+	manager.deps.newSysctl = func() sysctlService { return forwarding }
+	*events = nil
+	if err := manager.Stop(t.Context()); !errors.Is(err, preparedErr) {
+		t.Fatalf("lost prepared recovery error: %v", err)
+	}
+	for _, event := range []string{"dns-restore", "dhcp-stop", "mihomo-stop"} {
+		if !slices.Contains(*events, event) {
+			t.Fatalf("prepared recovery failure blocked %s: %v", event, *events)
+		}
+	}
+	if !engine.stopCalled {
+		t.Fatal("independently tracked gateway core was left running")
+	}
+	if !firewall.unloadCalled || forwarding.restoreValue != "0" {
+		t.Fatal("prepared identity failure blocked PF or forwarding cleanup")
+	}
+	if _, exists, err := runtime.LoadState(manager.paths.StateFile); err != nil || !exists {
+		t.Fatalf("unfinished cleanup lost its retry state: exists=%t, %v", exists, err)
+	}
+}
+
+func TestStopValidatesPFAnchorOnlyWhenCurrentRuntimeOwnsOne(t *testing.T) {
+	for _, scenario := range []string{"owned-current-boot", "not-owned", "previous-boot"} {
+		t.Run(scenario, func(t *testing.T) {
+			cfg := gatewayTestConfig()
+			cfg.Runtime.Dir = t.TempDir()
+			cfg.PF.AnchorName = " "
+			paths := runtime.NewPaths(cfg)
+			state := runtime.State{BootSessionID: "current", IPForwardingBefore: "0", PFAnchorLoaded: scenario != "not-owned"}
+			if scenario == "previous-boot" {
+				state.BootSessionID = "previous"
+			}
+			if err := runtime.SaveState(paths.StateFile, state); err != nil {
+				t.Fatal(err)
+			}
+			firewall, forwarding := &fakePF{}, &fakeSysctl{}
+			manager := Manager{cfg: cfg, paths: paths, deps: gatewayDeps{
+				geteuid: func() int { return 0 }, loadState: runtime.LoadState, removeState: runtime.RemoveState,
+				stopPrepared: func(config.Config) error { return nil },
+				currentBoot:  func() (runtime.BootSession, error) { return runtime.BootSession{ID: "current"}, nil },
+				newDHCP:      func(config.Config, runtime.Paths) dhcpService { return &fakeDHCP{} },
+				newMihomo:    func(config.Config, runtime.Paths) mihomoService { return &fakeMihomo{} },
+				newPF:        func(config.Config, runtime.Paths) pfService { return firewall },
+				newSysctl:    func() sysctlService { return forwarding },
+			}}
+			err := manager.Stop(t.Context())
+			wantErr := scenario == "owned-current-boot"
+			if (err != nil) != wantErr || wantErr && !strings.Contains(err.Error(), "pf.anchor_name") {
+				t.Fatalf("stop=%v, wantError=%t", err, wantErr)
+			}
+			if firewall.unloadCalled {
+				t.Fatal("attempted PF unload without a known anchor target")
+			}
+			if scenario != "previous-boot" && forwarding.restoreValue != "0" {
+				t.Fatal("PF target error blocked independent forwarding restoration")
+			}
+			if scenario == "previous-boot" && forwarding.restoreValue != "" {
+				t.Fatal("old runtime changed this boot's forwarding")
+			}
+			if _, exists, loadErr := runtime.LoadState(paths.StateFile); loadErr != nil || exists != wantErr {
+				t.Fatalf("retry state exists=%t, %v", exists, loadErr)
+			}
+		})
+	}
+}
+
 func TestCandidateStartCommitsAfterFinalValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name, cancelPhase                        string

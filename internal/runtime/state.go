@@ -35,8 +35,8 @@ type State struct {
 }
 
 // Owned is write intent, persisted before networksetup. Empty Servers means
-// automatic DNS, not a failed read. ServiceID prevents restoring a replacement
-// service that happens to reuse a name. VerifiedAt is startup evidence only.
+// automatic DNS, not a failed read. ServiceID identifies the original service;
+// restoring a removed service is skipped. VerifiedAt is startup evidence only.
 type SystemDNSSnapshot struct {
 	NetworkService string    `json:"network_service"`
 	ServiceID      string    `json:"service_id"`
@@ -82,7 +82,11 @@ func LoadState(path string) (State, bool, error) {
 }
 
 func SaveState(path string, state State) error {
-	data, err := json.MarshalIndent(state, "", "  ")
+	return saveJSON(path, state)
+}
+
+func saveJSON(path string, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}

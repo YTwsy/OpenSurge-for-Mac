@@ -34,6 +34,9 @@ func TestLoadExampleConfig(t *testing.T) {
 	if !cfg.Mihomo.StoreFakeIP {
 		t.Fatal("Mihomo.StoreFakeIP = false")
 	}
+	if cfg.Mihomo.SnifferEnabled {
+		t.Fatal("sniffer must default to disabled")
+	}
 	if cfg.DHCP.Binary != "dnsmasq" {
 		t.Fatalf("DHCP.Binary = %q", cfg.DHCP.Binary)
 	}
@@ -54,6 +57,46 @@ func TestLoadExampleConfig(t *testing.T) {
 	}
 	if cfg.UpstreamProxy.MatchDomain != "example.com" {
 		t.Fatalf("UpstreamProxy.MatchDomain = %q", cfg.UpstreamProxy.MatchDomain)
+	}
+}
+
+func TestLoadSnifferPreference(t *testing.T) {
+	for _, tt := range []struct {
+		name, body string
+		enabled    bool
+		invalid    bool
+	}{
+		{name: "legacy omitted", body: "mihomo:\n  store_fake_ip: true\n"},
+		{name: "disabled", body: "mihomo:\n  sniffer_enabled: false\n"},
+		{name: "enabled", body: "mihomo:\n  sniffer_enabled: true\n", enabled: true},
+		{name: "invalid", body: "mihomo:\n  sniffer_enabled: invalid\n", invalid: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tt.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if tt.invalid {
+				if err == nil || !strings.Contains(err.Error(), "mihomo.sniffer_enabled must be a boolean") {
+					t.Fatalf("invalid sniffer value: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Mihomo.SnifferEnabled != tt.enabled {
+				t.Fatalf("SnifferEnabled = %t, want %t", cfg.Mihomo.SnifferEnabled, tt.enabled)
+			}
+			if err := os.WriteFile(path, []byte(Render(cfg)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := Load(path)
+			if err != nil || loaded.Mihomo.SnifferEnabled != tt.enabled {
+				t.Fatalf("sniffer round trip = %t, err = %v", loaded.Mihomo.SnifferEnabled, err)
+			}
+		})
 	}
 }
 

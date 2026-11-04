@@ -57,9 +57,11 @@ rollback。运行中的 status/overview 每次只读取一次轻量运行时状�
 `degraded`。只有明确读取到 `tun.enable: false` 才是失败信号。不要增加独立后台
 watchdog，也不要在状态热路径反复执行 route/scutil 扫描。
 
-`tun.enable: false` 的失败语义已经针对项目固定的 mihomo v1.19.30 验证。升级
-mihomo 时必须重新核对失败后的 `/configs` 行为并跑真实 TUN Lab，不能把这个语义
-当作所有历史版本都具备的通用契约。
+`tun.enable: false` 的失败语义曾针对 mihomo v1.19.30 验证。当前固定的
+v1.19.33 已通过无效文件描述符的隔离真实核心检查，确认初始化失败后 `/configs`
+仍报告 TUN disabled，并保留本机 IPv6 配置的独立性；这不创建系统 TUN。
+升级 mihomo 仍须跑真实 TUN Lab，不能把隔离检查或历史结果当作当前 host-network
+路径的验收。当前网络复验范围见 [证据入口](../validation/evidence-map.md#mihomo-内核迁移)。
 
 当前默认不支持与另一个全局 TUN 同时占有公网路由。DNS resolver 状态与 TUN 路由
 所有权是不同信号；不要因为出现 utun scoped/supplemental resolver 就判定 TUN

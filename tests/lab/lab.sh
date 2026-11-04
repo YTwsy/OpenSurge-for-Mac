@@ -30,6 +30,7 @@ CONTROL_API_BINARY="$STATE_DIR/opensurge-control"
 EGRESS_PROVIDER="$STATE_DIR/tun-egress-provider.yaml"
 IPV6_PACKET_BINARY="$STATE_DIR/opensurge-network"
 PATCHED_MIHOMO_BINARY="$STATE_DIR/mihomo-opensurge"
+LAB_MIHOMO_BINARY_USED=""
 HTTP3_PROBE_BINARY="$STATE_DIR/opensurge-http3-probe"
 HTTP3_CLIENT_BINARY="$STATE_DIR/opensurge-http3-probe-linux-arm64"
 HTTP3_CLIENT_GUEST=/usr/local/bin/opensurge-http3-probe
@@ -351,6 +352,7 @@ write_config() {
   /sbin/ifconfig "$iface" | grep -q 'member: vmenet'
   /sbin/ifconfig "$iface" | grep -q "inet $LAN_IP "
   require_unique_lab_ip "$iface"
+  LAB_MIHOMO_BINARY_USED="$mihomo_bin"
   if [[ "$gateway_mode" == "isolated_lan" ]]; then
     [[ "$iface" != "$upstream" ]] || { echo "isolated lab and upstream interfaces must differ" >&2; exit 1; }
   else
@@ -674,6 +676,16 @@ destroy_tailscale_peer() {
   fi
 }
 
+verify_client_tools() {
+  limactl shell "$1" -- /bin/sh -ec '
+    for tool in bash curl dig ip ping python3 networkctl resolvectl; do
+      command -v "$tool" >/dev/null || { echo "Lab client dependency missing: $tool" >&2; exit 1; }
+    done
+    test -x /usr/local/bin/omg-lab-client
+    test -f /etc/systemd/network/05-open-mihomo-gateway-lab.network
+  '
+}
+
 start_clients() {
   local client instance_yaml pid failed cold_start
   local -a start_pids
@@ -700,7 +712,7 @@ start_clients() {
   if [[ "$cold_start" == 1 ]]; then
     for client in $CLIENTS; do
       limactl start "$client"
-      limactl shell "$client" -- true
+      verify_client_tools "$client"
     done
     return 0
   fi
@@ -718,7 +730,7 @@ start_clients() {
     return 1
   fi
   for client in $CLIENTS; do
-    limactl shell "$client" -- true
+    verify_client_tools "$client"
   done
 }
 
@@ -755,6 +767,11 @@ collect_artifacts() {
   local artifact_dir client evidence
   artifact_dir="$ROOT/artifacts/lab/$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$artifact_dir"
+  if [[ -n "$LAB_MIHOMO_BINARY_USED" ]]; then
+    "$LAB_MIHOMO_BINARY_USED" -v >"$artifact_dir/mihomo-version.txt" 2>&1
+    shasum -a 256 "$LAB_MIHOMO_BINARY_USED" >"$artifact_dir/mihomo.sha256"
+    /usr/bin/lipo -archs "$LAB_MIHOMO_BINARY_USED" >"$artifact_dir/mihomo-architectures.txt"
+  fi
   cp "$CONFIG" "$artifact_dir/config.yaml" 2>/dev/null || true
   cp "$LAB_DEVICE_POLICY_FILE" "$artifact_dir/device-policy.json" 2>/dev/null || true
   cp "$LAB_MIHOMO_PROFILE" "$artifact_dir/device-policy-profile.yaml" 2>/dev/null || true
@@ -1819,6 +1836,12 @@ build_ipv6_lab_binaries() {
   NO_PROXY="$go_no_proxy" \
   no_proxy="$go_no_proxy" \
     go build -o "$IPV6_PACKET_BINARY" ./cmd/opensurge-network
+  if [[ -n "${OMG_LAB_MIHOMO_BINARY:-}" ]]; then
+    [[ -x "$OMG_LAB_MIHOMO_BINARY" ]] || { echo "mihomo binary is not executable: $OMG_LAB_MIHOMO_BINARY" >&2; return 1; }
+    PATCHED_MIHOMO_BINARY="$OMG_LAB_MIHOMO_BINARY"
+    echo "Using explicitly selected IPv6 Lab core: $PATCHED_MIHOMO_BINARY"
+    return 0
+  fi
   if ! GOCACHE="$build_cache" \
     GOMODCACHE="$mod_cache" \
     GOPROXY="${GOPROXY:-https://goproxy.cn,direct}" \
@@ -3231,6 +3254,18 @@ run_ipv6_imported_egress_test() {
   echo "virtual LAN native IPv6 DIRECT, real subscription GLOBAL, identity, and rollback test passed"
 }
 
+run_local_routing_ipv4_https() {
+  local host fake_ip
+  host="$(url_host "$TEST_URL")"
+  fake_ip="$(dig +time=5 +tries=1 +short @127.0.0.1 -p "$CONFIG_DNS_PORT" "$host" A | awk '/^198[.]18[.]/ { print; exit }')"
+  [[ -n "$fake_ip" ]] || { echo "local-routing Lab did not receive a fake A address" >&2; return 1; }
+  # The system-resolver check uses a fresh hostname separately. Pin this packet
+  # probe to the current core mapping so a cached real A from before takeover
+  # cannot erase its domain rule identity or select a different address family.
+  curl --noproxy '*' --ipv4 --resolve "$host:443:$fake_ip" \
+    --fail --silent --show-error --max-time 15 "$TEST_URL"
+}
+
 run_local_routing_assertions() {
   local client client_ip host first_line
   set -- $CLIENTS
@@ -3248,7 +3283,7 @@ run_local_routing_assertions() {
 
   : >"$STATE_DIR/egress/proxy.log"
   first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-rule-host.out"
+  run_local_routing_ipv4_https >"$STATE_DIR/local-routing-rule-host.out"
   wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
   wait_for_tun_policy_log_for_host TunEgress DIRECT "$host"
   assert_tun_egress_proxy_unused
@@ -3260,7 +3295,7 @@ run_local_routing_assertions() {
   grep -Fq '"udp_behavior": "reject"' "$STATE_DIR/local-routing-global.json"
   : >"$STATE_DIR/egress/proxy.log"
   first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-global-host.out"
+  run_local_routing_ipv4_https >"$STATE_DIR/local-routing-global-host.out"
   wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
   assert_tun_egress_proxy_used
   run_local_routing_ipv6_tcp global open-surge/mac-mode-tcp
@@ -3277,7 +3312,7 @@ run_local_routing_assertions() {
   grep -Fq '"mode": "direct"' "$STATE_DIR/local-routing-direct.json"
   : >"$STATE_DIR/egress/proxy.log"
   first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-direct-host.out"
+  run_local_routing_ipv4_https >"$STATE_DIR/local-routing-direct-host.out"
   wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
   assert_tun_egress_proxy_unused
   run_local_routing_ipv6_tcp direct open-surge/mac-mode-tcp
@@ -3292,7 +3327,7 @@ run_local_routing_assertions() {
   "$BINARY" local-routing-set --config "$CONFIG" --mode rule --format json >"$STATE_DIR/local-routing-rule-follow.json"
   : >"$STATE_DIR/egress/proxy.log"
   first_line="$(( $(wc -l <"$STATE_DIR/logs/mihomo.log") + 1 ))"
-  curl --noproxy '*' --fail --silent --show-error --max-time 15 "$TEST_URL" >"$STATE_DIR/local-routing-rule-follow-host.out"
+  run_local_routing_ipv4_https >"$STATE_DIR/local-routing-rule-follow-host.out"
   wait_for_tun_source_log_after "$host" "198.18.0.1" "$first_line"
   assert_tun_egress_proxy_used
 
@@ -3340,10 +3375,17 @@ assert_mac_system_dns() {
       abort "system proxy must be off during DNS acceptance" unless status.success? && output.include?("Enabled: No")
     end
     host = "mac-dns-#{SecureRandom.hex(6)}.opensurge.test"
-    addresses = Addrinfo.getaddrinfo(host, nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM).map(&:ip_address).uniq
+    default_addresses = Addrinfo.getaddrinfo(host, nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM).map(&:ip_address).uniq
+    # Darwin turns zero flags into AI_DEFAULT (including AI_ADDRCONFIG), which
+    # can hide AAAA on a host without native IPv6 even when the TUN handles it.
+    # An explicit nonzero flag requests both families through the same system
+    # resolver. Actual IPv6 routing is checked separately by the packet probes.
+    flags = Socket::AI_CANONNAME
+    addresses = Addrinfo.getaddrinfo(host, nil, Socket::AF_UNSPEC, Socket::SOCK_STREAM, 0, flags).map(&:ip_address).uniq
+    puts JSON.pretty_generate({host: host, resolver: "macOS getaddrinfo", flags: "AI_CANONNAME", system_proxy: false, default_addresses: default_addresses, addresses: addresses})
+    abort "default system resolver missed fake A" unless default_addresses.any? { |a| a.start_with?("198.18.") }
     abort "system resolver missed fake A" unless addresses.any? { |a| a.start_with?("198.18.") }
     abort "system resolver missed fake AAAA" unless addresses.any? { |a| a.start_with?("fdfe:dcba:9876:") }
-    puts JSON.pretty_generate({host: host, resolver: "macOS getaddrinfo", system_proxy: false, addresses: addresses})
   ' "$STATE_DIR/mac-system-dns-snapshot.json" >"$STATE_DIR/mac-system-dns-resolution.json"
   # Both DNS transports must enter Mihomo, even when sent to the public
   # capture address. These do not replace the system-resolver assertion above.
@@ -3603,6 +3645,9 @@ run_test() {
     fi
     assert_mac_system_dns
     sudo -n "$BINARY" restart-mihomo --config "$CONFIG"
+    # Restart rotates the log and creates a new root-owned file. Keep private
+    # modes while making this disposable Lab evidence readable by the runner.
+    sudo -n chown "$(id -u):$(id -g)" "$STATE_DIR/logs/mihomo.log"
     assert_mac_system_dns
   fi
 

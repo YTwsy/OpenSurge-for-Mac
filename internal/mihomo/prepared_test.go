@@ -281,6 +281,39 @@ func TestPreparedIncompleteIdentityFailsClosed(t *testing.T) {
 	if fake.stops != 0 {
 		t.Fatal("signalled journal PID without fingerprint")
 	}
+	if _, err := prepareLocked(t.Context(), cfg, "rules: [\"MATCH,REJECT\"]", deps); err == nil || !strings.Contains(err.Error(), "lacks a process identity") {
+		t.Fatalf("replacement bypassed incomplete identity: %v", err)
+	}
+	if fake.starts != 1 || fake.stops != 0 {
+		t.Fatal("incomplete journal allowed a competing engine or an untracked signal")
+	}
+	if _, exists, err := LoadPrepared(cfg); err != nil || !exists {
+		t.Fatalf("incomplete recovery journal was discarded: exists=%t, %v", exists, err)
+	}
+}
+
+func TestPreparedCorruptJournalBlocksEngineChangesWithoutDiscardingEvidence(t *testing.T) {
+	cfg, fake, deps := preparedFixture(t)
+	path := preparedStatePath(cfg)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	broken := []byte("{interrupted-journal")
+	if err := os.WriteFile(path, broken, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := stopPreparedLocked(cfg, deps); err == nil {
+		t.Fatal("cleanup accepted an unreadable journal")
+	}
+	if _, err := prepareLocked(t.Context(), cfg, "rules: [\"MATCH,DIRECT\"]", deps); err == nil {
+		t.Fatal("replacement accepted an unreadable journal")
+	}
+	if fake.starts != 0 || fake.stops != 0 {
+		t.Fatal("unreadable journal caused process changes")
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != string(broken) {
+		t.Fatalf("unreadable recovery journal was discarded: %q, %v", content, err)
+	}
 }
 
 func TestPreparedControllerFailureDoesNotAutomaticallyReplaceLiveEngine(t *testing.T) {

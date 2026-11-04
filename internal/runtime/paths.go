@@ -11,6 +11,7 @@ type Paths struct {
 	Dir                 string
 	LogDir              string
 	StateFile           string
+	SystemDNSBackupFile string
 	DNSMasqConf         string
 	DNSMasqPIDFile      string
 	DNSMasqLog          string
@@ -30,6 +31,7 @@ func NewPaths(cfg config.Config) Paths {
 		Dir:                 dir,
 		LogDir:              filepath.Join(dir, "logs"),
 		StateFile:           filepath.Join(dir, "state.json"),
+		SystemDNSBackupFile: filepath.Join(dir, "system-dns-backups.json"),
 		DNSMasqConf:         filepath.Join(dir, "dnsmasq.conf"),
 		DNSMasqPIDFile:      filepath.Join(dir, "dnsmasq.pid"),
 		DNSMasqLog:          filepath.Join(dir, "logs", "dnsmasq.log"),

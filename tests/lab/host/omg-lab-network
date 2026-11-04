@@ -55,9 +55,10 @@ start_network() {
       /sbin/ifconfig "$iface" inet "$LAN_IP" netmask "$NETMASK" up
       printf '%s\n' "$iface" >"$INTERFACE_FILE"
       /bin/chmod 0644 "$INTERFACE_FILE"
+      status_network
+      return 0
     fi
-    status_network
-    return 0
+    echo "lab socket_vmnet is running without its bridge; recreating the lab network" >&2
   fi
 
   # socket_vmnet installs its own SIGHUP handler, so nohup alone does not keep

@@ -155,6 +155,14 @@ OpenSurge writes a separate `0600` YAML file under
 new file selected. Refreshing the source does not overwrite exported copies,
 and an edited copy must be imported as a local file before it becomes a draft.
 
+To remove an unused configuration, click **Delete source** on its card and
+confirm. This removes the library record, all its snapshot history, and its saved
+subscription URL. Original YAML files, exported copies, and global extensions
+are kept. The action also works if you already removed the snapshot in Finder.
+Apply another source before deleting one that is running or selected for the
+next startup, including a selected historical version. Deletion does not reload
+the gateway, and you can import the source again later.
+
 ### 2. Choose a network mode
 
 Open **网络设置** (Network Settings) and choose the topology that matches your
@@ -170,6 +178,18 @@ Set the downstream and upstream interfaces, Mac gateway IPv4, DHCP pool, and
 upstream DNS. Keep **mihomo TUN** enabled for transparent proxying. Per-device
 policies are enabled by default; register devices and choose their egress on the
 Devices page. Select **保存网络配置** (Save network configuration) to save network settings.
+
+**Sniffer (domain detection)** is in **Advanced Mihomo / DNS settings** and is
+off by default. If an app uses external encrypted DNS or cached real IPs and
+its connections lack the domain mapping needed by domain rules, stop the
+gateway, turn on **Enable Sniffer**, save, and start the gateway again. It
+extracts domains from HTTP Host and TLS/QUIC handshakes for rule matching while
+keeping the original destination IP and device-policy precedence. Connections
+using gateway fake-IP DNS normally already have a domain mapping. Sniffing
+cannot reliably recover the real domain hidden by ECH or identify traffic with
+no recognizable domain. The Connections page displays detected domains; inspect
+**Sniffed domain** and **Destination address / port** to check the result.
+OpenSurge owns this switch; imported `sniffer` settings do not override it.
 
 All three topologies expose the two experimental IPv6 settings. **IPv6 DNS
 queries** controls upstream and Fake-IP AAAA answers; explicit IPv6 mappings in

@@ -31,6 +31,7 @@ type Status struct {
 	IPv4Takeover        string `json:"ipv4_takeover"`
 	IPv6Takeover        string `json:"ipv6_takeover"`
 	ClientCount         int    `json:"client_count"`
+	DevicesError        string `json:"devices_error,omitempty"`
 	DNSIPv6             bool   `json:"dns_ipv6"`
 	MacTUNIPv6          string `json:"mac_tun_ipv6"`
 	MacSystemDNS        string `json:"mac_system_dns"`
@@ -46,8 +47,11 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		return Status{}, err
 	}
 	clients, err := device.LoadLeases(m.paths.LeaseFile)
+	devicesError := ""
 	if err != nil {
-		return Status{}, err
+		// Lease observations do not determine runtime ownership or process
+		// health. Keep that status available, especially interrupted recovery.
+		devicesError = fmt.Sprintf("read DHCP leases: %v", err)
 	}
 
 	gatewayStatus := "stopped"
@@ -75,7 +79,7 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		tunIPv6Requested = state.TUNIPv6Requested
 		nativeIPv6Available = state.NativeIPv6Available
 		ipv6Reason = state.IPv6Reason
-		bootSession, bootErr := runtime.CurrentBootSession()
+		bootSession, bootErr := currentBoot(m.gatewayDeps())
 		if bootErr != nil {
 			return Status{}, fmt.Errorf("determine current boot session: %w", bootErr)
 		}
@@ -168,6 +172,7 @@ func (m Manager) Status(ctx context.Context) (Status, error) {
 		IPv4Takeover:        ipv4Takeover,
 		IPv6Takeover:        ipv6Takeover,
 		ClientCount:         len(clients),
+		DevicesError:        devicesError,
 		DNSIPv6:             dnsIPv6,
 		MacTUNIPv6:          macTUNIPv6Status(state, exists, runtimeState, tunStatus),
 		MacSystemDNS:        macSystemDNSStatus(state, exists, runtimeState),
@@ -292,6 +297,13 @@ func (s Status) Format() string {
 	if s.TUNError != "" {
 		tunLabel += ": " + s.TUNError
 	}
+	clientsLabel := fmt.Sprintf("%d", s.ClientCount)
+	if s.DevicesError != "" {
+		clientsLabel = "unavailable"
+		if s.ClientCount > 0 {
+			clientsLabel = fmt.Sprintf("%d (incomplete)", s.ClientCount)
+		}
+	}
 	lines := []string{
 		fmt.Sprintf("Gateway: %s", s.Gateway),
 		fmt.Sprintf("Runtime state: %s", s.RuntimeState),
@@ -306,7 +318,10 @@ func (s Status) Format() string {
 		fmt.Sprintf("IPv6 packet path: requested=%s state=%s (%s)", s.TUNIPv6Requested, s.IPv6Packet, s.IPv6Reason),
 		fmt.Sprintf("pf anchor: %s", s.PFAnchor),
 		fmt.Sprintf("IP forwarding: %s", s.Forwarding),
-		fmt.Sprintf("Clients: %d", s.ClientCount),
+		fmt.Sprintf("Clients: %s", clientsLabel),
+	}
+	if s.DevicesError != "" {
+		lines = append(lines, "Devices warning: "+s.DevicesError)
 	}
 	return strings.Join(lines, "\n") + "\n"
 }

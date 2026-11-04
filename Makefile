@@ -1,7 +1,7 @@
 .PHONY: test build mihomo-build doctor status policy-control-test
 .PHONY: desktop-build desktop-production-build desktop-test
 .PHONY: web-install web-build web-test control-build control-run menubar-build menubar-test gui-build gui-test gui-installer gui-notarize
-.PHONY: lab-install lab-uninstall-root lab-check lab-up lab-status lab-test
+.PHONY: lab-install lab-uninstall-root lab-check lab-unit-test lab-up lab-status lab-test
 .PHONY: lab-test-tun lab-test-tun-imported-profile lab-test-tun-imported-egress lab-test-tun-local-routing lab-test-tun-device-policy lab-test-tailscale lab-tailscale-up lab-tailscale-down lab-tailscale-destroy lab-test-ipv6-userspace lab-test-ipv6-same-wifi lab-test-ipv6-same-lan lab-test-ipv6-imported-egress lab-down lab-destroy
 .PHONY: lab-test-policy-workspace
 .PHONY: real-device-start-off real-device-start-tun real-device-start-tun-proxy
@@ -84,6 +84,9 @@ lab-uninstall-root:
 
 lab-check:
 	./tests/lab/lab.sh check
+
+lab-unit-test:
+	python3 -B -m unittest discover -s tests/lab -p 'test_*.py' -v
 
 lab-up:
 	./tests/lab/lab.sh up

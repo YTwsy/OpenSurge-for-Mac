@@ -136,7 +136,7 @@ selection context，读取快照时按该上下文重编译，不能根据后续
 未保存的草稿差异。来源恢复后在下次启动/重载重新解析原策略。
 
 历史选择优先来自运行中/准备态核心；已跳过的 selector 从 applied bundle 或准备态记录中
-保留原选择，避免后续预览读取因 live group 缺席而重新启用它。停止态只读 pinned Mihomo 1.19.30 的 bbolt
+保留原选择，避免后续预览读取因 live group 缺席而重新启用它。停止态只读 pinned Mihomo 1.19.33 的 bbolt
 `cache.db` / `selected` bucket，使用相同版本 bbolt 依赖和有界锁等待。禁止复制运行中
 数据库、增加第二个 writer、清缓存或启动额外核心读取选择。临时校验目录必须保留原
 cache 路径。首次使用且没有缓存时使用第一候选；缓存无法读取且没有可信选择时，受影响

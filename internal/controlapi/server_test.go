@@ -2031,6 +2031,57 @@ func TestControlConfigRoundTripsFakeIPPersistence(t *testing.T) {
 	}
 }
 
+func TestControlConfigSnifferPreference(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Runtime.Dir = filepath.Join(dir, "runtime")
+	cfg.Mihomo.Config = filepath.Join(cfg.Runtime.Dir, "mihomo.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(config.Render(cfg)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	initial := controlConfigFrom(cfg, fileDigest(path))
+	if initial.Mihomo.SnifferEnabled == nil || *initial.Mihomo.SnifferEnabled {
+		t.Fatal("API must explicitly expose sniffer disabled by default")
+	}
+	for _, step := range []struct {
+		name    string
+		enabled bool
+		omit    bool
+	}{
+		{"enable", true, false},
+		{"legacy client preserves enabled", true, true},
+		{"disable", false, false},
+		{"legacy client preserves disabled", false, true},
+	} {
+		t.Run(step.name, func(t *testing.T) {
+			input := controlConfigFrom(cfg, fileDigest(path))
+			input.Mihomo.SnifferEnabled = &step.enabled
+			if step.omit {
+				input.Mihomo.SnifferEnabled = nil
+			}
+			payload, err := json.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := applyControlConfig(path, input.Revision, payload); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err = config.Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Mihomo.SnifferEnabled != step.enabled {
+				t.Fatalf("sniffer enabled = %t, want %t", cfg.Mihomo.SnifferEnabled, step.enabled)
+			}
+			output := controlConfigFrom(cfg, fileDigest(path))
+			if output.Mihomo.SnifferEnabled == nil || *output.Mihomo.SnifferEnabled != step.enabled {
+				t.Fatalf("API did not read back saved sniffer preference: %+v", output.Mihomo)
+			}
+		})
+	}
+}
+
 func TestControlConfigLegacyPayloadPreservesFakeIPPersistence(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.Default()

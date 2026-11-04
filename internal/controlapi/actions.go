@@ -260,8 +260,15 @@ func ServeHelper(ctx context.Context, socketPath, allowedRoot, socketGroup strin
 	if err := sleepManager.Reconcile(reconcileCtx); err != nil {
 		retrySystemSleepRelease(ctx, sleepManager, err)
 	}
-	if err := reconcilePreparedPolicyEngine(allowedRoot); err != nil {
-		return fmt.Errorf("reconcile prepared policy engine: %w", err)
+	return serveHelper(ctx, socketPath, allowedRoot, socketGroup, sleepManager, policyManager, reconcilePreparedPolicyEngine)
+}
+
+func serveHelper(ctx context.Context, socketPath, allowedRoot, socketGroup string, sleepManager *systemSleepLeaseManager, policyManager *helperPolicyLeases, reconcilePrepared func(string) error) error {
+	if err := reconcilePrepared(allowedRoot); err != nil {
+		// Keep the recovery channel available. Engine transitions still check
+		// the prepared journal under the shared lifecycle lock before taking
+		// ownership of its cache and tsnet identity.
+		log.Printf("OpenSurge prepared policy engine cleanup pending; helper remains available: %v", err)
 	}
 	_ = os.Remove(socketPath)
 	listener, err := net.Listen("unix", socketPath)
@@ -340,8 +347,11 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 	if err == nil {
 		err = requireTrustedRuntime(cfg, allowedRoot)
 	}
-	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "restart-mihomo" || request.Action == "config-apply-profile" || request.Action == "config-apply-tailscale") {
+	if err == nil && (request.Action == "start" || request.Action == "reload" || request.Action == "config-apply-profile" || request.Action == "config-apply-tailscale") {
 		err = requireTrustedStartInputs(cfg, allowedRoot)
+	}
+	if err == nil && request.Action == "restart-mihomo" {
+		err = requireTrustedRestartInputs(cfg, allowedRoot)
 	}
 	if err == nil && request.Action == "custom-dns-preview" {
 		// Preview renders profiles but never executes mihomo or dnsmasq. Keep
@@ -483,9 +493,7 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 				err = runner.SetDHCP(ctx, configPath, request.NetworkService)
 			}
 		case "dhcp-probe":
-			if request.Interface != cfg.Gateway.Interface {
-				err = fmt.Errorf("DHCP probe interface does not match configured gateway interface")
-			} else {
+			if err = validateHelperDHCPProbe(cfg, request.Interface); err == nil {
 				timeout := time.Duration(request.TimeoutMillis) * time.Millisecond
 				if timeout < time.Second || timeout > 10*time.Second {
 					timeout = 3 * time.Second
@@ -545,7 +553,10 @@ func retrySystemSleepRelease(ctx context.Context, manager *systemSleepLeaseManag
 }
 
 func loadHelperConfig(action, configPath string) (config.Config, error) {
-	if action == "stop" || action == "restart-mihomo" || action == "policy-workspace" || action == "policy-workspace-hold" || action == "custom-dns-preview" {
+	if action == "stop" || action == "config-apply-control" || action == "network-set-dhcp" || action == "dhcp-probe" {
+		return config.LoadRecovery(configPath)
+	}
+	if action == "restart-mihomo" || action == "policy-workspace" || action == "policy-workspace-hold" || action == "custom-dns-preview" {
 		return config.LoadRuntime(configPath)
 	}
 	return config.Load(configPath)
@@ -561,7 +572,7 @@ func reconcilePreparedPolicyEngine(allowedRoot string) error {
 	if err := requireRootOwnedConfig(path); err != nil {
 		return err
 	}
-	cfg, err := config.LoadRuntime(path)
+	cfg, err := config.LoadRecovery(path)
 	if err != nil {
 		return err
 	}
@@ -590,7 +601,7 @@ func helperGatewayLifecycleAction(action string) bool {
 }
 
 func validateHelperNetworkTarget(ctx context.Context, cfg config.Config, service, interfaceName string) error {
-	if interfaceName != cfg.Gateway.Interface {
+	if strings.TrimSpace(interfaceName) == "" || interfaceName != cfg.Gateway.Interface {
 		return fmt.Errorf("network interface does not match configured gateway interface")
 	}
 	actual, err := macosnetwork.ServiceInterface(ctx, service)
@@ -599,6 +610,13 @@ func validateHelperNetworkTarget(ctx context.Context, cfg config.Config, service
 	}
 	if actual != interfaceName {
 		return fmt.Errorf("network service %q uses %s, not configured interface %s", service, actual, interfaceName)
+	}
+	return nil
+}
+
+func validateHelperDHCPProbe(cfg config.Config, interfaceName string) error {
+	if strings.TrimSpace(interfaceName) == "" || interfaceName != cfg.Gateway.Interface {
+		return fmt.Errorf("DHCP probe interface does not match configured gateway interface")
 	}
 	return nil
 }
@@ -653,6 +671,20 @@ func requireTrustedStartInputs(cfg config.Config, allowedRoot string) error {
 		}
 	}
 	return requireTrustedProfileInputs(cfg, allowedRoot)
+}
+
+// Restart uses the rendered core config and its existing working directory.
+// dnsmasq and the next device-policy draft are not inputs to this operation.
+// Keep the profile and tsnet checks: the profile digest and working directory
+// are still used by the gateway's applied-config restart contract.
+func requireTrustedRestartInputs(cfg config.Config, allowedRoot string) error {
+	if err := requireTrustedFile(cfg.Mihomo.Config, allowedRoot, false); err != nil {
+		return fmt.Errorf("mihomo.config: %w", err)
+	}
+	restart := cfg
+	restart.DHCP.Enabled = false
+	restart.DevicePolicy.File = ""
+	return requireTrustedStartInputs(restart, allowedRoot)
 }
 
 func requireTrustedProfileInputs(cfg config.Config, allowedRoot string) error {

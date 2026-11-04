@@ -3,6 +3,8 @@ import { api } from '../api'
 import { t } from '../i18n'
 import { desktopAction, isDesktop } from '../desktop'
 import { customDNSStatus } from './CustomDNSStatus'
+import type { OperationNotification } from './OperationNotifications'
+import { ValidationSummary } from './ValidationSummary'
 import type { CustomDNSChange, CustomDNSDocument, CustomDNSDraft, CustomDNSImport, CustomDNSPreview } from '../types'
 
 const example = `hosts:
@@ -26,9 +28,10 @@ async function download(name: string, content: string) {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-export function CustomDNSCard({ saved, onSaved, running, onApply, applying = false, applyDisabled = false, loadError = '', onOpenNetwork, onCheckNetwork = onOpenNetwork, onDirtyChange, navigationRequest = 0 }: {
+export function CustomDNSCard({ saved, onSaved, onNotify, running, onApply, applying = false, applyDisabled = false, loadError = '', onOpenNetwork, onCheckNetwork = onOpenNetwork, onDirtyChange, navigationRequest = 0 }: {
   saved: CustomDNSDraft | null
   onSaved: (value: CustomDNSDraft) => void | Promise<void>
+  onNotify: (notification: OperationNotification) => void
   running: boolean
   onApply?: () => void
   applying?: boolean
@@ -41,8 +44,6 @@ export function CustomDNSCard({ saved, onSaved, running, onApply, applying = fal
 }) {
   const [draft, setDraft] = useState<CustomDNSDocument | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [pending, setPending] = useState<(CustomDNSImport & { name: string }) | null>(null)
   const [preview, setPreview] = useState<CustomDNSPreview | null>(null)
   const savedRef = useRef<CustomDNSDraft | null>(null)
@@ -70,8 +71,8 @@ export function CustomDNSCard({ saved, onSaved, running, onApply, applying = fal
   }, [navigationRequest, Boolean(saved)])
 
   async function work(action: () => Promise<void>) {
-    setBusy(true); setError(''); setMessage('')
-    try { await action() } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    setBusy(true)
+    try { await action() } catch (reason) { onNotify({ tone: 'error', title: t('操作未完成'), message: reason instanceof Error ? reason.message : String(reason) }) }
     finally { setBusy(false) }
   }
 
@@ -87,7 +88,7 @@ export function CustomDNSCard({ saved, onSaved, running, onApply, applying = fal
     })
   }
 
-  function edit(value: CustomDNSDocument) { setDraft(value); setPreview(null); setMessage('') }
+  function edit(value: CustomDNSDocument) { setDraft(value); setPreview(null) }
 
   const status = loadError ? '状态未知' : dirty ? '有未保存的修改' : saved ? customDNSStatus(saved, running) : '正在加载…'
   const statusTone = loadError ? 'off' : dirty || (saved && !saved.desired) ? 'draft' : saved?.applied ? 'live' : saved?.document.enabled ? 'ready' : 'off'
@@ -156,7 +157,7 @@ export function CustomDNSCard({ saved, onSaved, running, onApply, applying = fal
               const value = await api.saveCustomDNS(draft, saved.revision)
               setDraft(value.document); setPreview(null)
               await onSaved(value)
-              setMessage(t('草稿已保存，运行中的 DNS 配置未改变。'))
+              onNotify({ tone: 'success', title: t('草稿已保存'), message: t('草稿已保存，运行中的 DNS 配置未改变。') })
             })}><DNSIcon name="check" />{t('保存草稿')}</button>
           </div>
         </div>
@@ -180,7 +181,7 @@ export function CustomDNSCard({ saved, onSaved, running, onApply, applying = fal
         <p>{t('预览以已保存的网络设置为准；配置检查不代表真实查询验收。')}</p>
         <div className="custom-dns-actions"><span className={`pill ${preview.mac_ready ? 'ok' : ''}`}>{t('Mac TUN')} · {t(preview.mac_ready ? '配置前提满足' : '配置前提未满足')}</span><span className={`pill ${preview.downstream_ready ? 'ok' : ''}`}>{t('下游 DNS')} · {t(preview.downstream_ready ? '配置前提满足' : '配置前提未满足')}</span></div>
         {(!preview.mac_ready || !preview.downstream_ready) && <button type="button" onClick={onCheckNetwork}>{t('前往网络设置检查')}</button>}
-        {preview.blockers.map((item, i) => <p key={i} className="notice warn">{item}</p>)}
+        <ValidationSummary blockers={preview.blockers} warnings={preview.warnings} />
         {!preview.blockers.length && <p className="notice">{t('配置检查通过；应用时仍需通过引擎校验。')}</p>}
         <DNSChanges title={t('自定义内容变化')} changes={preview.changes} />
         <DNSChanges title={t('受管设置与系统 DNS 协同')} changes={preview.managed_changes} />
@@ -188,12 +189,10 @@ export function CustomDNSCard({ saved, onSaved, running, onApply, applying = fal
         <details><summary>{t('全局附加配置')}</summary><pre>{preview.overlay_yaml}</pre></details>
         <pre>{preview.final_yaml}</pre>
         <p className="muted">{t('hosts 先于上游策略匹配；更具体的域名可能优先于通配。节点和 Provider 也可能使用 hosts。')}</p>
-        {preview.warnings.map((item, i) => <p key={i} className="notice">{item}</p>)}
         {preview.dns_references.length > 0 && <details><summary>{t('DNS 服务引用')}</summary><pre>{preview.dns_references.map(item => `${item.field}: ${item.target} → ${item.effective} (${item.source})`).join('\n')}</pre></details>}
       </div>}
-      {message && <p role="status" className="notice">{message}</p>}
       {!draft && <button type="button" disabled={busy} onClick={() => void work(async () => { const value = await api.customDNS(); await onSaved(value) })}>{t('重新载入草稿')}</button>}
-      {(error || loadError) && <p role="alert" className="notice warn">{error || loadError}</p>}
+      {loadError && <p role="alert" className="notice warn">{loadError}</p>}
       </div>
     </details>
   </section>

@@ -4,10 +4,11 @@ import { isWindowVisible } from '../visibility'
 import type { ConnectionObservation } from '../types'
 
 export function useConnections(paused: boolean, gateway?: string, revision?: string) {
-  const [snapshot, setSnapshot] = useState<ConnectionObservation | null>(null)
-  const [error, setError] = useState('')
+  const lifecycle = gateway === 'degraded' ? 'running' : gateway
+  const [observation, setObservation] = useState<{ lifecycle?: string; snapshot: ConnectionObservation | null; error: string }>({ lifecycle, snapshot: null, error: '' })
 
   useEffect(() => {
+    setObservation(current => current.lifecycle === lifecycle ? current : { lifecycle, snapshot: null, error: '' })
     if (paused) return
     let active = true
     let timer = 0
@@ -20,9 +21,9 @@ export function useConnections(paused: boolean, gateway?: string, revision?: str
         inFlight = true
         try {
           const value = await api.connections(controller.signal)
-          if (active) { setSnapshot(value); setError('') }
+          if (active) setObservation({ lifecycle, snapshot: value, error: '' })
         } catch (cause) {
-          if (active) setError(cause instanceof Error ? cause.message : String(cause))
+          if (active) setObservation(current => ({ lifecycle, snapshot: current.lifecycle === lifecycle ? current.snapshot : null, error: cause instanceof Error ? cause.message : String(cause) }))
         } finally { inFlight = false }
       }
       if (active) timer = window.setTimeout(() => void poll(), 2000)
@@ -31,7 +32,9 @@ export function useConnections(paused: boolean, gateway?: string, revision?: str
     document.addEventListener('visibilitychange', onVisibility)
     void poll()
     return () => { active = false; controller.abort(); window.clearTimeout(timer); document.removeEventListener('visibilitychange', onVisibility) }
-  }, [paused, gateway, revision])
+  }, [paused, lifecycle, revision])
 
-  return { snapshot, error }
+  // A stopped inventory and a running sample belong to different lifecycles.
+  // Never briefly present connections or errors from the previous run.
+  return observation.lifecycle === lifecycle ? { snapshot: observation.snapshot, error: observation.error } : { snapshot: null, error: '' }
 }

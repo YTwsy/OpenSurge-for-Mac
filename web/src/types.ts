@@ -33,6 +33,7 @@ export type GatewayStatus = {
   native_ipv6_available: boolean
   ipv6_reason?: string
   client_count: number
+  devices_error?: string
 }
 
 export type TakeoverState = 'ready' | 'waiting' | 'stopped' | 'disabled' | 'failed' | 'interrupted'
@@ -116,7 +117,7 @@ export type ControlConfig = {
   gateway: { mode: 'same_lan' | 'same_wifi_dhcp' | 'isolated_lan'; interface: string; lan_ip: string; lan_prefix_len: number; upstream_interface: string }
   dhcp: { enabled: boolean; range_start: string; range_end: string; lease_time: string; domain: string; bypass_gateway: string; bypass_dns: string[] }
   dns: { listen: string; upstream: string; ipv6: boolean }
-  mihomo: { store_fake_ip: boolean }
+  mihomo: { store_fake_ip: boolean; sniffer_enabled: boolean }
   transparent: { mac_tun_ipv6?: boolean; mode: 'off' | 'tun'; strict_route: boolean; tun_ipv6: 'off' | 'auto' | 'always'; ipv6_shared_l2_ready?: boolean }
   local_system_proxy: { enabled: boolean }
   local_system_dns?: { enabled: boolean }
