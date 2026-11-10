@@ -191,13 +191,18 @@ export function SourcesPage({ overview, onChanged, onNotify, onOpenNetwork, onDi
             aria-disabled={busy}
             onDragEnter={event => {
               event.preventDefault()
+              // This zone imports DOM Files. Wails' global drag listeners would
+              // override its drop effect because native path drops are disabled.
+              event.stopPropagation()
+              event.dataTransfer.dropEffect = busy ? 'none' : 'copy'
               if (busy) return
               fileDragDepth.current += 1
               setFileDragActive(true)
             }}
             onDragOver={event => {
               event.preventDefault()
-              if (!busy) event.dataTransfer.dropEffect = 'copy'
+              event.stopPropagation()
+              event.dataTransfer.dropEffect = busy ? 'none' : 'copy'
             }}
             onDragLeave={event => {
               event.preventDefault()
