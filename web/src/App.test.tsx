@@ -1864,7 +1864,22 @@ describe('OpenSurge app shell', () => {
     expect(sourceLibrary && overlayPanel && Boolean(sourceLibrary.compareDocumentPosition(overlayPanel) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
     const file = new File(['proxies: []\nrules:\n  - MATCH,DIRECT\n'], 'home.yaml', { type: 'text/yaml' })
 
-    fireEvent.dragEnter(dropzone, { dataTransfer: { files: [file] } })
+    // Wails' document-level listeners reject file drops when native file drop
+    // is disabled. Reproduce that bubbling before dispatching the drop itself.
+    const rejectNativeDrop = (event: DragEvent) => { if (event.dataTransfer) event.dataTransfer.dropEffect = 'none' }
+    const dragListeners = new AbortController()
+    document.documentElement.addEventListener('dragenter', rejectNativeDrop, { signal: dragListeners.signal })
+    document.documentElement.addEventListener('dragover', rejectNativeDrop, { signal: dragListeners.signal })
+    const dataTransfer = { types: ['Files'], dropEffect: 'none', files: [] }
+    try {
+      fireEvent.dragEnter(dropzone, { dataTransfer })
+      expect(dataTransfer.dropEffect).toBe('copy')
+      dataTransfer.dropEffect = 'none'
+      fireEvent.dragOver(dropzone, { dataTransfer })
+      expect(dataTransfer.dropEffect).toBe('copy')
+    } finally {
+      dragListeners.abort()
+    }
     expect(dropzone.classList.contains('drag-active')).toBe(true)
     expect(screen.getByText('松开即可导入')).toBeTruthy()
     fireEvent.drop(dropzone, { dataTransfer: { files: [file] } })

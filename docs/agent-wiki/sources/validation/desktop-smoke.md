@@ -25,8 +25,11 @@ transport fixture, not a substitute for Control API or network validation.
 1. Confirm the main window loads from `wails://localhost` and shows fixture LAN IP
    `192.0.2.10`. Toggle sleep prevention and verify one PUT per explicit click,
    including the correct JSON body. This changes only the fixture's in-memory state.
-2. Import a newly created, non-sensitive YAML using the system file picker. Confirm
-   the fixture records the filename and byte count, and the UI receives its response.
+2. Import a newly created, non-sensitive YAML using the system file picker. Then
+   drag a second YAML from Finder onto the **Local mihomo YAML** drop zone and
+   release after **Drop to import** appears. For each import, confirm that a
+   draft appears and the fixture records one upload with the expected filename
+   and byte count.
 3. Type an unsaved source name or network field. Set `offline: true` in the fixture's
    `scenario.json`; verify a reconnect message appears without losing the page or
    draft. Set `offline: false` and increment `generation` to reject the old cookie;
