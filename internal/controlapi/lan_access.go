@@ -53,6 +53,8 @@ type lanAccessResponse struct {
 	Error                string       `json:"error,omitempty"`
 	RecommendedInterface string       `json:"recommended_interface,omitempty"`
 	Addresses            []lanAddress `json:"addresses"`
+	ShortcutURL          string       `json:"shortcut_url,omitempty"`
+	ShortcutError        string       `json:"shortcut_error,omitempty"`
 }
 
 // A single controller owns the optional listener. It never starts/stops the
@@ -64,6 +66,9 @@ type lanAccessController struct {
 	config         lanAccessConfig
 	problem        string
 	server         *http.Server
+	shortcutRunner LANShortcutRunner
+	shortcut       LANShortcutLease
+	shortcutError  string
 	generation     uint64
 	closed         bool
 	pauseDirty     bool
@@ -146,10 +151,14 @@ func validLANSettings(value lanSettings) bool {
 }
 
 func (c *lanAccessController) bindingAvailable(value lanSettings) bool {
+	return lanBindingAvailable(value, c.addresses)
+}
+
+func lanBindingAvailable(value lanSettings, discover func() ([]lanAddress, error)) bool {
 	if !validLANSettings(value) {
 		return false
 	}
-	addresses, err := c.addresses()
+	addresses, err := discover()
 	if err != nil {
 		return false
 	}
@@ -170,6 +179,7 @@ func lanConfigRevision(value lanAccessConfig) string {
 func (c *lanAccessController) response() lanAccessResponse {
 	c.mu.Lock()
 	cfg, problem, listening := c.config, c.problem, c.server != nil
+	shortcut, shortcutError := c.shortcut != nil, c.shortcutError
 	c.mu.Unlock()
 	addresses, err := c.addresses()
 	if err != nil || addresses == nil {
@@ -188,6 +198,12 @@ func (c *lanAccessController) response() lanAccessResponse {
 	}
 	response := lanAccessResponse{SchemaVersion: 1, lanSettings: cfg.lanSettings, Revision: lanConfigRevision(cfg),
 		PasswordSet: cfg.PasswordHash != "", State: state, URL: url, Error: problem, Addresses: addresses}
+	if state == "listening" {
+		response.ShortcutError = shortcutError
+		if shortcut {
+			response.ShortcutURL = "http://" + config.LANShortcutHost + "/"
+		}
+	}
 	if gateway, err := config.Load(c.owner.configPath); err == nil {
 		response.RecommendedInterface = gateway.Gateway.Interface
 	}
@@ -250,12 +266,14 @@ func (c *lanAccessController) reconcile() {
 	c.generation++
 	server := &http.Server{Handler: c.handler(c.config.lanSettings, c.generation), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	c.server = server
+	c.startShortcutLocked()
 	go func() {
 		err := server.Serve(listener)
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if c.server == server {
 			c.server = nil
+			c.stopShortcutLocked()
 			c.revokeLocked()
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
 				c.problem = "listen_failed"
@@ -266,6 +284,7 @@ func (c *lanAccessController) reconcile() {
 
 func (c *lanAccessController) stopLocked() {
 	c.generation++
+	c.stopShortcutLocked()
 	c.revokeLocked()
 	if c.server != nil {
 		_ = c.server.Close()

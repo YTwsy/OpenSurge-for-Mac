@@ -22,6 +22,7 @@ func testLANController(t *testing.T) (*Server, *lanAccessController) {
 	t.Helper()
 	s := newTestServer(t)
 	c := s.lan
+	c.shortcutRunner = &fakeLANShortcutRunner{}
 	c.addresses = func() ([]lanAddress, error) {
 		return []lanAddress{{Interface: "en0", IPv4: "192.168.50.1", PrefixLen: 22}}, nil
 	}

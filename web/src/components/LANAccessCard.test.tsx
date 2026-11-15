@@ -4,13 +4,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { LANAccessCard } from './LANAccessCard'
 import { lanAPI, type LANAccess } from '../lanAccess'
 import { RequestError } from '../api'
+import { activateLanguage, prepareLanguage } from '../i18n'
 
 vi.mock('../lanAccess', async importOriginal => ({ ...await importOriginal<typeof import('../lanAccess')>(), lanAPI: { settings: vi.fn(), save: vi.fn(), resetPassword: vi.fn() } }))
 vi.mock('qrcode.react', () => ({ QRCodeSVG: ({ value }: { value: string }) => <svg data-testid="address-qr"><title>{value}</title></svg> }))
 const initial: LANAccess = { schema_version: 1, revision: 'r1', enabled: false, interface: '', ipv4: '', prefix_len: 0, port: 61768, password_set: false, state: 'disabled', recommended_interface: 'en0', addresses: [{ interface: 'en0', ipv4: '192.168.50.1', prefix_len: 22 }] }
 const enabled: LANAccess = { ...initial, ...initial.addresses[0], enabled: true, password_set: true, state: 'listening', url: 'http://192.168.50.1:61768/', revision: 'r2' }
 beforeEach(() => { vi.mocked(lanAPI.settings).mockResolvedValue(initial) })
-afterEach(() => { cleanup(); vi.resetAllMocks() })
+afterEach(() => { cleanup(); vi.resetAllMocks(); activateLanguage('zh-Hans') })
 
 it('does not enable on mount, requires matching passwords, and encodes only the saved listening address', async () => {
   vi.mocked(lanAPI.save).mockResolvedValue(enabled)
@@ -79,4 +80,31 @@ it('resets the password only after explicit submission', async () => {
   await waitFor(() => expect(lanAPI.resetPassword).toHaveBeenCalledExactlyOnceWith('new management password', 'r2'))
   await screen.findByText('管理密码已重设，局域网浏览器需要重新登录。')
   expect(screen.getByLabelText('新管理密码')).toHaveProperty('value', '')
+})
+
+it('shows the shortcut while keeping the IP QR and password flow', async () => {
+  vi.mocked(lanAPI.settings).mockResolvedValue({ ...enabled, shortcut_url: 'http://open.surge/' })
+  render(<LANAccessCard />)
+  await screen.findByText('http://open.surge/')
+  expect(screen.getByTestId('address-qr').textContent).toBe(enabled.url)
+  expect(screen.getByText(/使用 OpenSurge 网关 DNS/)).toBeTruthy()
+})
+
+it('keeps the IP entry visible when the shortcut is unavailable', async () => {
+  vi.mocked(lanAPI.settings).mockResolvedValue({ ...enabled, shortcut_error: 'shortcut_unavailable' })
+  render(<LANAccessCard />)
+  await screen.findByText(/快捷访问暂不可用/)
+  expect(screen.getByTestId('address-qr').textContent).toBe(enabled.url)
+  expect(screen.queryByText('http://open.surge/')).toBeNull()
+})
+
+
+it('renders shortcut guidance and expanded settings in English', async () => {
+  await prepareLanguage('en'); activateLanguage('en')
+  vi.mocked(lanAPI.settings).mockResolvedValue({ ...enabled, shortcut_url: 'http://open.surge/' })
+  render(<LANAccessCard />)
+  await screen.findByText('Quick access')
+  fireEvent.click(screen.getByText('Advanced settings'))
+  fireEvent.click(screen.getByText('Reset management password'))
+  expect(document.body.textContent).not.toMatch(/[\u3400-\u9fff]/)
 })

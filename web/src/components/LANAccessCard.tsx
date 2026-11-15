@@ -119,6 +119,11 @@ export function LANAccessCard() {
         <QRCodeSVG value={current.url} size={164} marginSize={4} level="M" title={t('扫码打开管理页面')} />
         <div><strong>{t('扫码打开管理页面')}</strong><code>{current.url}</code><button type="button" onClick={() => { void copyText(current.url!).then(() => setNotice(t('访问地址已复制。'))).catch(() => setError(t('无法复制，请选择并复制访问地址。'))) }}>{t('复制访问地址')}</button><p className="lan-hint">{t('二维码只包含地址，打开后仍需输入管理密码。')}</p></div>
       </div>}
+      {current.state === 'listening' && current.shortcut_url && <div className="lan-hint">
+        <strong>{t('快捷访问')}</strong> <code>{current.shortcut_url}</code>
+        <p>{t('使用 OpenSurge 网关 DNS 的设备可通过此地址跳转，仍需输入管理密码。网关停止或使用外部加密 DNS 时，请使用上方 IP 地址。')}</p>
+      </div>}
+      {current.state === 'listening' && current.shortcut_error && <p className="lan-hint" role="status">{t('快捷访问暂不可用，IP 地址仍可使用。请检查 80 端口占用及 Helper 是否已更新，然后重新保存设置。')}</p>}
       {current.password_set && <details className="lan-reset lan-disclosure"><summary><span>{t('重设管理密码')}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg></summary><form className="lan-password-form lan-disclosure-content" onSubmit={event => void reset(event)}>
         <label>{t('新管理密码')}<input type="password" autoComplete="new-password" value={resetPassword} onChange={event => setResetPassword(event.target.value)} required disabled={busy} maxLength={512} /></label>
         <label>{t('确认新密码')}<input type="password" autoComplete="new-password" value={resetConfirmation} onChange={event => setResetConfirmation(event.target.value)} required disabled={busy} maxLength={512} /></label>

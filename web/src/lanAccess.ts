@@ -7,6 +7,7 @@ export type LANAccess = LANSettings & {
   schema_version: number; revision: string; password_set: boolean
   state: 'disabled' | 'listening' | 'unavailable'; url?: string; error?: string
   recommended_interface?: string; addresses: LANAddress[]
+  shortcut_url?: string; shortcut_error?: string
 }
 export type BrowserSession = { mode: 'local' | 'lan'; authenticated?: boolean; local_client?: boolean }
 

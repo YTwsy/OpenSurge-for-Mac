@@ -79,6 +79,26 @@ session 和 login 响应的 `local_client` 根据实际 TCP peer 与当前本机
 `/desktop*`、本机来源路径复制/Finder/导出副本接口。远程网络页提示地址修改、恢复 DHCP
 等操作可能断开管理连接；结果继续遵守 operation 的“未确认、只查询、不自动重试写入”契约。
 HTTP 环境的 operation ID 使用 `crypto.getRandomValues` 作为 `randomUUID` 不可用时的后备。
+
+快捷入口 `http://open.surge/` 在局域网管理成功监听后自动申请 Helper lease：仅在已选
+IPv4 的 TCP 80 接收同子网客户端，只接受 `open.surge` / `open.surge:80` 的 GET/HEAD
+根路径，302 到当前 `http://IPv4:port/`，不转发路径、查询参数或凭据，不建立会话。
+原 IP 入口、Host/Origin 校验和二维码保持原有语义。80 或 DNS 端口占用、旧 Helper 等
+仅使快捷入口不可用，由 `shortcut_error` 单独报告；重新保存设置可重试。
+
+Helper 同一 lease 在 loopback `127.0.0.1:61769` 提供 UDP/TCP 非递归 DNS，只回答
+`open.surge` 的 A（当前管理 IPv4，TTL 0），AAAA/HTTPS 等返回 NODATA，其他名称拒绝。
+dnsmasq 将该名称的查询转给这个端点，因此不会把 gateway LANIP 误当成另一个接口的
+管理地址。DNS 记录来自活跃 lease，不读取用户密码存储，不需要因管理端口/地址更新而
+重载网关。升级后须正常应用/重启网关一次以生成新的 dnsmasq 转发配置。
+第一版自动解析只覆盖使用网关 dnsmasq 的客户端；独立 DoH、直连 Mihomo DNS 和停止
+网关后的解析不在支持范围。路由器也可显式将该名称解析到已选管理地址。
+
+关闭管理、绑定变化或 IP 管理监听退出会释放 lease；Control Service 断连/崩溃、Helper
+退出也释放 HTTP/DNS sockets。Helper 自己逐请求检查绑定并每两秒检查地址丢失，不能
+静默跟随新地址。关闭 lease 等待 Helper 断连确认后再重绑，避免保存设置时竞争旧端口。
+HTTP/DNS 入口属于管理生命周期，不调用 PF、TUN 或 DHCP 启停；停网关保留 IP 管理入口。
+
 真实 LAN 和远程生命周期证据要求见 [局域网管理门槛](validation/test-gates.md#局域网管理)。
 
 ## 来源、凭据与应用

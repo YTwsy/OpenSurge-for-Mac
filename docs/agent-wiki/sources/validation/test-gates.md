@@ -79,6 +79,19 @@ OMG_PREPARED_MIHOMO_BINARY="$PWD/runtime/release-tools/bin/mihomo" \
 监听失败、本地可恢复性、地址变化暂停与旧请求竞争。UI fixture 另检查手机尺寸登录、
 改密/退出、设置草稿冲突、二维码只含实际地址、HTTP 的 operation ID 后备。
 
+快捷域名的隔离真实 DNS 检查：
+
+```sh
+OMG_SHORTCUT_DNSMASQ_BINARY=/absolute/path/to/dnsmasq \
+  go test ./internal/controlapi -run '^TestLANShortcutRealDNSMasq$' -count=1
+```
+
+它只在临时 loopback 高端口启动 dnsmasq 和别名解析器，验证 UDP/TCP 转发、当前管理地址
+及关闭后的 TTL 0 行为，不运行 DHCP、Helper 特权端口、PF 或 TUN。`TestLANShortcut*`
+另覆盖 Host/peer/方法边界、固定跳转目标、部分绑定回滚、Helper 断连与 IP 入口故障隔离。
+真实 LAN 还应从客户端打开 `http://open.surge/`，核对 302 的 Location、登录，以及占用
+80 端口后 IP 入口仍可用；这不能由隔离 DNS 测试替代。
+
 这些结果不证明物理设备可达性。真实 LAN 验收必须记录被测提交、macOS/浏览器与拓扑，
 由同网段另一设备扫码后登录，验证读状态、修改策略与退出；另从不允许的子网连接，
 验证地址/前缀变化后的暂停、端口释放与本机恢复，以及 Control Service 重启后重新登录。
