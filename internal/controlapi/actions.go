@@ -115,6 +115,7 @@ type HelperClient struct {
 }
 
 type HelperRequest struct {
+	LANShortcut        *lanSettings               `json:"lan_shortcut,omitempty"`
 	Action             string                     `json:"action"`
 	ConfigPath         string                     `json:"config_path"`
 	Manual             *macosnetwork.ManualConfig `json:"manual,omitempty"`
@@ -383,6 +384,10 @@ func handleHelperConnWithManagers(ctx context.Context, conn net.Conn, allowedRoo
 		servePolicyWorkspaceLease(ctx, conn, cfg, policyManager, err)
 		return
 	}
+	if request.Action == "lan-shortcut-hold" {
+		serveLANShortcutLease(ctx, conn, request.LANShortcut, err)
+		return
+	}
 	if request.Action == "sleep-prevention-hold" {
 		if err == nil && sleepManager == nil {
 			err = fmt.Errorf("sleep prevention lease manager is unavailable")
@@ -553,7 +558,7 @@ func retrySystemSleepRelease(ctx context.Context, manager *systemSleepLeaseManag
 }
 
 func loadHelperConfig(action, configPath string) (config.Config, error) {
-	if action == "stop" || action == "config-apply-control" || action == "network-set-dhcp" || action == "dhcp-probe" {
+	if action == "lan-shortcut-hold" || action == "stop" || action == "config-apply-control" || action == "network-set-dhcp" || action == "dhcp-probe" {
 		return config.LoadRecovery(configPath)
 	}
 	if action == "restart-mihomo" || action == "policy-workspace" || action == "policy-workspace-hold" || action == "custom-dns-preview" {
@@ -584,6 +589,8 @@ func reconcilePreparedPolicyEngine(allowedRoot string) error {
 
 func helperActionAllowed(action string) bool {
 	switch action {
+	case "lan-shortcut-hold":
+		return true
 	case "start", "stop", "reload", "restart-mihomo", "network-set-manual", "network-set-dhcp", "dhcp-probe", "config-apply-profile", "config-apply-device-policy", "config-apply-control", "config-apply-tailscale", "config-forget-tailscale-identity", "sleep-prevention-hold", "policy-workspace", "policy-workspace-hold", "custom-dns-preview":
 		return true
 	default:

@@ -355,3 +355,14 @@ func TestCustomDNSOwnsSystemHostsWithoutDisablingDHCPNames(t *testing.T) {
 		t.Fatalf("disabled: %v %s", err, rendered)
 	}
 }
+
+func TestManagementShortcutUsesLiveLoopbackResolver(t *testing.T) {
+	cfg := config.Default()
+	rendered, err := RenderConfig(cfg, runtime.NewPaths(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, "server=/open.surge/127.0.0.1#61769") || strings.Contains(rendered, "address=/open.surge/") {
+		t.Fatal("management alias must use the current LAN binding, not a gateway IP snapshot")
+	}
+}

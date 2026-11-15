@@ -61,6 +61,16 @@ LAN management is off by default. In a build that includes this feature, open
 4. Enter the management password in that device's browser to open the shared
    control panel. The QR contains only the URL; it never carries a password or logs you in.
 
+When **Quick access** is shown, devices using OpenSurge gateway DNS can open
+`http://open.surge`. The browser redirects to the current IP management URL;
+there is no port to type, and signing in is still required. The IP URL and QR code
+remain available. After upgrading, apply or restart the gateway once to generate
+the DNS forwarding configuration. If the shortcut is unavailable, check port 80
+on the Mac and update the Helper, then save LAN settings again. Use the IP URL
+when the gateway is stopped or the device uses external encrypted DNS or the
+engine DNS directly. Alternatively, map `open.surge` to the selected Mac management
+IPv4 in your router DNS.
+
 The endpoint uses HTTP, without transport encryption for passwords or sessions.
 Enable it only on a trusted LAN. This version supports private IPv4 addresses;
 IPv6 management URLs, HTTPS and public access are not provided. The browser can

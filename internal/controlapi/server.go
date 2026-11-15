@@ -37,6 +37,7 @@ type Options struct {
 	NetworkRunner     NetworkRunner
 	ConfigRunner      ConfigurationRunner
 	SleepRunner       SleepPreventionRunner
+	LANShortcutRunner LANShortcutRunner
 	PolicyRunner      PolicyWorkspaceRunner
 	DNSPreviewRunner  CustomDNSPreviewRunner
 	DiscoverNetwork   func(context.Context, string, string) (macosnetwork.Snapshot, error)
@@ -254,6 +255,13 @@ func New(options Options) (*Server, error) {
 		bootstraps:      map[string]bootstrapGrant{},
 	}
 	server.lan = newLANAccessController(server)
+	if options.LANShortcutRunner != nil {
+		server.lan.shortcutRunner = options.LANShortcutRunner
+	} else if runner, ok := options.Runner.(LANShortcutRunner); ok {
+		server.lan.shortcutRunner = runner
+	} else {
+		server.lan.shortcutRunner = HelperClient{SocketPath: "/var/run/opensurge/helper.sock"}
+	}
 	return server, nil
 }
 

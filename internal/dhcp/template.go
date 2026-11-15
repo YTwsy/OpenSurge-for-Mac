@@ -41,6 +41,7 @@ pid-file={{ .PIDFile }}
 {{ if .CustomDNS }}no-hosts
 {{ end }}port={{ .DNSPort }}
 listen-address={{ .DNSListen }}
+server=/{{ .ShortcutHost }}/{{ .ShortcutDNS }}
 {{ if .IPv6GatewayEnabled }}listen-address={{ .IPv6Gateway }}
 {{ end }}
 {{ if .DNSUpstream }}
@@ -50,6 +51,8 @@ server={{ .DNSUpstream }}
 `
 
 type templateData struct {
+	ShortcutHost        string
+	ShortcutDNS         string
 	DHCPEnabled         bool
 	Interface           string
 	RangeStart          string
@@ -118,6 +121,8 @@ func RenderConfig(cfg config.Config, paths runtime.Paths) (string, error) {
 		dnsUpstream = config.MihomoDNSUpstream
 	}
 	data := templateData{
+		ShortcutHost:        config.LANShortcutHost,
+		ShortcutDNS:         strings.Replace(config.LANShortcutDNS, ":", "#", 1),
 		DHCPEnabled:         cfg.DHCP.Enabled,
 		Interface:           cfg.Gateway.Interface,
 		RangeStart:          cfg.DHCP.RangeStart,

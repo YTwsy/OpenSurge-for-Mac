@@ -1,4 +1,8 @@
 export const englishMessages: Record<string, string> = {
+  '快捷访问': 'Quick access',
+  '使用 OpenSurge 网关 DNS 的设备可通过此地址跳转，仍需输入管理密码。网关停止或使用外部加密 DNS 时，请使用上方 IP 地址。': 'Devices using OpenSurge gateway DNS can use this shortcut and still need the management password. Use the IP address above when the gateway is stopped or external encrypted DNS is enabled.',
+  '快捷访问暂不可用，IP 地址仍可使用。请检查 80 端口占用及 Helper 是否已更新，然后重新保存设置。': 'Quick access is unavailable; the IP address still works. Check port 80 and update the Helper, then save settings again.',
+
   '来源已删除': 'Source deleted',
   '删除来源': 'Delete source',
   '删除来源 {{name}}': 'Delete source {{name}}',
