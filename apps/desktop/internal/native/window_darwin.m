@@ -317,7 +317,6 @@ void configureOpenSurgeWindow(void *pointer, bool rememberFrame, bool tray) {
         }
         [NSNotificationCenter.defaultCenter addObserver:guard selector:@selector(publishAppearance:) name:NSSystemColorsDidChangeNotification object:nil];
     } else {
-        webView.underPageBackgroundColor = [NSColor colorWithSRGBRed:242.0/255 green:247.0/255 blue:244.0/255 alpha:1];
         [webView.configuration.userContentController addScriptMessageHandler:guard name:@"opensurgeUIReady"];
         [guard showStartup];
         for (NSNotificationName name in @[NSApplicationDidHideNotification, NSApplicationDidUnhideNotification]) {

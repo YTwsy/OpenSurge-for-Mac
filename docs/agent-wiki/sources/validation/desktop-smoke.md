@@ -66,6 +66,9 @@ In both themes, open a connection filter and the Settings language picker. Confi
 options and checkmarks, a thin green-grey scrollbar, and readable green text selection
 in a search field. Exercise Arrow keys, Home/End, typeahead, Enter and Escape; Escape
 must retain the previous selection, and clicking outside must close the menu.
+With macOS set to always show scroll bars, scroll the main window and the Settings
+window. The scrollbar track should match the page background when switching
+between Light, Dark and System, including on a fresh launch with Dark saved.
 Switch languages, allow background refreshes, and reopen the main window to confirm
 the saved language and native menus agree. A failed save must restore the prior choice.
 
