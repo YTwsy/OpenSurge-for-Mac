@@ -3,7 +3,8 @@ import PackageDescription
 
 let package = Package(
     name: "OpenSurgeMenuBar",
-    platforms: [.macOS(.v13)],
+    // macOS 12 (Monterey) keeps intel Macs supported; v13 would drop them.
+    platforms: [.macOS(.v12)],
     products: [.executable(name: "OpenSurgeMenuBar", targets: ["OpenSurgeMenuBar"])],
     targets: [
         .executableTarget(name: "OpenSurgeMenuBar"),
