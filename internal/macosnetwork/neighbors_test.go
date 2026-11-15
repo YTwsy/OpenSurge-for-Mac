@@ -16,3 +16,13 @@ func TestParseNeighborsKeepsCompleteIPv4EntriesOnRequestedInterface(t *testing.T
 		t.Fatalf("first neighbor = %#v", neighbors[0])
 	}
 }
+
+func TestParseNeighborsRetainsConflictingMACsForTheSameIP(t *testing.T) {
+	output := `? (192.168.5.124) at aa:bb:cc:dd:ee:24 on en0 ifscope [ethernet]
+? (192.168.5.124) at ee:f7:1b:ec:bc:a5 on en0 ifscope [ethernet]
+? (192.168.5.124) at ee:f7:1b:ec:bc:a5 on en0 ifscope [ethernet]
+`
+	if rows := parseNeighbors(output, "en0"); len(rows) != 2 {
+		t.Fatalf("conflicting evidence lost: %#v", rows)
+	}
+}

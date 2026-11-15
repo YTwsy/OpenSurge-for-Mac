@@ -333,18 +333,27 @@ reservations are omitted from the mode-aware runtime bundle. The GUI marks
 those policies paused until a MAC is supplied or the gateway returns to
 `same_lan`; it never lets a later DHCP lease holder inherit the old IP rule.
 
-When an applied static IPv4 has no traffic and the Devices page observes exactly
-one active source with the same neighbor MAC at a different IPv4, the GUI shows
-the old and current addresses and offers **Use current IP and apply**. Confirmation
-changes only that device IPv4 while preserving its ID, name, profile, rules,
-routing mode, and selector choices. A running gateway performs a safe reload
-after the save; a stopped gateway applies the saved change on its next start.
-Until then, the routing-mode controls and applied selectors are disabled so a
-change against the stale `SRC-IP-CIDR` is not presented as immediate. An offline
-device can still have a selector preset, with an explicit note that it becomes
-effective when the device connects using its registered IP. Multiple active
-IPv4 observations for one MAC, MAC conflicts, and incomplete evidence never
-cause an automatic guess or silent rewrite.
+The Devices page checks observations every five seconds while visible. A new MAC
+at a registered IP offers **Confirm this device and update**. A locally administered
+MAC adds a possible private Wi-Fi address explanation; it never proves that the
+same physical device is present. An unchanged MAC at exactly one new active IPv4
+offers **Update address and apply**. Addresses owned by another desired or applied
+device, repeated MAC transitions at one IP, and multiple active IPs for the same
+MAC require an ownership check and cannot be overwritten with the shortcut.
+
+One confirmation rechecks current evidence, saves only the device address fields,
+and reloads a running gateway with a brief interruption. Its stable ID, name,
+profile, rules, routing mode, and selected outbounds are retained. Unrelated
+unsaved edits stay in the local draft. A saved update that fails to apply offers
+**Retry applying** without another save; a stopped gateway applies it next start.
+Address details and verification help are available inside the device card.
+
+Rule and routing drafts remain editable while identity needs confirmation; live
+outbound switches and connection refresh wait for that confirmation. The notice
+does not block traffic: existing IPv4 rules still match their applied source IP.
+Offline devices without current evidence can still have an outbound preset.
+Conflict history is bounded to two minutes of actual observations in memory;
+changes outside the sampled period are not guaranteed to be detected.
 
 Dashboard traffic and recent-lease summaries join the registered display name
 by normalized MAC and prefer it over the DHCP hostname. This makes a saved

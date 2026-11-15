@@ -201,6 +201,11 @@ func TestObservedLANDevicesDoesNotGuessWhenOneIPHasConflictingNeighborMACs(t *te
 	if len(observed) != 0 {
 		t.Fatalf("observed = %#v", observed)
 	}
+	active := mihomo.ConnectionsSnapshot{Connections: []mihomo.Connection{{Metadata: map[string]any{"sourceIP": "192.168.5.137"}}}}
+	observed = observedLANDevices(active, neighbors, "192.168.5.123", 24, registered...)
+	if len(observed) != 1 || !observed[0].MACConflict || len(observed[0].ObservedMACs) != 2 || observed[0].MAC != "" {
+		t.Fatalf("active conflict evidence lost: %#v", observed)
+	}
 }
 
 func TestTrafficRateSamplerUsesConnectionDeltasForGatewayAndDevices(t *testing.T) {

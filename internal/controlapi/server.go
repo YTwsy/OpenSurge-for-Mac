@@ -81,6 +81,7 @@ type Server struct {
 	probeConnectivity     func(context.Context, config.Config, ConnectivityTarget) ConnectivityResult
 	trafficSampler        *trafficRateSampler
 	connectionObservation connectionObservationCache
+	neighborHistory       deviceNeighborHistory
 	gatewayStatus         func(context.Context, config.Config) (gateway.Status, error)
 	gatewayActivity       gatewayActivity
 	doctor                *doctorController
@@ -354,6 +355,7 @@ func (s *Server) routes(auth func(http.Handler) http.Handler, local bool) http.H
 	mux.Handle("PUT /api/v1/profile-overlay", auth(http.HandlerFunc(s.handleProfileOverlay)))
 	mux.Handle("GET /api/v1/device-policy", auth(http.HandlerFunc(s.handleDevicePolicy)))
 	mux.Handle("PUT /api/v1/device-policy", auth(http.HandlerFunc(s.handleDevicePolicy)))
+	mux.Handle("POST /api/v1/device-policy/rebind", auth(http.HandlerFunc(s.handleDeviceRebind)))
 	mux.Handle("GET /api/v1/devices", auth(http.HandlerFunc(s.handleDevices)))
 	mux.Handle("GET /api/v1/device-traffic", auth(http.HandlerFunc(s.handleDeviceTraffic)))
 	mux.Handle("GET /api/v1/connections", auth(http.HandlerFunc(s.handleConnections)))
@@ -1916,17 +1918,11 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if cfg.Gateway.Mode == config.GatewayModeSameLAN {
-		connections, connectionErr := s.fetchConnections(r.Context(), cfg)
-		neighbors, neighborErr := s.discoverNeighbors(r.Context(), cfg.Gateway.Interface)
-		response.ObservedDevices = observedLANDevices(connections, neighbors, cfg.Gateway.LANIP, cfg.Gateway.LANPrefixLen, desired.Policy.Devices...)
-		observationErrors := []string{}
-		if connectionErr != nil {
-			observationErrors = append(observationErrors, "mihomo connections: "+connectionErr.Error())
+		observed, observationErr := s.observeSameLAN(r.Context(), cfg, desired.Policy.Devices)
+		response.ObservedDevices = observed
+		if observationErr != nil {
+			response.ObservationError = observationErr.Error()
 		}
-		if neighborErr != nil {
-			observationErrors = append(observationErrors, "macOS neighbor table: "+neighborErr.Error())
-		}
-		response.ObservationError = strings.Join(observationErrors, "; ")
 	}
 	ipv6BlockEnabled := cfg.Transparent.TUNIPv6 != config.TUNIPv6Off
 	annotateCompiledDeviceIPv6BlockState(response.Devices, ipv6BlockEnabled)

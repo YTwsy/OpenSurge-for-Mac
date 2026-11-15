@@ -224,3 +224,17 @@ leases、日志尾部、策略组、连接和 provider 状态，并把 mihomo AP
 ## 相邻规则
 
 来源合成与准备态工作区见 [profile overlay](decisions/mihomo-profile-overlay.md)；连接与归属接口见 [连接观察](decisions/connection-observation.md)；DHCP 恢复接口见 [恢复契约](decisions/dhcp-recovery.md)。
+
+## 设备地址确认更新
+
+`POST /api/v1/device-policy/rebind` 用于 same-LAN 的用户确认地址更新，要求现有会话认证
+和 `If-Match` 设备策略 revision。请求为 `device_id`、`from_ipv4`、`from_mac`、
+`to_ipv4`、`to_mac`；不接收新的 Profile 或规则。旧身份必须匹配持久化登记，MAC/IP
+一次仅变更一项，目标必须对应唯一、有当前流量的邻居。服务重新采样并校验 desired/applied
+地址占用、短期 MAC 冲突和其他活跃地址；观察不可用/失配返回 409，不写配置。
+成功响应与设备策略 GET 一致，保存沿既有 ConfigurationRunner 执行候选校验和 revision
+检查。调用方随后执行一次常规 reload；此端点本身不启动/停止网关。
+
+`GET /api/v1/devices` 的观察项可包含 `mac_conflict` 和 `observed_macs`。冲突包括同次
+快照中的不同 MAC，以及服务在当前 LAN 的两分钟采样窗口内看到至少两次 MAC 转换。
+历史限于内存且有容量上限，不能解释为完整设备身份审计或认证。

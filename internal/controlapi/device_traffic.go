@@ -353,9 +353,16 @@ func loadAppliedDevicePolicyBundle(paths runtime.Paths) (device.PolicyBundle, bo
 func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosnetwork.Neighbor, gatewayIP string, prefixLen int, registered ...device.ManagedDevice) []ObservedDevice {
 	neighborByIP := make(map[string]string, len(neighbors))
 	ambiguousNeighborIP := make(map[string]bool)
+	macsByIP := make(map[string]map[string]bool)
 	for _, neighbor := range neighbors {
 		if ip := normalizeTrafficIP(neighbor.IP); ip != "" {
-			mac := strings.ToLower(strings.TrimSpace(neighbor.MAC))
+			mac := canonicalDeviceMAC(neighbor.MAC)
+			if mac != "" {
+				if macsByIP[ip] == nil {
+					macsByIP[ip] = map[string]bool{}
+				}
+				macsByIP[ip][mac] = true
+			}
 			if mac == "" || ambiguousNeighborIP[ip] {
 				continue
 			}
@@ -400,6 +407,13 @@ func observedLANDevices(snapshot mihomo.ConnectionsSnapshot, neighbors []macosne
 	}
 	result := make([]ObservedDevice, 0, len(byIP))
 	for _, observed := range byIP {
+		if ambiguousNeighborIP[observed.IP] {
+			observed.MACConflict = true
+			for mac := range macsByIP[observed.IP] {
+				observed.ObservedMACs = append(observed.ObservedMACs, mac)
+			}
+			sort.Strings(observed.ObservedMACs)
+		}
 		result = append(result, *observed)
 	}
 	sort.Slice(result, func(i, j int) bool {

@@ -13,7 +13,7 @@ vi.mock('../api', () => {
     RequestError,
     waitForOperation: vi.fn(async () => ({ id: 'reload-1', kind: 'reload', state: 'succeeded' })),
     api: {
-      devices: vi.fn(), config: vi.fn(), sources: vi.fn(), tailscale: vi.fn(), tailscaleDiscovery: vi.fn(), profileOverlay: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(),
+      devices: vi.fn(), config: vi.fn(), sources: vi.fn(), tailscale: vi.fn(), tailscaleDiscovery: vi.fn(), profileOverlay: vi.fn(), devicePolicy: vi.fn(), saveDevicePolicy: vi.fn(), rebindDeviceIdentity: vi.fn(),
       selectPolicy: vi.fn(), selectDevicePolicy: vi.fn(), gateway: vi.fn(),
       localRouting: vi.fn(), setLocalRouting: vi.fn(),
       refreshLocalConnections: vi.fn(), refreshDeviceConnections: vi.fn(),
@@ -101,6 +101,10 @@ describe('DevicesPage', () => {
     ] })
     vi.mocked(api.testProxyHealth).mockResolvedValue({ schema_version: 1, test_url: 'https://www.gstatic.com/generate_204', results: [] })
     vi.mocked(api.saveDevicePolicy).mockImplementation(async (policy, revision) => documentFor(policy, `${revision}-next`))
+    vi.mocked(api.rebindDeviceIdentity).mockImplementation(async (update, revision) => {
+      const previous = await api.devicePolicy()
+      return documentFor({ ...previous.policy, devices: previous.policy.devices.map(device => device.id === update.device_id ? { ...device, mac: update.to_mac, ipv4: update.to_ipv4 } : device) }, `${revision}-next`)
+    })
   })
 
   afterEach(() => { cleanup(); vi.clearAllMocks(); activateLanguage('zh-Hans') })
@@ -907,28 +911,23 @@ describe('DevicesPage', () => {
     } as unknown as Overview
     renderPage(sameLANOverview)
 
-    expect(await screen.findByText('设备已识别，但 IP 已变化')).toBeTruthy()
-    expect(screen.getByText(/原地址 192\.168\.1\.101/).textContent).toContain('当前地址 192.168.1.137')
+    expect(await screen.findByText('发现设备的当前 IP 已变化')).toBeTruthy()
+    expect(screen.getByRole('region', { name: '设备地址确认' }).textContent).toContain('当前地址 192.168.1.137')
     const outlet = screen.getByLabelText('pixel 独立出口 当前摘要') as HTMLButtonElement
     expect(outlet.disabled).toBe(true)
     expect(outlet.textContent).toContain('先更新 IP 绑定')
     const card = outlet.closest('.device-card') as HTMLElement
-    expect((within(card).getByRole('group', { name: /设备路由方式/ }) as HTMLFieldSetElement).disabled).toBe(true)
+    expect((within(card).getByRole('group', { name: /设备路由方式/ }) as HTMLFieldSetElement).disabled).toBe(false)
     expect(api.selectDevicePolicy).not.toHaveBeenCalled()
 
-    await userEvent.click(screen.getByRole('button', { name: '使用当前 IP 并应用' }))
-    const dialog = screen.getByRole('dialog', { name: '更新 Pixel 的设备 IP？' })
-    expect(dialog.textContent).toContain('192.168.1.101')
-    expect(dialog.textContent).toContain('192.168.1.137')
-    expect(dialog.textContent).toContain('设备 ID、Profile、规则和出口选择都会保留')
-    await userEvent.click(within(dialog).getByRole('button', { name: '更新并重载网关' }))
-
-    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
-    const saved = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
-    expect(saved.devices[0]).toEqual({
-      id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.137', profile: 'pixel-policy', egress_mode: 'dedicated',
-    })
-    expect(saved.profiles).toEqual(policy.profiles)
+    expect(screen.getByText(/确认后会保存并应用/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '更新地址并应用' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(api.rebindDeviceIdentity).toHaveBeenCalledWith({
+      device_id: 'pixel', from_ipv4: '192.168.1.101', from_mac: 'aa:bb:cc:dd:ee:37', to_ipv4: '192.168.1.137', to_mac: 'aa:bb:cc:dd:ee:37',
+    }, 'policy-r1'))
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
+    await screen.findByText('已更新“Pixel”，原有规则和出口设置已保留。')
     expect(api.gateway).toHaveBeenCalledWith('reload')
     expect(waitForOperation).toHaveBeenCalledWith('reload-1')
   })
@@ -947,12 +946,11 @@ describe('DevicesPage', () => {
     }))
     renderPage({ ...overview, topology: 'same_lan', status: { ...overview.status, gateway: 'stopped' } } as unknown as Overview)
 
-    await userEvent.click(await screen.findByRole('button', { name: '使用当前 IP 并应用' }))
-    const dialog = screen.getByRole('dialog', { name: '更新 Pixel 的设备 IP？' })
-    expect(dialog.textContent).toContain('配置会在下次启动时应用')
-    await userEvent.click(within(dialog).getByRole('button', { name: '更新设备 IP' }))
-
-    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const update = await screen.findByRole('button', { name: '更新地址并应用' })
+    expect(screen.getByText(/确认后保存，下次启动时应用/)).toBeTruthy()
+    await userEvent.click(update)
+    await screen.findByText('已更新“Pixel”，原有规则和出口设置已保留，下次启动时应用。')
+    expect(api.rebindDeviceIdentity).toHaveBeenCalled()
     expect(api.gateway).not.toHaveBeenCalled()
     expect(waitForOperation).not.toHaveBeenCalled()
   })
@@ -974,11 +972,8 @@ describe('DevicesPage', () => {
     }))
     renderPage({ ...overview, topology: 'same_lan' } as unknown as Overview)
 
-    expect(await screen.findByText('静态配置身份：等待该 IPv4 经过 Mac')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '使用当前 IP 并应用' })).toBeNull()
-    const activation = screen.getByText('设备按登记 IP 接入后生效')
-    expect(activation.closest('.device-meta-item')).toBeTruthy()
-    expect(activation.closest('.device-metadata')).toBeTruthy()
+    expect(await screen.findByText('同一设备地址出现在多个 IP，暂时无法确定当前地址。请核对设备后重新检测。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '更新地址并应用' })).toBeNull()
     expect(document.querySelector('.outlet-activation-note')).toBeNull()
   })
 
@@ -1308,4 +1303,94 @@ describe('DevicesPage', () => {
     expect(screen.getByText('new-rule-set')).toBeTruthy()
     expect(screen.getByRole('button', { name: '放弃本地修改并加载最新版本' })).toBeTruthy()
   })
+  function prepareMACChange(mac = 'ee:f7:1b:ec:bc:a5', extras: Partial<DevicesResponse> = {}) {
+    const policy: PolicySet = {
+      ...basePolicy,
+      devices: [{ id: 'pixel', name: 'Pixel', mac: 'aa:bb:cc:dd:ee:37', ipv4: '192.168.1.101', profile: 'pixel-policy', egress_mode: 'dedicated' }],
+      profiles: [{ id: 'pixel-policy', default_policies: ['DIRECT', 'Proxy-A'], rules: [{ id: 'web', match: { domains: ['example.org'] }, policies: ['DIRECT', 'Proxy-A'] }] }],
+    }
+    const response = devicesResponse({ applied: true,
+      applied_devices: [{ id: 'pixel', mac: policy.devices[0].mac, ipv4: policy.devices[0].ipv4, profile: 'pixel-policy', egress_mode: 'dedicated', groups: { default: 'device/pixel/default', web: 'device/pixel/web' } }],
+      observed_devices: [{ ip: '192.168.1.101', mac, active_connections: 2, neighbor_observed: true }], ...extras,
+    })
+    vi.mocked(api.devicePolicy).mockResolvedValue(documentFor(policy))
+    vi.mocked(api.devices).mockResolvedValue(response)
+    return { policy, response }
+  }
+
+  it.each(['00:11:22:33:44:55', 'ee:f7:1b:ec:bc:a5'])('confirms a MAC change in one click and retains unsaved route edits: %s', async mac => {
+    const { policy } = prepareMACChange(mac)
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+    const update = await screen.findByRole('button', { name: '确认是这台设备并更新' })
+    expect(Boolean(screen.queryByText('可能是设备的私有 Wi-Fi 地址发生了变化。', { exact: false }))).toBe(mac.startsWith('ee'))
+    expect((screen.getByLabelText('pixel 独立出口 当前摘要') as HTMLButtonElement).disabled).toBe(true)
+    await userEvent.click(screen.getByRole('radio', { name: /跟随网关规则/ }))
+    expect(screen.getByText('未保存的修改会保留在草稿，不随本次地址更新应用。')).toBeTruthy()
+    await userEvent.click(update)
+    await screen.findByText('已更新“Pixel”，原有规则和出口设置已保留。')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(api.rebindDeviceIdentity).toHaveBeenCalledTimes(1)
+    expect(api.rebindDeviceIdentity).toHaveBeenCalledWith({device_id: 'pixel', from_ipv4: '192.168.1.101', from_mac: policy.devices[0].mac, to_ipv4: '192.168.1.101', to_mac: mac}, 'policy-r1')
+    expect(api.saveDevicePolicy).not.toHaveBeenCalled()
+    expect(api.selectDevicePolicy).not.toHaveBeenCalled()
+    expect(api.gateway).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: '保存设备配置' }))
+    await waitFor(() => expect(api.saveDevicePolicy).toHaveBeenCalled())
+    const draft = vi.mocked(api.saveDevicePolicy).mock.calls[0][0]
+    expect(draft.profiles).toEqual(policy.profiles)
+    expect(draft.devices[0]).toEqual({ ...policy.devices[0], mac, egress_mode: 'inherit_global' })
+  })
+
+  it('names the other registered device and offers help instead of overwriting its MAC', async () => {
+    const { policy } = prepareMACChange()
+    policy.devices.push({ id: 'tv', name: '客厅电视', mac: 'ee:f7:1b:ec:bc:a5', ipv4: '192.168.1.102', profile: 'pixel-policy', egress_mode: 'inherit_global' })
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+    expect(await screen.findByText('当前地址已登记给“客厅电视”。请检查两台设备的登记信息后再更新。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '确认是这台设备并更新' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: '地址与核对方法' }))
+    expect(screen.getByRole('button', { name: '查看或编辑设备登记' })).toBeTruthy()
+    expect(api.rebindDeviceIdentity).not.toHaveBeenCalled()
+  })
+
+  it('keeps flapping addresses in the ownership-check state even when the latest MAC matches', async () => {
+    prepareMACChange('aa:bb:cc:dd:ee:37', { observed_devices: [{ ip: '192.168.1.101', mac: 'aa:bb:cc:dd:ee:37', active_connections: 2, neighbor_observed: true, mac_conflict: true, observed_macs: ['aa:bb:cc:dd:ee:37', 'ee:f7:1b:ec:bc:a5'] }] })
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+    expect(await screen.findByText(/检测到同一 IP 的多个设备地址交替出现/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '确认是这台设备并更新' })).toBeNull()
+    expect((screen.getByLabelText('pixel 独立出口 当前摘要') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('rechecks before saving and refuses an observation that changed after the card was shown', async () => {
+    const { response } = prepareMACChange()
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+    const update = await screen.findByRole('button', { name: '确认是这台设备并更新' })
+    vi.mocked(api.devices).mockResolvedValue({ ...response, observed_devices: [] })
+    await userEvent.click(update)
+    expect(await screen.findByText('设备观察结果已变化或暂时不可用，已重新检测。请核对设备提示后再试。')).toBeTruthy()
+    expect(api.rebindDeviceIdentity).not.toHaveBeenCalled()
+    expect(api.gateway).not.toHaveBeenCalled()
+  })
+
+  it('offers one retry after a saved update fails to reload without saving or confirming twice', async () => {
+    prepareMACChange()
+    vi.mocked(api.gateway).mockRejectedValueOnce(new Error('reload failed'))
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+    await userEvent.click(await screen.findByRole('button', { name: '确认是这台设备并更新' }))
+    await userEvent.click(await screen.findByRole('button', { name: '重试应用' }))
+    await screen.findByText('已更新“Pixel”，原有规则和出口设置已保留。')
+    expect(api.rebindDeviceIdentity).toHaveBeenCalledTimes(1)
+    expect(api.gateway).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('requires a successful recheck after observation errors', async () => {
+    const { response } = prepareMACChange('ee:f7:1b:ec:bc:a5', { observation_error: 'neighbor lookup failed' })
+    renderPage({ ...overview, topology: 'same_lan' } as Overview)
+    const update = await screen.findByRole('button', { name: '确认是这台设备并更新' }) as HTMLButtonElement
+    expect(update.disabled).toBe(true)
+    vi.mocked(api.devices).mockResolvedValue({ ...response, observation_error: '' })
+    await userEvent.click(screen.getByRole('button', { name: '重新检测' }))
+    await waitFor(() => expect(update.disabled).toBe(false))
+  })
+
 })

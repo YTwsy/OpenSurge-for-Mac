@@ -80,12 +80,28 @@ mode-aware compiled bundle 必须排除其 device、selector、rule 与 reservat
 持续显示“需要 MAC / 策略暂停”。返回 `same_lan` 或补全 MAC 后重新编译即可恢复，禁止删除
 资料、伪造 MAC 或让新 DHCP lease holder 继承旧 `SRC-IP-CIDR` 策略。
 
-same-LAN applied IPv4 没有当前流量时，只有“恰好一个不同 IPv4、相同规范化邻居 MAC、
-`neighbor_observed=true` 且存在活跃连接”的观察项可以进入地址变化提示。GUI 不静默写入：
-它先禁用旧 `SRC-IP-CIDR` 对应的路由方式和 applied selectors，再由用户确认一次保存与
-安全重载。更新只替换设备 IPv4，必须保留稳定 ID、名称、Profile、规则、egress mode 与
-selector 选择。无观察证据时 selector 可标成预设；同 MAC 多地址或目标 IPv4 已被其他
-desired 设备占用时必须 fail closed，不提供猜测式更新。
+same-LAN 设备地址恢复覆盖四种情况：同 IP 的 MAC 单次变化显示“需要确认设备”；
+本地管理单播 MAC 只补充可能为私有 Wi-Fi 地址的解释，不作为同一设备的证明；新 MAC/IP
+已被其他 desired 或 applied 设备占用、原 MAC 仍活跃于其他 IP，或同 IP 的 MAC 持续切换，
+显示归属检查且禁止快捷改绑；旧 IPv4 无活跃流量且恰有一个相同 MAC 的活跃邻居时，提供
+“更新地址并应用”。同 MAC 多个活跃 IP、缺少当前邻居或观察失败均不猜测。
+
+设备页可见时每 5 秒复核观察。Control Service 在当前接口/网段内保留最多 1024 个 IP 的
+内存历史，每个 IP 最多三次 MAC 转换状态，窗口为 2 分钟；窗口内两次转换即标记
+`mac_conflict`。一次快照中的不同 MAC 也必须暴露冲突，不丢弃证据后降级成“未验证”。
+历史不持久化，也不构成持续在线监测；没有采样的变化不能声称已检测。
+
+用户在设备卡片确认一次，GUI 与 `POST /api/v1/device-policy/rebind` 均重新读取观察。
+后端使用 If-Match 校验、核对旧绑定与 desired/applied 占用，仅替换目标设备的 MAC 或
+IPv4（一次只允许其中一个变化），沿既有 ConfigurationRunner 验证并保存。稳定 ID、名称、
+Profile、规则、egress mode 和 selector 命名空间保持不变；重载复用原选择缓存。用户草稿
+不随地址更新保存，返回的新地址合入本地草稿，其余编辑保留。运行中保存后执行一次安全
+重载，失败保留“已保存、待应用”状态并直接提供重试应用；停止时下次启动应用。
+
+地址待确认时仍允许编辑规则/路由草稿，禁用 applied selectors 与连接刷新等依赖身份的
+即时操作。提示不会自动阻断数据面，当前 IPv4 规则仍按已应用的 SRC-IP-CIDR 匹配；
+界面须说明已应用地址。无观察证据时 selector 可标成预设。私有地址提示、地址详情和
+核对帮助均位于设备卡片，不额外弹第二次确认。
 
 旧文件省略 `egress_mode` 时解析为 `legacy_fallback`，继续保持“设备覆盖 → 全局规则 →
 设备默认兜底 → terminal MATCH”。GUI 会显示兼容提示并要求用户明确迁移到跟随或独立，
