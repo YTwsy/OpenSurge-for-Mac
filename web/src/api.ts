@@ -1,5 +1,5 @@
 import { operationID } from './operationID'
-import type { CustomDNSDocument, CustomDNSDraft, CustomDNSImport, CustomDNSPreview, APIError, ConnectionObservation, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
+import type { CustomDNSDocument, CustomDNSDraft, CustomDNSImport, CustomDNSPreview, APIError, ConnectionObservation, ConnectionRefreshResult, ConnectivityResponse, ControlConfig, DevicePolicyDocument, DeviceIdentityUpdate, DevicesResponse, DeviceTraffic, Diagnostics, DoctorRunStatus, GatewayPlan, LocalRouting, LocalRoutingMode, NetworkDefaults, NetworkInterfacesResponse, Operation, Overview, PolicySet, PolicyWorkspaceRequest, PolicyWorkspaceSnapshot, ProfileOverlay, ProfileOverlayDocument, ProfileOverlayPreview, ProxyGroup, ProxyHealthSnapshot, ProxyHealthTestResponse, SleepPreventionStatus, Source, SourceSnapshotFile, TailscaleDiscoveryResponse, TailscaleResponse, TailscaleUpdate, UIPreferences } from './types'
 import { getOperation, markOperationConnection, operationStatusUnknownMessage, recordOperation } from './operations'
 import { desktopAction, desktopHeaders, isDesktop } from './desktop'
 import { t } from './i18n'
@@ -139,6 +139,7 @@ export const api = {
   deviceTraffic: () => request<DeviceTraffic>('/api/v1/device-traffic'),
   connections: (signal?: AbortSignal) => request<ConnectionObservation>('/api/v1/connections', { signal }),
   devicePolicy: () => request<DevicePolicyDocument>('/api/v1/device-policy'),
+  rebindDeviceIdentity: (update: DeviceIdentityUpdate, revision: string) => trackedRequest<DevicePolicyDocument>('save-device-policy', '/api/v1/device-policy/rebind', { method: 'POST', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(update) }),
   saveDevicePolicy: (policy: PolicySet, revision: string) => trackedRequest<DevicePolicyDocument>('save-device-policy', '/api/v1/device-policy', { method: 'PUT', headers: { 'If-Match': `"${revision}"` }, body: JSON.stringify(policy) }),
   policies: () => request<{ groups: ProxyGroup[] }>('/api/v1/policies'),
   policyWorkspace: policyWorkspaceRequest,

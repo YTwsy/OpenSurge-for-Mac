@@ -267,3 +267,36 @@ html[data-theme="light"] .devices-workbench-page {
 :root .devices-workbench-page .outlet-candidates-link { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 14px; padding: 0 16px 14px; }
 :root .devices-workbench-page .outlet-candidates-link button { flex-shrink: 0; margin: 0; padding: 4px 0; font-size: 12px; line-height: 20px; }
 :root .devices-workbench-page .outlet-candidates-link small { margin: 0; color: var(--device-muted); font-size: 11px; letter-spacing: 0; font-weight: 400; line-height: 20px; }
+
+/* Address recovery is an inline part of the device header, not another card. */
+:root .devices-workbench-page .device-identity-review { margin: 16px 0 0; padding: 0 0 18px; border-bottom: 1px solid var(--device-border); }
+:root .devices-workbench-page .identity-review-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+:root .devices-workbench-page .identity-review-copy { min-width: 0; }
+:root .devices-workbench-page .identity-review-copy>strong { display: flex; align-items: center; gap: 7px; font-size: 12px; line-height: 1.6; font-weight: 600; color: var(--device-text); }
+:root .devices-workbench-page .identity-review-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--device-warning); }
+:root .devices-workbench-page .device-identity-review p { margin: 5px 0 0; font-size: 12px; line-height: 1.65; color: var(--device-muted); overflow-wrap: anywhere; }
+:root .devices-workbench-page .device-identity-review code { padding: 0; background: transparent; color: var(--device-text); font-size: 11px; border-radius: 0; overflow-wrap: anywhere; }
+:root .devices-workbench-page .identity-review-confirm { flex: none; appearance: none; min-height: 34px; padding: 8px 12px; border: 1px solid var(--device-accent); border-radius: 7px; background: var(--device-selected); color: var(--device-accent); font: inherit; font-size: 12px; font-weight: 500; line-height: 1.4; cursor: pointer; }
+:root .devices-workbench-page .identity-review-confirm:hover:not(:disabled) { background: var(--device-soft); }
+:root .devices-workbench-page .identity-review-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; margin-top: 7px; }
+:root .devices-workbench-page .device-identity-review small { font-size: 11px; line-height: 1.7; letter-spacing: 0; font-weight: 400; color: var(--device-muted); }
+:root .devices-workbench-page .identity-review-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-left: auto; }
+:root .devices-workbench-page .device-identity-review .text-link { appearance: none; padding: 3px 0; margin: 0; border: 0; background: transparent; color: var(--device-accent); font: inherit; font-size: 11px; line-height: 1.6; cursor: pointer; }
+:root .devices-workbench-page .identity-review-disclosure { display: inline-flex; align-items: center; gap: 5px; }
+:root .devices-workbench-page .device-identity-review button:focus-visible { outline: 2px solid var(--device-accent); outline-offset: 3px; }
+:root .devices-workbench-page .device-identity-review button:disabled { opacity: .5; cursor: not-allowed; }
+:root .devices-workbench-page .identity-review-draft { display: block; margin-top: 4px; }
+:root .devices-workbench-page .device-identity-review .identity-review-message { color: var(--device-warning); font-size: 11px; }
+:root .devices-workbench-page .identity-review-details { display: grid; grid-template-columns: minmax(185px,.85fr) minmax(0,1.4fr); gap: 20px; margin-top: 13px; padding-top: 13px; border-top: 1px dashed var(--device-border); }
+:root .devices-workbench-page .identity-review-details dl { display: grid; align-content: start; gap: 12px; margin: 0; }
+:root .devices-workbench-page .identity-review-details dt { margin-bottom: 4px; color: var(--device-muted); font-size: 11px; }
+:root .devices-workbench-page .identity-review-details dd { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; }
+:root .devices-workbench-page .identity-review-help { display: grid; gap: 8px; align-content: start; }
+:root .devices-workbench-page .identity-review-help p { margin: 0; font-size: 11px; }
+:root .devices-workbench-page .identity-review-help button { justify-self: start; }
+:root .devices-workbench-page .identity-routing-blocked { font-size: 11px; font-weight: 400; letter-spacing: 0; color: var(--device-muted); }
+@media (max-width: 720px) {
+  :root .devices-workbench-page .identity-review-row { align-items: flex-start; flex-direction: column; gap: 10px; }
+  :root .devices-workbench-page .identity-review-tools { margin-left: 0; }
+  :root .devices-workbench-page .identity-review-details { grid-template-columns: minmax(0,1fr); gap: 14px; }
+}

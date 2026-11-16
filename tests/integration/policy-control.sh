@@ -546,6 +546,26 @@ start_mihomo "device exits before source change"
 "$OMG_BIN" policy-select --config "$CONFIG" --group device/integration-dedicated/default --policy VanishingExit --format json >"$WORK_DIR/device-missing-selected.json"
 "$OMG_BIN" policy-select --config "$CONFIG" --group device/integration-dedicated/ruleset --policy VanishingExit --format json >"$WORK_DIR/ruleset-missing-selected.json"
 "$OMG_BIN" policy-select --config "$CONFIG" --group device/integration-retained/default --policy SurvivingExit --format json >"$WORK_DIR/device-retained-selected.json"
+section "device address updates preserve selected default and rule outbounds"
+for address_kind in mac ipv4; do
+  stop_mihomo
+  python3 - "$DEVICE_POLICY" "$address_kind" <<'PYCODE'
+import json, sys
+path, field = sys.argv[1:]
+with open(path) as stream:
+    policy = json.load(stream)
+policy['devices'][0][field] = 'ee:f7:1b:ec:bc:a5' if field == 'mac' else '192.168.50.111'
+with open(path, 'w') as stream:
+    json.dump(policy, stream)
+PYCODE
+  "$OMG_BIN" validate-mihomo --config "$CONFIG" --format json >"$WORK_DIR/rebind-$address_kind-validation.json"
+  start_mihomo "device $address_kind update"
+  "$OMG_BIN" policies --config "$CONFIG" --format json >"$WORK_DIR/rebind-$address_kind-selections.json"
+  grep -A 2 -F '"name": "device/integration-dedicated/default"' "$WORK_DIR/rebind-$address_kind-selections.json" | grep -Fq '"selected": "VanishingExit"'
+  grep -A 2 -F '"name": "device/integration-dedicated/ruleset"' "$WORK_DIR/rebind-$address_kind-selections.json" | grep -Fq '"selected": "VanishingExit"'
+  grep -A 2 -F '"name": "device/integration-retained/default"' "$WORK_DIR/rebind-$address_kind-selections.json" | grep -Fq '"selected": "SurvivingExit"'
+done
+cp "$WORK_DIR/device-policy-original.json" "$DEVICE_POLICY"
 stop_mihomo
 cat >"$PROFILE" <<'EOF'
 proxy-groups:

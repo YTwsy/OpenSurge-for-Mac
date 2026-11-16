@@ -39,10 +39,14 @@ func parseNeighbors(output, interfaceName string) []Neighbor {
 		ipText := strings.Trim(fields[1], "()")
 		ip := net.ParseIP(ipText).To4()
 		mac, err := net.ParseMAC(fields[3])
-		if ip == nil || err != nil || seen[ip.String()] {
+		if ip == nil || err != nil {
 			continue
 		}
-		seen[ip.String()] = true
+		key := ip.String() + "/" + mac.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		neighbors = append(neighbors, Neighbor{IP: ip.String(), MAC: strings.ToLower(mac.String()), Interface: interfaceName})
 	}
 	return neighbors

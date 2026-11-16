@@ -309,7 +309,7 @@ export type AppliedDeviceEgressMode = DeviceEgressMode | 'legacy_fallback'
 export type DeviceGatewayTarget = 'opensurge' | 'upstream_router'
 export type PolicyAdjustment = { slot: string; effect: 'inherit_global' | 'skip_rule' | 'filter_candidates'; missing_targets: string[]; selected?: string }
 export type CompiledDevice = { id: string; mac: string; ipv4: string; profile: string; gateway_target?: DeviceGatewayTarget | ''; egress_mode?: AppliedDeviceEgressMode | ''; configured_egress_mode?: AppliedDeviceEgressMode; policy_adjustments?: PolicyAdjustment[]; ipv6_blocked?: boolean; groups: Record<string, string>; rule_matches?: Record<string, PolicyRule['match']> }
-export type ObservedDevice = { ip: string; mac?: string; active_connections: number; neighbor_observed: boolean }
+export type ObservedDevice = { ip: string; mac?: string; active_connections: number; neighbor_observed: boolean; mac_conflict?: boolean; observed_macs?: string[] }
 export type DevicesResponse = {
   desired_digest?: string
   applied_digest?: string
@@ -460,3 +460,5 @@ export type CustomDNSDraft = { schema_version: number; revision: string; documen
 export type CustomDNSChange = { field: string; before: string; after: string; source: string }
 export type CustomDNSImport = { document: CustomDNSDocument; sections: string[] }
 export type CustomDNSPreview = { changes: CustomDNSChange[]; warnings: string[]; blockers: string[]; final_yaml: string; base_yaml: string; overlay_yaml: string; custom_yaml: string; managed_changes: CustomDNSChange[]; mac_ready: boolean; downstream_ready: boolean; dns_references: DNSReference[] }
+
+export type DeviceIdentityUpdate = { device_id: string; from_ipv4: string; from_mac: string; to_ipv4: string; to_mac: string }

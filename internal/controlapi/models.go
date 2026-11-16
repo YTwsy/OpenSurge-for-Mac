@@ -509,10 +509,12 @@ type DevicesResponse struct {
 // is included only when the macOS ARP cache contains a matching neighbor; this
 // remains observation evidence rather than DHCP-backed identity proof.
 type ObservedDevice struct {
-	IP                string `json:"ip"`
-	MAC               string `json:"mac,omitempty"`
-	ActiveConnections int    `json:"active_connections"`
-	NeighborObserved  bool   `json:"neighbor_observed"`
+	IP                string   `json:"ip"`
+	MAC               string   `json:"mac,omitempty"`
+	ActiveConnections int      `json:"active_connections"`
+	NeighborObserved  bool     `json:"neighbor_observed"`
+	MACConflict       bool     `json:"mac_conflict,omitempty"`
+	ObservedMACs      []string `json:"observed_macs,omitempty"`
 }
 
 // DeviceTrafficResponse is a point-in-time aggregation of the currently

@@ -161,7 +161,7 @@ OpenSurge lease 自动填写 hostname、MAC 与 IPv4；`same_lan` 则列出 miho
 
 设备卡自身提供整设备管理：「编辑身份与路由」复用登记面板并预填现有身份，「删除设备」
 同时清理该设备的私有 Profile。两者都只改本地草稿，仍走同一次“保存设备配置”。设备
-policy 是整文档提交，因此这些入口是操作者修正身份的唯一途径；`out_of_lan_devices`
+policy 的常规编辑是整文档提交；地址变化提示另提供仅更新地址的一次确认入口。`out_of_lan_devices`
 标记的设备只能在这里改地址或删除，界面必须把这条出路说清楚。
 
 设备策略模型、身份暂停与出口失效规则见 [设备策略契约](device-policy-overlays.md)。revision 冲突保留本地草稿；selector API 从设备 ID 与 slot 重建组名，拒绝伪造任意 group。只有与 applied reservation 完全一致且未过期的当前 lease 才提供 DHCP 身份就绪证据。
