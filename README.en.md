@@ -10,7 +10,7 @@
     <a href="LICENSE"><img alt="GPL-3.0-only" src="https://img.shields.io/badge/license-GPL--3.0--only-2ea44f?style=flat-square"></a>
   </p>
   <p>
-    <a href="README.md">简体中文</a> · <strong>English</strong>
+    <a href="README.md">简体中文</a> · <strong>English</strong> · <a href="README.ja.md">日本語</a>
   </p>
   <p>
     <a href="https://opensurge.pages.dev/">Website</a> ·
